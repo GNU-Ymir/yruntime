@@ -3,6 +3,7 @@
 #include <math.h>
 #include <memory.h>
 #include <gc/gc.h>
+#include <algorithm>
 
 extern "C" TypeInfo _y_Init_char () {
     value val;
