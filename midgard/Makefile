@@ -2,9 +2,11 @@ CC = gyc
 CFLAGS = 
 LDFLAGS = 
 
+
 SRC = $(wildcard **/*.yr)
 OBJS = $(SRC:.yr=.o)
 AOUT = libgymidgard
+
 
 all : $(AOUT) 
 
@@ -15,7 +17,7 @@ libgymidgard : $(OBJS)
 	$(CC) $(CFLAGS) -c $<
 	mv *.o obj/
 
-install: 
+install: $(INCLUDE)
 	cp libgymidgard.a /usr/lib/
 
 clean :
