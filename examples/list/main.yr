@@ -1,0 +1,41 @@
+import core.io;
+
+struct 
+| value : int
+| next : p!List
+ -> List;
+
+def alloc (T) (a : T) {
+    extern (C) GC_malloc (size : ulong) -> p!void;
+    let x = cast!(p!T) (GC_malloc (16UL));
+    *x = a;
+    return x;
+}
+
+def append (ref a : List, b : int) {
+    let current = &a;
+    while current !is null {
+        if ((*current).next is null) {
+            (*current).next = alloc (List {b, null});
+            return;
+        }
+        current = (*current).next;
+    }       
+}
+
+def printList (ref a : List) {
+    let current = &a;
+    while current !is null {
+        print ((*current).value);
+        print (" :: ");
+        current = (*current).next;
+    }
+    println ("NIL");
+}
+
+def main () {
+    let a = List {0, null};
+    for i in 1 .. 10
+        a.append (i);
+    a.printList ();
+}
