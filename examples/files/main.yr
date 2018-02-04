@@ -1,0 +1,136 @@
+import core.io;
+
+enum
+| A : 0
+| B : 1
+| C : 2
+ -> Test;
+
+def test (a : Test) {
+    println (a);
+}
+
+enum : byte
+| F_OK : 0B
+| X_OK : 1B
+| W_OK : 2B
+| R_OK : 4B
+-> FilePermission;
+
+enum
+| ReadForUser : 256
+| WriteForUser : 128
+| ExecForUser : 64
+| RWXForUser : 448
+| ReadForGroup : 32
+| WriteForGroup : 16
+| ExecForGroup : 8
+| RWXForGroup : 56
+| ReadForOthers : 4
+| WriteForOthers : 2
+| ExecForOthers : 1
+| RWXForOthers : 7
+| SetUserId : 2048
+| SetGroupId : 1024
+| Sticky : 512
+-> AccessPerm;
+
+enum : byte
+| File : 0B
+| Dir : 1B
+-> FileType;
+
+extern (C) access (const a : p!char, b : FilePermission) -> int;
+
+def exists (const name : string) -> bool {
+    if (access (name.ptr, FilePermission::F_OK) != -1) return true;
+    return false;    
+}
+
+// struct dirent {
+//     ino_t          d_ino; 8       /* numéro d'inœud */
+//     off_t          d_off;  8     /* décalage jusqu'à la dirent suivante */
+//     unsigned short d_reclen; 2    /* longueur de cet enregistrement */
+//     unsigned char  d_type;    1  /* type du fichier */
+//     char           d_name[256]; /* nom du fichier */
+// };
+
+extern (C) readdir (const a : p!void) -> p!char;
+extern (C) opendir (const a : p!char) -> p!void;
+extern (C) closedir (a : p!void);
+extern (C) GC_free (const c : p!char);
+extern (C) GC_free (const c : p!string);
+
+def isDir (const name : string) -> bool {
+    let dir = opendir (name.ptr);
+    if (dir !is null) {
+	closedir (dir);
+	return true;
+    } else return false;
+}
+
+def fromStringZ (a : p!char) -> string {
+    if (a is null) return "";
+    else if (*a == 0UB) return "";
+    let anc = a;
+    let len = 0U;
+    while (*a != 0UB) {
+        len ++;
+        a = a + 1;
+    }
+
+    let ret = [char ; len];
+    for (it in 0U .. len) {
+        ret [it] = *(anc + it);
+    }
+    return  string {len, ret.ptr};
+}
+
+
+def dirEntries (const path : string) -> [string] {
+    let dir = opendir (path.ptr);
+    let res = [string ; 0UL];
+    if (dir !is null) {
+        let entry = readdir (dir);
+        while (entry !is null) {
+	    let name = (entry + 19).fromStringZ ();
+	    if ((entry + 18).byte == 4)
+	        res = res ~ [name ~ "/"];
+	    else res = res ~ [name];
+	    entry = readdir (dir);
+        }
+        closedir (dir);
+    }
+    return res;
+}
+
+def opEquals (const a : string, const b : string) {
+    if (a.len != b.len) return false;
+    for (it in 0U .. a.len) {
+        if (a [it] != b [it]) return false;
+    }
+    return true;
+}
+
+def tree (const path, dec) -> void {
+    import core.io;
+    let res = dirEntries (path);
+    for (it in 0UL .. res.len) {
+	if (res [it] != "../" && res [it] != "./" && res [it] != ".git/") {
+            for (_it in 0 .. dec) {
+	        if (_it % 4 == 0) print ('|');
+	        print (' ');                
+            }
+
+	    println (("|-", res [it], ' ', isDir (path ~ res [it])));
+	    if (isDir (path ~ res [it])) {
+                tree (path ~ res [it], dec + 4);	    
+            }
+        }
+    }
+}
+
+
+def main () {
+    tree ("../../", 0);
+}
