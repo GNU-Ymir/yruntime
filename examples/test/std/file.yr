@@ -39,7 +39,11 @@ def dirEntries (const path : string) -> [string] {
 }
 
 def tree (const path, dec) -> void {
-    let res = dirEntries (path);
+    let aux = path;
+    if (path [path.len - 1U] != '/')
+        aux = path ~ "/";
+
+    let res = dirEntries (aux);
     for (it in 0UL .. res.len) {
 	if (res [it] != "../" && res [it] != "./" && res [it] != ".git/") {
             for (_it in 0 .. dec) {
@@ -48,8 +52,8 @@ def tree (const path, dec) -> void {
             }
 
 	    println (("|-", res [it]));
-	    if (isDir (path ~ res [it])) {
-                tree (path ~ res [it], dec + 4);	    
+	    if (isDir (aux ~ res [it])) {
+                tree (aux ~ res [it], dec + 4);	    
             }
         }
     }
