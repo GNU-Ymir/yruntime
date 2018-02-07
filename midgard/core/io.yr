@@ -100,7 +100,30 @@ def print if (is (T : tuple)) (T) (const tu : T) {
     print (b);    
 }
 
+private def printTuple (T) (const tu : t!(T)) {
+    print (tu.0);
+}
+
+private def printTuple if (is (T : tuple)) (T) (const tu : T) {
+    let (a, b...) = tu;
+    print (a);
+    print (", ");
+    printTuple (b);    
+}
+
 def print if (is (T : struct)) (T) (const a : T) {
     print (a::typeid);
-    print (a.tupleof);
+    print ('(');
+    printTuple (a.tupleof);
+    print (')');
+}
+
+def print (T, N : ulong) (const a : [const T ; N]) {
+    print ('[');
+    for it in 0U .. a.len {
+        print (a [it]);
+        if it < a.len - 1U
+            print (", ");
+    }
+    print (']');
 }
