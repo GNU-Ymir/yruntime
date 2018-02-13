@@ -1,10 +1,27 @@
 mod main;
-
 import core.io;
-import test;
+
+
+    
+mod random {
+    private static __init__ = false;
+    extern (C) random () -> int;
+    extern (C) time (a : p!void) -> long;
+    extern (C) srand (a : long);
+
+    def uniform (l : int, u : int) {
+        if (!__init__) {
+            srand (time (null));
+            __init__ = true;
+        }
+
+        return random::random () % ((u - l) + l);        
+    }
+    
+}
 
 def main (args) {
-    test::foo2 (12);
-    let b = test::Test {0};
-    println (b);
+    for i in 0 .. 5 {
+        println (random::uniform (0, 10));
+    }
 }
