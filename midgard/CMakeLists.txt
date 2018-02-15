@@ -12,7 +12,7 @@ FILE (
 FILE (
   GLOB_RECURSE
   SRC_STD
-  core/*.yr
+  std/*.yr
   )
 
 FILE (
@@ -24,13 +24,13 @@ FILE (
 FILE (
   GLOB_RECURSE
   SRC_STD_C
-  core/*.c
+  std/*.c
   )
 
 SET_SOURCE_FILES_PROPERTIES(${SRC_CORE} ${SRC_STD} PROPERTIES LANGUAGE C)
 
 add_library (gymidgard ${SRC_CORE} ${SRC_STD} ${SRC_CORE_C} ${SRC_STD_C})
-target_link_libraries (gymidgard -lpthread -lgc)
+target_link_libraries (gymidgard -lpthread -lgc -lgyruntime)
 install (TARGETS gymidgard DESTINATION /usr/lib/)
 include_directories(${CMAKE_SOURCE_DIR})
 
