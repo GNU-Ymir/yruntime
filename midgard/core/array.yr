@@ -12,7 +12,7 @@ def print (T) (a : const (slice!(const T))) {
     print (aux);
 }
 
-def opIndex (T, T2)(a : const (slice!T),  i : T2) -> T {
+def opIndex (T, T2) (a : const (slice!T),  i : T2) -> T {
     if i < a.len {
         return *(a.ptr + (cast!ulong(i) * char::sizeof));
     } else {
@@ -21,7 +21,7 @@ def opIndex (T, T2)(a : const (slice!T),  i : T2) -> T {
     }
 }
 
-def opIndex (T, T2) (ref a : slice!T,  i : T2) -> ref T {
+def opIndex (T, T2) (a : slice!T,  i : T2) -> ref T {
     if i < a.len {
         return *(a.ptr + (cast!ulong (i) * char::sizeof));
     } else {
@@ -30,26 +30,33 @@ def opIndex (T, T2) (ref a : slice!T,  i : T2) -> ref T {
     }
 }
 
-def opIndex (T2, T) (a : [T2], i : r!(T)) -> mut slice!char {
+def opIndex (T2, T) (a : [T2], i : r!(T)) -> mut slice!T2 {
     if i.scd >= i.fst && (i.scd - i.fst) <= a.len && i.fst <= a.len {
-        return slice!char {cast!ulong (i.scd - i.fst), a.ptr + i.fst};
+        return slice!T2 {cast!ulong (i.scd - i.fst), a.ptr + i.fst};
     } else {
         abort ();
-        return slice!char {0UL, null};
+        return slice!T2 {0UL, null};
     }
 }
 
-def opIndex (T2, T) (a : const [T2], i : r!(T)) -> slice!char {
+def opIndex (T2, T) (a : const [T2], i : r!(T)) -> slice!T2 {
     if i.scd >= i.fst && (i.scd - i.fst) <= a.len && i.fst <= a.len {
-        return const (slice!char) {cast!ulong (i.scd - i.fst), a.ptr + i.fst};
+        return const (slice!T2) {cast!ulong (i.scd - i.fst), a.ptr + i.fst};
     } else {
         abort ();
-        return const (slice!char) {0UL, null};
+        return const (slice!T2) {0UL, null};
     }
 }
 
+def opIndex (T) (a : [T]) -> mut slice!T {
+    return slice!T {a.len, a.ptr};
+}
 
-def dup (T) (const array : [const T]) -> mut [T] {
+def opIndex (T) (const a : [T]) -> slice!T {
+    return const (slice!T) {a.len, a.ptr};
+}
+
+def dup (T) (const array : [T]) -> mut [T] {
     let res = [T ; array.len];
     for it in 0U .. array.len {
         res [it] = array [it];
