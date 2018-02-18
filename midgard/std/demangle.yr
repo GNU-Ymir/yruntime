@@ -1,0 +1,43 @@
+mod std.demangle;
+import core.string;
+import std.outbuffer;
+
+def getNextInt (ref elem : slice!char) -> uint {
+    let len = 0U;
+    while elem [len] >= '0' && elem [len] <= '9' {
+        len ++;
+    }
+
+    let mul = 1U, i = len - 1U, res = 0U;
+    while i >= 0 {
+        res += cast!uint (elem [i] - '0') * mul;
+        mul *= 10U;
+        i --;
+    }
+    elem = slice!char {elem.len - len, elem.ptr + len};
+    return res;
+}
+
+def demangle_fn (str : string) -> string {    
+    if str [0] == '_' && str [1] == 'Y' {
+        if str [2] == 'm' return str;
+        let buf = OutBuffer (); 
+        let current = str [2U .. str.len];
+        let len = getNextInt (current);
+        while len != 0 {
+            if buf.len != 0
+                buf.write ('.');
+            for it in 0U .. len 
+                buf.write (current [it]);            
+        
+            current = slice!char {current.len - len, current.ptr + len};
+            len = getNextInt (current);
+        }
+        buf.write ('\n');
+        buf.write ('\0');
+        return buf.current;
+    } else {
+        return str;
+    }
+}
+

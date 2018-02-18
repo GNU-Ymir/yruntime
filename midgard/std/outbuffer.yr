@@ -1,0 +1,76 @@
+mod std.outbuffer;
+
+extern (C) snprintf (const buf : p!char, len : int, const format : p!char, ...) -> int;
+extern (C) sprintf (const buf : p!char, const format : p!char, ...);
+
+private {
+    struct
+    | current : [char]
+    | len : ulong
+     -> Outbuffer;
+        
+    def resize (ref buf : Outbuffer, len : ulong) {
+
+    }       
+}
+
+def OutBuffer () -> mut Outbuffer {
+    return Outbuffer {[char; 0U], 0UL};
+}
+
+def writeln (F, T...) (ref buf : Outbuffer, const fst : F, next : const T) -> ref Outbuffer {
+    buf.write (fst);
+    buf.write (next.expand);
+    buf.write ('\n');
+    return buf;
+}
+
+def writeln (F) (ref buf : Outbuffer, const fst : F) -> ref Outbuffer {
+    buf.write (fst);
+    buf.write ('\n');
+    return buf;
+}
+
+def write (F, T...) (ref buf : Outbuffer, const fst : F, next : const T) -> ref Outbuffer {
+    buf.write (fst);
+    buf.write (next.expand);
+    return buf;
+}
+
+def write (ref buf : Outbuffer, const str : string) -> ref Outbuffer {
+    if buf.current.len < buf.len + str.len {
+        buf.resize (buf.len + str.len);
+    }
+
+    for it in 0U .. str.len {
+        buf.current [it + buf.len] = str [it];
+    }
+    
+    buf.len += str.len;
+    return buf;
+}
+
+def write (ref buf : Outbuffer, i : int) -> ref Outbuffer {
+    let len = cast!uint (snprintf (null, 0, "%d".ptr, i));
+    if buf.current.len < buf.len + len {
+        buf.resize (buf.len + len);
+    }
+    
+    sprintf (buf.current.ptr + buf.len, "%d".ptr, i);
+    buf.len += len;
+    return buf;
+}
+
+def write (ref buf : Outbuffer, c : char) -> ref Outbuffer {
+    if buf.current.len < buf.len + 1U {
+        buf.resize (buf.len + 1U);
+    }
+
+    buf.current [buf.len] = c;
+    buf.len += 1U;
+    return buf;
+}
+
+def to (T of string) (ref buf : Outbuffer) -> mut string {
+    return string {buf.len, buf.current.ptr};
+}
