@@ -10,7 +10,17 @@ private {
      -> Outbuffer;
         
     def resize (ref buf : Outbuffer, len : ulong) {
+        let capacity = buf.current.len;
+        if (capacity == 0U) capacity = len + 1U;
+        else if (capacity * 2U < len) capacity = len + capacity + 1U;
+        else capacity = (capacity * 2U) + 1U;
 
+        let aux = [char ; capacity];
+        for it in 0U .. buf.len {
+            aux [it] = buf.current [it];
+        }
+
+        buf.current = aux;
     }       
 }
 
