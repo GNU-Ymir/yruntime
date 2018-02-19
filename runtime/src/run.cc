@@ -104,10 +104,29 @@ void installHandler () {
 
     sigaction(SIGSEGV, &sa, NULL);
     sigaction(SIGUSR1, &sa, NULL);
+    sigaction(SIGABRT, &sa, NULL);
+}
+
+extern "C" void _y_error (unsigned long len, char * ptr) {
+    fprintf (stderr, "Assert failure : ");
+    for (unsigned long i = 0 ; i < len ; i++) {
+	fprintf (stderr, "%c", ptr [i]);
+    }
+    fprintf (stderr, "\n");
+}
+
+extern "C" int y_run_main_debug (int argc, char ** argv, int(*y_main) (Array)) {
+    installHandler ();
+    auto args = (Array*) malloc (sizeof (Array) * argc);
+    for (int i = 0 ; i < argc ; i++) {
+	args [i] = {strlen (argv [i]), argv [i]};
+    }
+    auto ret = y_main ({(unsigned long) argc, args});
+    free (args);
+    return ret;
 }
 
 extern "C" int y_run_main (int argc, char ** argv, int(*y_main) (Array)) {
-    installHandler ();
     auto args = (Array*) malloc (sizeof (Array) * argc);
     for (int i = 0 ; i < argc ; i++) {
 	args [i] = {strlen (argv [i]), argv [i]};
