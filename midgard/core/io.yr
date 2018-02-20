@@ -54,7 +54,7 @@ def print (i : ushort) ->  void {
     printf ("%hu".ptr, i);
 }
 
-def print (i : ubyte) -> void {
+def print (i : const ubyte) -> void {
     printf ("%hhx".ptr, i);
 }
 
@@ -93,10 +93,21 @@ def print (T of [U], const U) (a : const T) {
 
 def print (F, T...) (a : const F, b : const T) {
     print (a);
-    println (b.expand);    
+    print (b.expand);    
 }
 
-def println (T...) (const i : T) {
+def println (F, T...) (s : const F, i : const T) {
+    print (s);
+    print (i.expand);
+    print ('\n');
+}
+
+def println (T) (const i : T) {
+    print (i);
+    print ('\n');
+}
+
+def println if (is (T : tuple)) (T) (const i : T) {
     print (i);
     print ('\n');
 }
@@ -106,9 +117,9 @@ def print (T) (const tu : t!(const T)) {
 }
 
 def print if (is (T : tuple)) (T) (const tu : T) {
-    let (a, b...) = tu;
-    print (a);
-    print (b);    
+    print ('(');
+    printTuple (tu);
+    print (')');
 }
 
 private def printTuple (T) (const tu : t!(const T)) {
