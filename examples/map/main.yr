@@ -27,7 +27,8 @@ def map (K, V) () {
 
 def find (K, V) (ref mp : p!(MapEntry!(K, V)), key : const K) -> ref V {
     if mp is null {
-        mp = alloc (MapEntry!(K, V) {key, V::init, null, null});
+        let copy = key;
+        mp = alloc (MapEntry!(K, V) {copy, V::init, null, null});
         return (*mp).value;
     } else if ((*mp).key == key) return (*mp).value;
     else if ((*mp).key < key)  return find ((*mp).left, key);
@@ -92,7 +93,7 @@ def opTest ("<") (const left : Test, const right : Test) {
 }
 
 def main () {
-    let a = map!(Test, int);
+    let a = map!(Test, int) ();
     for it in 0 .. 10 {
         a [Test {it, 10 - it}] = it;
     }
