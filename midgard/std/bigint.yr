@@ -1,0 +1,336 @@
+mod bigint;
+import core.array, core.io;
+import std.outbuffer;
+
+struct
+| number : [ubyte]
+| sign : bool
+ -> BigInt;
+
+def abs (a : long) -> long
+    return match a < 0 { true => -a; _ => a; };
+
+def isDigit (c : char) {
+    return c >= '0' && c <= '9';
+}
+
+def bigint () -> mut BigInt {
+    return BigInt {[0UB], false};
+}
+
+def bigint (str : const string) -> mut BigInt {
+    let res = BigInt {[ubyte]::init, false};
+    if (str [0].isDigit ()) {
+        res.sign = false;
+        res.number = [ubyte ; str.len];
+        for it in 0U .. str.len
+            res.number [it] = cast!ubyte (str [it] - '0');
+    } else {
+        res.sign = (str [0] == '-');
+        res.number = [ubyte ; str.len - 1U];
+        for it in 1U .. str.len
+            res.number [it - 1U] = cast!ubyte (str [it] - '0');
+    }
+    return res;    
+}
+
+
+def bigint (val : ulong) -> mut BigInt {
+    let res = BigInt {[ubyte]::init, false};
+    
+    while (val > 0UL) {
+        res.number = [cast!ubyte (val % 10UL)] ~ res.number;
+        val = val / 10UL;
+    }
+    return res;
+}
+
+def bigint (val : int) -> mut BigInt {
+    let res = BigInt {[ubyte]::init, false};
+    if (val < 0) {
+        res.sign = true;
+        val = -val;
+    }
+    
+    while (val > 0) {
+        res.number = [cast!ubyte (val % 10)] ~ res.number;
+        val = val / 10;
+    }
+    return res;
+}
+
+def abs (ref bg : BigInt) -> mut BigInt {
+    return BigInt {bg.number.dup (), false};
+}
+
+def rabs (ref bg : BigInt) -> mut BigInt {
+    return BigInt {bg.number, false};
+}
+
+def opAssign ("=") (ref bg : BigInt, aux : BigInt) -> mut BigInt {
+    bg = BigInt {aux.number.dup (), aux.sign};
+    return bg;
+}
+
+def opAssign ("+=") (ref bg : BigInt, aux : int) -> mut BigInt {
+    bg = bg + aux;
+    return bg;
+}
+
+def opAssign ("-=") (ref bg : BigInt, aux : int) -> mut BigInt {
+    bg = bg + aux;
+    return bg;
+}
+
+def opAssign ("+=") (ref bg : BigInt, ref aux : const BigInt) -> mut BigInt {
+    bg = bg + aux;
+    return bg;
+}
+
+def opAssign ("-=") (ref bg : BigInt, ref aux : const BigInt) -> mut BigInt {
+    bg = bg + aux;
+    return bg;
+}
+
+def opBinary ("-") (ref bg : BigInt, ref aux : const BigInt) {
+    let b = BigInt {aux.number.dup (), !aux.sign};
+    return bg + b;
+}
+
+def opBinary ("*") (ref bg : BigInt, ref aux : const BigInt) {
+    let res = bigint ();
+    res.number = mul (bg.number, aux.number);
+    res.sign = bg.sign != aux.sign;
+    if res.number.len == 1 && res.number [0] == 0
+        res.sign = false;
+    return res;
+}
+
+def opBinary ("/") (ref bg : BigInt, ref aux : const BigInt) {
+    let res = bigint ();
+    res.number = div (bg.number, aux.number).0;
+    res.sign = bg.sign != aux.sign;
+    if res.number.len == 1 && res.number [0] == 0
+        res.sign = false;
+    return res;
+}
+
+def opBinary ("%") (ref bg : BigInt, ref aux : const BigInt) {
+    let res = bigint ();
+    res.number = bigint (div (bg.number, aux.number).1).number;
+    res.sign = bg.sign != aux.sign;
+    if res.number.len == 1 && res.number [0] == 0
+        res.sign = false;
+    return res;
+}
+
+
+private def add (n1 : const [ubyte], n2 : const [ubyte]) -> [ubyte] {
+    let res = match n1.len > n2.len {true => n1.dup (); _ => n2.dup ();};
+    let carry = 0UB;
+    let diffInLen = cast!ulong (abs (cast!long (n1.len) - cast!long (n2.len)));
+    let _n2 = n2.dup (), _n1 = n1.dup ();
+    if (n1.len > n2.len)
+        _n2 = [ubyte ; diffInLen] ~ n2;
+    else
+        _n1 = [ubyte ; diffInLen] ~ n1;
+    
+    for it_ in 0U .. res.len {
+        let it = res.len - 1UL - it_;
+        res [it] = (carry) + (_n1 [it] + _n2 [it]);
+
+        if it != 0U {
+            if res [it] > 9UB {
+                res [it] -= 10UB;
+                carry = 1UB;
+            } else carry = 0UB;
+                
+        }        
+    }
+    if (res [0] > 9) {
+        res [0] -= 10UB;
+        res = [1UB] ~ res;
+    }
+    return res;
+}
+
+private def sub (n1 : const [ubyte], n2 : const [ubyte]) -> [ubyte] {
+    let res = match n1.len > n2.len {true => n1.dup (); _ => n2.dup ();};
+    let diffInLen = cast!ulong (abs (cast!long (n1.len) - cast!long (n2.len)));
+    let _n1 = n1.dup (), _n2 = n2.dup ();
+    if n1.len > n2.len
+        _n2 = [ubyte ; diffInLen] ~ n2;
+    else
+        _n1 = [ubyte ; diffInLen] ~ n1;
+
+    let nextM = false, currentP = false;
+    for it_ in 0U .. n1.len {
+        let it = n1.len - 1UL - it_;
+        if _n1 [it] < _n2 [it] {
+            currentP = true;
+        }
+
+        if currentP
+            res [it] = (_n1 [it] + 10UB) - (_n2 [it]);
+        else if nextM
+            res [it] = (_n1 [it] - 1UB) - (_n2 [it]);
+        else res [it] = (_n1 [it]) - (_n2 [it]);
+
+        if currentP
+            nextM = true;
+        else nextM = false;        
+        currentP = false;
+    }
+    
+    let nberase = 0U;
+    for it in 0U .. res.len {
+        if res [it] != 0 break;
+        else nberase ++;
+    }
+    
+    res = res [nberase .. res.len].dup ();
+    return res;    
+}
+
+def mul (n1 : const [ubyte], n2 : const [ubyte]) -> [ubyte] {
+    let _n1, _n2;
+    if n1.len > n2.len {
+        _n1 = n2.dup ();
+        _n2 = n1.dup ();
+    } else {
+        _n1 = n1.dup ();
+        _n2 = n2.dup ();
+    }
+
+    let res = [0UB].dup ();
+    for it_ in 0UL .. _n1.len {
+        let it = _n1.len - 1UL - it_;
+        let temp = _n2.dup ();
+
+        let currentDigit = _n1 [it];
+        
+        let carry = 0UB;
+        for j_ in 0UL .. temp.len {
+            let j = temp.len - 1UL - j_;
+            temp [j] = (temp [j] * currentDigit) + carry;
+            if temp [j] > 9 {
+                carry = (temp [j] / 10UB);
+                temp [j] -= (carry * 10UB);
+            } else carry = 0UB;
+        }
+        
+        if carry > 0
+            temp = [carry] ~ temp;
+
+        temp = temp ~ [ubyte ; _n1.len - it - 1U];
+        res = add (res, temp);
+    }
+    
+    let nberase = 0U;
+    for it in 0U .. res.len {
+        if res [it] != 0 break;
+        else nberase ++;
+    }
+    
+    res = res [nberase .. res.len].dup ();
+    if (res.len == 0UL) return [0UB].dup ();
+    return res;
+}
+
+def to (T of ulong) (den : const [ubyte]) -> ulong {
+    let sum = 0UL;
+    for it in 0U .. den.len
+        sum = (sum * 10UL) + den [it];
+    return sum;
+}
+
+def div (n : const [ubyte], _den : const [ubyte]) -> t!([ubyte], ulong) {
+    let den = _den.to!ulong;
+    let rem = 0UL;
+    let res = [ubyte ; n.len];
+    for it in 0UL .. n.len {
+        rem = (rem * 10UL + n [it]);
+        res [it] = cast!ubyte (rem / den);
+        rem %= den;
+    }
+
+    let nberase = 0U;
+    for it in 0U .. res.len {
+        if res [it] != 0 break;
+        else nberase ++;
+    }
+    
+    res = res [nberase .. res.len].dup ();
+    return (res, rem);
+}
+
+def opBinary ("+") (ref bg : BigInt, ref b : const BigInt) {
+    let res = bigint ();
+    if (bg.sign == b.sign) {
+        res.number = add (bg.number, b.number);
+        res.sign = bg.sign;
+    } else {
+        if (bg.rabs () > b.rabs ()) {
+            res.number = sub (bg.number, b.number);
+            res.sign = bg.sign;
+        } else {
+            res.number = sub (b.number, bg.number);
+            res.sign = b.sign;
+        }
+    }
+
+    if (res.number.len == 1 && res.number [0] == 0)
+        res.sign = false;
+    
+    return res;
+}
+
+def opEquals (ref bg : const BigInt, ref aux : const BigInt) -> bool {
+    if (bg.number.len != aux.number.len || bg.sign != aux.sign) return false;
+    for it in 0U .. bg.number.len {
+        if bg.number [it] != aux.number [it]
+            return false;
+    }
+    return true;
+}
+
+def opTest ("<") (ref n1 : const BigInt, ref n2 : const BigInt) -> bool {
+    if (n1.sign && !n2.sign) return true;
+    else if !n1.sign && n2.sign return false;
+    else if (!n1.sign) {
+        if n1.number.len < n2.number.len return true;
+        else if n1.number.len > n2.number.len return false;
+        for it in 0U .. n1.number.len {
+            if n1.number [it] < n2.number [it] return true;
+        }
+        return false;
+    } else {
+        if n1.number.len < n2.number.len return false;
+        else if n1.number.len > n2.number.len return true;
+        for it in 0U .. n1.number.len {
+            if n1.number [it] > n2.number [it] return true;
+        }
+        return false;
+    }                       
+}
+
+def opTest (">") (ref n1 : const BigInt, ref n2 : const BigInt) -> bool {
+    return !n1.opTest!"<" (n2) && !n1.opEquals (n2);
+}
+
+def opTest (">=") (ref n1 : const BigInt, ref n2 : const BigInt) -> bool {
+    return !n1.opTest!"<" (n2) || n1.opEquals (n2);
+}
+
+def opTest ("<=") (ref n1 : const BigInt, ref n2 : const BigInt) -> bool {
+    return n1.opTest!"<" (n2) || n1.opEquals (n2);
+}
+
+def to (T of string) (ref bg : BigInt) {
+    let buf = OutBuffer ();
+    if (bg.sign) buf.write ("-");
+    for it in 0U .. bg.number.len 
+        buf.write (cast!char (bg.number [it]) + '0');
+    return buf.to!string;
+}
+
