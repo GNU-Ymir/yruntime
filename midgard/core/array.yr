@@ -3,7 +3,7 @@ import std.abort;
 import std.traits;
 
 struct (T)
-| len : ulong
+| len : u64
 | ptr : p!T
  -> slice;
 
@@ -12,18 +12,29 @@ def print (T) (a : const (slice!(const T))) {
     print (aux);
 }
 
+def opEquals (T) (const left : [T], const right : [T]) -> bool {
+    if left.len != right.len
+        return false;
+    
+    for it in 0UL .. left.len {
+        if left [it] != right [it]
+            return false;
+    }
+    return true;
+}
+
 def opIndex (T, T2) (a : const (slice!T),  i : T2) -> T {
     if i < a.len {
-        return *(a.ptr + (cast!ulong(i) * char::sizeof));
+        return *(a.ptr + (cast!u64(i) * char::sizeof));
     } else {
         abort ();
         return *a.ptr;
     }
 }
 
-def opIndex (T, T2) (a : slice!T,  i : uint) -> ref T {
+def opIndex (T, T2) (a : slice!T,  i : u32) -> ref T {
     if i < a.len {
-        return *(a.ptr + (cast!ulong (i) * char::sizeof));
+        return *(a.ptr + (cast!u64 (i) * char::sizeof));
     } else {
         abort ();
         return *a.ptr;
@@ -32,7 +43,7 @@ def opIndex (T, T2) (a : slice!T,  i : uint) -> ref T {
 
 def opIndex (T2, T) (a : [T2], i : r!(T)) -> mut slice!T2 {
     if i.scd >= i.fst && (i.scd - i.fst) <= a.len && i.fst <= a.len {
-        return slice!T2 {cast!ulong (i.scd - i.fst), a.ptr + i.fst};
+        return slice!T2 {cast!u64 (i.scd - i.fst), a.ptr + i.fst};
     } else {
         abort ();
         return slice!T2 {0UL, null};
@@ -41,7 +52,7 @@ def opIndex (T2, T) (a : [T2], i : r!(T)) -> mut slice!T2 {
 
 def opIndex (T2, T) (a : const [T2], i : r!(T)) -> slice!T2 {
     if i.scd >= i.fst && (i.scd - i.fst) <= a.len && i.fst <= a.len {
-        return const (slice!T2) {cast!ulong (i.scd - i.fst), a.ptr + i.fst};
+        return const (slice!T2) {cast!u64 (i.scd - i.fst), a.ptr + i.fst};
     } else {
         abort ();
         return const (slice!T2) {0UL, null};
@@ -64,7 +75,7 @@ def dup (T) (const array : [const T]) -> mut [T] {
     return res;
 }
 
-def dup (T, N : ulong) (ref array : const ([const T ; N])) -> mut [T] {
+def dup (T, N : u64) (ref array : const ([const T ; N])) -> mut [T] {
     let res = [T ; array.len];
     for it in 0U .. array.len {
         res [it] = array [it];

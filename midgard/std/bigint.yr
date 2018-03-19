@@ -3,11 +3,11 @@ import core.array, core.io;
 import std.outbuffer;
 
 struct
-| number : [ubyte]
+| number : [u8]
 | sign : bool
  -> BigInt;
 
-def abs (a : long) -> long
+def abs (a : i64) -> i64
     return match a < 0 { true => -a; _ => a; };
 
 def isDigit (c : char) {
@@ -19,41 +19,41 @@ def bigint () -> mut BigInt {
 }
 
 def bigint (str : const string) -> mut BigInt {
-    let res = BigInt {[ubyte]::init, false};
+    let res = BigInt {[u8]::init, false};
     if (str [0].isDigit ()) {
         res.sign = false;
-        res.number = [ubyte ; str.len];
+        res.number = [u8 ; str.len];
         for it in 0U .. str.len
-            res.number [it] = cast!ubyte (str [it] - '0');
+            res.number [it] = cast!u8 (str [it] - '0');
     } else {
         res.sign = (str [0] == '-');
-        res.number = [ubyte ; str.len - 1U];
+        res.number = [u8 ; str.len - 1U];
         for it in 1U .. str.len
-            res.number [it - 1U] = cast!ubyte (str [it] - '0');
+            res.number [it - 1U] = cast!u8 (str [it] - '0');
     }
     return res;    
 }
 
 
-def bigint (val : ulong) -> mut BigInt {
-    let res = BigInt {[ubyte]::init, false};
+def bigint (val : u64) -> mut BigInt {
+    let res = BigInt {[u8]::init, false};
     
     while (val > 0UL) {
-        res.number = [cast!ubyte (val % 10UL)] ~ res.number;
+        res.number = [cast!u8 (val % 10UL)] ~ res.number;
         val = val / 10UL;
     }
     return res;
 }
 
-def bigint (val : int) -> mut BigInt {
-    let res = BigInt {[ubyte]::init, false};
+def bigint (val : i32) -> mut BigInt {
+    let res = BigInt {[u8]::init, false};
     if (val < 0) {
         res.sign = true;
         val = -val;
     }
     
     while (val > 0) {
-        res.number = [cast!ubyte (val % 10)] ~ res.number;
+        res.number = [cast!u8 (val % 10)] ~ res.number;
         val = val / 10;
     }
     return res;
@@ -72,12 +72,12 @@ def opAssign ("=") (ref bg : BigInt, aux : BigInt) -> mut BigInt {
     return bg;
 }
 
-def opAssign ("+=") (ref bg : BigInt, aux : int) -> mut BigInt {
+def opAssign ("+=") (ref bg : BigInt, aux : i32) -> mut BigInt {
     bg = bg + aux;
     return bg;
 }
 
-def opAssign ("-=") (ref bg : BigInt, aux : int) -> mut BigInt {
+def opAssign ("-=") (ref bg : BigInt, aux : i32) -> mut BigInt {
     bg = bg + aux;
     return bg;
 }
@@ -125,15 +125,15 @@ def opBinary ("%") (ref bg : BigInt, ref aux : const BigInt) {
 }
 
 
-private def add (n1 : const [ubyte], n2 : const [ubyte]) -> [ubyte] {
+private def add (n1 : const [u8], n2 : const [u8]) -> [u8] {
     let res = match n1.len > n2.len {true => n1.dup (); _ => n2.dup ();};
     let carry = 0UB;
-    let diffInLen = cast!ulong (abs (cast!long (n1.len) - cast!long (n2.len)));
+    let diffInLen = cast!u64 (abs (cast!i64 (n1.len) - cast!i64 (n2.len)));
     let _n2 = n2.dup (), _n1 = n1.dup ();
     if (n1.len > n2.len)
-        _n2 = [ubyte ; diffInLen] ~ n2;
+        _n2 = [u8 ; diffInLen] ~ n2;
     else
-        _n1 = [ubyte ; diffInLen] ~ n1;
+        _n1 = [u8 ; diffInLen] ~ n1;
     
     for it_ in 0U .. res.len {
         let it = res.len - 1UL - it_;
@@ -154,14 +154,14 @@ private def add (n1 : const [ubyte], n2 : const [ubyte]) -> [ubyte] {
     return res;
 }
 
-private def sub (n1 : const [ubyte], n2 : const [ubyte]) -> [ubyte] {
+private def sub (n1 : const [u8], n2 : const [u8]) -> [u8] {
     let res = match n1.len > n2.len {true => n1.dup (); _ => n2.dup ();};
-    let diffInLen = cast!ulong (abs (cast!long (n1.len) - cast!long (n2.len)));
+    let diffInLen = cast!u64 (abs (cast!i64 (n1.len) - cast!i64 (n2.len)));
     let _n1 = n1.dup (), _n2 = n2.dup ();
     if n1.len > n2.len
-        _n2 = [ubyte ; diffInLen] ~ n2;
+        _n2 = [u8 ; diffInLen] ~ n2;
     else
-        _n1 = [ubyte ; diffInLen] ~ n1;
+        _n1 = [u8 ; diffInLen] ~ n1;
 
     let nextM = false, currentP = false;
     for it_ in 0U .. n1.len {
@@ -192,7 +192,7 @@ private def sub (n1 : const [ubyte], n2 : const [ubyte]) -> [ubyte] {
     return res;    
 }
 
-def mul (n1 : const [ubyte], n2 : const [ubyte]) -> [ubyte] {
+def mul (n1 : const [u8], n2 : const [u8]) -> [u8] {
     let _n1, _n2;
     if n1.len > n2.len {
         _n1 = n2.dup ();
@@ -222,7 +222,7 @@ def mul (n1 : const [ubyte], n2 : const [ubyte]) -> [ubyte] {
         if carry > 0
             temp = [carry] ~ temp;
 
-        temp = temp ~ [ubyte ; _n1.len - it - 1U];
+        temp = temp ~ [u8 ; _n1.len - it - 1U];
         res = add (res, temp);
     }
     
@@ -237,20 +237,20 @@ def mul (n1 : const [ubyte], n2 : const [ubyte]) -> [ubyte] {
     return res;
 }
 
-def to (T of ulong) (den : const [ubyte]) -> ulong {
+def to (T of u64) (den : const [u8]) -> u64 {
     let sum = 0UL;
     for it in 0U .. den.len
         sum = (sum * 10UL) + den [it];
     return sum;
 }
 
-def div (n : const [ubyte], _den : const [ubyte]) -> t!([ubyte], ulong) {
-    let den = _den.to!ulong;
+def div (n : const [u8], _den : const [u8]) -> t!([u8], u64) {
+    let den = _den.to!u64;
     let rem = 0UL;
-    let res = [ubyte ; n.len];
+    let res = [u8 ; n.len];
     for it in 0UL .. n.len {
         rem = (rem * 10UL + n [it]);
-        res [it] = cast!ubyte (rem / den);
+        res [it] = cast!u8 (rem / den);
         rem %= den;
     }
 

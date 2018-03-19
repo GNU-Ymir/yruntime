@@ -17,23 +17,12 @@ def opAssign ("=") (a : slice!(char), const b : string) -> mut slice!char {
 }
 
 def dup (const array : string) -> mut string {
-    extern (C) GC_malloc (len : ulong) -> mut p!char;
-    let res = string {array.len, GC_malloc (array.len)};
+    extern (C) GC_malloc (len : u64) -> mut p!char;
+    let res = [char] {array.len, GC_malloc (array.len)};
     for it in 0U .. array.len {
         res [it] = array [it];
     }
     return res;
-}
-
-def opEquals (const left : string, const right : string) -> bool {
-    if left.len != right.len
-        return false;
-    
-    for it in 0UL .. left.len {
-        if left [it] != right [it]
-            return false;
-    }
-    return true;
 }
 
 def opEquals (const left : string, const right : slice!char) -> bool {
@@ -58,7 +47,7 @@ def opEquals (const left : slice!char, const right : slice!char) -> bool {
     return true;
 }
 
-def opTest (op : string) (const left : string, const right : string) -> int {
+def opTest (op : string) (const left : string, const right : string) -> i32 {
     let min = left.len;
     if right.len < min {
         min = right.len;
@@ -74,7 +63,7 @@ def opTest (op : string) (const left : string, const right : string) -> int {
     return 0;
 }
 
-def opTest (op : string) (const left : string, const right : slice!(char)) -> int {
+def opTest (op : string) (const left : string, const right : slice!(char)) -> i32 {
     let min = left.len;
     if right.len < min {
         min = right.len;
@@ -90,7 +79,7 @@ def opTest (op : string) (const left : string, const right : slice!(char)) -> in
     return 0;
 }
 
-def opTest (op : string) (const left : slice!(char), const right : slice!(char)) -> int {
+def opTest (op : string) (const left : slice!(char), const right : slice!(char)) -> i32 {
     let min = left.len;
     if right.len < min {
         min = right.len;
@@ -106,7 +95,7 @@ def opTest (op : string) (const left : slice!(char), const right : slice!(char))
     return 0;
 }
 
-def opTest (op : string) (const left : slice!(char), const right : string) -> int {
+def opTest (op : string) (const left : slice!(char), const right : string) -> i32 {
     let min = left.len;
     if right.len < min {
         min = right.len;

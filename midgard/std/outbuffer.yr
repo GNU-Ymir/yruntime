@@ -1,15 +1,15 @@
 mod std.outbuffer;
 
-extern (C) snprintf (const buf : p!char, len : int, const format : p!char, ...) -> int;
-extern (C) sprintf (const buf : p!char, const format : p!char, ...);
+extern (C) snpri32f (const buf : p!char, len : i32, const format : p!char, ...) -> i32;
+extern (C) spri32f (const buf : p!char, const format : p!char, ...);
 
 private {
     struct
     | current : [char]
-    | len : ulong
+    | len : u64
      -> Outbuffer;
         
-    def resize (ref buf : Outbuffer, len : ulong) {
+    def resize (ref buf : Outbuffer, len : u64) {
         let capacity = buf.current.len;
         if (capacity == 0U) capacity = len + 1U;
         else if (capacity * 2U < len) capacity = len + capacity + 1U;
@@ -60,13 +60,13 @@ def write (ref buf : Outbuffer, const str : string) -> ref Outbuffer {
     return buf;
 }
 
-def write (ref buf : Outbuffer, i : int) -> ref Outbuffer {
-    let len = cast!uint (snprintf (null, 0, "%d".ptr, i));
+def write (ref buf : Outbuffer, i : i32) -> ref Outbuffer {
+    let len = cast!u32 (snpri32f (null, 0, "%d".ptr, i));
     if buf.current.len < buf.len + len {
         buf.resize (buf.len + len);
     }
     
-    sprintf (buf.current.ptr + buf.len, "%d".ptr, i);
+    spri32f (buf.current.ptr + buf.len, "%d".ptr, i);
     buf.len += len;
     return buf;
 }
