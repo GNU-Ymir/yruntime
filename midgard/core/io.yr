@@ -1,7 +1,9 @@
 mod core.io;
+import std.traits;
 
 extern (C) putchar (const c : char);
 extern (C) printf (const c : p!char, ...);
+extern (C) scanf (const c : p!char, ...);
 
 def print (c : char) -> void
     putchar (c);
@@ -147,5 +149,53 @@ def print (T, N : u64) (const a : [const T ; N]) {
     }
     print (']');
 }
+
+def read if (isIntegral!T) (T) () {
+    let i = i64::init;
+    scanf ("%d".ptr, &i);
+    return cast!T (i);
+}
+
+def read if (is (T : char)) (T) () {
+    let i = char::init;
+    scanf ("%c".ptr, &i);
+    return i;
+}
+
+def read if (is (T : string) || is (T : [char])) (T) () {
+    let res = [char ; 0U];
+    while true {
+        let i = char::init;
+        scanf ("%c".ptr, &i);
+        if (i == '\n' || i == '\r') break;
+        else res = res ~ [i];
+    }
+    return res;
+}
+
+def read if (is (T : string) || is (T : [char])) (T) (end : [char]) {
+    let res = [char ; 0U];
+    while true {
+        let i = char::init;
+        scanf ("%c".ptr, &i);
+        for it in end {
+            if i == it break;
+        }
+        res = res ~ [i];
+    }
+    return res;
+}
+
+def read if (is (T : string) || is (T : [char])) (T) (end : char) {
+    let res = [char ; 0U];
+    while true {
+        let i = char::init;
+        scanf ("%c".ptr, &i);       
+        if i == end break;        
+        else res = res ~ [i];
+    }
+    return res;
+}
+
 
 
