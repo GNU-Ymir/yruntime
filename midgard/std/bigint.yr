@@ -1,4 +1,4 @@
-mod bigint;
+mod std.bigint;
 import core.array, core.io;
 import std.outbuffer;
 
@@ -328,6 +328,15 @@ def opTest ("<=") (ref n1 : const BigInt, ref n2 : const BigInt) -> bool {
 
 def to (T of string) (ref bg : BigInt) {
     let buf = OutBuffer ();
+    if (bg.sign) buf.write ("-");
+    for it in 0U .. bg.number.len 
+        buf.write (cast!char (bg.number [it]) + '0');
+    return buf.to!string;
+}
+
+def to (T of string) (bg : const BigInt) {
+    let buf = OutBuffer ();
+    if (bg.number.len == 0) return "0";
     if (bg.sign) buf.write ("-");
     for it in 0U .. bg.number.len 
         buf.write (cast!char (bg.number [it]) + '0');

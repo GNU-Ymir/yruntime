@@ -1,7 +1,7 @@
 mod std.outbuffer;
 
-extern (C) snpri32f (const buf : p!char, len : i32, const format : p!char, ...) -> i32;
-extern (C) spri32f (const buf : p!char, const format : p!char, ...);
+extern (C) snprintf (const buf : p!char, len : i32, const format : p!char, ...) -> i32;
+extern (C) sprintf (const buf : p!char, const format : p!char, ...);
 
 private {
     struct
@@ -61,12 +61,12 @@ def write (ref buf : Outbuffer, const str : string) -> ref Outbuffer {
 }
 
 def write (ref buf : Outbuffer, i : i32) -> ref Outbuffer {
-    let len = cast!u32 (snpri32f (null, 0, "%d".ptr, i));
+    let len = cast!u32 (snprintf (null, 0, "%d".ptr, i));
     if buf.current.len < buf.len + len {
         buf.resize (buf.len + len);
     }
     
-    spri32f (buf.current.ptr + buf.len, "%d".ptr, i);
+    sprintf (buf.current.ptr + buf.len, "%d".ptr, i);
     buf.len += len;
     return buf;
 }

@@ -1,0 +1,142 @@
+mod std.socket;
+
+private enum
+| SOCK_DGRAM : 2
+| SOCK_SEQPACKET : 5
+| SOCK_STREAM : 1
+| SOL_SOCKET : 1
+| SO_ACCEPTCONN   : 30
+| SO_BROADCAST    : 6
+| SO_DEBUG        : 1
+| SO_DONTROUTE    : 5
+| SO_ERROR        : 4
+| SO_KEEPALIVE    : 9
+| SO_LINGER       : 13
+| SO_OOBINLINE    : 10
+| SO_RCVBUF       : 8
+| SO_RCVLOWAT     : 18
+| SO_RCVTIMEO     : 20
+| SO_REUSEADDR    : 2
+| SO_SNDBUF       : 7
+| SO_SNDLOWAT     : 19
+| SO_SNDTIMEO     : 21
+| SO_TYPE         : 3
+ -> SockCst;
+
+private {
+    cte TCP_KEEPIDLE = 4;
+    cte TCP_KEEPINTVL = 5;
+    cte SOMAXCONN = 128;
+    cte SOCK_RDM = 4;
+}
+
+private enum : u32
+| MSG_CTRUNC      : 0x0800U
+| MSG_DONTROUTE   : 0x0400U
+| MSG_EOR         : 0x8000U
+| MSG_OOB         : 0x0100U
+| MSG_PEEK        : 0x0200U
+| MSG_TRUNC       : 0x2000U
+| MSG_WAITALL     : 0x1000U
+| MSG_NOSIGNAL    : 0x4000U
+ -> MsgCst;
+
+private enum
+| AF_APPLETALK    : 5
+| AF_INET         : 2
+| AF_INET6        : 10
+| AF_IPX          : 4
+| AF_UNIX         : 1
+| AF_UNSPEC       : 0
+| PF_APPLETALK    : 5
+| PF_IPX          : 4
+ -> AFCst;
+
+private enum
+| SHUT_RD : 0
+| SHUT_WR : 1
+| SHUT_RDWR : 2
+ -> ShutCst;
+
+enum
+| UNSPEC :     AFCst::AF_UNSPEC     /// Unspecified address family
+| UNIX :       AFCst::AF_UNIX       /// Local communication
+| INET :       AFCst::AF_INET       /// Internet Protocol version 4
+| IPX :        AFCst::AF_IPX        /// Novell IPX
+| APPLETALK :  AFCst::AF_APPLETALK  /// AppleTalk
+| INET6 :      AFCst::AF_INET6      /// Internet Protocol version 6
+ -> AddrFamily;
+
+/* TODO : complete this enum by using socket.h */
+enum : i32
+| SockStream    : 1  /* stream (connection) socket) */
+| SockDGram     : 2  /* datagram (conn.less) socket */
+| SockRaw       : 3  /* raw socket		    */
+| SockRdm       : 4  /* reliably-delivered message  */
+| SockSeqPacket : 5  /* sequential packet socket    */
+| SockPacket    : 10 /* see socket.h                */
+ -> SocketType;
+
+enum : u32
+| InAddrAny : 0U /* linux/in.h */
+// | InAddrBroadcast : 0xffffffffU
+ -> AddrType;
+
+/* TODO : complete the enum by using in.h */
+enum : i32
+| Ip   : 0
+| Icmp : 1
+| Igmp : 2
+| Ipip : 4
+| Tcp  : 6
+| Egp  : 8
+| Pup  : 12
+| Udp  : 17
+| Ipv6 : 41
+| Raw  : 255
+ -> IpProtocol;
+
+public {
+
+    struct
+    | sin_family : i16
+    | sin_port : u16
+    | sin_addr : InAddr
+    | sin_zero : [char ; 8u]
+     -> SockAddrIn;
+
+    struct
+    | sa_family : u16
+    | sa_data : [char ; 14u]
+     -> SockAddr;
+
+    struct
+    | handle : i32
+    | addrFamily : AddrFamily
+    | sockType : SocketType
+     -> Socket;
+
+    struct
+    | s_addr : u32
+     -> InAddr;
+    
+    extern (C) accept (x : i32, addr : p!SockAddr, len : p!u32) -> i32;
+    extern (C) bind (x : i32, addr : p!SockAddr, len : u32)-> i32;
+    extern (C) connect (x : i32, addr : p!SockAddr, len : u32)-> i32;
+    extern (C) getpeername (x : i32, addr : p!SockAddr, len : p!u32)-> i32;
+    extern (C) getsockname(x : i32, addr : p!SockAddr, len : p!u32)-> i32;
+    extern (C) getsockopt(x : i32, y : i32, z : i32, w : p!void, len : p!u32)-> i32;
+    extern (C) listen(x : i32, y : i32)-> i32;
+    extern (C) recv(x : i32, y : p!void, z : u32, w : i32)-> u32;
+    extern (C) recvfrom(x : i32, y : p!void, z : u32, w : i32, v : p!SockAddr, u : p!u32)-> u32;
+    extern (C) send(x : i32,  y : p!void, size : u32, z : i32)-> u32;
+    extern (C) sendto(x : i32, y : p!void, size : u32, z : i32, addr : p!SockAddr, len : u32)-> u32;
+    extern (C) setsockopt(x : i32, y : i32, z : i32, w : p!void, len : u32)-> u32;
+    extern (C) shutdown(x : i32, y : i32)-> i32;
+    extern (C) socket(x : i32, y : i32, z : i32)-> i32;
+    extern (C) sockatmark(x : i32)-> i32;
+    extern (C) socketpair(x : i32, y : i32, z : i32, ref w : [i32; 2U])-> i32;
+}
+
+def send (ref sock : Socket, a : [u8]) {    
+}
