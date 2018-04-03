@@ -41,7 +41,7 @@ private enum : u32
 | MSG_NOSIGNAL    : 0x4000U
  -> MsgCst;
 
-private enum
+enum
 | AF_APPLETALK    : 5
 | AF_INET         : 2
 | AF_INET6        : 10
@@ -69,16 +69,16 @@ enum
 
 /* TODO : complete this enum by using socket.h */
 enum : i32
-| SockStream    : 1  /* stream (connection) socket) */
-| SockDGram     : 2  /* datagram (conn.less) socket */
-| SockRaw       : 3  /* raw socket		    */
-| SockRdm       : 4  /* reliably-delivered message  */
-| SockSeqPacket : 5  /* sequential packet socket    */
-| SockPacket    : 10 /* see socket.h                */
+| SOCK_STREAM    : 1  /* stream (connection) socket) */
+| SOCK_DGRAM     : 2  /* datagram (conn.less) socket */
+| SOCK_RAW       : 3  /* raw socket		    */
+| SOCK_RDM       : 4  /* reliably-delivered message  */
+| SOCK_SEQ_PACKET : 5  /* sequential packet socket    */
+| SOCK_PACKET    : 10 /* see socket.h                */
  -> SocketType;
 
 enum : u32
-| InAddrAny : 0U /* linux/in.h */
+| IN_ADDR_ANY : 0U /* linux/in.h */
 // | InAddrBroadcast : 0xffffffffU
  -> AddrType;
 
@@ -96,47 +96,124 @@ enum : i32
 | Raw  : 255
  -> IpProtocol;
 
-public {
 
-    struct
-    | sin_family : i16
-    | sin_port : u16
-    | sin_addr : InAddr
-    | sin_zero : [char ; 8u]
-     -> SockAddrIn;
+struct
+| sin_family : i16
+| sin_port : u16
+| sin_addr : InAddr
+| sin_zero : [char ; 8u]
+ -> SockAddrIn;
 
-    struct
-    | sa_family : u16
-    | sa_data : [char ; 14u]
-     -> SockAddr;
+struct
+| sa_family : u16
+| sa_data : [char ; 14u]
+ -> SockAddr;
 
-    struct
-    | handle : i32
-    | addrFamily : AddrFamily
-    | sockType : SocketType
-     -> Socket;
+struct
+| handle : i32
+| addrFamily : AddrFamily
+| sockType : SocketType
+ -> Socket;
 
-    struct
-    | s_addr : u32
-     -> InAddr;
-    
-    extern (C) accept (x : i32, addr : p!SockAddr, len : p!u32) -> i32;
-    extern (C) bind (x : i32, addr : p!SockAddr, len : u32)-> i32;
-    extern (C) connect (x : i32, addr : p!SockAddr, len : u32)-> i32;
-    extern (C) getpeername (x : i32, addr : p!SockAddr, len : p!u32)-> i32;
-    extern (C) getsockname(x : i32, addr : p!SockAddr, len : p!u32)-> i32;
-    extern (C) getsockopt(x : i32, y : i32, z : i32, w : p!void, len : p!u32)-> i32;
-    extern (C) listen(x : i32, y : i32)-> i32;
-    extern (C) recv(x : i32, y : p!void, z : u32, w : i32)-> u32;
-    extern (C) recvfrom(x : i32, y : p!void, z : u32, w : i32, v : p!SockAddr, u : p!u32)-> u32;
-    extern (C) send(x : i32,  y : p!void, size : u32, z : i32)-> u32;
-    extern (C) sendto(x : i32, y : p!void, size : u32, z : i32, addr : p!SockAddr, len : u32)-> u32;
-    extern (C) setsockopt(x : i32, y : i32, z : i32, w : p!void, len : u32)-> u32;
-    extern (C) shutdown(x : i32, y : i32)-> i32;
-    extern (C) socket(x : i32, y : i32, z : i32)-> i32;
-    extern (C) sockatmark(x : i32)-> i32;
-    extern (C) socketpair(x : i32, y : i32, z : i32, ref w : [i32; 2U])-> i32;
+struct
+| s_addr : u32
+ -> InAddr;
+
+mod native {    
+    public {
+        extern (C) accept (x : i32, addr : p!SockAddr, len : p!u32) -> i32;
+        extern (C) bind (x : i32, addr : p!SockAddr, len : u32)-> i32;
+        extern (C) connect (x : i32, addr : p!SockAddr, len : u32)-> i32;
+        extern (C) getpeername (x : i32, addr : p!SockAddr, len : p!u32)-> i32;
+        extern (C) getsockname(x : i32, addr : p!SockAddr, len : p!u32)-> i32;
+        extern (C) getsockopt(x : i32, y : i32, z : i32, w : p!void, len : p!u32)-> i32;
+        extern (C) listen(x : i32, y : i32)-> i32;
+        extern (C) recv(x : i32, y : p!void, z : u32, w : i32)-> u32;
+        extern (C) recvfrom(x : i32, y : p!void, z : u32, w : i32, v : p!SockAddr, u : u32)-> u32;
+        extern (C) send(x : i32,  y : p!void, size : u32, z : i32)-> u32;
+        extern (C) sendto(x : i32, y : p!void, size : u32, z : i32, addr : p!SockAddr, len : u32)-> u32;
+        extern (C) setsockopt(x : i32, y : i32, z : i32, w : p!void, len : u32)-> u32;
+        extern (C) shutdown(x : i32, y : i32)-> i32;
+        extern (C) socket(x : i32, y : i32, z : i32)-> i32;
+        extern (C) sockatmark(x : i32)-> i32;
+        extern (C) socketpair(x : i32, y : i32, z : i32, ref w : [i32; 2U])-> i32;
+        extern (C) close (fd : i32)-> i32;
+    }
 }
 
-def send (ref sock : Socket, a : [u8]) {    
+mod tcp {
+    
+    extern (C) htons (host : u16) -> u16;
+    struct
+    | socket : i32
+    | addr : SockAddrIn
+    | port : u16
+     -> Server;
+
+    struct (T)
+    | content : const T
+    | sock : Client
+     -> Msg;
+
+    struct
+    | socket : i32
+    | addr : SockAddrIn
+     -> Client;
+    
+    def server (port : u16) -> Server {
+        let sock = native::socket (cast!i32 (AddrFamily::INET), SocketType::SOCK_STREAM, 0);
+        if sock == -1
+            assert (false, "Error while creating the socket");
+
+        let addr = SockAddrIn::init;
+        addr.sin_family = cast!i16 (AddrFamily::INET);
+        addr.sin_addr.s_addr = AddrType::IN_ADDR_ANY;
+        addr.sin_port = htons (port);
+
+        let res = native::bind (sock, cast!(p!SockAddr) (&addr), SockAddrIn::sizeof);
+        if res < 0 
+            assert (false, "Bind Error : ");
+
+        if native::listen (sock, 3) < 0
+            assert (false, "Listen error");
+        
+        return Server {sock, addr, port};
+    }
+
+    def accept (serv : Server) -> Client {
+        let clientAddr = SockAddrIn::init;
+        let lenAddr = SockAddrIn::sizeof;
+
+        let client = native::accept (serv.socket, cast!(p!SockAddr) (&clientAddr), cast!(p!u32) (&lenAddr));
+        if client < 0
+            return Client {-1, clientAddr};
+        else return Client {client, clientAddr};
+    }
+
+    def recv (T of [U], U) (cl : Client, len : u32) -> Msg!T {
+        let res = [U ; len];
+        let size = native::recv (cl.socket, cast!(p!void) (res.ptr), len, 0);
+        res = T {cast!u64 (size), res.ptr};
+        return Msg!T {res, cl};
+    }
+
+    def send (T of [U], U) (cl : Client, const msg : T) {
+        native::send (cl.socket, cast!(p!void)(msg.ptr), cast!u32 (msg.len), 0);
+    }
+
+    def send (T) (cl : Client, const msg : T) {
+        let aux = msg;
+        native::send (cl.socket, cast!(p!void)(&aux), cast!u32 (T::sizeof), 0);
+    }    
+    
+    def recv (T) (cl : Client) {
+        let res = T::init;
+        native::recv (cl.socket, cast!(p!void) (&res), T::sizeof, 0);
+        return Msg!T {res, cl};
+    }
+    
+    def close (cl : Client) {
+        native::close (cl.socket);
+    }
+    
 }
