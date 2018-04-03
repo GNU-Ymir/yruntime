@@ -1,8 +1,29 @@
 mod std.range;
 
-def iota (n : u64) -> [u64] {
-    let res = [u64 ; n];
-    for i in 0U .. n
-        res [i] = i;
+def iota (T) (n : T) -> mut [T] {
+    let res = [T ; cast!u64 (n)];
+    for i in 0U .. cast!u64 (n)
+        res [i] = cast!T (i);
     return res;
 }
+
+
+struct (T)
+| source : [T]
+| dir : bool
+ -> Range;    
+
+
+def retro (T) (a : [T]) {
+    return Range!T {a, true};
+}
+
+def copy (T) (a : Range!T, b : [T]) {
+    for i in 0U .. b.len {
+        if a.dir {
+            b [i] = a.source [a.source.len - i - 1U];
+        }        
+    }
+}
+
+
