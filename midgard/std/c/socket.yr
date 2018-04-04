@@ -1,4 +1,4 @@
-mod std.socket;
+mod std.c.socket;
 
 private enum
 | SOCK_DGRAM : 2
@@ -119,7 +119,7 @@ struct
 | s_addr : u32
  -> InAddr;
 
-mod native {    
+mod C {    
     public {
         extern (C) accept (x : i32, addr : p!SockAddr, len : p!u32) -> i32;
         extern (C) bind (x : i32, addr : p!SockAddr, len : u32)-> i32;
@@ -141,28 +141,3 @@ mod native {
     }
 }
 
-mod tcp {
-    
-    extern (C) htons (host : u16) -> u16;
-    
-    def server (port : u16) -> i32 {
-        let sock = native::socket (cast!i32 (AddrFamily::INET), SocketType::SOCK_STREAM, 0);
-        if sock == -1
-            assert (false, "Error while creating the socket");
-
-        let addr = SockAddrIn::init;
-        addr.sin_family = cast!i16 (AddrFamily::INET);
-        addr.sin_addr.s_addr = AddrType::IN_ADDR_ANY;
-        addr.sin_port = htons (port);
-
-        let res = native::bind (sock, cast!(p!SockAddr) (&addr), SockAddrIn::sizeof);
-        if res < 0 
-            assert (false, "Bind Error : ");
-
-        if native::listen (sock, 3) < 0
-            assert (false, "Listen error");
-        
-        return sock;
-    }
-
-}

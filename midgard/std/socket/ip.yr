@@ -1,10 +1,11 @@
 mod std.socket.ip;
 
 import std.string, std.conv;
-import core.array;
+import core.array, std.c.socket;
 
 extern (C) htons (host : u16) -> u16;
-public extern (C) inet_aton (const c : p!char, i : p!u32);
+extern (C) inet_addr (const c : p!char) -> u32;
+extern (C) inet_aton (const c : p!char, i : p!u32);
 
 enum
 | V4 : 0
@@ -29,19 +30,19 @@ struct
 struct
 | segments : [u16 ; 8U]
  -> IpV6Addr;
-
-mod inner {
     
-    def toIpAddr (const str : string) -> IpAddr {
-        let index = str.lastIndexOf (':');
-        if index == str.len { return IpAddr {IpVersion::V4, IpAddrC {IpV4Addr::init}, 0US}; }
-        let port = (const (string) {str.len - index, str.ptr + index}).to!u16;
-        let aux = (const (string) {index - 1U, str.ptr}).dup ();
-        aux [index] = '\0';
-        let addr = IpV4Addr::init;
-        inet_aton (aux.ptr, &addr.s_addr);
-        
-        return IpAddr {IpVersion::V4, IpAddrC {addr}, port};        
-    }
+def toIpAddr (const str : string) -> IpAddr {
+    let index = str.lastIndexOf (':');
+    if index == str.len { return IpAddr {IpVersion::V4, IpAddrC {IpV4Addr::init}, 0US}; }
+    let port = (const (string) {str.len - index, str.ptr + index}).to!u16;
+    let aux = (const (string) {index - 1U, str.ptr}).dup ();
+    aux [index] = '\0';
+    let addr = IpV4Addr::init;
     
-}
+    if (aux.len == 0U)
+        addr.s_addr = AddrType::IN_ADDR_ANY;
+    else 
+        addr.s_addr = inet_addr (aux.ptr);
+    
+    return IpAddr {IpVersion::V4, IpAddrC {addr}, port};        
+}    

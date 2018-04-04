@@ -1,9 +1,13 @@
 mod std.socket.tcp;
 
 public import std.socket.ip;
-import std.socket;
+import std.c.socket;
 
 mod Tcp {
+
+    extern (C) htons (host : u16) -> u16;
+    extern (C) inet_addr (const c : p!char) -> u32;
+    extern (C) inet_aton (const c : p!char, i : p!u32);
     
     struct
     | socket : i32
@@ -16,22 +20,30 @@ mod Tcp {
      -> TcpStream;
 
     def bind (addr : const string) -> TcpListener {
-        let sock = native::socket (cast!i32 (AddrFamily::INET), SocketType::SOCK_STREAM, 0);
-
+        let sock = C::socket (cast!i32 (AddrFamily::INET), SocketType::SOCK_STREAM, 0);
         if sock == -1
-            assert (false);
+            assert (false, "Error while creating the socket");
         
-        let ipaddr = inner::toIpAddr (addr);
-        let serv = tcp::server (ipaddr.port);
+        let ipaddr = toIpAddr (addr);
+        let raddr = SockAddrIn::init;
+        raddr.sin_family = cast!i16 (AddrFamily::INET);
+        raddr.sin_addr.s_addr = ipaddr.addr.v4.s_addr;
+        raddr.sin_port = htons (ipaddr.port);
+
+        if C::bind (sock, cast!(p!SockAddr) (&raddr), SockAddrIn::sizeof) < 0        
+            assert (false, "Bind Error : ");
+
+        if C::listen (sock, 3) < 0
+            assert (false, "Listen error");
         
-        return TcpListener {serv, ipaddr};
+        return TcpListener {sock, ipaddr};
     }
 
     def accept (ref listener : TcpListener) -> TcpStream {
         let clientAddr = SockAddrIn::init;
         let lenAddr = SockAddrIn::sizeof;    
 
-        let client = native::accept (listener.socket, cast!(p!SockAddr) (&clientAddr), cast!(p!u32) (&lenAddr));
+        let client = C::accept (listener.socket, cast!(p!SockAddr) (&clientAddr), cast!(p!u32) (&lenAddr));
         
         if client < 0 {
             return TcpStream {
@@ -48,16 +60,32 @@ mod Tcp {
         
     }
 
+    def connect (addr : const string) -> TcpStream {
+        let sock = C::socket (cast!i32 (AddrFamily::INET), SocketType::SOCK_STREAM, 0);
+        let ipaddr = toIpAddr (addr);
+
+        let remoteAddr = SockAddrIn::init;
+        remoteAddr.sin_addr.s_addr = ipaddr.addr.v4.s_addr;
+        remoteAddr.sin_family = cast!i16 (AddrFamily::INET);
+        remoteAddr.sin_port = htons (ipaddr.port);
+        
+        let res = C::connect (sock, cast!(p!SockAddr) (&remoteAddr), SockAddrIn::sizeof);
+        if res != 0
+            assert (false, "Connect failure");
+        
+        return TcpStream {sock, ipaddr};        
+    }
+    
     def write (ref stream : TcpStream, const data : [u8]) {
-        native::send (stream.socket, cast!(p!void) (data.ptr), cast!u32 (data.len), 0);
+        C::send (stream.socket, cast!(p!void) (data.ptr), cast!u32 (data.len), 0);
     }
 
-    def read (ref stream : TcpStream, const data : [u8]) -> u64 {
-        return native::recv (stream.socket, cast!(p!void) (data.ptr), cast!u32 (data.len), 0);
+    def read (ref stream : TcpStream, data : [u8]) -> u64 {
+        return C::recv (stream.socket, cast!(p!void) (data.ptr), cast!u32 (data.len), 0);
     }
 
     def close (ref stream : TcpStream) {
-        native::close (stream.socket);
+        C::close (stream.socket);
     }
 
 }
