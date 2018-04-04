@@ -1,0 +1,63 @@
+mod std.socket.tcp;
+
+public import std.socket.ip;
+import std.socket;
+
+mod Tcp {
+    
+    struct
+    | socket : i32
+    | local_addr : IpAddr
+     -> TcpListener;
+
+    struct
+    | socket : i32
+    | remote_addr : IpAddr
+     -> TcpStream;
+
+    def bind (addr : const string) -> TcpListener {
+        let sock = native::socket (cast!i32 (AddrFamily::INET), SocketType::SOCK_STREAM, 0);
+
+        if sock == -1
+            assert (false);
+        
+        let ipaddr = inner::toIpAddr (addr);
+        let serv = tcp::server (ipaddr.port);
+        
+        return TcpListener {serv, ipaddr};
+    }
+
+    def accept (ref listener : TcpListener) -> TcpStream {
+        let clientAddr = SockAddrIn::init;
+        let lenAddr = SockAddrIn::sizeof;    
+
+        let client = native::accept (listener.socket, cast!(p!SockAddr) (&clientAddr), cast!(p!u32) (&lenAddr));
+        
+        if client < 0 {
+            return TcpStream {
+                -1,
+                IpAddr {IpVersion::V4, IpAddrC {IpV4Addr::init}, 0US}
+            };
+        } else {
+            let ipaddr = IpAddr {IpVersion::V4, IpAddrC {IpV4Addr::init}, 0US};
+            ipaddr.addr.v4.s_addr = clientAddr.sin_addr.s_addr;
+            ipaddr.port = clientAddr.sin_port;
+            
+            return TcpStream {client, ipaddr};
+        }
+        
+    }
+
+    def write (ref stream : TcpStream, const data : [u8]) {
+        native::send (stream.socket, cast!(p!void) (data.ptr), cast!u32 (data.len), 0);
+    }
+
+    def read (ref stream : TcpStream, const data : [u8]) -> u64 {
+        return native::recv (stream.socket, cast!(p!void) (data.ptr), cast!u32 (data.len), 0);
+    }
+
+    def close (ref stream : TcpStream) {
+        native::close (stream.socket);
+    }
+
+}

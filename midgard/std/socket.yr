@@ -144,23 +144,8 @@ mod native {
 mod tcp {
     
     extern (C) htons (host : u16) -> u16;
-    struct
-    | socket : i32
-    | addr : SockAddrIn
-    | port : u16
-     -> Server;
-
-    struct (T)
-    | content : const T
-    | sock : Client
-     -> Msg;
-
-    struct
-    | socket : i32
-    | addr : SockAddrIn
-     -> Client;
     
-    def server (port : u16) -> Server {
+    def server (port : u16) -> i32 {
         let sock = native::socket (cast!i32 (AddrFamily::INET), SocketType::SOCK_STREAM, 0);
         if sock == -1
             assert (false, "Error while creating the socket");
@@ -177,43 +162,7 @@ mod tcp {
         if native::listen (sock, 3) < 0
             assert (false, "Listen error");
         
-        return Server {sock, addr, port};
+        return sock;
     }
 
-    def accept (serv : Server) -> Client {
-        let clientAddr = SockAddrIn::init;
-        let lenAddr = SockAddrIn::sizeof;
-
-        let client = native::accept (serv.socket, cast!(p!SockAddr) (&clientAddr), cast!(p!u32) (&lenAddr));
-        if client < 0
-            return Client {-1, clientAddr};
-        else return Client {client, clientAddr};
-    }
-
-    def recv (T of [U], U) (cl : Client, len : u32) -> Msg!T {
-        let res = [U ; len];
-        let size = native::recv (cl.socket, cast!(p!void) (res.ptr), len, 0);
-        res = T {cast!u64 (size), res.ptr};
-        return Msg!T {res, cl};
-    }
-
-    def send (T of [U], U) (cl : Client, const msg : T) {
-        native::send (cl.socket, cast!(p!void)(msg.ptr), cast!u32 (msg.len), 0);
-    }
-
-    def send (T) (cl : Client, const msg : T) {
-        let aux = msg;
-        native::send (cl.socket, cast!(p!void)(&aux), cast!u32 (T::sizeof), 0);
-    }    
-    
-    def recv (T) (cl : Client) {
-        let res = T::init;
-        native::recv (cl.socket, cast!(p!void) (&res), T::sizeof, 0);
-        return Msg!T {res, cl};
-    }
-    
-    def close (cl : Client) {
-        native::close (cl.socket);
-    }
-    
 }
