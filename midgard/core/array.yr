@@ -52,22 +52,21 @@ def opIndex (T2, T) (a : [T2], i : r!(T)) -> mut slice!T2 {
 
 def opIndex (T2, T) (a : const [T2], i : r!(T)) -> slice!T2 {
     if i.scd >= i.fst && (i.scd - i.fst) <= a.len && i.fst <= a.len {
-        return slice!T2 {cast!u64 (i.scd - i.fst), a.ptr + i.fst};
+        return const (slice!T2) {cast!u64 (i.scd - i.fst), a.ptr + i.fst};
     } else {
-        abort ();
-        return slice!T2 {0UL, null};
+        assert (false, "Out of range");
     }
 }
 
-def opIndex (T) (a : [T]) -> mut slice!T {
+def opIndex (T) (a : [T]) -> mut slice!(mut T) {
     return slice!T {a.len, a.ptr};
 }
 
-def opIndex (T) (const a : [T]) -> slice!T {
+def opIndex (T) (a : [const T]) -> slice!(const T) {
     return const (slice!T) {a.len, a.ptr};
 }
 
-def replicate (T) (const array : [T], ntimes : u64) -> mut [T]{
+def replicate (T) (const array : [T], ntimes : u64) -> [mut T]{
     let res = [T ; new array.len * cast!u64 (ntimes)];
     for i in 0U .. ntimes {
         for j in 0U .. array.len {
@@ -77,8 +76,8 @@ def replicate (T) (const array : [T], ntimes : u64) -> mut [T]{
     return res;
 }
 
-def dup (T) (const array : [const T]) -> mut [T] {
-    let res = [T ; new array.len];
+def dup (T) (const array : [const T]) -> [mut T] {
+    let res = [mut T ; new array.len];
     for it in 0U .. array.len {
         res [it] = array [it];
     }
@@ -86,7 +85,7 @@ def dup (T) (const array : [const T]) -> mut [T] {
 }
 
 def dup (T, N : u64) (ref array : const ([const T ; N])) -> mut [T] {
-    let res = [T ; new array.len];
+    let res = [mut T ; new array.len];
     for it in 0U .. array.len {
         res [it] = array [it];
     }
@@ -99,4 +98,12 @@ def dup (T) (const array : slice!T) -> mut [T] {
         res [it] = array [it];
     }
     return res;
+}
+
+def to (T of [U], U) (ref a : slice!U) -> mut T {
+    return T {a.len, a.ptr};
+}
+
+def to (T of [U], U) (a : const slice!U) -> T {
+    return const!T {a.len, a.ptr};
 }
