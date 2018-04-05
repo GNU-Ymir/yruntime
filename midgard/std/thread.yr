@@ -1,4 +1,5 @@
 mod std.thread;
+import core.io;
 
 extern (C) pthread_join (th : u64, a : p!(p!(void)));
 extern (C) pthread_exit (a : int);
@@ -7,70 +8,98 @@ public extern (C) sleep (a : int) -> void;
 
 struct
 | id : u64
- -> Thread;
-
-private mod pthread (T) {
+ -> Thread;    
+    
+mod pthread (T) {
     public extern (C) pthread_create (thread : p!u64, attr : p!void, call : fn (p!T)-> p!void, data : p!T);
 }
 
-private mod ThreadInfos {
-
+mod ThreadInfos {
+    
     public static launched : [Thread]; 
     self () {
-        launched = [Thread ; 1UL];
+        launched = [Thread ; new 1UL];
         launched [0] = Thread {0UL};
     }
-
 }
 
-def spawn (T...) (n : u32, foo : fn (T)-> void, data : T) -> mut [Thread] {
-    let res = [Thread ; n];
-    
-    for it in 0U .. n {
-        let id = 0UL;//cast!u64 (it) + ThreadInfos::launched.len;
-        let ptr = (ptr : p!(t!(fn (T) -> void, T))) {
-            let (fun, data...) =  *ptr;
-            fun (data.expand);
-            return cast!(p!void) (null);
-        };
 
-        let alloc = [t!(fn (T) -> void, T) ; 1U];
-        alloc[0] = (foo, data.expand);
-        pthread!(t!(fn (T) -> void, T))::pthread_create (&id, null, ptr, alloc.ptr);
-        res [it] = Thread {id};
+mod thread {
+    
+    def @inline spawn (T...) (foo : fn (T)-> void, data : T) -> mut Thread {
+        return spawn (1U, foo, data.expand) [0];
+    }
+
+    def spawn (T...) (n : u32, foo : dg (T)-> void, data : T) -> mut [Thread] {
+        let res = [Thread ; n];
+        
+        for it in 0U .. n {
+            let id = cast!u64 (it) + ThreadInfos::launched.len;
+            let ptr = (ptr : p!(t!(dg (T) -> void, T))) {
+                let (fun, data...) =  *ptr;
+                fun (data.expand);
+                return cast!(p!void) (null);
+            };
+
+            let alloc = [t!(dg (T) -> void, T) ; 1U];
+            alloc[0] = (foo, data.expand);
+            pthread!(t!(dg (T) -> void, T))::pthread_create (&id, null, ptr, alloc.ptr);
+            res [it] = Thread {id};
+        }
+        
+        ThreadInfos::launched = ThreadInfos::launched ~ res;
+        return res;
     }
     
-    ThreadInfos::launched = ThreadInfos::launched ~ res;
-    return res;
-}
+    def spawn (T...) (n : u32, foo : fn (T)-> void, data : T) -> mut [Thread] {
+        let res = [Thread ; n];
+        
+        for it in 0U .. n {
+            let id = cast!u64 (it) + ThreadInfos::launched.len;
+            let ptr = (ptr : p!(t!(fn (T) -> void, T))) {
+                let (fun, data...) =  *ptr;
+                fun (data.expand);
+                return cast!(p!void) (null);
+            };
 
-def spawn (F : FUN, FUN, T...) (n : u32, data : T) -> mut [Thread] {
-    let res = [Thread ; n];
-    
-    for it in 0U .. n {
-        let id = 0UL;//cast!u64 (it) + ThreadInfos::launched.len;
-        let ptr = (ptr : p!(t!(fn (T) -> void, T))) {
-            let (fun, data...) =  *ptr;
-            fun (data.expand);
-            return cast!(p!void) (null);
-        };
+            let alloc = [t!(fn (T) -> void, T) ; 1U];
+            alloc[0] = (foo, data.expand);
+            pthread!(t!(fn (T) -> void, T))::pthread_create (&id, null, ptr, alloc.ptr);
+            res [it] = Thread {id};
+        }
+        
+        ThreadInfos::launched = ThreadInfos::launched ~ res;
+        return res;
+    }
 
-        let alloc = [t!(fn (T) -> void, T) ; 1U];
-        alloc[0] = (fn (T) -> void (F), data.expand);
-        pthread!(t!(fn (T) -> void, T))::pthread_create (&id, null, ptr, alloc.ptr);
-        res [it] = Thread {id};
+    def spawn (F : FUN, FUN, T...) (n : u32, data : T) -> mut [Thread] {
+        let res = [Thread ; n];
+        
+        for it in 0U .. n {
+            let id = cast!u64 (it) + ThreadInfos::launched.len;
+            let ptr = (ptr : p!(t!(fn (T) -> void, T))) {
+                let (fun, data...) =  *ptr;
+                fun (data.expand);
+                return cast!(p!void) (null);
+            };
+
+            let alloc = [t!(fn (T) -> void, T) ; 1U];
+            alloc[0] = (fn (T) -> void (F), data.expand);
+            pthread!(t!(fn (T) -> void, T))::pthread_create (&id, null, ptr, alloc.ptr);
+            res [it] = Thread {id};
+        }
+        
+        ThreadInfos::launched = ThreadInfos::launched ~ res;
+        return res;
     }
     
-    ThreadInfos::launched = ThreadInfos::launched ~ res;
-    return res;
-}
+    def join (const th : Thread) {
+        pthread_join (th.id, null);
+    }
 
-
-def join (const th : Thread) {
-    pthread_join (th.id, null);
-}
-
-def join (const th : [Thread]) {
-    for it in th
-        pthread_join (it.id, null);
+    def join (const th : [Thread]) {
+        for it in th
+            pthread_join (it.id, null);
+    }
+    
 }

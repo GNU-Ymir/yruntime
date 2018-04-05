@@ -22,12 +22,12 @@ def bigint (str : const string) -> mut BigInt {
     let res = BigInt {[u8]::init, false};
     if (str [0].isDigit ()) {
         res.sign = false;
-        res.number = [u8 ; str.len];
+        res.number = [u8 ; new str.len];
         for it in 0U .. str.len
             res.number [it] = cast!u8 (str [it] - '0');
     } else {
         res.sign = (str [0] == '-');
-        res.number = [u8 ; str.len - 1U];
+        res.number = [u8 ; new str.len - 1U];
         for it in 1U .. str.len
             res.number [it - 1U] = cast!u8 (str [it] - '0');
     }
@@ -131,9 +131,9 @@ private def add (n1 : const [u8], n2 : const [u8]) -> [u8] {
     let diffInLen = cast!u64 (abs (cast!i64 (n1.len) - cast!i64 (n2.len)));
     let _n2 = n2.dup (), _n1 = n1.dup ();
     if (n1.len > n2.len)
-        _n2 = [u8 ; diffInLen] ~ n2;
+        _n2 = [u8 ; new diffInLen] ~ n2;
     else
-        _n1 = [u8 ; diffInLen] ~ n1;
+        _n1 = [u8 ; new diffInLen] ~ n1;
     
     for it_ in 0U .. res.len {
         let it = res.len - 1UL - it_;
@@ -159,9 +159,9 @@ private def sub (n1 : const [u8], n2 : const [u8]) -> [u8] {
     let diffInLen = cast!u64 (abs (cast!i64 (n1.len) - cast!i64 (n2.len)));
     let _n1 = n1.dup (), _n2 = n2.dup ();
     if n1.len > n2.len
-        _n2 = [u8 ; diffInLen] ~ n2;
+        _n2 = [u8 ; new diffInLen] ~ n2;
     else
-        _n1 = [u8 ; diffInLen] ~ n1;
+        _n1 = [u8 ; new diffInLen] ~ n1;
 
     let nextM = false, currentP = false;
     for it_ in 0U .. n1.len {
@@ -222,7 +222,7 @@ def mul (n1 : const [u8], n2 : const [u8]) -> [u8] {
         if carry > 0
             temp = [carry] ~ temp;
 
-        temp = temp ~ [u8 ; _n1.len - it - 1U];
+        temp = temp ~ [u8 ; new _n1.len - it - 1U];
         res = add (res, temp);
     }
     
@@ -247,7 +247,7 @@ def to (T of u64) (den : const [u8]) -> u64 {
 def div (n : const [u8], _den : const [u8]) -> t!([u8], u64) {
     let den = _den.to!u64;
     let rem = 0UL;
-    let res = [u8 ; n.len];
+    let res = [u8 ; new n.len];
     for it in 0UL .. n.len {
         rem = (rem * 10UL + n [it]);
         res [it] = cast!u8 (rem / den);
