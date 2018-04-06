@@ -26,12 +26,12 @@ mod ThreadInfos {
 
 mod thread {
     
-    def @inline spawn (T...) (foo : fn (T)-> void, data : T) -> mut Thread {
+    def @inline spawn (T...) (foo : fn (T)-> void, data : T) -> Thread {
         return spawn (1U, foo, data.expand) [0];
     }
 
-    def spawn (T...) (n : u32, foo : dg (T)-> void, data : T) -> mut [Thread] {
-        let res = [Thread ; n];
+    def spawn (T...) (n : u32, foo : dg (T)-> void, data : T) -> [Thread] {
+        let res = [Thread ; new n];
         
         for it in 0U .. n {
             let id = cast!u64 (it) + ThreadInfos::launched.len;
@@ -41,7 +41,7 @@ mod thread {
                 return cast!(p!void) (null);
             };
 
-            let alloc = [t!(dg (T) -> void, T) ; 1U];
+            let alloc = [t!(dg (T) -> void, T) ; new 1U];
             alloc[0] = (foo, data.expand);
             pthread!(t!(dg (T) -> void, T))::pthread_create (&id, null, ptr, alloc.ptr);
             res [it] = Thread {id};
@@ -51,29 +51,28 @@ mod thread {
         return res;
     }
     
-    def spawn (T...) (n : u32, foo : fn (T)-> void, data : T) -> mut [Thread] {
-        let res = [Thread ; n];
+    def spawn (T...) (n : u32, foo : fn (T)-> void, data : T) -> [Thread] {
+        let res = [Thread ; new n];
         
         for it in 0U .. n {
-            let id = cast!u64 (it) + ThreadInfos::launched.len;
+            let id = cast!u64 (it);// + ThreadInfos::launched.len;
             let ptr = (ptr : p!(t!(fn (T) -> void, T))) {
                 let (fun, data...) =  *ptr;
                 fun (data.expand);
                 return cast!(p!void) (null);
             };
 
-            let alloc = [t!(fn (T) -> void, T) ; 1U];
+            let alloc = [t!(fn (T) -> void, T) ; new 1U];
             alloc[0] = (foo, data.expand);
             pthread!(t!(fn (T) -> void, T))::pthread_create (&id, null, ptr, alloc.ptr);
             res [it] = Thread {id};
         }
         
-        ThreadInfos::launched = ThreadInfos::launched ~ res;
         return res;
     }
 
     def spawn (F : FUN, FUN, T...) (n : u32, data : T) -> mut [Thread] {
-        let res = [Thread ; n];
+        let res = [Thread ; new n];
         
         for it in 0U .. n {
             let id = cast!u64 (it) + ThreadInfos::launched.len;
@@ -83,7 +82,7 @@ mod thread {
                 return cast!(p!void) (null);
             };
 
-            let alloc = [t!(fn (T) -> void, T) ; 1U];
+            let alloc = [t!(fn (T) -> void, T) ; new 1U];
             alloc[0] = (fn (T) -> void (F), data.expand);
             pthread!(t!(fn (T) -> void, T))::pthread_create (&id, null, ptr, alloc.ptr);
             res [it] = Thread {id};
