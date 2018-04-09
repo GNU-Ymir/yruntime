@@ -1,0 +1,58 @@
+mod std.c.thread;
+
+struct
+| data : [u8 ; 40U]
+ -> pthread_mutex_t;
+
+struct
+| data : [u8 ; 48U]
+ -> pthread_cond_t;
+
+struct
+| data : [u8; 32U]
+ -> pthread_barrier_t;
+
+public mod pthread (T) {
+    public extern (C) pthread_create (thread : p!u64, attr : p!void, call : fn (p!T)-> p!void, data : p!T);
+}
+
+public extern (C) pthread_create (thread : p!u64, attr : p!void, call : fn (p!void)-> p!void, data : p!void);
+public extern (C) pthread_join (th : u64, a : p!(p!(void)));
+public extern (C) pthread_exit (a : i32);
+public extern (C) pthread_self ()-> u64;
+
+/**
+ * =======
+ *  MUTEX
+ * =======
+*/
+public extern (C) pthread_mutex_init (lock : p!pthread_mutex_t , attr: p!void)-> i32;
+
+public extern (C) pthread_mutex_destroy (lock : p!pthread_mutex_t)-> i32;
+public extern (C) pthread_mutex_trylock (lock : p!pthread_mutex_t)-> i32;
+
+public extern (C) pthread_mutex_lock (mutex : p!pthread_mutex_t)-> i32;
+public extern (C) pthread_mutex_unlock (mutex : p!pthread_mutex_t)-> i32; 
+
+/**
+ * ====== 
+ *  COND
+ * ======
+*/
+
+public extern (C) pthread_cond_init (cond : p!pthread_cond_t, attr: p!void)-> i32;
+public extern (C) pthread_cond_wait (cond : p!pthread_cond_t, lock : p!pthread_mutex_t)-> i32;
+public extern (C) pthread_cond_signal (cond : p!pthread_cond_t)-> i32;
+public extern (C) pthread_cond_broadcast (cond : p!pthread_cond_t)-> i32;
+
+
+/**
+ * =========
+ *  BARRIER
+ * =========
+*/    
+
+public extern (C) pthread_barrier_init (barr : p!pthread_barrier_t, attr: p!void, nb : u32)-> i32;
+public extern (C) pthread_barrier_wait (barr : p!pthread_barrier_t);
+public extern (C) pthread_barrier_destroy (barr : p!pthread_barrier_t);
+
