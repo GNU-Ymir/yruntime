@@ -25,7 +25,7 @@ def opEquals (T) (const left : [T], const right : [T]) -> bool {
 
 def opIndex (T, T2) (a : const (slice!T),  i : T2) -> T {
     if i < a.len {
-        return *(a.ptr + (cast!u64(i) * char::sizeof));
+        return *(a.ptr + (cast!u64(i) * T::sizeof));
     } else {
         abort ();
         return *a.ptr;
@@ -34,7 +34,7 @@ def opIndex (T, T2) (a : const (slice!T),  i : T2) -> T {
 
 def opIndex (T, T2) (a : slice!T,  i : u32) -> ref T {
     if i < a.len {
-        return *(a.ptr + (cast!u64 (i) * char::sizeof));
+        return *(a.ptr + (cast!u64 (i) * T::sizeof));
     } else {
         abort ();
         return *a.ptr;
@@ -43,7 +43,7 @@ def opIndex (T, T2) (a : slice!T,  i : u32) -> ref T {
 
 def opIndex (T2, T) (a : [T2], i : r!(T)) -> mut slice!T2 {
     if i.scd >= i.fst && (i.scd - i.fst) <= a.len && i.fst <= a.len {
-        return slice!T2 {cast!u64 (i.scd - i.fst), a.ptr + i.fst};
+        return slice!T2 {cast!u64 (i.scd - i.fst), a.ptr + (cast!u64 (i.fst) * T2::sizeof)};
     } else {
         abort ();
         return slice!T2 {0UL, null};
@@ -52,7 +52,7 @@ def opIndex (T2, T) (a : [T2], i : r!(T)) -> mut slice!T2 {
 
 def opIndex (T2, T) (a : const [T2], i : r!(T)) -> slice!T2 {
     if i.scd >= i.fst && (i.scd - i.fst) <= a.len && i.fst <= a.len {
-        return const (slice!T2) {cast!u64 (i.scd - i.fst), a.ptr + i.fst};
+        return const (slice!T2) {cast!u64 (i.scd - i.fst), a.ptr + (cast!u64 (i.fst) * T2::sizeof)};
     } else {
         assert (false, "Out of range");
     }
@@ -74,6 +74,15 @@ def replicate (T) (const array : [T], ntimes : u64) -> [mut T]{
         }
     }
     return res;
+}
+
+def opBinary ("+", T) (left : const slice!T,  right : const slice!T) -> slice!T {
+    assert (left.len == right.len, "size mistmatch");
+    let res = [mut T ; new left.len];
+    for i in 0U .. left.len {
+        res [i] = left [i] + right [i];
+    }
+    return slice!T {res.len, res.ptr};
 }
 
 def dup (T) (const array : [const T]) -> [mut T] {
@@ -100,10 +109,11 @@ def dup (T) (const array : slice!T) -> [mut T] {
     return res;
 }
 
-def to (T of [U], U) (ref a : slice!U) -> mut T {
-    return T {a.len, a.ptr};
+def array (U) (a : const slice!U) -> [U] {
+    return const![U] {a.len, a.ptr};
 }
 
-def to (T of [U], U) (a : const slice!U) -> T {
-    return const!T {a.len, a.ptr};
+def array (U) (ref a : slice!U) -> mut [U] {
+    return [U] {a.len, a.ptr};
 }
+
