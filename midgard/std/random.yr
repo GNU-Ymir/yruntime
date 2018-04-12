@@ -5,13 +5,33 @@ public extern (C) rand () -> i32;
 public extern (C) srand (i : i32);
 public extern (C) time (i : i32) -> i32;
 
+static init = false;
+
 def uniform if (isIntegral!(T) () && isIntegral!(T2)())
-    (T, T2) (a : T, b : T2) -> i32 {
-	let static init = false;
+    (T, T2) (a : T, b : T2) -> T {
 	if (!init) {
 	    init = true;
 	    srand (time (0));
 	}
 	
-	return rand () % cast!i32((b - a) + a);
+	return cast!T (rand () % cast!i32((b - a) + a));
     }
+
+def shuffle (T) (ref a : [T]) {
+    import std.algorithm.mutation;
+    for i in 0UL .. a.len {
+        let ch = uniform (0UL, a.len);
+        swap (a [i], a [ch]);
+    }
+    return a;
+} 
+
+def shuffle (T, N : u64) (ref a : [T ; N]) {
+    import std.algorithm.mutation;
+    for i in 0UL .. a.len {
+        let ch = uniform (0UL, a.len);
+        swap (a [i], a [ch]);
+    }
+    return a;
+} 
+
