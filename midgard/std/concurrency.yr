@@ -21,7 +21,7 @@ mod thread {
     extern (C) write (file : i32, c : p!u8, len : u32);
     
     def @inline spawn (T...) (foo : fn (T)-> void, data : T) -> Thread {
-        return spawn (1U, foo, data.expand) [0];
+        return spawn (1U, foo, data::expand) [0];
     }
     
     def spawn (T...) (n : u32, foo : dg (T)-> void, data : T) -> [Thread] {
@@ -36,12 +36,12 @@ mod thread {
             let ptr = (ptr : p!(t!(p!pthread_barrier_t, dg (T) -> void, T))) {
                 let (barr, fun, data...) =  *ptr;
                 pthread_barrier_wait (barr);
-                fun (data.expand);
+                fun (data::expand);
                 return cast!(p!void) (null);
             };
 
             let alloc = [t!(p!pthread_barrier_t, dg (T) -> void, T) ; new 1U];
-            alloc[0] = (&barrier, foo, data.expand);
+            alloc[0] = (&barrier, foo, data::expand);
             pthread!(t!(p!pthread_barrier_t, dg (T) -> void, T))::pthread_create (&id, null, ptr, alloc.ptr);
             res [it] = Thread {id};
             pipes [it] = pipe ();
