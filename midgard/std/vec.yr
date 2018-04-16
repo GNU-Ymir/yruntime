@@ -1,0 +1,116 @@
+mod std.vec;
+
+public {
+    __macro vec {
+        ($x : expr "|" $y: ident "in" $z1: expr ".." $z2: expr) {
+            let res;
+            {
+                let y = z1;
+                res = Vec!(typeof (mut x))::new ();
+            }
+            
+            for y in z1 .. z2 {
+                res.push (y);
+            }
+            res;
+        }
+
+        ($x : expr ";" "new" $y : expr) {
+            let res = Vec!(typeof (mut x))::new (y);
+            for i in 0UL .. cast!u64 (y)
+                res [i] = x;
+            res;
+        }
+        
+        (+x : ($val : expr, ",")) {
+            let res = Vec!(typeof (mut x.0.val))::new ();
+            cte for i in x {
+                res.push (i.val);
+            }
+            res;
+        }
+        
+    }       
+}
+
+struct (T)
+| capacity : u64
+| len : u64
+| data : p!T
+ -> Vector;
+
+mod Vec (T) {
+    def new () {
+        return Vector!T {0UL, 0UL, null};
+    }
+    
+    def new (len : u64) {
+        return Vector!T {len, len, ([mut T ; new len]).ptr};
+    }    
+}
+
+def push (T) (ref a : Vector!T, b : T) {
+    if (a.capacity == 0UL) {
+        a.capacity = 10UL;
+        a.len = 1UL;
+        let aux = [mut T ; new 10UL];
+        aux [0] = b;
+        a.data = aux.ptr;
+    } else if a.capacity == a.len {
+        let aux = [mut T ; new a.len * 2UL];
+        a.capacity = a.capacity * 2UL;
+        for i in 0UL .. a.len {
+            aux [i] = *(a.data + (i * T::sizeof));
+        }
+        aux [a.len] = b;
+        a = Vector!T {a.capacity, a.len + 1UL, aux.ptr};
+    } else {        
+        *(a.data + (a.len * T::sizeof)) = b;
+        a.len = a.len + 1UL;        
+    }
+}
+
+def pop (T) (ref a : Vector!T) -> T {
+    if (a.len == 0UL) assert (false, "Pop empty vector");
+    else {
+        let res = *(a.data + ((a.len - 1UL)* T::sizeof));
+        a.len = a.len - 1UL;
+        if a.capacity >= a.len * 2UL {
+            let aux = [mut T ; new a.len];
+            for i in 0UL .. a.len
+                aux [i] = *(a.data + (i * T::sizeof));
+            a.data = aux.ptr;
+            a.capacity = a.len;
+        }
+        return res;
+    }
+}
+
+def opIndex (T) (a : Vector!T, i : i64) -> ref T {
+    import std.conv;
+    assert (a.len > i, "overflow " ~ (cast!i64 (a.len)).to!string ~ " < " ~ i.to!string);
+    return *(a.data + (cast!u64 (i) * T::sizeof));
+}
+
+def opIndex (T) (a : Vector!T, i : u64) -> ref T {
+    import std.conv;
+    assert (a.len > i, "overflow " ~ (cast!i64 (a.len)).to!string ~ " < " ~ (cast!i64 (i)).to!string);
+    return *(a.data + (i * T::sizeof));
+}
+
+def opIndex (T2, T) (a : Vector!T2, i : r!(T)) -> mut slice!T2 {
+    assert (i.scd >= i.fst && (i.scd - i.fst) <= a.len && i.fst <= a.len);
+    return slice!T2 {cast!u64 (i.scd - i.fst), a.data + (cast!u64 (i.fst) * T2::sizeof)};
+}
+
+def print if (true) (T) (a : Vector!(T)) {
+    print ('[');
+    for i in 0UL .. a.len {
+        print (*(a.data + (i * T::sizeof)));
+        if i != a.len - 1UL
+            print (", ");
+    }
+    print (']');
+}
+
+
