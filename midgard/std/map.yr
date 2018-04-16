@@ -1,0 +1,107 @@
+mod std.map;
+import std.memory;
+
+public {
+    __macro map {
+        (+elem: ($x: expr "=>" $y: expr, ",")) {
+            let res = Map!(typeof (mut elem.0.x), typeof (mut elem.0.y))::new ();
+            cte for i in elem {
+                res.insert (i.x, i.y);
+            }
+            res;
+        }        
+    }
+}
+
+mod Map (K, V) {
+    def new () {
+        return BTreeMap!(mut K, mut V) {null, 0UL};
+    }
+}
+
+struct (K, V)
+| head : p!(Node!(K, V))
+| len : u64
+ -> BTreeMap;
+
+struct (K, V)
+| key : K
+| value : V
+| left : p!(Node!(K, V))
+| right : p!(Node!(K, V))
+ -> Node;
+
+def insert (K, V) (ref map : BTreeMap!(K, V), key : K, value : V) {
+    if (map.head is null) {
+        map.head = alloc (Node!(mut K, mut V) {key, value, null, null});
+        map.len = 1UL;
+    } else {
+        map.head.insert (map, key, value);        
+    }
+}
+
+def insert (K, V) (ref node : p!(Node!(K, V)), ref map : BTreeMap!(K, V), key : K, value : V) {
+    if (node is null) {
+        node = alloc (Node!(mut K, mut V) {key, value, null, null});
+        map.len = map.len + 1UL;
+    } else {
+        if (node.key >= key) {
+            node.left.insert (map, key, value);
+        } else
+            node.right.insert (map, key, value);
+    }
+}
+
+def opIndex (K, V) (ref map : BTreeMap!(K, V), key : K)-> ref V {
+    let res = map.head.getOrInsert (key);
+    return *res;
+}
+
+def get (K, V) (ref node : p!(Node!(K, V)), key : K) -> p!V {
+    if (node is null) return null;
+    else {
+        if (node.key == key) return &node.value;
+        else if node.key >= key {
+            return node.left.get (key);
+        } else return node.right.get (key);
+    }
+}
+
+def getOrInsert (K, V) (ref node : p!(Node!(K, V)), key : K) -> p!V {
+    if (node is null) {
+        node = alloc (Node!(mut K, mut V){key, V::init, null, null});
+        return &node.value;
+    } else {
+        if (node.key == key) return &node.value;
+        else if node.key >= key {
+            return node.left.getOrInsert (key);
+        } else return node.right.getOrInsert (key);
+    }
+}
+
+def opBinary ("in", K, V) (key : K, ref map : BTreeMap!(K, V))-> p!V {
+    return map.head.get (key);
+}
+
+def print (K, V) (map : BTreeMap!(K, V)) {
+    print ('{');
+    print (map.head);
+    print ('}');
+}
+
+def print (K, V) (ref node : p!(Node!(K, V))) {
+    if (node !is null) {
+        if (node.left !is null) {
+            print (node.left);
+            print (", ");
+        }
+        print (node.key, " => ", node.value);
+        if (node.right !is null) {
+            print (", ");
+            print (node.right);
+        }
+    }
+}
+
+
+
