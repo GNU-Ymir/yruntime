@@ -1,0 +1,118 @@
+mod std.set;
+import std.memory;
+
+public __macro set {
+    (+elem : ($x : expr, ",")) {
+        let res = Set!(typeof (mut elem.0.x))::init ();
+        cte for i in elem {
+            res.insert (i.x);
+        }
+        res;
+    }
+}
+
+mod Set (T) {
+    def init () {
+        return BTreeSet!(mut T) {null, 0UL};
+    }    
+}
+
+struct (T)
+| head : p!(inner::Node!T)
+| len : u64
+ -> BTreeSet;
+
+def insert (T) (ref set : BTreeSet!T, val : T) {
+    if set.head is null {
+        set.head = alloc (inner::Node!(mut T){val, null, null});
+        set.len = 1UL;
+    } else {
+        inner::insert (set.head, set, val);
+    }
+}
+
+def remove (T) (ref set : BTreeSet!T, val : T) {
+    let rm = inner::remove (set.head, val);
+    if rm { set.len = set.len - 1UL; }
+}
+
+def opBinary ("in", T) (const set : BTreeSet!T, val : T) {
+    return inner::contains (set.head, val);
+}
+
+def print (T) (const set : BTreeSet!T) {
+    print ('{');
+    inner::print (set.head);
+    print ('}');
+}
+
+private mod inner {
+    struct (T)
+    | val : T
+    | left : p!(inner::Node!T)
+    | right : p!(inner::Node!T)
+     -> Node;
+
+    def insert (T) (ref node : p!(Node!T), ref set : BTreeSet!T, val : T) {
+        if node is null {
+            node = alloc (Node!(mut T) {val, null, null});
+            set.len = set.len + 1UL;
+        } else if node.val > val {
+            node.left.insert (set, val);
+        } else if node.val < val {
+            node.right.insert (set, val);
+        }
+    }
+
+    def contains (T) (const node : p!(Node!T), val : T) {
+        if node !is null {
+            if node.val == val { return true; }
+            else if node.val > val { return node.left.contains (val); }
+            else return node.right.contains (val);
+        } else return false;
+    }
+    
+    def remove (T) (ref node : p!(Node!T), val : T) {
+        if node !is null {
+            if node.val == val {
+                if node.left is null {
+                    node = node.right;
+                } else if node.right is null {
+                    node = node.left;
+                } else {
+                    let right = node.right.getAndRemoveMin ();
+                    node.val = right.val;
+                }
+                return true;
+            } else if node.val > val {
+                return node.left.remove (val);
+            } else return node.right.remove (val);
+        }
+        return false;
+    }
+
+    def getAndRemoveMin (T) (ref node : p!(Node!T)) {
+        if node.left is null {
+            let ret = node;
+            if node.right !is null {
+                node = node.right; 
+            } else node = null;
+            return ret;
+        } else return nide.left.getAndRemoveMin ();
+    }
+
+    def print (T) (const node : p!(Node!T)) {
+        if node !is null {
+            if node.left !is null {
+                print (node.left);
+                print (", ");
+            }
+            print (node.val);
+            if node.right !is null {
+                print (", ");
+                print (node.right);
+            }
+        }
+    }
+        
+}
