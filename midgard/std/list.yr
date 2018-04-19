@@ -1,13 +1,17 @@
 import std.memory;
 
-public struct (T)
-| head : p!(Node!T)
- -> List;
+private mod inner {
+    struct (T)
+    | value : T
+    | next : p!(inner::Node!(T))
+     -> Node;
+}
+
 
 public struct (T)
-| value : T
-| next : p!(Node!(T))
- -> Node;
+| head : p!(inner::Node!T)
+ -> List;
+
 
 def list(T) ()-> List!T {
     return List!T {null};
@@ -15,12 +19,12 @@ def list(T) ()-> List!T {
 
 def push (T) (ref a : List!T, b : T) {
     if (a.head is null) {
-        a.head = alloc (Node!T {b, null});        
+        a.head = alloc (inner::Node!T {b, null});        
     } else {
         let current = a.head;
         while current !is null {
             if ((*current).next is null) {
-                (*current).next = alloc (Node!T {b, null});
+                (*current).next = alloc (inner::Node!T {b, null});
                 return;
             }
             current = (*current).next;
@@ -50,11 +54,25 @@ def pop (T) (ref a : List!T) -> T {
     }    
 }
 
-def next (T) (ref list : List!T) -> mut p!Node {
+def back (T) (ref list : List!T) -> T {
+    let current = list.head;
+    while current !is null {
+        if current.next !is null {
+            current = current.next;
+        } else return current.value;
+    }
+    assert (false);
+}
+
+def empty (T) (ref list : List!T) {
+    return list.head is null;
+}
+
+def next (T) (ref list : List!T) -> mut p!(inner::Node!T) {
     return list.head;
 }
 
-def next (T) (nodePtr : p!(Node!T)) -> mut p!(Node!T) {
+def next (T) (nodePtr : p!(inner::Node!T)) -> mut p!(inner::Node!T) {
     if (nodePtr is null)
         return null;
     return (*nodePtr).next;
@@ -69,4 +87,28 @@ def print (T) (const a : List!T) {
         current = (*current).next;
     }
     print ("NIL");
+}
+
+def @inline opIter (1, T) (ref list : List!T) {
+    return listIter::It!T { list.head };
+}
+
+def @inline get (0, T) (a : listIter::It!T) -> ref T {
+    return a.val.value;
+}
+
+def @inline isEnd (T) (a : listIter::It!T) {
+    return a.val is null;
+}
+
+def @inline next (T) (ref a : listIter::It!T) {
+    a = listIter::It!T { a.val.next };
+}
+
+private mod listIter {
+    
+    struct (T)
+    | val : p!(inner::Node!T)
+     -> It;
+    
 }

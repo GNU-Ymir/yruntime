@@ -1,5 +1,6 @@
 mod std.map;
 import std.memory;
+import std.list;
 
 public {
     __macro map {
@@ -61,6 +62,36 @@ def print (K, V) (const map : BTreeMap!(K, V)) {
 def printTree (K, V) (map : BTreeMap!(K, V)) {
     inner::printTree (map.head, 0);
 }
+
+def opIter (2, K, V) (ref set : BTreeMap!(K, V)) {
+    let x = inner::It!(K, V) {List!(p!(inner::Node!(K, V)))::init};
+    if (set.head !is null) {
+        x.stack.push (set.head);
+        inner::findLeftMostChild (x);
+    }    
+    return x;
+}
+
+def @inline get (0, K, V) (ref it : inner::It!(K, V)) -> const K {
+    return it.stack.back ().key;
+}
+
+def @inline get (1, K, V) (ref it : inner::It!(K, V)) -> ref V {
+    return it.stack.back ().value;
+}
+
+def next (K, V) (ref it : inner::It!(K, V)) {
+    let np = it.stack.pop ();
+    if np.right !is null {
+        it.stack.push (np.right);
+        inner::findLeftMostChild (it);
+    }
+}
+
+def isEnd (K, V) (ref it : inner::It!(K, V)) {
+    return (it.stack.empty ());
+}
+
 
 private mod inner {
 
@@ -168,4 +199,21 @@ private mod inner {
             node.right.printTree (x + 1);
         } else println ("\\_");
     }
+
+    struct (K, V)
+    | stack : List!(p!(Node!(K, V)))
+     -> It;
+
+    def findLeftMostChild (K, V) (ref it : It!(K, V)) {
+        if (!it.stack.empty ()) {
+            let node = it.stack.back ();
+            if node !is null {
+                while node.left !is null {
+                    push (it.stack, node.left);
+                    node = node.left;
+                }
+            }
+        }
+    }
+
 }

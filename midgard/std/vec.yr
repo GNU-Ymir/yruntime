@@ -70,6 +70,12 @@ def push (T) (ref a : Vector!T, b : T) {
     }
 }
 
+def push (T) (ref a : Vector!T, b : const Vector!T) {
+    for i in 0UL .. b.len {
+        a.push (b [i]);
+    }
+}
+
 def pop (T) (ref a : Vector!T) -> T {
     if (a.len == 0UL) assert (false, "Pop empty vector");
     else {
@@ -86,13 +92,13 @@ def pop (T) (ref a : Vector!T) -> T {
     }
 }
 
-def opIndex (T) (a : Vector!T, i : i64) -> ref T {
+def @inline opIndex (T) (a : Vector!T, i : i64) -> ref T {
     import std.conv;
     assert (a.len > i, "overflow " ~ (cast!i64 (a.len)).to!string ~ " < " ~ i.to!string);
     return *(a.data + (cast!u64 (i) * T::sizeof));
 }
 
-def opIndex (T) (a : Vector!T, i : u64) -> ref T {
+def @inline opIndex (T) (a : Vector!T, i : u64) -> ref T {
     import std.conv;
     assert (a.len > i, "overflow " ~ (cast!i64 (a.len)).to!string ~ " < " ~ (cast!i64 (i)).to!string);
     return *(a.data + (i * T::sizeof));
@@ -113,4 +119,54 @@ def print if (true) (T) (a : Vector!(T)) {
     print (']');
 }
 
+def @inline opIter (1, T) (ref a : Vector!T) {
+    return vecIter::It!T {0UL, &a};
+}
+
+def @inline get (0, T) (ref a : vecIter::It!T) -> ref T {
+    return (*a.vec)[a.it];
+}
+
+def @inline next (T) (ref a : vecIter::It!T) {
+    a.it ++;
+}
+
+def @inline isEnd (T) (a : vecIter::It!T) {
+    return a.it == a.vec.len;
+}
+
+def @inline opIter (2, T) (ref a : Vector!T) {
+    return vecIter::It2!T{0UL, &a};
+}
+
+def @inline get (0, T) (ref a : vecIter::It2!T) -> ref u64 {
+    return a.it;
+}
+
+def @inline get (1, T) (ref a : vecIter::It2!T) -> ref T {
+    return (*a.vec)[a.it];
+}
+
+def @inline next (T) (ref a : vecIter::It2!T) {
+    a.it ++;
+}
+
+def @inline isEnd (T) (a : vecIter::It2!T) {
+    return a.it == a.vec.len;
+}
+
+
+private mod vecIter {
+
+    struct (T)
+    | it : u64
+    | vec : p!(Vector!T)
+     -> It;
+
+    struct (T)
+    | it : u64
+    | vec : p!(Vector!T)
+     -> It2;
+                
+}
 
