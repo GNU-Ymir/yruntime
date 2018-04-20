@@ -25,22 +25,22 @@ struct (K, V)
 | len : u64
  -> BTreeMap;
 
-def insert (K, V) (ref map : BTreeMap!(K, V), key : K, value : V) {
+def insert (K, V) (ref map : BTreeMap!(K, V), const key : K, value : V) {
     if (map.head is null) {
-        map.head = alloc (inner::Node!(mut K, mut V) {key, value, null, null});
+        map.head = alloc (inner::Node!(const K, mut V) {key, value, null, null});
         map.len = 1UL;
     } else {
         inner::insert (map.head, map, key, value);        
     }
 }
 
-def remove (K, V) (ref map : BTreeMap!(K, V), key : K) {
+def remove (K, V) (ref map : BTreeMap!(K, V), const key : K) {
     let rm = inner::remove (map.head, key);
     if rm { map.len = map.len - 1UL; }
 }
 
 
-def opIndex (K, V) (ref map : BTreeMap!(K, V), key : K)-> ref V {
+def opIndex (K, V) (ref map : BTreeMap!(K, V), const key : K)-> ref V {
     let res = inner::getOrInsert (map.head, key);
     return *res;
 }
@@ -96,15 +96,15 @@ def isEnd (K, V) (ref it : inner::It!(K, V)) {
 private mod inner {
 
     struct (K, V)
-    | key : K
+    | key : const K
     | value : V
     | left : p!(inner::Node!(K, V))
     | right : p!(inner::Node!(K, V))
      -> Node;
     
-    def insert (K, V) (ref node : p!(Node!(K, V)), ref map : BTreeMap!(K, V), key : K, value : V) {
+    def insert (K, V) (ref node : p!(Node!(K, V)), ref map : BTreeMap!(K, V), const key : K, value : V) {
         if (node is null) {
-            node = alloc (Node!(mut K, mut V) {key, value, null, null});
+            node = alloc (Node!(const K, mut V) {key, value, null, null});
             map.len = map.len + 1UL;
         } else {
             if (node.key > key) {
@@ -115,7 +115,7 @@ private mod inner {
         }
     }
 
-    def get (K, V) (ref node : p!(Node!(K, V)), key : K) -> p!V {
+    def get (K, V) (ref node : p!(Node!(K, V)), const key : K) -> p!V {
         if (node is null) return null;
         else {
             if (node.key == key) return &node.value;
@@ -125,7 +125,7 @@ private mod inner {
         }
     }
 
-    def get (K, V) (const node : p!(Node!(K, V)), key : K) -> const p!V {
+    def get (K, V) (const node : p!(Node!(K, V)), const key : K) -> const p!V {
         if (node is null) return null;
         else {
             if (node.key == key) return &node.value;
@@ -135,7 +135,7 @@ private mod inner {
         }
     }
 
-    def getOrInsert (K, V) (ref node : p!(Node!(K, V)), key : K) -> p!V {
+    def getOrInsert (K, V) (ref node : p!(Node!(K, V)), const key : K) -> p!V {
         if (node is null) {
             node = alloc (Node!(mut K, mut V){key, V::init, null, null});
             return &node.value;
@@ -147,7 +147,7 @@ private mod inner {
         }
     }
 
-    def remove (K, V) (ref node : p!(Node!(K, V)), key : K) {
+    def remove (K, V) (ref node : p!(Node!(K, V)), const key : K) {
         if (node !is null) {
             if (node.key == key) {
                 if node.left is null {
