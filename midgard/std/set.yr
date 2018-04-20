@@ -15,7 +15,7 @@ public __macro set {
 
 mod Set (T) {
     def init () {
-        return BTreeSet!(mut T) {null, 0UL};
+        return BTreeSet!(const T) {null, 0UL};
     }    
 }
 
@@ -24,9 +24,9 @@ struct (T)
 | len : u64
  -> BTreeSet;
 
-def insert (T) (ref set : BTreeSet!T, val : T) {
+def insert (T) (ref set : BTreeSet!T, const val : T) {
     if set.head is null {
-        set.head = alloc (inner::Node!(mut T){val, null, null});
+        set.head = alloc (inner::Node!(const T){val, null, null});
         set.len = 1UL;
     } else {
         inner::insert (set.head, set, val);
@@ -50,17 +50,17 @@ def array (T) (ref set : BTreeSet!T) {
     return res;
 }
 
-def front (T) (ref set : BTreeSet!T)-> ref T {
+def front (T) (ref set : BTreeSet!T)-> const T {
     assert (set.head !is null, "accessing empty set");
     return set.head.val;
 }
 
-def remove (T) (ref set : BTreeSet!T, val : T) {
+def remove (T) (ref set : BTreeSet!T, const val : T) {
     let rm = inner::remove (set.head, val);
     if rm { set.len = set.len - 1UL; }
 }
 
-def opBinary ("in", T) (const set : BTreeSet!T, val : T) {
+def opBinary ("in", T) (const set : BTreeSet!T, const val : T) {
     return inner::contains (set.head, val);
 }
 
@@ -79,7 +79,6 @@ def filter (FUN : C, C, T) (set : BTreeSet!T) {
 def filter (T) (set : BTreeSet!T, FUN : dg (T)-> bool) {
     return inner::filter (set.head, FUN);
 }
-
 
 def print (T) (const set : BTreeSet!T) {
     print ('{');
@@ -127,14 +126,14 @@ def isEnd (T) (ref it : inner::It!T) {
 
 private mod inner {
     struct (T)
-    | val : T
+    | val : const T
     | left : p!(inner::Node!T)
     | right : p!(inner::Node!T)
      -> Node;
     
-    def insert (T) (ref node : p!(Node!T), ref set : BTreeSet!T, val : T) {
+    def insert (T) (ref node : p!(Node!T), ref set : BTreeSet!T, const val : T) {
         if node is null {
-            node = alloc (Node!(mut T) {val, null, null});
+            node = alloc (Node!(const T) {val, null, null});
             set.len = set.len + 1UL;
         } else if node.val > val {
             node.left.insert (set, val);
@@ -143,7 +142,7 @@ private mod inner {
         }
     }
 
-    def contains (T) (const node : p!(Node!T), val : T) {
+    def contains (T) (const node : p!(Node!T), const val : T) {
         if node !is null {
             if node.val == val { return true; }
             else if node.val > val { return node.left.contains (val); }
@@ -151,7 +150,7 @@ private mod inner {
         } else return false;
     }
     
-    def remove (T) (ref node : p!(Node!T), val : T) {
+    def remove (T) (ref node : p!(Node!T), const val : T) {
         if node !is null {
             if node.val == val {
                 if node.left is null {
