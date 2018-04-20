@@ -1,9 +1,52 @@
 mod std.algorithm.sorting;
+import std.algorithm.mutation;
 
-def isSorted (T) (a : const [T]) {
+def isSorted (T) (a : const T) {
     for i in 0U .. (a.len - 1U) {
         if a [i] > a [i + 1U] { return false; }            
     }
     return true;
 }
 
+def isSorted (FUN : C, C, T) (a : const T) {
+    for i in 0U .. (a.len - 1U) {
+        if !FUN (a [i], a [i + 1U]) { return false; }            
+    }
+    return true;
+}
+
+def sort (T) (a : T)
+    inner::sort!((a, b) => a < b) (a, a.len);
+
+
+def sort (FN : C, C, T) (a : T)
+    inner::sort!FN (a, a.len);
+
+
+private mod inner {
+
+    def sort (FUN : C, C, T) (a : T, len : u64) {
+        if len < 2 return;
+        let pivot = a [len / 2U];
+        
+        let i = 0U, j = len - 1U;
+        while true {
+            
+            while (i < j && FUN (a [i], pivot)) i++;
+            while (i < j && FUN (pivot, a[j])) j--;
+
+            if i >= j
+                break;
+
+            let temp = a [i];
+            a [i] = a [j];
+            a [j] = temp;
+            i ++;
+            j --;
+        }
+
+        sort!FUN (a, i);
+        sort!FUN (a [i .. a.len].array (), len - i);    
+    }
+
+}

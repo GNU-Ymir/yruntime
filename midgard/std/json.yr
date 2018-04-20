@@ -1,0 +1,108 @@
+mod std.json;
+import std.map, std.vec;
+
+enum
+| INT : 1
+| FLOAT : 2
+| STRING : 3
+| ARRAY : 4
+| OBJECT : 5
+ -> JSON_TYPE;
+
+struct
+| type : JSON_TYPE
+| str : string
+| float : f64
+| int : i64
+| array : Vector!JsonValue
+| obj : BTreeMap!(string, JsonValue)
+ -> JsonValue;
+
+
+def print (val : JsonValue) {
+    match val.type {
+        JSON_TYPE::INT => print ("i64 (", val.int, ")");
+        JSON_TYPE::STRING => print ("str (", val.str, ")");
+        JSON_TYPE::FLOAT => print ("f64 (", val.float, ")");
+        JSON_TYPE::ARRAY => print ("arr (", val.array, ")");
+        JSON_TYPE::OBJECT => print ("obj (", val.obj, ")");
+    }
+}
+
+public __macro json {
+    ("{" *content : (*elems : ($x : token), ",") "}") {
+        import std.map;
+        let ret = JsonValue::init;
+        ret.type = JSON_TYPE::OBJECT;
+        
+        cte for i in content {
+            let jnner = json: {$(i)};
+            cte if !is (typeof (jnner) : i32)
+                insert (ret.obj, jnner.0, jnner.1);
+        }
+        ret;
+    }
+    
+    ("[" *content : (*elem : ($x : token), ",") "]") {
+        import std.map, std.vec;
+        let a = Vec!(JsonValue)::init ();
+        cte for i in content {
+            let jinner2 = json: {$(i)};
+            cte if !is (typeof (jinner2) : i32) 
+                push (a, jinner2);
+        }
+        let ret = JsonValue::init;
+        ret.type = JSON_TYPE::ARRAY;
+        ret.array = a;
+        ret;
+    }
+    
+    ("\"" *id : ($x : token) "\"" ":" *next : ($x : token)) {
+        let name = q: {$(id)}, val = json: {$(next)};
+        (name, val);
+    }
+
+    ($x : expr) {
+        import std.traits;
+        let ret = JsonValue::init;
+        cte if isIntegral! (typeof (x)) {
+            ret.type = JSON_TYPE::INT;
+            ret.int = x;
+        } else if (is (typeof (x) : f32) || is (typeof(x) : f64))  {
+            ret.type = JSON_TYPE::FLOAT;
+            ret.float = x;
+        } else {
+            ret.type = JSON_TYPE::STRING;
+            ret.str = x;
+        }
+        ret;
+    }
+
+    (*x : (" ")) {
+        0;
+    }
+    
+}
+
+def opIndex (ref val : JsonValue, b : string) -> ref JsonValue {
+    assert (val.type == JSON_TYPE::OBJECT, "is not an object");
+    return val.obj [b];
+}
+
+def opIndex (ref val : JsonValue, b : i64) -> ref JsonValue {
+    assert (val.type == JSON_TYPE::ARRAY, "is not an array");
+    return val.array [b];
+}
+
+def opIndex (ref val : JsonValue, b : u64) -> ref JsonValue {
+    assert (val.type == JSON_TYPE::ARRAY, "is not an array");
+    return val.array [b];
+}
+
+def len (ref val : JsonValue) -> u64 {
+    assert (val.type == JSON_TYPE::ARRAY || val.type == JSON_TYPE::OBJECT);
+    if val.type == JSON_TYPE::ARRAY
+        return val.array.len;
+    else
+        return val.obj.len;
+}
