@@ -30,7 +30,7 @@ FILE (
 SET_SOURCE_FILES_PROPERTIES(${SRC_CORE} ${SRC_STD} PROPERTIES LANGUAGE C)
 
 add_library (gymidgard ${SRC_CORE} ${SRC_STD} ${SRC_CORE_C} ${SRC_STD_C})
-target_link_libraries (gymidgard -lpthread -lgc -lgyruntime)
+target_link_libraries (gymidgard -lpthread -lgc -lgyruntime -lgmp)
 install (TARGETS gymidgard DESTINATION /usr/lib/)
 include_directories(${CMAKE_SOURCE_DIR})
 
