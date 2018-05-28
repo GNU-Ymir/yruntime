@@ -10,7 +10,7 @@ enum
  -> JSON_TYPE;
 
 struct
-| type : JSON_TYPE
+| info : JSON_TYPE
 | str : string
 | float : f64
 | int : i64
@@ -20,7 +20,7 @@ struct
 
 
 def print (val : JsonValue) {
-    match val.type {
+    match val.info {
         JSON_TYPE::INT => print ("i64 (", val.int, ")");
         JSON_TYPE::STRING => print ("str (", val.str, ")");
         JSON_TYPE::FLOAT => print ("f64 (", val.float, ")");
@@ -33,7 +33,7 @@ public __macro json {
     ("{" *content : (*elems : ($x : token), ",") "}") {
         import std.map;
         let ret = JsonValue::init;
-        ret.type = JSON_TYPE::OBJECT;
+        ret.info = JSON_TYPE::OBJECT;
         
         cte for i in content {
             let jnner = json: {$(i)};
@@ -52,7 +52,7 @@ public __macro json {
                 push (a, jinner2);
         }
         let ret = JsonValue::init;
-        ret.type = JSON_TYPE::ARRAY;
+        ret.info = JSON_TYPE::ARRAY;
         ret.array = a;
         ret;
     }
@@ -66,13 +66,13 @@ public __macro json {
         import std.traits;
         let ret = JsonValue::init;
         cte if isIntegral! (typeof (x)) {
-            ret.type = JSON_TYPE::INT;
+            ret.info = JSON_TYPE::INT;
             ret.int = x;
         } else if (is (typeof (x) : f32) || is (typeof(x) : f64))  {
-            ret.type = JSON_TYPE::FLOAT;
+            ret.info = JSON_TYPE::FLOAT;
             ret.float = x;
         } else {
-            ret.type = JSON_TYPE::STRING;
+            ret.info = JSON_TYPE::STRING;
             ret.str = x;
         }
         ret;
@@ -85,23 +85,23 @@ public __macro json {
 }
 
 def opIndex (ref val : JsonValue, b : string) -> ref JsonValue {
-    assert (val.type == JSON_TYPE::OBJECT, "is not an object");
+    assert (val.info == JSON_TYPE::OBJECT, "is not an object");
     return val.obj [b];
 }
 
 def opIndex (ref val : JsonValue, b : i64) -> ref JsonValue {
-    assert (val.type == JSON_TYPE::ARRAY, "is not an array");
+    assert (val.info == JSON_TYPE::ARRAY, "is not an array");
     return val.array [b];
 }
 
 def opIndex (ref val : JsonValue, b : u64) -> ref JsonValue {
-    assert (val.type == JSON_TYPE::ARRAY, "is not an array");
+    assert (val.info == JSON_TYPE::ARRAY, "is not an array");
     return val.array [b];
 }
 
 def len (ref val : JsonValue) -> u64 {
-    assert (val.type == JSON_TYPE::ARRAY || val.type == JSON_TYPE::OBJECT);
-    if val.type == JSON_TYPE::ARRAY
+    assert (val.info == JSON_TYPE::ARRAY || val.info == JSON_TYPE::OBJECT);
+    if val.info == JSON_TYPE::ARRAY
         return val.array.len;
     else
         return val.obj.len;

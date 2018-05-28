@@ -1,6 +1,6 @@
 import std.traits;
 
-def scan (FUN : C, C, T) (const a : [const T]) -> [T] {
+def scan if (isCollection!T) (FUN : C, C, T) (const a : T) -> T {
     let b = [T ; new a.len];
     if b.len == 0UL return b;
     b [0] = a [0];
@@ -10,27 +10,12 @@ def scan (FUN : C, C, T) (const a : [const T]) -> [T] {
     return b;
 }
 
-def scan (FUN : C, C, T, N : u64) (ref a : const [const T ; N]) -> [T] {
-    let b = [T ; new a.len];
-    if b.len == 0UL return b;
-    b [0] = a [0];
-    for it in 1UL .. a.len {
-        b [it] = FUN (b [it - 1UL], a [it]);
-    }
-    return b;
-}
-
-def each (FUN : C, C, T) (const a : [const T]) -> void {
+def each if (isCollection!T) (FUN : C, C, T) (const a : T) -> void {
     for it in a
         FUN (it);
 }
 
-def each (FUN : C, C, T, N : u64) (ref a : const [const T ; N]) -> void {
-    for it in 0UL .. a.len
-        FUN (a [it]);
-}
-
-def filter (FUN : C, C, T) (const a : [const T]) -> [T] {
+def filter if (isCollection!T) (FUN : C, C, T) (const a : T) -> T {
     let b = [T ; new 0UL];
     for it in 0UL .. a.len {
         if FUN (a [it])
@@ -39,16 +24,7 @@ def filter (FUN : C, C, T) (const a : [const T]) -> [T] {
     return b;
 }
 
-def filter (FUN : C, C, T, N : u64) (ref a : const [const T ; N]) -> [T] {
-    let b = [T ; new 0UL];
-    for it in 0UL .. a.len {
-        if FUN (a [it])
-            b = b ~ [a [it]]; 
-    }
-    return b;
-}
-
-def map (FUN : C, C, T) (const a : [const T]) {
+def map if (isCollection!T) (FUN : C, C, T) (const a : T) {
     let b = [typeof (mut FUN (a [0])) ; new a.len];    
     for it in 0UL .. a.len {
         b [it] = FUN (a [it]);
@@ -56,27 +32,7 @@ def map (FUN : C, C, T) (const a : [const T]) {
     return b;    
 }
 
-def map (FUN : C, C, T, N : u64) (ref a : const [const T ; N]) {
-    let b = [typeof (mut FUN (a [0])) ; new a.len];    
-    for it in 0UL .. a.len {
-        b [it] = FUN (a [it]);
-    }
-    return b;    
-}
-
-def fold (FUN : C, C, T) (a : const [const T]) -> T {
-    if a.len == 0UL
-        return T::init;
-    else {
-        let b = a [0];
-        for it in 1UL .. a.len {
-            b = FUN (a [it], b);
-        }
-        return b;
-    }
-}
-
-def fold (FUN : C, C, T, N : u64) (ref a : const [const T ; N]) -> T {
+def fold if (isCollection!T) (FUN : C, C, T) (a : const T) {
     if a.len == 0UL
         return T::init;
     else {

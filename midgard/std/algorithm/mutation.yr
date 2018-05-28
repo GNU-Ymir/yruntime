@@ -1,6 +1,7 @@
 mod std.algorithm.mutation;
+import std.traits;
 
-def copy (T) (const a : [const T], b : [T]) {
+def copy if (isCollection!T && isCollection!U) (T, U) (const a : T, b : U) {
     let i = 0UL;
     while i < a.len && i < b.len {
         b [i] = a [i];
@@ -8,7 +9,7 @@ def copy (T) (const a : [const T], b : [T]) {
     }
 }
 
-def copy (T) (const a : [const T], b : [T], len : ulong) {
+def copy if (isCollection!T && isCollection!U) (T, U) (const a : T, b : U, len : ulong) {
     let i = 0UL;
     while i < len {
         b [i] = a [i];
@@ -16,20 +17,12 @@ def copy (T) (const a : [const T], b : [T], len : ulong) {
     } 
 }
 
-def copy (T, N) (ref a : const [const T ; N], b : [T]) {
-    let i = 0UL;
-    while i < a.len && i < b.len {
-        b [i] = a [i];
-        i++;
-    }
-}
-
-def fill (T) (a : [T], val : T) {
+def fill if (isCollection!T && !isCollection!U) (T, U) (a : T, val : U) {
     for it in a
         it = val;
 }
 
-def fill (T) (a : [T], val : const [const T]) {
+def fill if (isCollection!T && isCollection!U) (T, U) (a : T, val : const U) {
     let j = 0UL;
     for it in a {
         it = val [j];
@@ -38,24 +31,15 @@ def fill (T) (a : [T], val : const [const T]) {
     }
 }
 
-def fill (T, N : ulong) (a : [T], const val : [const T ; N]) {
-    let j = 0UL;
-    for it in a {
-        it = val [j];
-        j ++;
-        j = j % val.len;
-    }
-}
-
-def generate (T, FUN : fn (ulong, ulong) -> T) (len : ulong) -> mut [T] {
+def generate (T, FUN : fn (u64, u64) -> T) (len : u64) -> mut [T] {
     let a = [T ; len];
     for it in 0UL .. len
         a [it] = FUN (it, len);
     return a;
 }
 
-def generate (T, FUN : fn (ulong, ulong) -> T, N : ulong) () -> mut [T ; N] {
-    let a = [T ; new N];
+def generate (T, FUN : fn (u64, u64) -> T, N : u64) () -> mut [T ; N] {
+    let a = [T ; N];
     for it in 0UL .. N
         a [it] = FUN (it, N);
     return a;

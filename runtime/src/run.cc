@@ -91,7 +91,7 @@ void bt_sighandler(int sig, struct sigcontext ctx) {
 	    runCommand (syscom);
 	}
 
-    exit(0);
+    exit(1);
 }
 
 void installHandler () {
