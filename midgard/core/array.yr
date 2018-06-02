@@ -23,7 +23,7 @@ def opEquals (T) (const left : [T], const right : [T]) -> bool {
     return true;
 }
 
-def opIndex (T, T2) (a : const (slice!T),  i : T2) -> T {
+def opIndex (T, T2) (const a : slice!(T),  i : T2) -> const T {
     if i < a.len {
         return *(a.ptr + (cast!u64(i) * T::sizeof));
     } else {
@@ -36,8 +36,7 @@ def opIndex (T, T2) (a : slice!T,  i : T2) -> ref T {
     if i < a.len {
         return *(a.ptr + (cast!u64 (i) * T::sizeof));
     } else {
-        abort ();
-        return *a.ptr;
+        assert (false);
     }
 }
 
@@ -50,9 +49,9 @@ def opIndex (T2, T) (a : [T2], i : r!(T)) -> mut slice!T2 {
     }
 }
 
-def opIndex (T2, T) (a : const [T2], i : r!(T)) -> slice!T2 {
+def opIndex (T2, T) (a : [const T2], i : r!(T)) -> slice!(const T2) {
     if i.scd >= i.fst && (i.scd - i.fst) <= a.len && i.fst <= a.len {
-        return const (slice!T2) {cast!u64 (i.scd - i.fst), a.ptr + (cast!u64 (i.fst) * T2::sizeof)};
+        return slice!(const T2) {cast!u64 (i.scd - i.fst), a.ptr + (cast!u64 (i.fst) * T2::sizeof)};
     } else {
         assert (false, "Out of range");
     }
@@ -109,7 +108,7 @@ def dup (T) (const array : slice!T) -> [mut T] {
     return res;
 }
 
-def array (U) (a : const slice!U) -> [U] {
+def array (U) (a : const slice!U) -> const [U] {
     return const![U] {a.len, a.ptr};
 }
 
