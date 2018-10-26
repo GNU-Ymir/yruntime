@@ -11,7 +11,7 @@ def @trusted print (c : char) -> void
 def @{trusted} print (const s : string) -> void {
     let i = 0U;
     while i < s.len {
-        print (s [i]);
+        putchar (s [i]);
         i = i + 1U;
     }
 }
@@ -125,12 +125,13 @@ def @{trusted} print if (is (T : tuple)) (T) (const tu : T) {
 }
 
 private def @{trusted} printTuple if (is (T : tuple)) (T) (const tu : T) {
-    cte if (tu::arity >= 2) {
+    cte if (tu::arity == 2) {
         let (a, b...) = tu;
         print (a);
         print (", ");
         printTuple (b);
-    } else print (tu.0);
+    } else if tu::arity == 1
+        print (tu.0);
 }
 
 def @{trusted} print if (is (T : struct)) (T) (const a : T) {
@@ -156,7 +157,7 @@ def @{trusted} read if (isIntegral!T) (T) () {
     return cast!T (i);
 }
 
-def @{trusted} read if (is (T : char)) (T) () {
+def @{trusted} read (T of char) () {
     let i = char::init;
     scanf ("%c".ptr, &i);
     return i;

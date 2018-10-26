@@ -16,45 +16,50 @@ enum
 | M_2_SQRTPI : 1.12837916709551257384794992200128
 | SQRT2 :      1.41421356237309504876378807303183
 | SQRT1_2 :    0.70710678118654752438189403651592
--> Math;
+ -> Math;
 
+import std.traits;
 
-//mod math {
-    import std.traits;
+public {
+    extern (C) cos (a : f32) -> f32;
+    extern (C) sin (a : f32) -> f32;
+    extern (C) tan (a : f32) -> f32;
+
+    extern (C) acos (a : f32) -> f32;
+    extern (C) asin (a : f32) -> f32;
+    extern (C) atan (a : f32) -> f32;
+}
+
+def pow if (isNumeric!T) (T) (x : T, y : u32) -> T {
+    let temp = T::init;
+    if (y == 0U) return 1;
     
-    public {
-        extern (C) cos (a : f32) -> f32;
-        extern (C) sin (a : f32) -> f32;
-        extern (C) tan (a : f32) -> f32;
+    temp = pow (x, y / 2U);
+    if y % 2U == 0U
+        return temp * temp;
+    else
+        return x * temp * temp;
+}
 
-        extern (C) acos (a : f32) -> f32;
-        extern (C) asin (a : f32) -> f32;
-        extern (C) atan (a : f32) -> f32;
-    }
-
-    def pow if (isNumeric!T) (T) (x : T, y : u32) -> T {
-        let temp = T::init;
-        if (y == 0U) return 1;
-        
-        temp = pow (x, y / 2U);
-        if y % 2U == 0U
-            return temp * temp;
-        else
+def pow (x : f64, y : i32) -> f64 {
+    let temp;
+    if (y == 0) return 1.;
+    
+    temp = pow (x, y / 2);
+    if y % 2 == 0 {
+        return temp * temp;
+    } else {
+        if y > 0
             return x * temp * temp;
+        else
+            return (temp * temp) / x;
     }
+}
 
-    def pow (x : f64, y : i32) -> f64 {
-        let temp;
-        if (y == 0) return 1.;
-        
-        temp = pow (x, y / 2);
-        if y % 2 == 0 {
-            return temp * temp;
-        } else {
-            if y > 0
-                return x * temp * temp;
-            else
-                return (temp * temp) / x;
-        }
-    }
-//}
+public extern (C) floor (x : f64) -> f64;
+
+def modulo (x : f64, y : f64) -> f64 {
+    extern (C) fmod (x : f64, y : f64)-> f64;
+    return fmod (x, y);
+}
+
