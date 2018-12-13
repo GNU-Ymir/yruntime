@@ -1,0 +1,149 @@
+mod core.info;
+
+
+public {
+    type TypeInfo impl ((p!void | u64), p!TypeInfo) {
+
+        let vtable : self.0.0;
+        let len : self.0.1;
+        
+        let childs : self.1;
+        let anc : self.1;
+
+        def equals (self, other : TypeInfo) -> bool {
+            return *(cast!(p!(p!void)) (&self)) is *(cast!(p!(p!void)) (&other));
+        }        
+    }
+
+    type I8_info over TypeInfo {}
+    
+    type I16_info over TypeInfo {}
+
+    type I32_info over TypeInfo {}    
+
+    type I64_info over TypeInfo {}
+
+    type U8_info over TypeInfo {}
+
+    type U16_info over TypeInfo {}
+
+    type U32_info over TypeInfo {}
+
+    type U64_info over TypeInfo {}
+
+    type Bool_info over TypeInfo {}
+
+    type Char_info over TypeInfo {}
+
+    type F32_info over TypeInfo {}
+
+    type F64_info over TypeInfo {}
+
+    type DynamicArray_info over TypeInfo {
+        over equals (self, other : TypeInfo) -> bool {
+            if (!self.super.equals (other)) return false;
+            else {
+                return self.childs.equals (*(other.childs));
+            }
+        }
+    }
+
+    type StaticArray_info over TypeInfo {
+        over equals (self, other : TypeInfo) -> bool {
+            if (!self.super.equals (other)) return false;
+            else {
+                return self.len == other.len && self.childs.equals (*(other.childs));
+            }
+        }
+    }
+    
+    type FuncPtr_info over TypeInfo {
+        over equals (self, other : TypeInfo) -> bool {
+            if (!self.super.equals (other)) return false;
+            else {
+                return self.vtable is other.vtable;
+            }
+        }
+    }
+
+    type Delegate_info over TypeInfo {
+        over equals (self, other : TypeInfo) -> bool {
+            if (!self.super.equals (other)) return false;
+            else {
+                return self.vtable is other.vtable;
+            }
+        }
+    }
+
+    type Ptr_info over TypeInfo {
+        over equals (self, other : TypeInfo) -> bool {
+            if (!self.super.equals (other)) return false;
+            else {
+                return self.childs.equals (*(other.childs));
+            }
+        }
+    }
+    
+    type Ref_info over TypeInfo {
+        over equals (self, other : TypeInfo) -> bool {
+            if (!self.super.equals (other)) return false;
+            else {
+                return self.childs.equals (*(other.childs));
+            }
+        }
+    }
+    
+    type Range_info over TypeInfo {
+        over equals (self, other : TypeInfo) -> bool {
+            if (!self.super.equals (other)) return false;
+            else {
+                return self.childs.equals (*(other.childs));
+            }
+        }
+    }
+
+    type Struct_info over TypeInfo {
+        over equals (self, other : TypeInfo) -> bool {
+            return self.vtable is other.vtable;            
+        }
+    }
+
+    type Tuple_info over TypeInfo {
+        over equals (self, other : TypeInfo) -> bool {
+            return self.vtable is other.vtable;            
+        }
+    }
+    
+    type Aggregate_info over TypeInfo {
+        over equals (self, other : TypeInfo) -> bool {
+            if (!self.super.equals (other)) return false;            
+            if (self.vtable is other.vtable) return true;
+            else {
+                if (other.anc !is null) {
+                    return self.equals (*(other.anc));
+                }                
+            }
+            return false;
+        }
+        
+    }
+    
+}
+
+private {
+    static i8_info : I8_info;
+    static i16_info : I16_info;
+    static i32_info : I32_info;
+    static i64_info : I64_info;
+
+    static u8_info : U8_info;
+    static u16_info : U16_info;
+    static u32_info : U32_info;
+    static u64_info : U64_info;
+
+    static bool_info : Bool_info;
+    static char_info : Char_info;
+
+    static f32_info : F32_info;
+    static f64_info : F64_info;
+}
