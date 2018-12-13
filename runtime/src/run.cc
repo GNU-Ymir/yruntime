@@ -8,45 +8,10 @@
 #include <unistd.h>
 #include <OutBuffer.hh>
 
-int getNextInt (char *& elem) {
-    auto len = 0;
-    while (elem [len] >= '0' && elem[len] <= '9')
-	len ++;
-
-    auto mul = 1;
-    auto i = len - 1;
-    auto res = 0;
-    while (i >= 0) {
-	res += (elem [i] - '0') * mul;
-	mul *= 10;
-	i--;
-    }
-    elem += len;
-    return res;
-}
-
-char* demangle (char * func) {    
-    if (func [0] == '_' && func [1] == 'Y') {
-	auto aux = func + 2;
-	if (aux [0] == 'm') return func; // _Ymain
-	else {
-	    OutBuffer buf;
-	    int len = getNextInt (aux);
-	    while (len != 0) {
-		if (buf.len != 0) write (buf, '.');
-		for (int i = 0 ; i < len ; i++) {
-		    write (buf, aux [i]);
-		}
-		aux += len;
-		len = getNextInt (aux);
-	    }
-	    write (buf, "\n");
-	    write (buf, '\0');
-	    return buf.current;
-	}
-    }
-    return func;
-}
+/**
+ * in Midgard extern (C) { def core::demangle::demangle }
+*/
+extern "C" char*  _Y4core8demangle8demangleFAAxaZPxa (unsigned long len, char * ptr);
 
 void runCommand (char *sys) {
     auto fp = popen (sys, "r");
@@ -59,7 +24,7 @@ void runCommand (char *sys) {
     memset (path, 0, 255 - 1);    
     printf ("in function : ");
     auto func = fgets (path, 255 - 1, fp);
-    char * dem = demangle (func);
+    char * dem = _Y4core8demangle8demangleFAAxaZPxa (strlen (func), func);
     printf ("%s", dem);
     printf ("\t%s", fgets (path, 255 - 1, fp));    
     pclose (fp);
