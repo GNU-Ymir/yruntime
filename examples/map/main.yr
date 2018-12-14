@@ -14,7 +14,7 @@ struct (K, V)
 
 
 def alloc (T) (a : T) {
-    extern (C) GC_malloc (size : ulong) -> p!void;
+    extern (C) GC_malloc (size : u64) -> p!void;
     let x = cast!(p!T) (GC_malloc (16UL));
     *x = a;
     return x;
@@ -39,7 +39,7 @@ def opIndex (K, V) (ref map : Map!(K, V), key : const K) -> ref V {
     return find (map.entry, key);
 }
 
-def print (K, V) (const map : p!(MapEntry!(K, V)), padd : int) {
+def print (K, V) (const map : p!(MapEntry!(K, V)), padd : i32) {
     if map !is null {
 
         for it in 0 .. padd {
@@ -48,10 +48,10 @@ def print (K, V) (const map : p!(MapEntry!(K, V)), padd : int) {
             else print (' ');
         }
         print ("| ");
-        println (((*map).key, " : ", (*map).value));
+        println (map.key, " : ", map.value);
 
-        if (*map).left !is null {
-            print ((*map).left, padd + 4);            
+        if map.left !is null {
+            print (map.left, padd + 4);            
         } else {
             for it in 0 .. padd {
                 if (it % 4 == 0)
@@ -61,8 +61,8 @@ def print (K, V) (const map : p!(MapEntry!(K, V)), padd : int) {
             println ("|   \\_");
         }
         
-        if (*map).right !is null {
-            print ((*map).right, padd + 4);
+        if map.right !is null {
+            print (map.right, padd + 4);
         } else {
             for it in 0 .. padd {
                 if (it % 4 == 0)
@@ -80,8 +80,8 @@ def print (K, V) (const map : Map!(K, V)) {
 }
 
 struct
-| a : int
-| b : int
+| a : i32
+| b : i32
  -> Test;
 
 def opEquals (const left : Test, const right : Test) {
@@ -93,7 +93,7 @@ def opTest ("<") (const left : Test, const right : Test) {
 }
 
 def main () {
-    let a = map!(Test, int) ();
+    let a = map!(Test, i32) ();
     for it in 0 .. 10 {
         a [Test {it, 10 - it}] = it;
     }

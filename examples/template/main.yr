@@ -1,31 +1,34 @@
-import core.io;
 
 struct
-| a : int
+| a : i32
 | b : string
 | c : bool
  -> A;
 
-def innerFoo (T) (const tu : t!T) {
-    print (tu.0);
-}
-
-def innerFoo if (is (T : tuple)) (T) (const tu : T) {
-    let (a, b ...) = tu;
-    print (a);
-    print (", ");
-    innerFoo (b);
+def innerFoo (T ...) (const tu : T) {
+    cte if (is (tu : tuple)) {
+        cte if (tu::arity >= 2) {
+            let (a, b ...) = tu;
+            print (a);
+            print (", ");
+            innerFoo (b::expand);
+        } else {
+            print (tu.0);
+        }
+    } else {
+        print (tu);
+    }
 }
 
 def foo if (is (T : tuple)) (T) (const a : T) {
-    print ("(");
-    innerFoo (a);
-    print (")");
+    print ("{");
+    innerFoo (a::expand);
+    println ("}");
 }
                  
 def foo if (is (T : struct)) (T) (const a : T) {
     print (a::typeid);    
-    println (a.tupleof);    
+    foo (a.tupleof);
 }
 
 def main () {

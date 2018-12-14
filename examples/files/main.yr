@@ -1,6 +1,6 @@
 import core.io;
 
-enum : byte
+enum : i8
 | F_OK : 0B
 | X_OK : 1B
 | W_OK : 2B
@@ -25,12 +25,12 @@ enum
 | Sticky : 512
  -> AccessPerm;
 
-enum : byte
+enum : i8
 | File : 0B
 | Dir : 1B
  -> FileType;
 
-extern (C) access (const a : p!char, b : FilePermission) -> int;
+extern (C) access (const a : p!char, b : FilePermission) -> i32;
 
 def exists (const name : string) -> bool {
     if (access (name.ptr, FilePermission::F_OK) != -1) return true;
@@ -69,7 +69,7 @@ def fromStringZ (a : p!char) -> string {
         a = a + 1;
     }
 
-    let ret = [char ; len];
+    let ret = [char ; new len];
     for (it in 0U .. len) {
         ret [it] = *(anc + it);
     }
@@ -79,30 +79,27 @@ def fromStringZ (a : p!char) -> string {
 
 def dirEntries (const path : string) -> [string] {
     let dir = opendir (path.ptr);
-    let res = [string ; 0UL];
+    let res = [string ; new 0UL];
     if (dir !is null) {
         let entry = readdir (dir);
         while (entry !is null) {
 	    let name = (entry + 19).fromStringZ ();
-	    if ((entry + 18).byte == 4)
-	        res = res ~ [name ~ "/"];
-	    else res = res ~ [name];
+	    if (*cast!(p!i8) (entry + 18) == 4) {
+                res = res ~ [name ~ "/"];
+	    } else res = res ~ [name];
+                
 	    entry = readdir (dir);
         }
-        closedir (dir);
+        closedir (dir);        
     }
     return res;
 }
 
-def opEquals (const a : string, const b : string) {
-    if (a.len != b.len) return false;
-    for (it in 0U .. a.len) {
-        if (a [it] != b [it]) return false;
-    }
-    return true;
-}
-
-def tree (const path, dec) -> void {
+def tree (const cpath, dec) -> void {
+    let path = cpath.dup ();
+    if (path [path.len - 1U] != '/')
+        path = path ~ "/";
+    
     import core.io;
     let res = dirEntries (path);
     for (it in 0UL .. res.len) {
@@ -111,16 +108,16 @@ def tree (const path, dec) -> void {
 	        if (_it % 4 == 0) print ('|');
 	        print (' ');                
             }
-
-	    println (("|-", res [it], ' ', isDir (path ~ res [it])));
-	    if (isDir (path ~ res [it])) {
+            
+            if (isDir (path ~ res [it])) {
+	        println ("|- dir:", res [it]);
                 tree (path ~ res [it], dec + 4);	    
-            }
+            } else println ("|- file:", res [it]);            
         }
     }
 }
 
 
-def main () {
-    tree ("/home/ecadorel/", 0);
+def main (args) {
+    tree (args [1], 0);
 }

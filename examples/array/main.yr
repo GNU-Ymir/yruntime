@@ -3,11 +3,11 @@ import core.io;
 extern (C) printf (const c : p!char, ...);
 
 struct
-| a : [int; 3U]
+| a : [i32; 3U]
  -> Test;
 
 struct (T)
-| len : ulong
+| len : u64
 | ptr : p!T
  -> slice;
 
@@ -15,16 +15,16 @@ def print (T) (const a : p!(const T)) {
     printf ("%x".ptr, a);
 }
 
-def opIndex (T, I : ulong) (ref a : [T ; I], i : r!(int)) -> mut slice!T {
+def opIndex (T, I : u64) (ref a : [T ; I], i : r!(i32)) -> mut slice!T {
     if (i.scd >= i.fst && i.scd - i.fst < a.len && i.fst < a.len) {
-        return slice!(T) {cast!ulong (i.scd - i.fst), &a [i.fst]};
+        return slice!(T) {cast!u64 (i.scd - i.fst), &a [i.fst]};
     } else {
         return slice!T {0U, null};
     }
 }
 
 def opIndex (T, I) (ref a : slice!(T), i : I) -> ref T {
-    return *(a.ptr + (T::sizeof * cast!ulong (i)));
+    return *(a.ptr + (T::sizeof * cast!u64 (i)));
 }
 
 def opAssign ("=", T) (a : slice!(T), b : const [const T]) {
@@ -48,7 +48,7 @@ def print (T) (const a : slice!T) {
 }
 
 def main (args) {
-    let a = [int ; imut 10U];
+    let a = [i32 ; 10U];
     a [0 .. 3] = [1, 2, 3];
     println (a);
 }
