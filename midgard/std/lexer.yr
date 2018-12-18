@@ -5,192 +5,192 @@ import std.map;
 import std.string;
 import std.algorithm.comparison;
 
-private struct (T)
-| line : u64
-| column : u64
-| current : i64
-| disposed : bool
-| content : T
-| skips : BTreeMap!(string, bool)
-| tokens : [string]
-| reads : Vector!(Word)
- -> LexerContent;
+// private struct (T)
+// | line : u64
+// | column : u64
+// | current : i64
+// | disposed : bool
+// | content : T
+// | skips : BTreeMap!(string, bool)
+// | tokens : [string]
+// | reads : Vector!(Word)
+//  -> LexerContent;
 
-public type Lexer (T) impl (LexerContent!T) {
+// public type Lexer (T) impl (LexerContent!T) {
     
-    private let _line : self.0.line;
-    private let _column : self.0.column;
-    private let _current : self.0.current;
-    private let _disposed : self.0.disposed;
-    private let _content : self.0.content;
-    private let _skips : self.0.skips;
-    private let _tokens : self.0.tokens;
-    private let _reads : self.0.reads;
+//     private let _line : self.0.line;
+//     private let _column : self.0.column;
+//     private let _current : self.0.current;
+//     private let _disposed : self.0.disposed;
+//     private let _content : self.0.content;
+//     private let _skips : self.0.skips;
+//     private let _tokens : self.0.tokens;
+//     private let _reads : self.0.reads;
     
-    self (content : T, tokens : [string]) {
-        self._line = 1UL;
-        self._column = 1UL;
-        self._current = -1;
-        self._content = content;
-        self._disposed = false;
-        self._tokens = tokens;
-        self._skips = Map!(string, bool)::init ();
-        self._reads = Vec!Word::init ();
-    }
+//     self (content : T, tokens : [string]) {
+//         self._line = 1UL;
+//         self._column = 1UL;
+//         self._current = -1;
+//         self._content = content;
+//         self._disposed = false;
+//         self._tokens = tokens;
+//         self._skips = Map!(string, bool)::init ();
+//         self._reads = Vec!Word::init ();
+//     }
 
-    def next (self, ref word : Word)-> ref Lexer!T {
-        if (self._current >=:i64 self._reads.len - 1U) {
-            return self.get (word);
-        } else {
-            self._current += 1;
-            word = self._reads [self._current];
-            while (self.isSkip (word) && self._current <:i64 self._reads.len - 1U) {
-                self._current += 1;
-                word = self._reads [self._current];
-            }
+//     def next (self, ref word : Word)-> ref Lexer!T {
+//         if (self._current >=:i64 self._reads.len - 1U) {
+//             return self.get (word);
+//         } else {
+//             self._current += 1;
+//             word = self._reads [self._current];
+//             while (self.isSkip (word) && self._current <:i64 self._reads.len - 1U) {
+//                 self._current += 1;
+//                 word = self._reads [self._current];
+//             }
             
-            if (self.isSkip (word)) return self.get (word);
-            return self;
-        }
-    }
+//             if (self.isSkip (word)) return self.get (word);
+//             return self;
+//         }
+//     }
 
-    def next (self) -> Word {
-        let word = Word::init ();
-        self.next (word);
-        return word;
-    }
+//     def next (self) -> Word {
+//         let word = Word::init ();
+//         self.next (word);
+//         return word;
+//     }
 
-    def rewind (self, nb : u64) -> ref Lexer!T {
-        self._current = self._current -:i64 nb;
-        if (self._current < -1) self._current = -1;
-        return self;
-    }
+//     def rewind (self, nb : u64) -> ref Lexer!T {
+//         self._current = self._current -:i64 nb;
+//         if (self._current < -1) self._current = -1;
+//         return self;
+//     }
 
-    def tell (self) {
-        return self._current;
-    }
+//     def tell (self) {
+//         return self._current;
+//     }
 
-    def seek (self, pos : i64) {
-        self._current = pos;
-    }
+//     def seek (self, pos : i64) {
+//         self._current = pos;
+//     }
 
-    def @attrib content (self) -> ref T {
-        return self._content;
-    }
+//     def @attrib content (self) -> ref T {
+//         return self._content;
+//     }
     
-    def setSkip (self, const skip : [string]) {
-        for i in skip {
-            self._skips.insert (i, true);
-        }
-    }
+//     def setSkip (self, const skip : [string]) {
+//         for i in skip {
+//             self._skips.insert (i, true);
+//         }
+//     }
     
-    private {
-        def get (self, ref word : Word)-> ref Lexer!T {
-            let fst = true;
-            while fst || (self.isSkip (word) && !word.isEof ()) {
-                if !self.getWord (word) {
-                    word.setEof ();
-                    break;
-                }
-                fst = false;
-            }
-            self._reads.push (word);
-            self._current += 1;
-            return self;
-        }
+//     private {
+//         def get (self, ref word : Word)-> ref Lexer!T {
+//             let fst = true;
+//             while fst || (self.isSkip (word) && !word.isEof ()) {
+//                 if !self.getWord (word) {
+//                     word.setEof ();
+//                     break;
+//                 }
+//                 fst = false;
+//             }
+//             self._reads.push (word);
+//             self._current += 1;
+//             return self;
+//         }
 
-        def isSkip (self, elem : Word) -> bool {
-            for k, v in self._skips {
-                if k == elem.str
-                    return v;
-            }
-            return false;
-        }
+//         def isSkip (self, elem : Word) -> bool {
+//             for k, v in self._skips {
+//                 if k == elem.str
+//                     return v;
+//             }
+//             return false;
+//         }
 
-        def getWord (self, ref word : Word) -> bool {
-            if (self._content.isEof ()) return false;
-            let where = self._content.tell ();
-            let line = self._content.getLine ();
-            if (line == "") return false;
-            let max = 0UL, beg = line.len;
-            for it in self._tokens {
-                let id = line.indexOf (it);
-                if (id != line.len) {
-                    if (id == beg && it.len > max) max = it.len;
-                    else if (id < beg) {
-                        beg = id;
-                        max = it.len;
-                    }
-                }
-            }
+//         def getWord (self, ref word : Word) -> bool {
+//             if (self._content.isEof ()) return false;
+//             let where = self._content.tell ();
+//             let line = self._content.getLine ();
+//             if (line == "") return false;
+//             let max = 0UL, beg = line.len;
+//             for it in self._tokens {
+//                 let id = line.indexOf (it);
+//                 if (id != line.len) {
+//                     if (id == beg && it.len > max) max = it.len;
+//                     else if (id < beg) {
+//                         beg = id;
+//                         max = it.len;
+//                     }
+//                 }
+//             }
 
-            self.constructWord (word, beg, max, line, where);
-            if (word.str == "\n" || word.str == "\r") {
-                self._line += 1U;
-                self._column += 1U;
-            } else {
-                self._column += word.str.len;
-            }
-            return true;
-        }
+//             self.constructWord (word, beg, max, line, where);
+//             if (word.str == "\n" || word.str == "\r") {
+//                 self._line += 1U;
+//                 self._column += 1U;
+//             } else {
+//                 self._column += word.str.len;
+//             }
+//             return true;
+//         }
 
-        def constructWord (self, ref word : Word, beg : u64, max : u64, line : string, where : u64) {
-            if (beg == line.len + 1U) word.str = line;
-            else if (beg == 0U) {
-                word.str = line [0U .. std::algorithm::comparison::min (max, line.len)].dup ();
-                self._content.seek (where + max);
-            } else if (beg > 0U) {
-                word.str = line [0U .. min (beg, line.len)].dup ();
-                self._content.seek (where + beg);
-            }
-            word.locus = (self._line, self._column);
-        }                
-    }
+//         def constructWord (self, ref word : Word, beg : u64, max : u64, line : string, where : u64) {
+//             if (beg == line.len + 1U) word.str = line;
+//             else if (beg == 0U) {
+//                 word.str = line [0U .. std::algorithm::comparison::min (max, line.len)].dup ();
+//                 self._content.seek (where + max);
+//             } else if (beg > 0U) {
+//                 word.str = line [0U .. min (beg, line.len)].dup ();
+//                 self._content.seek (where + beg);
+//             }
+//             word.locus = (self._line, self._column);
+//         }                
+//     }
             
-}
+// }
 
-public type Word impl (string, i64, i64) {
+// public type Word impl (string, i64, i64) {
 
-    private let _line : self.1;
-    private let _col : self.2;
-    private let _str : self.0;
+//     private let _line : self.1;
+//     private let _col : self.2;
+//     private let _str : self.0;
 
-    self () {
-        self._line = -1;
-        self._col = -1;
-        self._str = "";
-    }
+//     self () {
+//         self._line = -1;
+//         self._col = -1;
+//         self._str = "";
+//     }
 
-    def setEof (self) {
-        self._line = -1;
-        self._col = -1;
-        self._str = "";
-    }
+//     def setEof (self) {
+//         self._line = -1;
+//         self._col = -1;
+//         self._str = "";
+//     }
 
-    def @attrib locus (self) -> (i64, i64) {
-        return (self._line, self._col);        
-    }
+//     def @attrib locus (self) -> (i64, i64) {
+//         return (self._line, self._col);        
+//     }
 
-    def @attrib locus (self, loc : (u64, u64)) {
-        self._line = cast!i64 (loc.0);
-        self._col = cast!i64 (loc.1);
-    }
+//     def @attrib locus (self, loc : (u64, u64)) {
+//         self._line = cast!i64 (loc.0);
+//         self._col = cast!i64 (loc.1);
+//     }
 
-    def @attrib str (self) -> string {
-        return self._str;
-    }
+//     def @attrib str (self) -> string {
+//         return self._str;
+//     }
 
-    def @attrib str (self, const aux : string) {
-        self._str = aux;
-    }
+//     def @attrib str (self, const aux : string) {
+//         self._str = aux;
+//     }
 
-    def isEof (self) -> bool {
-        return self._line == -1;
-    }
+//     def isEof (self) -> bool {
+//         return self._line == -1;
+//     }
     
-}
+// }
 
-def print (word : Word) {
-    print (word.str);
-    print (word.locus);
-}
+// def print (word : Word) {
+//     print (word.str);
+//     print (word.locus);
+// }

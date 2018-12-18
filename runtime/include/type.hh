@@ -3,8 +3,9 @@
 struct VTable;
 struct TypeInfo {    
     VTable* vtable;
-    void* ig1;
-    void* ig2;
+    void* _vtable;
+    unsigned long len;
+    TypeInfo * c_o_a;
 };
   
 struct VTable {

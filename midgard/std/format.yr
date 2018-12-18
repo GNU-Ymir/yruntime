@@ -2,285 +2,285 @@ mod std.format;
 
 import std.lexer, std.traits;
 
-type File impl (u64, string) {
+// type File impl (u64, string) {
 
-    private let _current : self.0;
-    private let _content : self.1;
+//     private let _current : self.0;
+//     private let _content : self.1;
 
-    self (str : string) {
-        self._current = 0UL;
-        self._content = str;
-    }
+//     self (str : string) {
+//         self._current = 0UL;
+//         self._content = str;
+//     }
 
-    def isEof (self) -> bool {
-        return self._current >= self._content.len;
-    }
+//     def isEof (self) -> bool {
+//         return self._current >= self._content.len;
+//     }
 
-    def tell (self) -> u64 {
-        return self._current;
-    }
+//     def tell (self) -> u64 {
+//         return self._current;
+//     }
 
-    def seek (self, pos : u64) -> void {
-        self._current = pos;
-    }
+//     def seek (self, pos : u64) -> void {
+//         self._current = pos;
+//     }
 
-    def remaining (self) -> string {
-        if (!self.isEof ())
-            return string {self._content.len - self._current, self._content.ptr + self._current};
-        else return "";
-    }
+//     def remaining (self) -> string {
+//         if (!self.isEof ())
+//             return string {self._content.len - self._current, self._content.ptr + self._current};
+//         else return "";
+//     }
     
-    def getLine (self) -> string {
-        let beg = self._current;
-        while (!self.isEof ()) {
-            if (self._content [self._current] == '\n' ||
-                self._content [self._current] == '\r') {
-                self._current += 1U;
-                break;
-            }
-            else self._current += 1U;
-        }
-        return string {self._current - beg, self._content.ptr + beg};
-    }    
-}
+//     def getLine (self) -> string {
+//         let beg = self._current;
+//         while (!self.isEof ()) {
+//             if (self._content [self._current] == '\n' ||
+//                 self._content [self._current] == '\r') {
+//                 self._current += 1U;
+//                 break;
+//             }
+//             else self._current += 1U;
+//         }
+//         return string {self._current - beg, self._content.ptr + beg};
+//     }    
+// }
 
-// format_string := <text> [ maybe-format <text> ] *
-// maybe-format := '{' '{' | '}' '}' | <format>
-// format := '{' [ argument ] [ ':' format_spec ] '}'
-// argument := integer
+// // format_string := <text> [ maybe-format <text> ] *
+// // maybe-format := '{' '{' | '}' '}' | <format>
+// // format := '{' [ argument ] [ ':' format_spec ] '}'
+// // argument := integer
 
-// format_spec := [[fill]align][sign]['#' type][width]['.' precision]
-// fill := character
-// align := '<' | '^' | '>'
-// sign := '+' | '-'
-// width := count
-// precision := count | '*'
-// count := parameter | integer
-// parameter := argument '$'
+// // format_spec := [[fill]align][sign]['#' type][width]['.' precision]
+// // fill := character
+// // align := '<' | '^' | '>'
+// // sign := '+' | '-'
+// // width := count
+// // precision := count | '*'
+// // count := parameter | integer
+// // parameter := argument '$'
 
-def writeNumber (Writer, TUPLE)(ref buf : Writer, index : u64, values : TUPLE) {
-    let j = 0UL;
-    cte for i in values {
-        if j == index {
-            buf.write (i.to!string);            
-        }
-        j += 1U;
-    }
-}
+// def writeNumber (Writer, TUPLE)(ref buf : Writer, index : u64, values : TUPLE) {
+//     let j = 0UL;
+//     cte for i in values {
+//         if j == index {
+//             buf.write (i.to!string);            
+//         }
+//         j += 1U;
+//     }
+// }
 
-def convertString (T) (x : T, sign : char, type_ : char, prec : i32) -> string {
-    import std.traits;
-    cte if (isFloating!(T)) {            
-        if (prec == 0) prec = 5;
-        let res = "";
-        match type_ {
-            '\0' => res = x.to!string (cast!u32 (prec));
-            'e' => res = x.to!(string, "e") (cast!u32 (prec));
-            'E' => res = x.to!(string, "E") (cast!u32 (prec));
-            _ => assert (false, "Invalid type format " ~ string {1U, &type_} ~ " for type " ~ T::typeid);
-        };
+// def convertString (T) (x : T, sign : char, type_ : char, prec : i32) -> string {
+//     import std.traits;
+//     cte if (isFloating!(T)) {            
+//         if (prec == 0) prec = 5;
+//         let res = "";
+//         match type_ {
+//             '\0' => res = x.to!string (cast!u32 (prec));
+//             'e' => res = x.to!(string, "e") (cast!u32 (prec));
+//             'E' => res = x.to!(string, "E") (cast!u32 (prec));
+//             _ => assert (false, "Invalid type format " ~ string {1U, &type_} ~ " for type " ~ T::typeid);
+//         };
         
-        if (x > 0. && sign == '+') return [sign].dup () ~ res;
-        return res;
-    } else if (isIntegral!T) {
-        if (prec > 0) assert (false, "Precision is only applicable on floating types");
-        let res = "";
-        match type_ {
-            '\0' => res = x.to!string;
-            'b' => res = x.to!(string, "b");
-            'o' => res = x.to!(string,  "o");
-            'x' => res = x.to!(string,  "x");
-            'X' => res = x.to!(string,  "X");
-            'X' => res = x.to!(string,  "X");
-            _ => assert (false, "Invalid type format " ~ string {1U, &type_} ~ " for type " ~ T::typeid);
-        }
-        if (x > cast!T (0B) && sign == '+') return [sign].dup () ~ res;
-        return res;
-    } else {
-        if (prec > 0) assert (false, "Precision is only applicable on floating types");
-        return "";
-    }
-}
+//         if (x > 0. && sign == '+') return [sign].dup () ~ res;
+//         return res;
+//     } else if (isIntegral!T) {
+//         if (prec > 0) assert (false, "Precision is only applicable on floating types");
+//         let res = "";
+//         match type_ {
+//             '\0' => res = x.to!string;
+//             'b' => res = x.to!(string, "b");
+//             'o' => res = x.to!(string,  "o");
+//             'x' => res = x.to!(string,  "x");
+//             'X' => res = x.to!(string,  "X");
+//             'X' => res = x.to!(string,  "X");
+//             _ => assert (false, "Invalid type format " ~ string {1U, &type_} ~ " for type " ~ T::typeid);
+//         }
+//         if (x > cast!T (0B) && sign == '+') return [sign].dup () ~ res;
+//         return res;
+//     } else {
+//         if (prec > 0) assert (false, "Precision is only applicable on floating types");
+//         return "";
+//     }
+// }
 
-def writeNumber (Writer, TUPLE)(ref buf : Writer, fill : char, align : char, sign : char, type_ : char, width : u32, star_width : bool, prec : i32, prec_star : bool, index : u64, values : TUPLE) {
-    let j = 0UL;
-    let got_width = false, got_prec = false;
-    cte for x in values {
-        if star_width && !prec_star && j == index - 1U {
-            cte if (!isIntegral!(typeof (x)) ())
-                assert (false, "argument " ~ j.to!string ~ " used as width must be an integral type");
-            else  {
-                width = cast!(u32) (x);
-                got_width = true;
-            }
-        } else if star_width && prec_star && j == index - 2U {
-            cte if (!isIntegral!(typeof (x)) ())
-                assert (false, "argument " ~ j.to!string ~ " used as width must be an integral type");
-            else  {
-                width = cast!(u32) (x);
-                got_width = true;
-            }
-        } else if prec_star && j == index - 1U {
-            cte if (!isIntegral!(typeof (x)) ())
-                assert (false, "argument " ~ j.to!string ~ " used for precision must be an integral type");
-            else {
-                prec = cast!i32 (x);
-                got_prec = true;
-            }
-        } else if j == index {
-            if (star_width && !got_width) assert (false, "Undefined width for argument " ~ index.to!string);
-            if (prec_star && !got_prec) assert (false, "Undefined width for argument " ~ index.to!string);
-            let elem = convertString (x, sign, type_, prec);
-            if (elem.len < width) {
-                match align {
-                    '<' => {
-                        buf.write (elem);
-                        for i in elem.len ..:u64 width {
-                            buf.write (fill);
-                        }
-                    }
-                    '>' => {
-                        for i in 0U .. width -:u64 elem.len {
-                            buf.write (fill);
-                        }
-                        buf.write (elem);
-                    }
-                    _ => {
-                        let toAdd = width -:u64 elem.len;
-                        for i in 0U .. toAdd/2U {
-                            buf.write (fill);
-                        }
-                        buf.write (elem);
-                        for i in toAdd/2U .. toAdd {
-                            buf.write (fill);
-                        }
-                    }                    
-                }
-            } else {
-                buf.write (elem);
-            }
-        }
-        j += 1U;
-    }
-}
+// def writeNumber (Writer, TUPLE)(ref buf : Writer, fill : char, align : char, sign : char, type_ : char, width : u32, star_width : bool, prec : i32, prec_star : bool, index : u64, values : TUPLE) {
+//     let j = 0UL;
+//     let got_width = false, got_prec = false;
+//     cte for x in values {
+//         if star_width && !prec_star && j == index - 1U {
+//             cte if (!isIntegral!(typeof (x)) ())
+//                 assert (false, "argument " ~ j.to!string ~ " used as width must be an integral type");
+//             else  {
+//                 width = cast!(u32) (x);
+//                 got_width = true;
+//             }
+//         } else if star_width && prec_star && j == index - 2U {
+//             cte if (!isIntegral!(typeof (x)) ())
+//                 assert (false, "argument " ~ j.to!string ~ " used as width must be an integral type");
+//             else  {
+//                 width = cast!(u32) (x);
+//                 got_width = true;
+//             }
+//         } else if prec_star && j == index - 1U {
+//             cte if (!isIntegral!(typeof (x)) ())
+//                 assert (false, "argument " ~ j.to!string ~ " used for precision must be an integral type");
+//             else {
+//                 prec = cast!i32 (x);
+//                 got_prec = true;
+//             }
+//         } else if j == index {
+//             if (star_width && !got_width) assert (false, "Undefined width for argument " ~ index.to!string);
+//             if (prec_star && !got_prec) assert (false, "Undefined width for argument " ~ index.to!string);
+//             let elem = convertString (x, sign, type_, prec);
+//             if (elem.len < width) {
+//                 match align {
+//                     '<' => {
+//                         buf.write (elem);
+//                         for i in elem.len ..:u64 width {
+//                             buf.write (fill);
+//                         }
+//                     }
+//                     '>' => {
+//                         for i in 0U .. width -:u64 elem.len {
+//                             buf.write (fill);
+//                         }
+//                         buf.write (elem);
+//                     }
+//                     _ => {
+//                         let toAdd = width -:u64 elem.len;
+//                         for i in 0U .. toAdd/2U {
+//                             buf.write (fill);
+//                         }
+//                         buf.write (elem);
+//                         for i in toAdd/2U .. toAdd {
+//                             buf.write (fill);
+//                         }
+//                     }                    
+//                 }
+//             } else {
+//                 buf.write (elem);
+//             }
+//         }
+//         j += 1U;
+//     }
+// }
 
-def writeSpecl (Writer, TUPLE) (ref buf : Writer, ref lex : Lexer!File, index : u64, implicit_index : bool, values : TUPLE) {
-    let word = Word::init ();
-    let current = 0; // 0 = align, 1 = sign, 2 = '#', 3 = width, 4 = precision, 5 = type
-    let width = 0U, star_width = false;
-    let align = '\0';
-    let sign = '\0';
-    let fill = ' ';
-    let type_ = '\0';
-    let prec = -1, prec_star = false;
+// def writeSpecl (Writer, TUPLE) (ref buf : Writer, ref lex : Lexer!File, index : u64, implicit_index : bool, values : TUPLE) {
+//     let word = Word::init ();
+//     let current = 0; // 0 = align, 1 = sign, 2 = '#', 3 = width, 4 = precision, 5 = type
+//     let width = 0U, star_width = false;
+//     let align = '\0';
+//     let sign = '\0';
+//     let fill = ' ';
+//     let type_ = '\0';
+//     let prec = -1, prec_star = false;
     
-    while (!(word = lex.next ()).isEof ()) {
-        if word.str == "}" break;
-        match (current, word.str) {
-            (0 , "<" | "^" | ">") => { align = word.str [0]; current = 1; }
-            (2 , "<" | "^" | ">") => { align = word.str [0]; current = 1; fill = sign; sign = '\0';}
-            (0 ... 1, "+") => {sign = word.str [0]; current = 2; }
-            (0 ... 2, "#") => {
-                //word = lex.next ();
-                current = 3;
-            }            
-            (0 ... 4, ".") => {
-                word = lex.next ();
-                if (word.str == "*") {
-                    prec_star = true;
-                    if (implicit_index) index += 1U;
-                } else prec = word.str.to!i32;
-                current = 5;
-            }
-            (0 ... 3, c : string) => {
-                match c {                    
-                    "o" | "x" | "X" | "p" | "b" | "e" | "E" => { type_ = word.str [0]; current = 6; }
-                    _ => {          
-                        word = lex.next ();                
-                        match (c.len, word.str) {
-                            (1U, "<" | "^" | ">") => { align = word.str [0]; current = 1; fill = c [0]; }
-                            _ => {
-                                lex.rewind (1U);
-                                if (c != "*") {
-                                    for i in 0U .. c.len {
-                                        if c [i] < '0' || c [i] > '9' {
-                                            assert (false, "Invalid format string, expected [<, ^, >], found " ~ word.str);
-                                        }
-                                    }
-                                    width = c.to!u32;
-                                } else {
-                                    if (implicit_index) index += 1U;
-                                    star_width = true;
-                                }
-                                current = 4;
-                            }
-                        }
-                    }
-                }
-            }
-            (4 ... 5, c : string) => {
-                match c {                    
-                    "o" | "x" | "X" | "p" | "b" | "e" | "E" => type_ = word.str [0];
-                    _ => assert (false, "Unexpected [" ~ c ~ "]");
-                }
-            }
-            _ => assert (false, "Unexpected [" ~ word.str ~ "]");
-        }
-    }
+//     while (!(word = lex.next ()).isEof ()) {
+//         if word.str == "}" break;
+//         match (current, word.str) {
+//             (0 , "<" | "^" | ">") => { align = word.str [0]; current = 1; }
+//             (2 , "<" | "^" | ">") => { align = word.str [0]; current = 1; fill = sign; sign = '\0';}
+//             (0 ... 1, "+") => {sign = word.str [0]; current = 2; }
+//             (0 ... 2, "#") => {
+//                 //word = lex.next ();
+//                 current = 3;
+//             }            
+//             (0 ... 4, ".") => {
+//                 word = lex.next ();
+//                 if (word.str == "*") {
+//                     prec_star = true;
+//                     if (implicit_index) index += 1U;
+//                 } else prec = word.str.to!i32;
+//                 current = 5;
+//             }
+//             (0 ... 3, c : string) => {
+//                 match c {                    
+//                     "o" | "x" | "X" | "p" | "b" | "e" | "E" => { type_ = word.str [0]; current = 6; }
+//                     _ => {          
+//                         word = lex.next ();                
+//                         match (c.len, word.str) {
+//                             (1U, "<" | "^" | ">") => { align = word.str [0]; current = 1; fill = c [0]; }
+//                             _ => {
+//                                 lex.rewind (1U);
+//                                 if (c != "*") {
+//                                     for i in 0U .. c.len {
+//                                         if c [i] < '0' || c [i] > '9' {
+//                                             assert (false, "Invalid format string, expected [<, ^, >], found " ~ word.str);
+//                                         }
+//                                     }
+//                                     width = c.to!u32;
+//                                 } else {
+//                                     if (implicit_index) index += 1U;
+//                                     star_width = true;
+//                                 }
+//                                 current = 4;
+//                             }
+//                         }
+//                     }
+//                 }
+//             }
+//             (4 ... 5, c : string) => {
+//                 match c {                    
+//                     "o" | "x" | "X" | "p" | "b" | "e" | "E" => type_ = word.str [0];
+//                     _ => assert (false, "Unexpected [" ~ c ~ "]");
+//                 }
+//             }
+//             _ => assert (false, "Unexpected [" ~ word.str ~ "]");
+//         }
+//     }
     
-    writeNumber (buf, fill, align, sign, type_, width, star_width, prec, prec_star, index, values);
-}
+//     writeNumber (buf, fill, align, sign, type_, width, star_width, prec, prec_star, index, values);
+// }
 
-def format (Writer, F, TUPLE...) (ref buf : Writer, fmt : string, fst : F, values : TUPLE) {
-    format (buf, fmt, (fst, values::expand));
-}
+// def format (Writer, F, TUPLE...) (ref buf : Writer, fmt : string, fst : F, values : TUPLE) {
+//     format (buf, fmt, (fst, values::expand));
+// }
 
-def format if (!is (TUPLE : tuple)) (Writer, TUPLE) (ref buf : Writer, fmt : string, values : TUPLE) {
-    format (buf, fmt, (values,));
-}
+// def format if (!is (TUPLE : tuple)) (Writer, TUPLE) (ref buf : Writer, fmt : string, values : TUPLE) {
+//     format (buf, fmt, (values,));
+// }
 
-def format if (is (TUPLE : tuple)) (Writer, TUPLE) (ref buf : Writer, fmt : string, values : TUPLE) {
-    let file = File::init (fmt);
-    let tokens = ["{", "}", ":", "<", "^", ">", "+", "-", "*", "#", ".", "b", "o", "x", "X", "p", "b", "e", "E", " "];
-    let lex = Lexer!(File)::init (file, tokens);
-    let word = Word::init ();
-    let current = 0UL;
-    while (!(word = lex.next ()).isEof ()) {
-        match word.str {
-            "{" => {
-                let next = lex.next ();
-                match next.str {
-                    "{" => buf.write ("{");
-                    "}" => {
-                        writeNumber (buf, current, values);
-                        current += 1UL;
-                    }
-                    ":" => {
-                        writeSpecl (buf, lex, current, true, values);
-                        current += 1UL;
-                    }
-                    elem : string => {
-                        let argument = elem.to!u32 ();
-                        next = lex.next ();
-                        match next.str {
-                            "}" => writeNumber (buf, argument, values);
-                            ":" => {
-                                writeSpecl(buf, lex, argument, false, values);                                
-                            }                                
-                        }
-                    }
-                }
-            }
-            "}" => {
-                let next = lex.next ();
-                match next.str {
-                    "}" => buf.write ("}");
-                    _ => assert (false, "Unmatched '}', to escape it use '}}'");
-                }
-            }
-            elem : string => buf.write (elem);
-        }
-    }    
-}
+// def format if (is (TUPLE : tuple)) (Writer, TUPLE) (ref buf : Writer, fmt : string, values : TUPLE) {
+//     let file = File::init (fmt);
+//     let tokens = ["{", "}", ":", "<", "^", ">", "+", "-", "*", "#", ".", "b", "o", "x", "X", "p", "b", "e", "E", " "];
+//     let lex = Lexer!(File)::init (file, tokens);
+//     let word = Word::init ();
+//     let current = 0UL;
+//     while (!(word = lex.next ()).isEof ()) {
+//         match word.str {
+//             "{" => {
+//                 let next = lex.next ();
+//                 match next.str {
+//                     "{" => buf.write ("{");
+//                     "}" => {
+//                         writeNumber (buf, current, values);
+//                         current += 1UL;
+//                     }
+//                     ":" => {
+//                         writeSpecl (buf, lex, current, true, values);
+//                         current += 1UL;
+//                     }
+//                     elem : string => {
+//                         let argument = elem.to!u32 ();
+//                         next = lex.next ();
+//                         match next.str {
+//                             "}" => writeNumber (buf, argument, values);
+//                             ":" => {
+//                                 writeSpecl(buf, lex, argument, false, values);                                
+//                             }                                
+//                         }
+//                     }
+//                 }
+//             }
+//             "}" => {
+//                 let next = lex.next ();
+//                 match next.str {
+//                     "}" => buf.write ("}");
+//                     _ => assert (false, "Unmatched '}', to escape it use '}}'");
+//                 }
+//             }
+//             elem : string => buf.write (elem);
+//         }
+//     }    
+// }
 
 
