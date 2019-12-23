@@ -1,285 +1,285 @@
-mod std.set;
-import std.memory;
-import std.vec;
-import std.list;
+// mod std.set;
+// import std.memory;
+// import std.vec;
+// import std.list;
 
-public __macro set {
-    (+elem : ($x : expr, ",")) {
-        let res = Set!(typeof (mut elem.0.x))::init ();
-        cte for i in elem {
-            res.insert (i.x);
-        }
-        res;
-    }
-}
+// public __macro set {
+//     (+elem : ($x : expr, ",")) {
+//         let res = Set!(typeof (mut elem.0.x))::init ();
+//         cte for i in elem {
+//             res.insert (i.x);
+//         }
+//         res;
+//     }
+// }
 
-mod Set (T) {
-    def init () {
-        return BTreeSet!(const T) {null, 0UL};
-    }    
-}
+// mod Set (T) {
+//     def init () {
+//         return BTreeSet!(const T) {null, 0UL};
+//     }    
+// }
 
-struct (T)
-| head : p!(inner::Node!T)
-| len : u64
- -> BTreeSet;
+// struct (T)
+// | head : p!(inner::Node!T)
+// | len : u64
+//  -> BTreeSet;
 
-def insert (T) (ref set : BTreeSet!T, const val : T) {
-    if set.head is null {
-        set.head = alloc (inner::Node!(const T){val, null, null});
-        set.len = 1UL;
-    } else {
-        inner::insert (set.head, set, val);
-    }
-}
+// def insert (T) (ref set : BTreeSet!T, const val : T) {
+//     if set.head is null {
+//         set.head = alloc (inner::Node!(const T){val, null, null});
+//         set.len = 1UL;
+//     } else {
+//         inner::insert (set.head, set, val);
+//     }
+// }
 
-def insert (T) (ref set : BTreeSet!T, b : BTreeSet!T) {
-    if set.head is null {
-        set.head = b.head;
-    } else {
-        let arr = b.array ();
-        for i in 0UL .. arr.len {
-            set.insert (arr [i]);
-        }
-    }
-}
+// def insert (T) (ref set : BTreeSet!T, b : BTreeSet!T) {
+//     if set.head is null {
+//         set.head = b.head;
+//     } else {
+//         let arr = b.array ();
+//         for i in 0UL .. arr.len {
+//             set.insert (arr [i]);
+//         }
+//     }
+// }
 
-def array (T) (ref set : BTreeSet!T) {
-    let res = [mut T ; new set.len];
-    inner::array (set.head, res);
-    return res;
-}
+// def array (T) (ref set : BTreeSet!T) {
+//     let res = [mut T ; new set.len];
+//     inner::array (set.head, res);
+//     return res;
+// }
 
-def front (T) (ref set : BTreeSet!T)-> const T {
-    assert (set.head !is null, "accessing empty set");
-    return set.head.val;
-}
+// def front (T) (ref set : BTreeSet!T)-> const T {
+//     assert (set.head !is null, "accessing empty set");
+//     return set.head.val;
+// }
 
-def remove (T) (ref set : BTreeSet!T, const val : T) {
-    let rm = inner::remove (set.head, val);
-    if rm { set.len = set.len - 1UL; }
-}
+// def remove (T) (ref set : BTreeSet!T, const val : T) {
+//     let rm = inner::remove (set.head, val);
+//     if rm { set.len = set.len - 1UL; }
+// }
 
-def opBinary ("in", T) (const set : BTreeSet!T, const val : T) {
-    return inner::contains (set.head, val);
-}
+// def opBinary ("in", T) (const set : BTreeSet!T, const val : T) {
+//     return inner::contains (set.head, val);
+// }
 
-def each (FUN : C, C, T) (set : BTreeSet!T) {
-    inner::each!FUN (set.head);
-}
+// def each (FUN : C, C, T) (set : BTreeSet!T) {
+//     inner::each!FUN (set.head);
+// }
 
-def map (FUN : C, C, T) (set : BTreeSet!T) {
-    return inner::map!FUN (set.head);
-}
+// def map (FUN : C, C, T) (set : BTreeSet!T) {
+//     return inner::map!FUN (set.head);
+// }
 
-def filter (FUN : C, C, T) (set : BTreeSet!T) {
-    return inner::filter!FUN (set.head);
-}
+// def filter (FUN : C, C, T) (set : BTreeSet!T) {
+//     return inner::filter!FUN (set.head);
+// }
 
-def filter (T) (set : BTreeSet!T, FUN : dg (T)-> bool) {
-    return inner::filter (set.head, FUN);
-}
+// def filter (T) (set : BTreeSet!T, FUN : dg (T)-> bool) {
+//     return inner::filter (set.head, FUN);
+// }
 
-def print (T) (const set : BTreeSet!T) {
-    print ('{');
-    inner::print (set.head);
-    print ('}');
-}
+// def print (T) (const set : BTreeSet!T) {
+//     print ('{');
+//     inner::print (set.head);
+//     print ('}');
+// }
 
-def opIndex (T) (ref set : BTreeSet!T, b : u64) -> const T {
-    let x = inner::get (set.head, b, 0UL);
-    assert (x.1 !is null, "Out of range");
-    return *x.1;
-}
+// def opIndex (T) (ref set : BTreeSet!T, b : u64) -> const T {
+//     let x = inner::get (set.head, b, 0UL);
+//     assert (x.1 !is null, "Out of range");
+//     return *x.1;
+// }
 
-def opIndex (T) (ref set : BTreeSet!T, b : i64) -> const T {
-    assert (b >= 0);
-    let x = inner::get (set.head, cast!u64 (b), 0UL);
-    assert (x.1 !is null, "Out of range");
-    return *x.1;
-}
+// def opIndex (T) (ref set : BTreeSet!T, b : i64) -> const T {
+//     assert (b >= 0);
+//     let x = inner::get (set.head, cast!u64 (b), 0UL);
+//     assert (x.1 !is null, "Out of range");
+//     return *x.1;
+// }
 
-def opIter (1, T) (ref set : BTreeSet!T) {
-    let x = inner::It!T {List!(p!(inner::Node!T))::init};
-    if (set.head !is null) {
-        x.stack.push (set.head);
-        inner::findLeftMostChild (x);
-    }    
-    return x;
-}
+// def opIter (1, T) (ref set : BTreeSet!T) {
+//     let x = inner::It!T {List!(p!(inner::Node!T))::init};
+//     if (set.head !is null) {
+//         x.stack.push (set.head);
+//         inner::findLeftMostChild (x);
+//     }    
+//     return x;
+// }
 
-def @inline get (0, T) (ref it : inner::It!T) -> const T {
-    return it.stack.back ().val;
-}
+// def @inline get (0, T) (ref it : inner::It!T) -> const T {
+//     return it.stack.back ().val;
+// }
 
-def next (T) (ref it : inner::It!T) {
-    let np = it.stack.pop ();
-    if np.right !is null {
-        it.stack.push (np.right);
-        inner::findLeftMostChild (it);
-    }
-}
+// def next (T) (ref it : inner::It!T) {
+//     let np = it.stack.pop ();
+//     if np.right !is null {
+//         it.stack.push (np.right);
+//         inner::findLeftMostChild (it);
+//     }
+// }
 
-def isEnd (T) (ref it : inner::It!T) {
-    return (it.stack.empty ());
-}
+// def isEnd (T) (ref it : inner::It!T) {
+//     return (it.stack.empty ());
+// }
 
-private mod inner {
-    struct (T)
-    | val : const T
-    | left : p!(inner::Node!T)
-    | right : p!(inner::Node!T)
-     -> Node;
+// private mod inner {
+//     struct (T)
+//     | val : const T
+//     | left : p!(inner::Node!T)
+//     | right : p!(inner::Node!T)
+//      -> Node;
     
-    def insert (T) (ref node : p!(Node!T), ref set : BTreeSet!T, const val : T) {
-        if node is null {
-            node = alloc (Node!(const T) {val, null, null});
-            set.len = set.len + 1UL;
-        } else if node.val > val {
-            node.left.insert (set, val);
-        } else if node.val < val {
-            node.right.insert (set, val);
-        }
-    }
+//     def insert (T) (ref node : p!(Node!T), ref set : BTreeSet!T, const val : T) {
+//         if node is null {
+//             node = alloc (Node!(const T) {val, null, null});
+//             set.len = set.len + 1UL;
+//         } else if node.val > val {
+//             node.left.insert (set, val);
+//         } else if node.val < val {
+//             node.right.insert (set, val);
+//         }
+//     }
 
-    def contains (T) (const node : p!(Node!T), const val : T) {
-        if node !is null {
-            if node.val == val { return true; }
-            else if node.val > val { return node.left.contains (val); }
-            else return node.right.contains (val);
-        } else return false;
-    }
+//     def contains (T) (const node : p!(Node!T), const val : T) {
+//         if node !is null {
+//             if node.val == val { return true; }
+//             else if node.val > val { return node.left.contains (val); }
+//             else return node.right.contains (val);
+//         } else return false;
+//     }
     
-    def remove (T) (ref node : p!(Node!T), const val : T) {
-        if node !is null {
-            if node.val == val {
-                if node.left is null {
-                    node = node.right;
-                } else if node.right is null {
-                    node = node.left;
-                } else {
-                    let right = node.right.getAndRemoveMin ();
-                    node.val = right.val;
-                }
-                return true;
-            } else if node.val > val {
-                return node.left.remove (val);
-            } else return node.right.remove (val);
-        }
-        return false;
-    }
+//     def remove (T) (ref node : p!(Node!T), const val : T) {
+//         if node !is null {
+//             if node.val == val {
+//                 if node.left is null {
+//                     node = node.right;
+//                 } else if node.right is null {
+//                     node = node.left;
+//                 } else {
+//                     let right = node.right.getAndRemoveMin ();
+//                     node.val = right.val;
+//                 }
+//                 return true;
+//             } else if node.val > val {
+//                 return node.left.remove (val);
+//             } else return node.right.remove (val);
+//         }
+//         return false;
+//     }
 
-    def getAndRemoveMin (T) (ref node : p!(Node!T)) {
-        if node.left is null {
-            let ret = node;
-            if node.right !is null {
-                node = node.right; 
-            } else node = null;
-            return ret;
-        } else return node.left.getAndRemoveMin ();
-    }
+//     def getAndRemoveMin (T) (ref node : p!(Node!T)) {
+//         if node.left is null {
+//             let ret = node;
+//             if node.right !is null {
+//                 node = node.right; 
+//             } else node = null;
+//             return ret;
+//         } else return node.left.getAndRemoveMin ();
+//     }
 
-    def array (T) (node : p!(Node!T), arr : [T]) -> u64 {
-        if node !is null {
-            let current = array (node.left, arr);
-            arr [current] = node.val;
-            let nb = array (node.right, arr [current + 1UL .. arr.len].array ());
-            return current + 1UL + nb;
-        }
-        return 0UL;
-    }
+//     def array (T) (node : p!(Node!T), arr : [T]) -> u64 {
+//         if node !is null {
+//             let current = array (node.left, arr);
+//             arr [current] = node.val;
+//             let nb = array (node.right, arr [current + 1UL .. arr.len].array ());
+//             return current + 1UL + nb;
+//         }
+//         return 0UL;
+//     }
 
-    def get (T) (node : p!(Node!T), index : u64, nb : u64) -> t!(u64, p!T) {
-        if node !is null {
-            let current = get (node.left, index, nb);
-            if current.1 !is null return current;
-            else {
-                nb = current.0;
-                if nb == index return (nb, &node.val);
-                else return get (node.right, index, nb + 1UL);
-            }
-        }
-        return (nb, cast!(p!T) (null));
-    }
+//     def get (T) (node : p!(Node!T), index : u64, nb : u64) -> t!(u64, p!T) {
+//         if node !is null {
+//             let current = get (node.left, index, nb);
+//             if current.1 !is null return current;
+//             else {
+//                 nb = current.0;
+//                 if nb == index return (nb, &node.val);
+//                 else return get (node.right, index, nb + 1UL);
+//             }
+//         }
+//         return (nb, cast!(p!T) (null));
+//     }
     
-    def each (FUN : C, C, T) (node : p!(Node!T)) {
-        if node !is null {
-            if node.left !is null {
-                inner::each!FUN (node.left);
-            }
-            FUN (node.val);
-            if node.right !is null {
-                inner::each!FUN (node.right);
-            }
-        }
-    }
+//     def each (FUN : C, C, T) (node : p!(Node!T)) {
+//         if node !is null {
+//             if node.left !is null {
+//                 inner::each!FUN (node.left);
+//             }
+//             FUN (node.val);
+//             if node.right !is null {
+//                 inner::each!FUN (node.right);
+//             }
+//         }
+//     }
 
-    def map (FUN : C, C, T) (node : p!(Node!T)) -> BTreeSet!(typeof (mut FUN (T::init))) {
-        let ret = BTreeSet!(typeof (mut FUN (T::init)))::init;
-        if node !is null {
-            if node.left !is null {
-                ret = inner::map!FUN (node.left);
-            }
-            ret.insert (FUN (node.val));
-            if node.right !is null {
-                ret.insert (inner::map!FUN (node.right));
-            }
-        }
-        return ret;
-    }
+//     def map (FUN : C, C, T) (node : p!(Node!T)) -> BTreeSet!(typeof (mut FUN (T::init))) {
+//         let ret = BTreeSet!(typeof (mut FUN (T::init)))::init;
+//         if node !is null {
+//             if node.left !is null {
+//                 ret = inner::map!FUN (node.left);
+//             }
+//             ret.insert (FUN (node.val));
+//             if node.right !is null {
+//                 ret.insert (inner::map!FUN (node.right));
+//             }
+//         }
+//         return ret;
+//     }
 
-    def filter (FUN : C, C, T) (node : p!(Node!T)) -> BTreeSet!T {
-        let ret = BTreeSet!(typeof (mut FUN (T::init)))::init;
-        if node !is null {
-            ret = inner::filter!FUN (node.left);
-            if FUN (node.val)
-                ret.insert (node.val);
-            ret.insert (inner::filter!FUN (node.right));
-        }
-        return ret;
-    }
+//     def filter (FUN : C, C, T) (node : p!(Node!T)) -> BTreeSet!T {
+//         let ret = BTreeSet!(typeof (mut FUN (T::init)))::init;
+//         if node !is null {
+//             ret = inner::filter!FUN (node.left);
+//             if FUN (node.val)
+//                 ret.insert (node.val);
+//             ret.insert (inner::filter!FUN (node.right));
+//         }
+//         return ret;
+//     }
 
-    def filter (T) (node : p!(Node!T), FUN : dg (T)-> bool) -> BTreeSet!T {
-        let ret = BTreeSet!(T)::init;
-        if node !is null {
-            ret = inner::filter (node.left, FUN);
-            if FUN (node.val)
-                ret.insert (node.val);
-            ret.insert (inner::filter (node.right, FUN));
-        }
-        return ret;    
-    }
+//     def filter (T) (node : p!(Node!T), FUN : dg (T)-> bool) -> BTreeSet!T {
+//         let ret = BTreeSet!(T)::init;
+//         if node !is null {
+//             ret = inner::filter (node.left, FUN);
+//             if FUN (node.val)
+//                 ret.insert (node.val);
+//             ret.insert (inner::filter (node.right, FUN));
+//         }
+//         return ret;    
+//     }
     
-    def print (T) (const node : p!(Node!T)) {
-        if node !is null {
-            if node.left !is null {
-                print (node.left);
-                print (", ");
-            }
-            print (node.val);
-            if node.right !is null {
-                print (", ");
-                print (node.right);
-            }
-        }
-    }
+//     def print (T) (const node : p!(Node!T)) {
+//         if node !is null {
+//             if node.left !is null {
+//                 print (node.left);
+//                 print (", ");
+//             }
+//             print (node.val);
+//             if node.right !is null {
+//                 print (", ");
+//                 print (node.right);
+//             }
+//         }
+//     }
     
-    struct (T)
-    | stack : List!(p!(Node!T))
-     -> It;
+//     struct (T)
+//     | stack : List!(p!(Node!T))
+//      -> It;
 
-    def findLeftMostChild (T) (ref it : It!T) {
-        if (!it.stack.empty ()) {
-            let node = it.stack.back ();
-            if node !is null {
-                while node.left !is null {
-                    push (it.stack, node.left);
-                    node = node.left;
-                }
-            }
-        }
-    }
+//     def findLeftMostChild (T) (ref it : It!T) {
+//         if (!it.stack.empty ()) {
+//             let node = it.stack.back ();
+//             if node !is null {
+//                 while node.left !is null {
+//                     push (it.stack, node.left);
+//                     node = node.left;
+//                 }
+//             }
+//         }
+//     }
     
-}
+// }
 
 

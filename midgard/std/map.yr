@@ -1,219 +1,219 @@
-mod std.map;
-import std.memory;
-import std.list;
+// mod std.map;
+// import std.memory;
+// import std.list;
 
-public {
-    __macro map {
-        (+elem: ($x: expr "=>" $y: expr, ",")) {
-            let res = Map!(typeof (mut elem.0.x), typeof (mut elem.0.y))::init ();
-            cte for i in elem {
-                res.insert (i.x, i.y);
-            }
-            res;
-        }        
-    }
-}
+// public {
+//     __macro map {
+//         (+elem: ($x: expr "=>" $y: expr, ",")) {
+//             let res = Map!(typeof (mut elem.0.x), typeof (mut elem.0.y))::init ();
+//             cte for i in elem {
+//                 res.insert (i.x, i.y);
+//             }
+//             res;
+//         }        
+//     }
+// }
 
-mod Map (K, V) {
-    def init () {
-        return BTreeMap!(mut K, mut V) {null, 0UL};
-    }
-}
+// mod Map (K, V) {
+//     def init () {
+//         return BTreeMap!(mut K, mut V) {null, 0UL};
+//     }
+// }
 
-struct (K, V)
-| head : p!(inner::Node!(K, V))
-| len : u64
- -> BTreeMap;
+// struct (K, V)
+// | head : p!(inner::Node!(K, V))
+// | len : u64
+//  -> BTreeMap;
 
-def insert (K, V) (ref map : BTreeMap!(K, V), const key : K, value : V) {
-    if (map.head is null) {
-        map.head = alloc (inner::Node!(const K, mut V) {key, value, null, null});
-        map.len = 1UL;
-    } else {
-        inner::insert (map.head, map, key, value);        
-    }
-}
+// def insert (K, V) (ref map : BTreeMap!(K, V), const key : K, value : V) {
+//     if (map.head is null) {
+//         map.head = alloc (inner::Node!(const K, mut V) {key, value, null, null});
+//         map.len = 1UL;
+//     } else {
+//         inner::insert (map.head, map, key, value);        
+//     }
+// }
 
-def remove (K, V) (ref map : BTreeMap!(K, V), const key : K) {
-    let rm = inner::remove (map.head, key);
-    if rm { map.len = map.len - 1UL; }
-}
-
-
-def opIndex (K, V) (ref map : BTreeMap!(K, V), const key : K)-> ref V {
-    let res = inner::getOrInsert (map.head, key);
-    return *res;
-}
-
-def opBinary ("in", K, V) (key : K, ref map : BTreeMap!(K, V))-> p!V {
-    return inner::get (map.head, key);
-}
-
-def opBinary ("in", K, V) (key : K, const map : BTreeMap!(K, V))-> const p!V {
-    return inner::get (map.head, key);
-}
-
-def print (K, V) (const map : BTreeMap!(K, V)) {
-    print ('{');
-    inner::print (map.head);
-    print ('}');
-}
-
-def printTree (K, V) (map : BTreeMap!(K, V)) {
-    inner::printTree (map.head, 0);
-}
-
-def opIter (2, K, V) (ref set : BTreeMap!(K, V)) {
-    let x = inner::It!(K, V) {List!(p!(inner::Node!(K, V)))::init};
-    if (set.head !is null) {
-        x.stack.push (set.head);
-        inner::findLeftMostChild (x);
-    }    
-    return x;
-}
-
-def @inline get (0, K, V) (ref it : inner::It!(K, V)) -> const K {
-    return it.stack.back ().key;
-}
-
-def @inline get (1, K, V) (ref it : inner::It!(K, V)) -> ref V {
-    return it.stack.back ().value;
-}
-
-def next (K, V) (ref it : inner::It!(K, V)) {
-    let np = it.stack.pop ();
-    if np.right !is null {
-        it.stack.push (np.right);
-        inner::findLeftMostChild (it);
-    }
-}
-
-def isEnd (K, V) (ref it : inner::It!(K, V)) {
-    return (it.stack.empty ());
-}
+// def remove (K, V) (ref map : BTreeMap!(K, V), const key : K) {
+//     let rm = inner::remove (map.head, key);
+//     if rm { map.len = map.len - 1UL; }
+// }
 
 
-private mod inner {
+// def opIndex (K, V) (ref map : BTreeMap!(K, V), const key : K)-> ref V {
+//     let res = inner::getOrInsert (map.head, key);
+//     return *res;
+// }
 
-    struct (K, V)
-    | key : const K
-    | value : V
-    | left : p!(inner::Node!(K, V))
-    | right : p!(inner::Node!(K, V))
-     -> Node;
+// def opBinary ("in", K, V) (key : K, ref map : BTreeMap!(K, V))-> p!V {
+//     return inner::get (map.head, key);
+// }
+
+// def opBinary ("in", K, V) (key : K, const map : BTreeMap!(K, V))-> const p!V {
+//     return inner::get (map.head, key);
+// }
+
+// def print (K, V) (const map : BTreeMap!(K, V)) {
+//     print ('{');
+//     inner::print (map.head);
+//     print ('}');
+// }
+
+// def printTree (K, V) (map : BTreeMap!(K, V)) {
+//     inner::printTree (map.head, 0);
+// }
+
+// def opIter (2, K, V) (ref set : BTreeMap!(K, V)) {
+//     let x = inner::It!(K, V) {List!(p!(inner::Node!(K, V)))::init};
+//     if (set.head !is null) {
+//         x.stack.push (set.head);
+//         inner::findLeftMostChild (x);
+//     }    
+//     return x;
+// }
+
+// def @inline get (0, K, V) (ref it : inner::It!(K, V)) -> const K {
+//     return it.stack.back ().key;
+// }
+
+// def @inline get (1, K, V) (ref it : inner::It!(K, V)) -> ref V {
+//     return it.stack.back ().value;
+// }
+
+// def next (K, V) (ref it : inner::It!(K, V)) {
+//     let np = it.stack.pop ();
+//     if np.right !is null {
+//         it.stack.push (np.right);
+//         inner::findLeftMostChild (it);
+//     }
+// }
+
+// def isEnd (K, V) (ref it : inner::It!(K, V)) {
+//     return (it.stack.empty ());
+// }
+
+
+// private mod inner {
+
+//     struct (K, V)
+//     | key : const K
+//     | value : V
+//     | left : p!(inner::Node!(K, V))
+//     | right : p!(inner::Node!(K, V))
+//      -> Node;
     
-    def insert (K, V) (ref node : p!(Node!(K, V)), ref map : BTreeMap!(K, V), const key : K, value : V) {
-        if (node is null) {
-            node = alloc (Node!(const K, mut V) {key, value, null, null});
-            map.len = map.len + 1UL;
-        } else {
-            if (node.key > key) {
-                node.left.insert (map, key, value);
-            } else if node.key < key {
-                node.right.insert (map, key, value);
-            } else node.value = value;
-        }
-    }
+//     def insert (K, V) (ref node : p!(Node!(K, V)), ref map : BTreeMap!(K, V), const key : K, value : V) {
+//         if (node is null) {
+//             node = alloc (Node!(const K, mut V) {key, value, null, null});
+//             map.len = map.len + 1UL;
+//         } else {
+//             if (node.key > key) {
+//                 node.left.insert (map, key, value);
+//             } else if node.key < key {
+//                 node.right.insert (map, key, value);
+//             } else node.value = value;
+//         }
+//     }
 
-    def get (K, V) (ref node : p!(Node!(K, V)), const key : K) -> p!V {
-        if (node is null) return null;
-        else {
-            if (node.key == key) return &node.value;
-            else if node.key >= key {
-                return node.left.get (key);
-            } else return node.right.get (key);
-        }
-    }
+//     def get (K, V) (ref node : p!(Node!(K, V)), const key : K) -> p!V {
+//         if (node is null) return null;
+//         else {
+//             if (node.key == key) return &node.value;
+//             else if node.key >= key {
+//                 return node.left.get (key);
+//             } else return node.right.get (key);
+//         }
+//     }
 
-    def get (K, V) (const node : p!(Node!(K, V)), const key : K) -> const p!V {
-        if (node is null) return null;
-        else {
-            if (node.key == key) return &node.value;
-            else if node.key >= key {
-                return node.left.get (key);
-            } else return node.right.get (key);
-        }
-    }
+//     def get (K, V) (const node : p!(Node!(K, V)), const key : K) -> const p!V {
+//         if (node is null) return null;
+//         else {
+//             if (node.key == key) return &node.value;
+//             else if node.key >= key {
+//                 return node.left.get (key);
+//             } else return node.right.get (key);
+//         }
+//     }
 
-    def getOrInsert (K, V) (ref node : p!(Node!(K, V)), const key : K) -> p!V {
-        if (node is null) {
-            node = alloc (Node!(mut K, mut V){key, V::init, null, null});
-            return &node.value;
-        } else {
-            if (node.key == key) return &node.value;
-            else if node.key >= key {
-                return node.left.getOrInsert (key);
-            } else return node.right.getOrInsert (key);
-        }
-    }
+//     def getOrInsert (K, V) (ref node : p!(Node!(K, V)), const key : K) -> p!V {
+//         if (node is null) {
+//             node = alloc (Node!(mut K, mut V){key, V::init, null, null});
+//             return &node.value;
+//         } else {
+//             if (node.key == key) return &node.value;
+//             else if node.key >= key {
+//                 return node.left.getOrInsert (key);
+//             } else return node.right.getOrInsert (key);
+//         }
+//     }
 
-    def remove (K, V) (ref node : p!(Node!(K, V)), const key : K) {
-        if (node !is null) {
-            if (node.key == key) {
-                if node.left is null {
-                    node = node.right;
-                } else if node.right is null {
-                    node = node.left;
-                } else {
-                    let right = node.right.getAndRemoveMin ();
-                    node.key = right.key;
-                    node.value = right.value;
-                }
-                return true;
-            } else if (node.key >= key) {
-                return node.left.remove (key);
-            } else return node.right.remove (key);
-        } return false;
-    }
+//     def remove (K, V) (ref node : p!(Node!(K, V)), const key : K) {
+//         if (node !is null) {
+//             if (node.key == key) {
+//                 if node.left is null {
+//                     node = node.right;
+//                 } else if node.right is null {
+//                     node = node.left;
+//                 } else {
+//                     let right = node.right.getAndRemoveMin ();
+//                     node.key = right.key;
+//                     node.value = right.value;
+//                 }
+//                 return true;
+//             } else if (node.key >= key) {
+//                 return node.left.remove (key);
+//             } else return node.right.remove (key);
+//         } return false;
+//     }
 
-    def getAndRemoveMin (K, V) (ref node : p!(Node!(K, V))) {
-        if node.left is null {
-            let ret = node;
-            if node.right !is null {
-                node = node.right;
-            } else node = null;
-            return ret;
-        } else return node.left.getAndRemoveMin ();    
-    }
+//     def getAndRemoveMin (K, V) (ref node : p!(Node!(K, V))) {
+//         if node.left is null {
+//             let ret = node;
+//             if node.right !is null {
+//                 node = node.right;
+//             } else node = null;
+//             return ret;
+//         } else return node.left.getAndRemoveMin ();    
+//     }
 
-    def print (K, V) (const node : p!(Node!(K, V))) {
-        if (node !is null) {
-            if (node.left !is null) {
-                print (node.left);
-                print (", ");
-            }
-            print (node.key, " => ", node.value);
-            if (node.right !is null) {
-                print (", ");
-                print (node.right);
-            }
-        }
-    }
+//     def print (K, V) (const node : p!(Node!(K, V))) {
+//         if (node !is null) {
+//             if (node.left !is null) {
+//                 print (node.left);
+//                 print (", ");
+//             }
+//             print (node.key, " => ", node.value);
+//             if (node.right !is null) {
+//                 print (", ");
+//                 print (node.right);
+//             }
+//         }
+//     }
 
-    def printTree (K, V) (const node : p!(Node!(K, V)), x : i32) {
-        for i in 0 .. x
-            print ("\t|: ");
-        if node !is null {
-            println (node.key, " => ", node.value);
-            node.left.printTree (x + 1);
-            node.right.printTree (x + 1);
-        } else println ("\\_");
-    }
+//     def printTree (K, V) (const node : p!(Node!(K, V)), x : i32) {
+//         for i in 0 .. x
+//             print ("\t|: ");
+//         if node !is null {
+//             println (node.key, " => ", node.value);
+//             node.left.printTree (x + 1);
+//             node.right.printTree (x + 1);
+//         } else println ("\\_");
+//     }
 
-    struct (K, V)
-    | stack : List!(p!(Node!(K, V)))
-     -> It;
+//     struct (K, V)
+//     | stack : List!(p!(Node!(K, V)))
+//      -> It;
 
-    def findLeftMostChild (K, V) (ref it : It!(K, V)) {
-        if (!it.stack.empty ()) {
-            let node = it.stack.back ();
-            if node !is null {
-                while node.left !is null {
-                    push (it.stack, node.left);
-                    node = node.left;
-                }
-            }
-        }
-    }
+//     def findLeftMostChild (K, V) (ref it : It!(K, V)) {
+//         if (!it.stack.empty ()) {
+//             let node = it.stack.back ();
+//             if node !is null {
+//                 while node.left !is null {
+//                     push (it.stack, node.left);
+//                     node = node.left;
+//                 }
+//             }
+//         }
+//     }
 
-}
+// }

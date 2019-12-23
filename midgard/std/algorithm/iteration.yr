@@ -1,46 +1,45 @@
-import std.traits;
+mod std::algorithm::iteration
+    
+import std::traits;
+import std::memory;
 
-def scan if (isCollection!T) (FUN : C, C, T) (const a : T) -> T {
-    let b = [T ; new a.len];
-    if b.len == 0UL return b;
-    b [0] = a [0];
-    for it in 1UL .. a.len {
-        b [it] = FUN (b [it - 1UL], a [it]);
-    }
-    return b;
-}
-
-def each if (isCollection!T) (FUN : C, C, T) (const a : T) -> void {
-    for it in a
-        FUN (it);
-}
-
-def filter if (isCollection!T) (FUN : C, C, T) (const a : T) -> T {
-    let b = [T ; new 0UL];
-    for it in 0UL .. a.len {
-        if FUN (a [it])
-            b = b ~ [a [it]]; 
-    }
-    return b;
-}
-
-def map if (isCollection!T) (FUN : C, C, T) (const a : T) {
-    let b = [typeof (mut FUN (a [0])) ; new a.len];    
-    for it in 0UL .. a.len {
-        b [it] = FUN (a [it]);
-    }
-    return b;    
-}
-
-def fold if (isCollection!T) (FUN : C, C, T) (a : const T) {
-    if a.len == 0UL
-        return T::init;
-    else {
-        let b = a [0];
-        for it in 1UL .. a.len {
-            b = FUN (a [it], b);
+pub {
+           
+    def map (FUN : fn (U) -> T, C of [U], U, T) (a : C) -> mut [mut T] {
+        let mut b : [mut T] = alias allocArray!T (a.len);
+        for it in 0_u64 .. b.len {
+            cte if (is!T (X of [J], J)) 
+                b [it] = alias FUN (a [it])
+            else
+                b [it] = FUN (a [it])
         }
-        return b;
+        alias b
     }
+    
+    def scan (FUN : fn (U, U)-> U, C of [U], U) (a : C) -> mut [mut U] {
+        let mut b : [mut U] = alias [U::init ; new a.len];
+        if b.len != 0_u64 {
+            b [0] = a [0];
+            for i in 1_u64 .. a.len {
+                b [i] = FUN (b [i - 1_u64], a [i])
+            }
+        }
+        alias b
+    }
+
+    def each (FUN : fn (U)-> void, C of [U], U) (a : C) -> void {
+        for i in a
+            FUN (i)
+    }
+
+    def fold (FUN : fn (U, U)-> U, C of [U], U) (a : C) -> U {
+        if a.len == 1_u64
+            a [0]
+        else {
+            let len_2 = a.len / 2_u64;            
+            FUN (fold (a[0_u64..len_2]), fold (a[len_2 .. a.len]))
+        }
+    }
+    
 }
 

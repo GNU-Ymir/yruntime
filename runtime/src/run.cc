@@ -8,10 +8,7 @@
 #include <unistd.h>
 #include <OutBuffer.hh>
 
-/**
- * in Midgard extern (C) { def core::demangle::demangle }
-*/
-extern "C" char*  _Y4core8demangle8demangleFAAxaZPxa (unsigned long len, char * ptr);
+
 
 void runCommand (char *sys) {
     auto fp = popen (sys, "r");
@@ -24,8 +21,7 @@ void runCommand (char *sys) {
     memset (path, 0, 255 - 1);    
     printf ("in function : ");
     auto func = fgets (path, 255 - 1, fp);
-    char * dem = _Y4core8demangle8demangleFAAxaZPxa (strlen (func), func);
-    printf ("%s", dem);
+    printf ("%s", func);
     printf ("\t%s", fgets (path, 255 - 1, fp));    
     pclose (fp);
 }
@@ -53,6 +49,7 @@ void bt_sighandler(int sig, struct sigcontext ctx) {
 
 	    char syscom[256];
 	    snprintf(syscom, 256, "addr2line %p -f -e %.*s", trace[i], (int) p, messages[i]);
+
 	    runCommand (syscom);
 	}
 
@@ -80,7 +77,7 @@ extern "C" void _y_error (unsigned long len, char * ptr) {
     fprintf (stderr, "\n");
 }
 
-extern "C" int y_run_main_debug (int argc, char ** argv, int(*y_main) (Array)) {
+extern "C" int _yrt_run_main_debug (int argc, char ** argv, int(*y_main) (Array)) {
     installHandler ();
     auto args = (Array*) malloc (sizeof (Array) * argc);
     for (int i = 0 ; i < argc ; i++) {
@@ -91,12 +88,12 @@ extern "C" int y_run_main_debug (int argc, char ** argv, int(*y_main) (Array)) {
     return ret;
 }
 
-extern "C" int y_run_main (int argc, char ** argv, int(*y_main) (Array)) {
-    auto args = (Array*) malloc (sizeof (Array) * argc);
-    for (int i = 0 ; i < argc ; i++) {
-	args [i] = {strlen (argv [i]), argv [i]};
-    }
-    auto ret = y_main ({(unsigned long) argc, args});
-    free (args);
+extern "C" int _yrt_run_main (int argc, char ** argv, int(*y_main) (Array)) {
+    //auto args = (Array*) malloc (sizeof (Array) * argc);
+    // for (int i = 0 ; i < argc ; i++) {
+    // 	args [i] = utf8toUtf32 (argv [i]);
+    // }
+    auto ret = y_main ({(unsigned long) argc, argv});
+    //free (args);
     return ret;
 }

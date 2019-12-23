@@ -1,0 +1,54 @@
+mod core::typeinfo;
+import core::array;
+import std::io;
+
+/**
+ * This module list all the possible type info, and the system to compare type at runtime
+ */
+    
+pub struct
+| typeid : u32
+| size   : usize
+| inner  : [TypeInfo]
+| name   : [c32] 
+ -> TypeInfo;
+
+pub enum : u32
+| ARRAY        = 1u32
+| BOOL         = 2u32
+| CHAR         = 3u32
+| CLOSURE      = 4u32
+| FLOAT        = 5u32
+| FUNC_PTR     = 6u32
+| SIGNED_INT   = 7u32
+| UNSIGNED_INT = 8u32
+| POINTER      = 9u32
+| SLICE        = 10u32
+| STRUCT       = 11u32
+| TUPLE        = 12u32
+| VOID         = 13u32
+ -> TypeIDs;
+    
+pub def equals (left : TypeInfo, right : TypeInfo) -> bool {
+    if (left.typeid == right.typeid) {
+        if (left.typeid == TypeIDs::BOOL ||
+            left.typeid == TypeIDs::CHAR ||
+            left.typeid == TypeIDs::FLOAT ||
+            left.typeid == TypeIDs::SIGNED_INT ||
+            left.typeid == TypeIDs::UNSIGNED_INT) {
+            return left.size == right.size;
+        } else if (left.inner.len == right.inner.len && left.typeid != TypeIDs::STRUCT) {
+            for j in 0u64 .. left.inner.len {
+                if !equals (left.inner [j], right.inner [j]) {
+                    return false;
+                }
+            }
+            return true;
+        } else if (left.typeid == TypeIDs::STRUCT) {
+            return left.name.ptr is right.name.ptr;
+        }
+    }
+    false
+}
+
+

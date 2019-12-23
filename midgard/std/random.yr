@@ -1,37 +1,45 @@
-mod std.random;
-import std.traits;
+mod std::random;
+import std::io
 
-public extern (C) rand () -> i32;
-public extern (C) srand (i : i32);
-public extern (C) time (i : i32) -> i32;
+extern (C) def rand () -> i32;
+extern (C) def srand (i : i32);
+extern (C) def time (i : i32) -> i32;
 
-static init = false;
+static mut init : bool = false;
 
-def uniform if (isIntegral!(T) () && isIntegral!(T2)())
-    (T, T2) (a : T, b : T2) -> T {
-	if (!init) {
-	    init = true;
-	    srand (time (0));
-	}
-	
-	return cast!T (rand () % cast!i32((b - a) + a));
+pub {
+
+    def uniform (a : i32, b : i32) -> i32 {
+        if (!init) {
+            init = true;
+            srand (time (0));
+        }
+        
+        return rand () % ((b - a) + a);
     }
 
-def shuffle (T) (ref a : [T]) {
-    import std.algorithm.mutation;
-    for i in 0UL .. a.len {
-        let ch = uniform (0UL, a.len);
-        swap (a [i], a [ch]);
+    def uniform (a : u64, b : u64) -> u64 {
+        if (!init) {
+            init = true;
+            srand (time (0));
+        }
+        
+        return cast!(u64) (rand ()) % ((b - a) + a);
     }
-    return a;
-} 
+    
+    def shuffle (T) (a : [T]) -> mut [mut T] {
+        def swap (ref mut a : T, ref mut b : T) {
+            let x = a;
+            a = b;
+            b = x;
+        }
+        
+        let mut x : [mut T] = copy a;
+        for i in 0_u64 .. a.len {
+            let ch = uniform (0_u64, a.len);
+            swap (ref x [i], ref x [ch]);
+        }
+        return alias x;
+    } 
 
-def shuffle (T, N : u64) (ref a : [T ; N]) {
-    import std.algorithm.mutation;
-    for i in 0UL .. a.len {
-        let ch = uniform (0UL, a.len);
-        swap (a [i], a [ch]);
-    }
-    return a;
-} 
-
+}

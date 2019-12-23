@@ -1,189 +1,174 @@
-mod std.conv;
+mod std::conv;
 
-import core.io;
-import std.abort;
-import std.c.string;
-import std.traits;
-import std.math;
+// import core.io;
+// import std.abort;
+// import std.c.string;
+import std::traits;
+// import std.math;
 
-extern (C) snprintf (const buf : p!char, len : i32, const format : p!char, ...) -> i32;
-extern (C) sprintf (const buf : p!char, const format : p!char, ...);
+// extern (C) snprintf (const buf : p!char, len : i32, const format : p!char, ...) -> i32;
+// extern (C) sprintf (const buf : p!char, const format : p!char, ...);
 
-def to (T of string) (c : char) -> mut string {
-    return [c];
-}
+// def to (T of string) (c : char) -> mut string {
+//     return [c];
+// }
 
-def to (T of string) (const a : p!char) -> mut string {
-    if (a is null || *a == 0UB) return [char; 0U];
-    let ret = [char ; new strlen (a)];
-    let b = a, it = 0U;
-    while *b != '\0' {
-        ret [it] = *b;
-        b = b + 1U;
-        it ++;
-    }
-    return ret;
-}
-
-def to if (isIntegral!T2) (T of string, T2) (elem : T2) -> string {
-    if (elem < 0) return "-" ~ to!string (-elem);
-    else if (elem == 0) return "0";
-    let nb = elem, size = 0UL;
-    while nb > 0 {
-        nb /= cast!T2 (10B);
-        size ++;
-    }
-    let res = [char ; new size];
-    for it in 0UL .. size {
-        res [size - it - 1UL] = cast!char (elem % cast!T2 (10B)) + '0';
-        elem /= cast!T2 (10B);
-    }
-    return cast!string (res);
-}
-
-def to if (isIntegral!T2) (T of string, "b", T2) (elem : T2) -> string {
-    if (elem < 0) return "-" ~ to!(string, "b") (-elem);
-    else if (elem == 0) return "0";
-    let nb = elem, size = 0UL;
-    while nb > 0 {
-        nb /= cast!T2 (2B);
-        size ++;
-    }
-    let res = [char ; new size];
-    for it in 0UL .. size {
-        res [size - it - 1UL] = cast!char (elem % cast!T2 (2B)) + '0';
-        elem /= cast!T2 (2B);
-    }
-    return cast!string (res);
-}
-
-def to if (isIntegral!T2) (T of string, "o", T2) (elem : T2) -> string {
-    if (elem < 0) return "-" ~ to!(string, "o") (-elem);
-    else if (elem == 0) return "0";
-    let nb = elem, size = 0UL;
-    while nb > 0 {
-        nb /= cast!T2 (8B);
-        size ++;
-    }
-    let res = [char ; new size + 2UL];
-    res [0] = '0';
-    res [1] = 'o';
-    for it in 0UL .. size {
-        res [size - it - 1UL + 2UL] = cast!char (elem % cast!T2 (8B)) + '0';
-        elem /= cast!T2 (8B);
-    }
-    return cast!string (res);
-}
-
-def to if (isIntegral!T2) (T of string, "x", T2) (elem : T2) -> string {
-    if (elem < 0) return "-" ~ to!(string, "x") (-elem);
-    else if (elem == 0) return "0";
-    let nb = elem, size = 0UL;
-    while nb > 0 {
-        nb /= cast!T2 (16B);
-        size ++;
-    }
-    let res = [char ; new size + 2UL];
-    res [0] = '0';
-    res [1] = 'x';
-    for it in 0UL .. size {
-        let val = elem % cast!T2 (16B);
-        if (val >= cast!T2 (10)) 
-            res [size - it - 1UL + 2UL] = cast!char (val - cast!T2 (10B)) + 'a';
-        else
-            res [size - it - 1UL + 2UL] = cast!char (val) + '0';
-        elem /= cast!T2 (16B);
-    }
-    return cast!string (res);
-}
-
-def to if (isIntegral!T2) (T of string, "X", T2) (elem : T2) -> string {
-    if (elem < 0) return "-" ~ to!(string, "X") (-elem);
-    else if (elem == 0) return "0";
-    let nb = elem, size = 0UL;
-    while nb > 0 {
-        nb /= cast!T2 (16B);
-        size ++;
-    }
-    let res = [char ; new size + 2U];
-    res [0] = '0';
-    res [1] = 'x';
-    for it in 0UL .. size {
-        let val = elem % cast!T2 (16B);
-        if (val >= cast!T2 (10)) 
-            res [size - it - 1UL + 2UL] = cast!char (val - cast!T2 (10B)) + 'A';
-        else
-            res [size - it - 1UL + 2UL] = cast!char (val) + '0';
-        elem /= cast!T2 (16B);
-    }
-    return cast!string (res);
-}
+// def to (T of string) (const a : p!char) -> mut string {
+//     if (a is null || *a == 0UB) return [char; 0U];
+//     let ret = [char ; new strlen (a)];
+//     let b = a, it = 0U;
+//     while *b != '\0' {
+//         ret [it] = *b;
+//         b = b + 1U;
+//         it ++;
+//     }
+//     return ret;
+// }
 
 
-def to if (isFloating!T2) (T of string, T2) (elem : T2, prec : u32) -> string {
-    let len = cast!u32 (snprintf (null, 0, "%.*f".ptr, prec, elem));
-    let res = [char ; new len];
-    sprintf (res.ptr, "%.*f".ptr, prec, elem);
-    return res;
-}
+// def to if (isIntegral!T2) (T of string, "b", T2) (elem : T2) -> string {
+//     if (elem < 0) return "-" ~ to!(string, "b") (-elem);
+//     else if (elem == 0) return "0";
+//     let nb = elem, size = 0UL;
+//     while nb > 0 {
+//         nb /= cast!T2 (2B);
+//         size ++;
+//     }
+//     let res = [char ; new size];
+//     for it in 0UL .. size {
+//         res [size - it - 1UL] = cast!char (elem % cast!T2 (2B)) + '0';
+//         elem /= cast!T2 (2B);
+//     }
+//     return cast!string (res);
+// }
 
-def to if (isFloating!T2) (T of string, T2) (elem : T2) -> string {    
-    return to!string (elem, 5U);
-}
+// def to if (isIntegral!T2) (T of string, "o", T2) (elem : T2) -> string {
+//     if (elem < 0) return "-" ~ to!(string, "o") (-elem);
+//     else if (elem == 0) return "0";
+//     let nb = elem, size = 0UL;
+//     while nb > 0 {
+//         nb /= cast!T2 (8B);
+//         size ++;
+//     }
+//     let res = [char ; new size + 2UL];
+//     res [0] = '0';
+//     res [1] = 'o';
+//     for it in 0UL .. size {
+//         res [size - it - 1UL + 2UL] = cast!char (elem % cast!T2 (8B)) + '0';
+//         elem /= cast!T2 (8B);
+//     }
+//     return cast!string (res);
+// }
 
-def to if (isFloating!T2) (T of string, "e", T2) (elem : T2, prec : u32) -> string {
-    let neg = false;
-    if (elem < 0.) {
-        neg = true;
-        elem = -elem;
-    }
+// def to if (isIntegral!T2) (T of string, "x", T2) (elem : T2) -> string {
+//     if (elem < 0) return "-" ~ to!(string, "x") (-elem);
+//     else if (elem == 0) return "0";
+//     let nb = elem, size = 0UL;
+//     while nb > 0 {
+//         nb /= cast!T2 (16B);
+//         size ++;
+//     }
+//     let res = [char ; new size + 2UL];
+//     res [0] = '0';
+//     res [1] = 'x';
+//     for it in 0UL .. size {
+//         let val = elem % cast!T2 (16B);
+//         if (val >= cast!T2 (10)) 
+//             res [size - it - 1UL + 2UL] = cast!char (val - cast!T2 (10B)) + 'a';
+//         else
+//             res [size - it - 1UL + 2UL] = cast!char (val) + '0';
+//         elem /= cast!T2 (16B);
+//     }
+//     return cast!string (res);
+// }
+
+// def to if (isIntegral!T2) (T of string, "X", T2) (elem : T2) -> string {
+//     if (elem < 0) return "-" ~ to!(string, "X") (-elem);
+//     else if (elem == 0) return "0";
+//     let nb = elem, size = 0UL;
+//     while nb > 0 {
+//         nb /= cast!T2 (16B);
+//         size ++;
+//     }
+//     let res = [char ; new size + 2U];
+//     res [0] = '0';
+//     res [1] = 'x';
+//     for it in 0UL .. size {
+//         let val = elem % cast!T2 (16B);
+//         if (val >= cast!T2 (10)) 
+//             res [size - it - 1UL + 2UL] = cast!char (val - cast!T2 (10B)) + 'A';
+//         else
+//             res [size - it - 1UL + 2UL] = cast!char (val) + '0';
+//         elem /= cast!T2 (16B);
+//     }
+//     return cast!string (res);
+// }
+
+
+// def to if (isFloating!T2) (T of string, T2) (elem : T2, prec : u32) -> string {
+//     let len = cast!u32 (snprintf (null, 0, "%.*f".ptr, prec, elem));
+//     let res = [char ; new len];
+//     sprintf (res.ptr, "%.*f".ptr, prec, elem);
+//     return res;
+// }
+
+// def to if (isFloating!T2) (T of string, T2) (elem : T2) -> string {    
+//     return to!string (elem, 5U);
+// }
+
+// def to if (isFloating!T2) (T of string, "e", T2) (elem : T2, prec : u32) -> string {
+//     let neg = false;
+//     if (elem < 0.) {
+//         neg = true;
+//         elem = -elem;
+//     }
    
-    let exp = 0;
-    while (elem >= 10.) {
-        exp += 1;
-        elem = elem / 10.;
-    }
+//     let exp = 0;
+//     while (elem >= 10.) {
+//         exp += 1;
+//         elem = elem / 10.;
+//     }
 
-    return match (neg) {
-        true =>  ("-" ~ elem.to!string (prec) ~ "e" ~ exp.to!string);
-        _ =>  (elem.to!string (prec) ~ "e" ~ exp.to!string);
-    }; 
-}
+//     return match (neg) {
+//         true =>  ("-" ~ elem.to!string (prec) ~ "e" ~ exp.to!string);
+//         _ =>  (elem.to!string (prec) ~ "e" ~ exp.to!string);
+//     }; 
+// }
 
-def to if (isFloating!T2) (T of string, "E", T2) (elem : T2, prec : u32) -> string {    
-    let neg = false;
-    if (elem < 0.) {
-        neg = true;
-        elem = -elem;
-    }
+// def to if (isFloating!T2) (T of string, "E", T2) (elem : T2, prec : u32) -> string {    
+//     let neg = false;
+//     if (elem < 0.) {
+//         neg = true;
+//         elem = -elem;
+//     }
    
-    let exp = 0;
-    while (elem >= 10.) {
-        exp += 1;
-        elem = elem / 10.;
-    }
+//     let exp = 0;
+//     while (elem >= 10.) {
+//         exp += 1;
+//         elem = elem / 10.;
+//     }
 
-    return match (neg) {
-        true =>  ("-" ~ elem.to!string (prec) ~ "E" ~ exp.to!string);
-        _ =>  (elem.to!string (prec) ~ "E" ~ exp.to!string);
-    }; 
-}
+//     return match (neg) {
+//         true =>  ("-" ~ elem.to!string (prec) ~ "E" ~ exp.to!string);
+//         _ =>  (elem.to!string (prec) ~ "E" ~ exp.to!string);
+//     }; 
+// }
 
-def to if (isIntegral!T) (T) (elem : const string) -> T
-{
-    let res = T::init;//cast!T(elem[elem.len - 1u] - '0');
-    let i = cast!i32 (elem.len) - 1;
-    let mul = cast!T (1);
+pub def if (isIntegral!T) to (T) (elem : [c32]) -> T {
+    let mut res = T::init;
+    
+    let mut i = cast!i32 (elem.len) - 1;
+    let mut  mul = cast!T (1);
 
     while i >= 0 {
-        assert ((elem [i] >= '0' && elem [i] <= '9') || elem[i] == ' ', elem ~ " is not integral");
         if elem [i] != ' ' {
-            res += cast!T(elem[i] - '0') * mul;
+            res += (cast!T(elem [i]) - cast!T ('0')) * mul;
             mul *= cast!T(10);
         }
-        i--;
+        i -= 1;
     }
-    return res;
+    
+    res
 }
 
-def to (T of string) (a : T) return a;
+// def to (T of string) (a : T) return a;

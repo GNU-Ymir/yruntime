@@ -1,114 +1,63 @@
-import std.memory;
-
-private mod inner {
-    struct (T)
+mod std::list
+import std::memory;
+import std::io
+import std::abort
+    
+mod inner {
+    struct 
     | value : T
-    | next : p!(inner::Node!(T))
-     -> Node;
+    | next : &(Node!(T)) = null
+     -> Node (T);
 }
 
 
-public struct (T)
-| head : p!(inner::Node!T)
- -> List;
+pub struct
+| head : &(inner::Node!T) = null
+ -> List (T);
 
 
-def list(T) ()-> List!T {
-    return List!T {null};
+pub def push (T) (a : List!T, b : T) -> List!T {
+    return if (a.head is null) {
+        List!T (?head=alloc (inner::Node!T (b)))
+    } else
+        List!T(?head=pushNode!(T) (a.head, b))
 }
 
-def push (T) (ref a : List!T, b : T) {
+
+def pushNode (T) (a : &(inner::Node!T), b : T) -> &(inner::Node!T) {
+    if a is null 
+        alloc (inner::Node!T(b))
+    else
+        alloc (inner::Node!T ((*a).value, ?next=pushNode ((*a).next, b)))    
+}
+
+
+pub def pop (T) (a : List!T) -> (T, List!T) {
     if (a.head is null) {
-        a.head = alloc (inner::Node!T {b, null});        
-    } else {
-        let current = a.head;
-        while current !is null {
-            if ((*current).next is null) {
-                (*current).next = alloc (inner::Node!T {b, null});
-                return;
-            }
-            current = (*current).next;
-        }
+        abort ();
     }
+    
+    let (x, y) = popNode!(T) (a.head);
+    return (x, List!T (?head=y));
 }
 
-def pop (T) (ref a : List!T) -> T {
-    let current = a.head;
-    if (a.head is null) {
-        return T::init;
-    } else {        
-        while current !is null {
-            if ((*current).next !is null) {
-                if ((*(*current).next).next is null) {
-                    let value = (*(*current).next).value;
-                    (*current).next = null;
-                    return value;
-                }
-            }        
-            current = (*current).next;
-        }
-        
-        let value = (*a.head).value;
-        a.head = null;
-        return value;
-    }    
-}
-
-def back (T) (ref list : List!T) -> T {
-    let current = list.head;
-    while current !is null {
-        if current.next !is null {
-            current = current.next;
-        } else return current.value;
+def popNode (T) (a : &(inner::Node!T)) -> (T, &(inner::Node!T)) {
+    if ((*a).next is null) {
+        return ((*a).value, cast!(&(inner::Node!T)) (null))
     }
-    assert (false);
+    
+    let (x, y) = popNode ((*a).next);
+    (x, alloc (inner::Node!(T) ((*a).value, ?next=y)))        
 }
 
-def empty (T) (ref list : List!T) {
-    return list.head is null;
-}
 
-def next (T) (ref list : List!T) -> mut p!(inner::Node!T) {
-    return list.head;
-}
-
-def next (T) (nodePtr : p!(inner::Node!T)) -> mut p!(inner::Node!T) {
-    if (nodePtr is null)
-        return null;
-    return (*nodePtr).next;
-}
-
-def print (T) (const a : List!T) {
-    let current = a.head;
+pub def printList (T) (a : List!T) {        
+    let mut current = a.head;
     while current !is null {
         print ("[");
         print ((*current).value);
         print ("]::");
         current = (*current).next;
     }
-    print ("NIL");
-}
-
-def @inline opIter (1, T) (ref list : List!T) {
-    return listIter::It!T { list.head };
-}
-
-def @inline get (0, T) (a : listIter::It!T) -> ref T {
-    return a.val.value;
-}
-
-def @inline isEnd (T) (a : listIter::It!T) {
-    return a.val is null;
-}
-
-def @inline next (T) (ref a : listIter::It!T) {
-    a = listIter::It!T { a.val.next };
-}
-
-private mod listIter {
-    
-    struct (T)
-    | val : p!(inner::Node!T)
-     -> It;
-    
+    println ("NIL");
 }

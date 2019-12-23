@@ -1,34 +1,82 @@
+/**
+ * Some basic knowledge on types, to simplify the template specializations
+ * All the function define in this module can be used as cte values
+ */
+mod std::traits;
 
-def isIntegral (T) () 
-    return is (T : i32) || is (T : i64) || is (T : i16) || is (T : i8) ||
-    is (T : u32) || is (T : u64) || is (T : u16) || is (T : u8);
+pub {
 
+    /**
+     * Cte check if it is an integral type
+     * Templates : 
+     * - T any type
+     */
+    def isIntegral (T) () -> bool {
+        is!(T) (U of i32) || is!(T) (U of i64) || is!(T) (U of i16) || is!(T) (U of i8) ||
+            is!(T) (U of u32) || is!(T) (U of u64) || is!(T) (U of u16) || is!(T) (U of u8)
+    }
 
-def isFloating (T) () 
-    return is (T : f64) || is (T : f32);
+    /**
+     * Cte check if it is an floating point type
+     * Templates : 
+     * - T any type
+     */
+    def isFloating (T) () -> bool {
+        is!T (U of f64) || is!T (U of f32)
+    }
+    
+    /**
+     * Cte check if it is an floating point or a integral type
+     * Templates : 
+     * - T any type
+     */    
+    def isNumeric (T) ()-> bool {
+        isIntegral!T || isFloating!T
+    }
 
+    /**
+     * Cte check if it is an integral signed type
+     * Templates : 
+     * - T any type
+     */    
+    def isSigned (T) () -> bool {
+        is!(T)(U of i32) || is!T (U of i64) || is!T (U of i16) || is!T (U of i8)
+    }
 
-def isNumeric (T) ()
-    return isIntegral!T || isFloating!T;
+    /**
+     * Cte check if it is an integral unsigned type
+     * Templates : 
+     * - T any type
+     */    
+    def isUnsigned (T) () -> bool {
+        is!T (U of u32) || is!T (U of u64) || is!T (U of u16) || is!T (U of u8)
+    }
 
+    /**
+     * Cte check if it is a dynamic array type
+     * Templates : 
+     * - T any type
+     */        
+    def isDynamicArray (T) () -> bool {
+        is!T (U of [V], V)
+    }
 
-def isSigned (T) () 
-    return is (T : i32) || is (T : i64) || is (T : i16) || is (T : i8);
+    /**
+     * Cte check if it is a static array type
+     * Templates : 
+     * - T any type
+     */        
+    def isStaticArray (T) () -> bool {
+        is!T (U of [X;N], X, N : usize) 
+    }
 
-
-def isUnsigned (T) () 
-    return is (T : u32) || is (T : u64) || is (T : u16) || is (T : u8);
-
-
-def isDynamicArray (T of const T2, T2 of [U], const U) () return true;
-def isDynamicArray (T) () return false;
-
-def isStaticArray (T of const T2, T2 of [U ; I], const U, I : u64) () return true;
-def isStaticArray (T) () return false;
-
-def isArray if (isStaticArray!T || isDynamicArray!T) (T) () return true;
-def isArray (T) () return false;
-
-def isCollection if (isArray!T) (T) () return true;
-def isCollection (T of slice!U, U) () return true;
-def isCollection (T) () return false;
+    /**
+     * Cte check if it is a static array or a dynamic array type
+     * Templates : 
+     * - T any type
+     */        
+    def isArray (T) () -> bool {
+        isDynamicArray!T || isStaticArray!T
+    }
+    
+}

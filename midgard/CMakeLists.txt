@@ -28,6 +28,7 @@ FILE (
   )
 
 SET_SOURCE_FILES_PROPERTIES(${SRC_CORE} ${SRC_STD} PROPERTIES LANGUAGE C)
+SET_SOURCE_FILES_PROPERTIES(${SRC_CORE} PROPERTIES COMPILE_FLAGS "-nostdinc")
 
 add_library (gymidgard ${SRC_CORE} ${SRC_STD} ${SRC_CORE_C} ${SRC_STD_C})
 target_link_libraries (gymidgard -lpthread -lgc -lgyruntime -lgmp)

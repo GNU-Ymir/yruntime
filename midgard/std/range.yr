@@ -1,43 +1,69 @@
-mod std.range;
+mod std::range;
+import std::memory;
+import std::traits;
+    
+pub {
 
-def iota (T) (n : T) -> mut [T] {
-    let res = [T ; new cast!u64 (n)];
-    for i in 0U .. cast!u64 (n)
-        res [i] = cast!T (i);
-    return res;
-}
-
-
-struct (T)
-| source : [T]
-| dir : bool
- -> Range;    
-
-
-def retro (T) (a : [T]) {
-    return Range!T {a, true};
-}
-
-def copy (T) (a : Range!T, b : [T]) {
-    for i in 0U .. b.len {
-        if a.dir {
-            b [i] = a.source [a.source.len - i - 1U];
-        }        
+    /**
+     * Generate a list of value that span the value n
+     * Example : 
+     * --------------
+     * println (iota (4))  // [0, 1, 2, 3]
+     * --------------
+     */
+    def if (isIntegral!T) iota (T) (n : T) -> mut [mut T] {
+        let mut res : [mut T] = alias allocArray!T (cast!u64 (n));
+        for i in 0u64 .. cast!u64 (n)
+            res [i] = cast!T (i);
+        alias res
     }
-}
 
-def join (T) (a : [const [const T]]) {
-    let res = [mut T ; new 0U];
-    for i in a {
-        res = res ~ i;
+    /**
+     * Generate a list of value that span the given starting and ending values
+     * Example : 
+     * --------------
+     * println (iota (1, 4))  // [1, 2, 3]
+     * --------------
+     */
+    def if (isIntegral!T) iota (T) (b : T, e : T) -> mut [mut T] {
+        let mut res : [mut T] = alias allocArray!T (cast!u64 (e - b));
+        for i in cast!u64 (b) .. cast!u64 (e)
+            res [i - cast!u64 (b)] = cast!T (i);
+        alias res
     }
-    return res;
-}
 
-def reverse (T) (ref a : T) {
-    for i in 0U .. (a.len / 2U) {
-        swap (a [i], a [a.len - 1U - i]);
+    /**
+     * Join a list of list into a single list
+     * Example : 
+     * -------------
+     * let a = alias [
+     *            alias [1, 2, 3], 
+     *            alias [9, 8, 7]
+     * ];
+     * println (a.join ()); // [1, 2, 3, 9, 8, 7]
+     * -------------
+     */
+    def join (C of [T], T of [U], U) (a : C) -> mut [mut U] {
+        let mut res : [mut U] = alias allocArray!U (0u64);
+        for i in a {
+            res = alias (res ~ i);
+        }
+        alias res
     }
+
+    /**
+     * Reverse a list of element
+     * Example : 
+     * -----------
+     * let a = [1, 2, 3];
+     * println (a.reverse ()); // [3, 2, 1]
+     * -----------
+     */
+    def reverse (T of [U], U) (a : T) -> mut [mut U] {
+        let mut res : [mut U] = alias allocArray!U (a.len);
+        for i in 0u64 .. res.len
+            res [i] = a [(a.len - i) - 1u64];
+        alias res
+    }
+
 }
-
-

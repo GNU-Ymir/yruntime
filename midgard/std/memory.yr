@@ -1,14 +1,23 @@
-mod std.memory;
+mod std::memory;
 
-def alloc (T) (a : T) {
-    extern (C) GC_malloc (size : u64) -> mut p!void;
-    let x = cast!(p!T) (GC_malloc (T::sizeof));
+extern (C) def GC_malloc (size : usize) -> &(void);
+
+mod allocMod (T) {
+    extern (C) def _yrt_new_array (_ : usize, _ : u64)-> mut [mut T];
+}
+
+pub def alloc (T) (a : T) -> & (T) {
+    let mut x : mut &(mut T) = cast!(mut &(mut T)) (GC_malloc (sizeof T));
     *x = a;
     return x;
 }
-
-def allocBlock (T) (len : u64) {
-    extern (C) GC_malloc (size : u64) -> mut p!void;
-    return cast!(p!T) (GC_malloc (T::sizeof * len));
+    
+pub def allocBlock (T) (len : u64) -> &T {
+    return cast!(&T) (GC_malloc (sizeof (T) *:usize len));
 }
+
+pub def allocArray (T) (len : u64) -> mut [mut T] {
+    alias allocMod!(T)::_yrt_new_array (sizeof T, len)
+}
+
 

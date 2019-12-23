@@ -7,31 +7,32 @@
 #include <string.h>
 #include <type.hh>
 
-volatile int _y_exc_handled;
+volatile int _yrt_exc_handled;
 
-volatile unsigned _y_exc_tries;
+volatile unsigned _yrt_exc_tries;
 
-char *_y_exc_file;
-char *_y_exc_function;
-unsigned _y_exc_line;
-volatile int _y_exc_code;
+char *_yrt_exc_file;
+char *_yrt_exc_function;
+unsigned _yrt_exc_line;
+volatile int _yrt_exc_code;
 
-TypeInfo* _y_exc_type_info;
-void* _y_exc_type_data;
+TypeInfo _yrt_exc_type_info;
+void* _yrt_exc_type_data;
 
 /* This is the global stack of catchers. */
-struct _y_exc_stack *_y_exc_global;
+struct _yrt_exc_stack *_yrt_exc_global;
 
 /* Stack is actually a linked list of catcher cells. */
-struct _y_exc_stack
+struct _yrt_exc_stack
 {
     unsigned num;
     jmp_buf j;
-    struct _y_exc_stack *prev;
+    struct _yrt_exc_stack *prev;
 };
 
+char* toUtf8 (unsigned int code, char chars[5]);
 
-extern "C" void _y_exc_print (FILE *stream, char *file, char *function, unsigned line,
+extern "C" void _yrt_exc_print (FILE *stream, char *file, char *function, unsigned line,
 		   int code)
 {
     fprintf (stream, "Exception in file \"%s\", at line %u",
@@ -41,46 +42,53 @@ extern "C" void _y_exc_print (FILE *stream, char *file, char *function, unsigned
 	{
 	    fprintf (stream, ", in function \"%s\"", function);
 	}
+    fprintf (stream, ", of type ");    
+    int * data = (int*) _yrt_exc_type_info.name.data;
+    for (unsigned int i = 0 ; i < _yrt_exc_type_info.name.len ; i++) {
+	char c[5];
+	fprintf (stream, "%s", toUtf8 (data [i], c));
+    }
+    
     fprintf (stream, ".");
     
-#ifdef _Y_EXC_PRINT
+#ifdef _yrt_EXC_PRINT
     fprintf (stream, " Exception ");
-    _Y_EXC_PRINT (code, stream);
+    _yrt_EXC_PRINT (code, stream);
 #endif
     fprintf (stream, "\n");
 }
 
-extern "C" int _y_exc_push (jmp_buf *j, int returned) {
-    static _y_exc_stack *head;
+extern "C" int _yrt_exc_push (jmp_buf *j, int returned) {
+    static _yrt_exc_stack *head;
     if (returned != 0) { // Le jmp a déjà été déclaré, on est revenu dessus suite à un throw
 	return 0;	
     }
 
-    ++ _y_exc_tries;
+    ++ _yrt_exc_tries;
     /* Using memcpy here is the best alternative. */
-    head = (_y_exc_stack*) malloc (sizeof (_y_exc_stack));
+    head = (_yrt_exc_stack*) malloc (sizeof (_yrt_exc_stack));
     memcpy (&head->j, j, sizeof (jmp_buf));
-    head->num = _y_exc_tries;
-    head->prev = _y_exc_global;
-    _y_exc_global = head;
+    head->num = _yrt_exc_tries;
+    head->prev = _yrt_exc_global;
+    _yrt_exc_global = head;
 
     return 1;     
 }
 
-extern "C" void _y_exc_pop (jmp_buf *j)
+extern "C" void _yrt_exc_pop (jmp_buf *j)
 {
-    struct _y_exc_stack *stored = _y_exc_global;
+    struct _yrt_exc_stack *stored = _yrt_exc_global;
 
     if (stored == NULL)
 	{	    
 	    fprintf (stderr, "Unhandled exception\n");
-	    _y_exc_print (stderr, _y_exc_file, _y_exc_function,
-			 _y_exc_line, _y_exc_code);
+	    _yrt_exc_print (stderr, _yrt_exc_file, _yrt_exc_function,
+			 _yrt_exc_line, _yrt_exc_code);
 	    
 	    raise (SIGABRT);
 	}
     
-    _y_exc_global = stored->prev;
+    _yrt_exc_global = stored->prev;
     
     if (j)
 	{
@@ -94,37 +102,38 @@ extern "C" void _y_exc_pop (jmp_buf *j)
     free (stored);
 }
 
-extern "C" void _y_exc_store (TypeInfo* info, void* data) {
-    _y_exc_type_info = info;
-    _y_exc_type_data = data;
+extern "C" void _yrt_exc_store (TypeInfo info, void* data) {
+    _yrt_exc_type_info = info;
+    _yrt_exc_type_data = data;
 }
 
-extern "C" void* _y_exc_check_type (TypeInfo * info) {
-    if (info-> vtable-> equals (info, *_y_exc_type_info)) {
-	return _y_exc_type_data;
+extern "C" void* _yrt_exc_check_type (TypeInfo info) {
+    // core::typeinfo::equals (TypeInfo, TypeInfo)-> bool
+    if (_Y4core8typeinfo6equalsF4core8typeinfo8TypeInfo4core8typeinfo8TypeInfoZb (info, _yrt_exc_type_info)) {
+	return _yrt_exc_type_data;
     }
     return NULL;
 }
 
-extern "C" void _y_exc_throw (char *file, char *function, unsigned line, TypeInfo* info, void* data)
+extern "C" void _yrt_exc_throw (char *file, char *function, unsigned line, TypeInfo info, void* data)
 {
     jmp_buf j;
 
-    _y_exc_file = file;
-    _y_exc_function = function;
-    _y_exc_line = line;
-
+    _yrt_exc_file = file;
+    _yrt_exc_function = function;
+    _yrt_exc_line = line;
+    _yrt_exc_store (info, data);
+    
     /* Pop for jumping. */
-    _y_exc_pop (&j);
-    _y_exc_store (info, data);
+    _yrt_exc_pop (&j);
    
     /* LONGJUMP to J with nonzero value. */
     longjmp (j, 1);
 }
 
-extern "C" void _y_exc_rethrow () {
+extern "C" void _yrt_exc_rethrow () {
     jmp_buf j;
-    _y_exc_pop (&j);
+    _yrt_exc_pop (&j);
    
     /* LONGJUMP to J with nonzero value. */
     longjmp (j, 1);

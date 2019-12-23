@@ -1,52 +1,68 @@
-mod std.algorithm.mutation;
-import std.traits;
+mod std::algorithm::mutation;
+import std::traits;
+import std::memory;
 
-def copy if (isCollection!T && isCollection!U) (T, U) (const a : T, b : U) {
-    let i = 0UL;
-    while i < a.len && i < b.len {
-        b [i] = a [i];
-        i++;
+pub {
+    /**
+     * Fill an array with a value
+     * Params : 
+     * - a, mutable ref array
+     * - val, the value to place in cell
+     * Templates : 
+     * - U, any
+     */
+    def fill (U) (ref mut a : [mut U], val : U) -> void {
+        for ref mut it in a
+            it = val;
+    }
+
+    /**
+     * Generate a dynamic array from a predicate 
+     * Params : 
+     * - len, the len of the array to return    
+     * Templates : 
+     * - FUN, a predicate function 
+     * - T, the inner type of the return array
+     */
+    def generate (FUN : fn (u64, u64) -> T, T) (len : u64) -> mut [mut T] {
+        let mut a : [mut T] = alias allocArray!T (len);
+        for it in 0_u64 .. len
+            a [it] = FUN (it, len);
+        alias a
+    }
+
+    /**
+     * Generate a static array from a predicate 
+     * Templates : 
+     * - N, the len of the returned array
+     * - FUN, a predicate function 
+     * - T, the inner type of the return array
+     */
+    def generate (N : u64, FUN : fn (u64, u64) -> T, T) () -> mut [mut T ; N] {
+        let mut a : [mut T; N] = [T::init ; N];
+        for it in 0_u64 .. N
+            a [it] = FUN (it, N);
+        a
+    }
+
+    /**
+     * Swap two values
+     * Params : 
+     * - a, a mutable ref value
+     * - b, a mutable ref value
+     */
+    def swap (T) (ref mut a : T, ref mut b : T) {
+        let z = a;
+        a = b;
+        b = z;
+    }
+
+    /**
+    
+     */
+    def reverse (T) (ref mut a : [mut T])-> void {
+        for i in 0_u64 .. (a.len / 2_u64)
+            swap (ref a [i], ref a [a.len - i])
     }
 }
 
-def copy if (isCollection!T && isCollection!U) (T, U) (const a : T, b : U, len : ulong) {
-    let i = 0UL;
-    while i < len {
-        b [i] = a [i];
-        i++;
-    } 
-}
-
-def fill if (isCollection!T && !isCollection!U) (T, U) (a : T, val : U) {
-    for it in a
-        it = val;
-}
-
-def fill if (isCollection!T && isCollection!U) (T, U) (a : T, val : const U) {
-    let j = 0UL;
-    for it in a {
-        it = val [j];
-        j ++;
-        j = j % val.len;
-    }
-}
-
-def generate (T, FUN : fn (u64, u64) -> T) (len : u64) -> mut [T] {
-    let a = [T ; len];
-    for it in 0UL .. len
-        a [it] = FUN (it, len);
-    return a;
-}
-
-def generate (T, FUN : fn (u64, u64) -> T, N : u64) () -> mut [T ; N] {
-    let a = [T ; N];
-    for it in 0UL .. N
-        a [it] = FUN (it, N);
-    return a;
-}
-
-def swap (T) (ref a : T, ref b : T) {
-    let z = a;
-    a = b;
-    b = z;
-}

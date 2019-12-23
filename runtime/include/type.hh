@@ -1,14 +1,12 @@
 #pragma once
+#include <array.hh>
 
-struct VTable;
 struct TypeInfo {    
-    VTable* vtable;
-    void* _vtable;
-    unsigned long len;
-    TypeInfo * c_o_a;
+    unsigned int id;
+    unsigned long size;
+    Array inner;
+    Array name;
 };
-  
-struct VTable {
-    TypeInfo* typeinfo;
-    bool (*equals)(void*, TypeInfo);
-};
+
+
+extern "C" bool _Y4core8typeinfo6equalsF4core8typeinfo8TypeInfo4core8typeinfo8TypeInfoZb (TypeInfo a, TypeInfo b);

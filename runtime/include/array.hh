@@ -7,6 +7,6 @@ struct Array {
     void * data;
 };
 
-extern "C" void* _y_newArray (unsigned long, unsigned long);
+extern "C" Array _yrt_dup_slice (Array, unsigned long);
 
 #endif

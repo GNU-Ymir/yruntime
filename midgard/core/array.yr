@@ -1,118 +1,32 @@
-mod core.array;
-import std.abort;
-import std.traits;
+mod core::array;
 
-struct (T)
-| len : u64
-| ptr : p!T
- -> slice;
-
-def print (T) (a : const (slice!(const T))) {
-    let aux = const [T] {a.len, a.ptr};
-    print (aux);
+mod allocMod (T) {
+    extern (C) def _yrt_new_array (_ : usize, _ : u64)-> mut [mut T];
 }
 
-def opEquals (T) (const left : [T], const right : [T]) -> bool {
-    if left.len != right.len
-        return false;
+pub def binop ("~", C of [U], U) (a : C, b : C) -> mut [mut U] {
+    let mut res : [mut U] = alias allocMod!(U)::_yrt_new_array (sizeof U, a.len + b.len);
+    for i in 0_u64 .. a.len {
+        cte if (is!U (T of [J], J))
+            res [i] = alias a [i]
+        else
+            res [i] = a [i]
+    }
+
+    for j in 0_u64 .. b.len {
+        cte if (is!U (T of [J], J))
+            res [j + a.len ] = alias b [j]
+        else
+            res [j + a.len] = b [j];
+    }
     
-    for it in 0UL .. left.len {
-        if left [it] != right [it]
-            return false;
+    alias res
+}
+
+pub def binop ("==", C of [U], U) (a : C, b : C) -> bool {
+    if (a.len != b.len) return false;
+    for i in 0u64 .. a.len {
+        if !(a [i] == b [i]) return false;
     }
     return true;
 }
-
-def opIndex (T, T2) (const a : slice!(T),  i : T2) -> const T {
-    if i < a.len {
-        return *(a.ptr + (cast!u64(i) * T::sizeof));
-    } else {
-        abort ();
-        return *a.ptr;
-    }
-}
-
-def opIndex (T, T2) (a : slice!T,  i : T2) -> ref T {
-    if i < a.len {
-        return *(a.ptr + (cast!u64 (i) * T::sizeof));
-    } else {
-        assert (false);
-    }
-}
-
-def opIndex (T2, T) (a : [T2], i : r!(T)) -> mut slice!T2 {
-    if i.scd >= i.fst && (i.scd - i.fst) <= a.len && i.fst <= a.len {
-        return slice!T2 {cast!u64 (i.scd - i.fst), a.ptr + (cast!u64 (i.fst) * T2::sizeof)};
-    } else {
-        abort ();
-        return slice!T2 {0UL, null};
-    }
-}
-
-def opIndex (T2, T) (a : [const T2], i : r!(T)) -> slice!(const T2) {
-    if i.scd >= i.fst && (i.scd - i.fst) <= a.len && i.fst <= a.len {
-        return slice!(const T2) {cast!u64 (i.scd - i.fst), a.ptr + (cast!u64 (i.fst) * T2::sizeof)};
-    } else {
-        assert (false, "Out of range");
-    }
-}
-
-def opIndex (T) (a : [T]) -> mut slice!(mut T) {
-    return slice!T {a.len, a.ptr};
-}
-
-def opIndex (T) (a : [const T]) -> slice!(const T) {
-    return const (slice!T) {a.len, a.ptr};
-}
-
-def replicate (T) (const array : [T], ntimes : u64) -> [mut T]{
-    let res = [T ; new array.len * cast!u64 (ntimes)];
-    for i in 0U .. ntimes {
-        for j in 0U .. array.len {
-            res [i * array.len + j] = array [j];
-        }
-    }
-    return res;
-}
-
-def opBinary ("+", T) (left : const slice!T,  right : const slice!T) -> slice!T {
-    assert (left.len == right.len, "size mistmatch");
-    let res = [mut T ; new left.len];
-    for i in 0U .. left.len {
-        res [i] = left [i] + right [i];
-    }
-    return slice!T {res.len, res.ptr};
-}
-
-def dup (T) (const array : [const T]) -> [mut T] {
-    let res = [mut T ; new array.len];
-    for it in 0U .. array.len {
-        res [it] = array [it];
-    }
-    return res;
-}
-
-def dup (T, N : u64) (ref array : const ([const T ; N])) -> [mut T] {
-    let res = [mut T ; new array.len];
-    for it in 0U .. array.len {
-        res [it] = array [it];
-    }
-    return res;
-}
-
-def dup (T) (const array : slice!T) -> [mut T] {
-    let res = [T ; new array.len];
-    for it in 0U .. array.len {
-        res [it] = array [it];
-    }
-    return res;
-}
-
-def array (U) (a : const slice!U) -> const [U] {
-    return const![U] {a.len, a.ptr};
-}
-
-def array (U) (ref a : slice!U) -> mut [U] {
-    return [U] {a.len, a.ptr};
-}
-
