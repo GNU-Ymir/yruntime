@@ -88,8 +88,17 @@ extern "C" unsigned int _yrt_getwchar () {
     char c[5];
     scanf ("%c", &c[0]);
     size_t size = utf8_codepoint_size (c[0]);
-    for (int i = 0 ; i < (int) size ; i++)
-	scanf ("%c", &c[i + 1]);
+    for (int i = 1 ; i < (int) size ; i++)
+	scanf ("%c", &c[i]);
     
+    return toUtf32 (c);
+}
+
+extern "C" unsigned int _yrt_getwchar_in_file (FILE * file) {
+    char c[5];
+    c[0] = fgetc (file);
+    size_t size = utf8_codepoint_size (c[0]);
+    for (int i = 1 ; i < (int) size; i ++)
+	c[i + 1] = fgetc (file);
     return toUtf32 (c);
 }

@@ -27,3 +27,7 @@ extern "C" void* _yrt_dupl_any (void* data, unsigned long len) {
     memcpy (x, data, len);
     return x;
 }
+
+extern "C" void* _yrt_alloc_class (unsigned long len) {
+    return GC_malloc (len);
+}

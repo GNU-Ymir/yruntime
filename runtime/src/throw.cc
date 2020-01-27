@@ -109,7 +109,7 @@ extern "C" void _yrt_exc_store (TypeInfo info, void* data) {
 
 extern "C" void* _yrt_exc_check_type (TypeInfo info) {
     // core::typeinfo::equals (TypeInfo, TypeInfo)-> bool
-    if (_Y4core8typeinfo6equalsF4core8typeinfo8TypeInfo4core8typeinfo8TypeInfoZb (info, _yrt_exc_type_info)) {
+    if (_Y4core8typeinfo6equalsF4core8typeinfo8TypeInfo4core8typeinfo8TypeInfoZb (_yrt_exc_type_info, info)) {
 	return _yrt_exc_type_data;
     }
     return NULL;
