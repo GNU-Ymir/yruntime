@@ -24,12 +24,20 @@ pub {
     }
 
     /**
-     * Transform an integer in a array of c32, with the base 10
-     * 
+     * Transforms an integer into a formatted array of c32, with the base 10
+     * Example : 
+     * --------------
+     * let x = 123;
+     * let z = x.to!([c32]) ();
+     * assert (z == "123");
+     * --------------
      */
     def if (isIntegral!T2) to (T of [c32], T2) (elem : T2) -> dmut [c32] {    
-        if (elem < cast!(T2)(0)) return alias ("-" ~ to!([c32]) (-elem));
-        else if (elem == cast!(T2)(0)) return copy "0";
+        if (elem < cast!(T2)(0)) {
+            return alias ("-" ~ to!([c32]) (-elem));
+        } else if (elem == cast!(T2)(0))
+            return copy "0";
+        
         let mut nb = elem, mut size = 0u64;
         while nb > cast!T2 (0) {
             nb /= cast!T2 (10i8);
@@ -45,6 +53,10 @@ pub {
         alias res
     }
 
+    /**
+     * Transform an integer into a c32
+     * Warning: only work if /elem/ is < 10
+     */
     def if (isIntegral!T2) to (T of c32, T2) (elem : T2) -> c32 {
         match (elem) {
             cast!T2 (0) => {'0'}
@@ -61,6 +73,9 @@ pub {
         }
     }
 
+    /**
+     * Transform a array of c8 into an array of c32
+     */
     def to (T of [c32]) (elem : [c8]) -> dmut [c32] {
         let dmut res = alias ['\u{0}'; new elem.len];
         for i in 0u64 .. elem.len {
@@ -69,6 +84,7 @@ pub {
         alias res
     }
 
+    
     def if (isFloating!T2) to (T of [c32], T2) (elem : T2, prec : u32) -> dmut [c32] {
         let len = cast!u32 (snprintf (cast!(&c8) (null), 0, "%.*f"s8.ptr, prec, elem));
         let dmut res = alias ['\u{0}'c8 ; new len];
