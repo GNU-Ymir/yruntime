@@ -26,7 +26,8 @@ pub enum : u32
 | SLICE        = 10u32
 | STRUCT       = 11u32
 | TUPLE        = 12u32
-| VOID         = 13u32
+| OBJECT       = 13u32
+| VOID         = 14u32
  -> TypeIDs;
     
 pub def equals (left : TypeInfo, right : TypeInfo) -> bool {
@@ -37,13 +38,19 @@ pub def equals (left : TypeInfo, right : TypeInfo) -> bool {
             left.typeid == TypeIDs::SIGNED_INT ||
             left.typeid == TypeIDs::UNSIGNED_INT) {
             return left.size == right.size;
-        } else if (left.inner.len == right.inner.len && left.typeid != TypeIDs::STRUCT) {
+        } else if (left.inner.len == right.inner.len && (left.typeid != TypeIDs::STRUCT && left.typeid != TypeIDs::OBJECT)) {
             for j in 0u64 .. left.inner.len {
                 if !equals (left.inner [j], right.inner [j]) {
                     return false;
                 }
             }
             return true;
+        } else if (left.typeid == TypeIDs::OBJECT) {
+            if (left.name.ptr !is right.name.ptr) {
+                if (left.inner.len != 0u64) {
+                    return equals (left.inner [0], right);
+                } else return false;
+            } else return true;
         } else if (left.typeid == TypeIDs::STRUCT) {
             return left.name.ptr is right.name.ptr;
         }

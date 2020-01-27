@@ -1,174 +1,116 @@
 mod std::conv;
-
-// import core.io;
-// import std.abort;
-// import std.c.string;
 import std::traits;
-// import std.math;
-
-// extern (C) snprintf (const buf : p!char, len : i32, const format : p!char, ...) -> i32;
-// extern (C) sprintf (const buf : p!char, const format : p!char, ...);
-
-// def to (T of string) (c : char) -> mut string {
-//     return [c];
-// }
-
-// def to (T of string) (const a : p!char) -> mut string {
-//     if (a is null || *a == 0UB) return [char; 0U];
-//     let ret = [char ; new strlen (a)];
-//     let b = a, it = 0U;
-//     while *b != '\0' {
-//         ret [it] = *b;
-//         b = b + 1U;
-//         it ++;
-//     }
-//     return ret;
-// }
 
 
-// def to if (isIntegral!T2) (T of string, "b", T2) (elem : T2) -> string {
-//     if (elem < 0) return "-" ~ to!(string, "b") (-elem);
-//     else if (elem == 0) return "0";
-//     let nb = elem, size = 0UL;
-//     while nb > 0 {
-//         nb /= cast!T2 (2B);
-//         size ++;
-//     }
-//     let res = [char ; new size];
-//     for it in 0UL .. size {
-//         res [size - it - 1UL] = cast!char (elem % cast!T2 (2B)) + '0';
-//         elem /= cast!T2 (2B);
-//     }
-//     return cast!string (res);
-// }
+extern (C) def snprintf (buf : &c8, len : i32, format : &c8, ...) -> i32;
+extern (C) def sprintf (buf : &c8, format : &c8, ...);
 
-// def to if (isIntegral!T2) (T of string, "o", T2) (elem : T2) -> string {
-//     if (elem < 0) return "-" ~ to!(string, "o") (-elem);
-//     else if (elem == 0) return "0";
-//     let nb = elem, size = 0UL;
-//     while nb > 0 {
-//         nb /= cast!T2 (8B);
-//         size ++;
-//     }
-//     let res = [char ; new size + 2UL];
-//     res [0] = '0';
-//     res [1] = 'o';
-//     for it in 0UL .. size {
-//         res [size - it - 1UL + 2UL] = cast!char (elem % cast!T2 (8B)) + '0';
-//         elem /= cast!T2 (8B);
-//     }
-//     return cast!string (res);
-// }
-
-// def to if (isIntegral!T2) (T of string, "x", T2) (elem : T2) -> string {
-//     if (elem < 0) return "-" ~ to!(string, "x") (-elem);
-//     else if (elem == 0) return "0";
-//     let nb = elem, size = 0UL;
-//     while nb > 0 {
-//         nb /= cast!T2 (16B);
-//         size ++;
-//     }
-//     let res = [char ; new size + 2UL];
-//     res [0] = '0';
-//     res [1] = 'x';
-//     for it in 0UL .. size {
-//         let val = elem % cast!T2 (16B);
-//         if (val >= cast!T2 (10)) 
-//             res [size - it - 1UL + 2UL] = cast!char (val - cast!T2 (10B)) + 'a';
-//         else
-//             res [size - it - 1UL + 2UL] = cast!char (val) + '0';
-//         elem /= cast!T2 (16B);
-//     }
-//     return cast!string (res);
-// }
-
-// def to if (isIntegral!T2) (T of string, "X", T2) (elem : T2) -> string {
-//     if (elem < 0) return "-" ~ to!(string, "X") (-elem);
-//     else if (elem == 0) return "0";
-//     let nb = elem, size = 0UL;
-//     while nb > 0 {
-//         nb /= cast!T2 (16B);
-//         size ++;
-//     }
-//     let res = [char ; new size + 2U];
-//     res [0] = '0';
-//     res [1] = 'x';
-//     for it in 0UL .. size {
-//         let val = elem % cast!T2 (16B);
-//         if (val >= cast!T2 (10)) 
-//             res [size - it - 1UL + 2UL] = cast!char (val - cast!T2 (10B)) + 'A';
-//         else
-//             res [size - it - 1UL + 2UL] = cast!char (val) + '0';
-//         elem /= cast!T2 (16B);
-//     }
-//     return cast!string (res);
-// }
-
-
-// def to if (isFloating!T2) (T of string, T2) (elem : T2, prec : u32) -> string {
-//     let len = cast!u32 (snprintf (null, 0, "%.*f".ptr, prec, elem));
-//     let res = [char ; new len];
-//     sprintf (res.ptr, "%.*f".ptr, prec, elem);
-//     return res;
-// }
-
-// def to if (isFloating!T2) (T of string, T2) (elem : T2) -> string {    
-//     return to!string (elem, 5U);
-// }
-
-// def to if (isFloating!T2) (T of string, "e", T2) (elem : T2, prec : u32) -> string {
-//     let neg = false;
-//     if (elem < 0.) {
-//         neg = true;
-//         elem = -elem;
-//     }
-   
-//     let exp = 0;
-//     while (elem >= 10.) {
-//         exp += 1;
-//         elem = elem / 10.;
-//     }
-
-//     return match (neg) {
-//         true =>  ("-" ~ elem.to!string (prec) ~ "e" ~ exp.to!string);
-//         _ =>  (elem.to!string (prec) ~ "e" ~ exp.to!string);
-//     }; 
-// }
-
-// def to if (isFloating!T2) (T of string, "E", T2) (elem : T2, prec : u32) -> string {    
-//     let neg = false;
-//     if (elem < 0.) {
-//         neg = true;
-//         elem = -elem;
-//     }
-   
-//     let exp = 0;
-//     while (elem >= 10.) {
-//         exp += 1;
-//         elem = elem / 10.;
-//     }
-
-//     return match (neg) {
-//         true =>  ("-" ~ elem.to!string (prec) ~ "E" ~ exp.to!string);
-//         _ =>  (elem.to!string (prec) ~ "E" ~ exp.to!string);
-//     }; 
-// }
-
-pub def if (isIntegral!T) to (T) (elem : [c32]) -> T {
-    let mut res = T::init;
-    
-    let mut i = cast!i32 (elem.len) - 1;
-    let mut  mul = cast!T (1);
-
-    while i >= 0 {
-        if elem [i] != ' ' {
-            res += (cast!T(elem [i]) - cast!T ('0')) * mul;
-            mul *= cast!T(10);
+pub {
+    /**
+     * Transform a string of c8, c-like formated i.e. an array of c8 ending by a '\u{0}'
+     * Returns: 
+     * An array of c8
+     */
+    def to (T of [c8]) (a : &c8) -> dmut [c8] {
+        if (a is null || *a == '\u{0}') return [];
+        let dmut ret = ['\u{0}' ; new strlen (a)];
+        let mut b = a, mut it = 0u32;
+        while *b != '\u{0}' {
+            ret [it] = *b;
+            b = b + 1u32;
+            it += 1u32;
         }
-        i -= 1;
+        alias ret
     }
-    
-    res
-}
 
-// def to (T of string) (a : T) return a;
+    /**
+     * Transform an integer in a array of c32, with the base 10
+     * 
+     */
+    def if (isIntegral!T2) to (T of [c32], T2) (elem : T2) -> dmut [c32] {    
+        if (elem < cast!(T2)(0)) return alias ("-" ~ to!([c32]) (-elem));
+        else if (elem == cast!(T2)(0)) return copy "0";
+        let mut nb = elem, mut size = 0u64;
+        while nb > cast!T2 (0) {
+            nb /= cast!T2 (10i8);
+            size += 1u64;
+        }
+
+        let mut res : [mut c32] = alias ['\u{0}' ; new size];
+        let mut aux = elem;
+        for it in 0u64 .. size {
+            res [size - it - 1u64] = to!c32 (aux % cast!T2 (10i8));
+            aux /= cast!T2 (10i8);
+        }
+        alias res
+    }
+
+    def if (isIntegral!T2) to (T of c32, T2) (elem : T2) -> c32 {
+        match (elem) {
+            cast!T2 (0) => {'0'}
+            cast!T2 (1) => {'1'}
+            cast!T2 (2) => {'2'}
+            cast!T2 (3) => {'3'}
+            cast!T2 (4) => {'4'}
+            cast!T2 (5) => {'5'}
+            cast!T2 (6) => {'6'}
+            cast!T2 (7) => {'7'}
+            cast!T2 (8) => {'8'}
+            cast!T2 (9) => {'9'}
+            _ => '_'
+        }
+    }
+
+    def to (T of [c32]) (elem : [c8]) -> dmut [c32] {
+        let dmut res = alias ['\u{0}'; new elem.len];
+        for i in 0u64 .. elem.len {
+            res [i] = cast!(c32) (elem [i])
+        }
+        alias res
+    }
+
+    def if (isFloating!T2) to (T of [c32], T2) (elem : T2, prec : u32) -> dmut [c32] {
+        let len = cast!u32 (snprintf (cast!(&c8) (null), 0, "%.*f"s8.ptr, prec, elem));
+        let dmut res = alias ['\u{0}'c8 ; new len];
+        sprintf (res.ptr, "%.*f"s8.ptr, prec, elem);
+        alias res.to!([c32]) ()
+    }
+
+    def if (isFloating!T2) to (T of [c32], T2) (elem : T2) -> dmut [c32] {    
+        alias to!([c32]) (elem, 5u32)
+    }
+
+
+    def if (isFloating!T2) to (T of [c32], "e", T2) (elem : T2, prec : u32) -> dmut [c32] {
+        import std::io;
+        alias if elem < 0.0 {
+            alias ("-" ~ to!([c32], "e") (-elem, prec))
+        } else {
+            let mut z = elem, mut exp = 0;
+            while (z >= 10.0) {
+                exp += 1;
+                println (z, " ", z >= 10.0);
+                z = z / 10.;
+                println (z, " ", z >= 10.0);
+            }
+            alias alias (to!([c32]) (z) ~ "e" ~ to!([c32]) (exp))
+        }
+    }
+
+    def if (isIntegral!T) to (T) (elem : [c32]) -> T {
+        let mut res = T::init;
+        
+        let mut i = cast!i32 (elem.len) - 1;
+        let mut  mul = cast!T (1);
+
+        while i >= 0 {
+            if elem [i] != ' ' {
+                res += (cast!T(elem [i]) - cast!T ('0')) * mul;
+                mul *= cast!T(10);
+            }
+            i -= 1;
+        }
+        
+        res
+    }
+}

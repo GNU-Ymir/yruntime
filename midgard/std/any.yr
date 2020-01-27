@@ -1,31 +1,40 @@
-// mod std.any;
-// import std.memory;
-
-// struct
-// | id : [const char]
-// | ptr : p!void
-//  -> any;
-
-// mod Any {
-//     def new (T) (a : T) {
-//         return any {a::typeid, cast!(p!void) (alloc (a))};
-//     }
-// }
-
-// def as (T) (ref a : any) -> ref T {
-//     assert (a.id == (mut T)::typeid, "type mismatch : !is (" ~ a.id ~ " : " ~ (mut T)::typeid ~ ")");
-//     return * (cast!(p!(mut T)) (a.ptr));
-// }
-
-// def isT (T) (a : any) {
-//     return (a.id == (mut T)::typeid);
-// }
-
-// def opAssign ("=", T) (ref a : any, b : T) {
-//     a.id = (mut T)::typeid;
-//     a.ptr = cast!(p!void) (alloc (b));
-//     return b;
-// }
-
-
+mod std::any;
+import std::io
     
+pub {
+    /**
+     * Ancestor class of all type
+     * An any type is relativaly similar to type Option, but doesn't have a default type
+     */
+    class @abstract Any {
+        self () {}
+        
+        impl Printable;        
+    }
+
+
+    /**
+     * This class is used to have a data in an any value
+     */
+    class Some (T) over Any {
+        pub let mut value : T;
+
+        self (x : T) with value = x {}
+
+        over print (self) {
+            print (self.value);
+        }
+    }
+
+    /**
+     * Any can have type none, when no value is used
+     */
+    class None over Any {
+        self () {}
+
+        over print (self) {
+            print ("None");
+        }
+    }    
+
+}
