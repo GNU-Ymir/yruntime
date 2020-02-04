@@ -1,6 +1,6 @@
 mod std::conv;
 import std::traits;
-
+import core::array;
 
 extern (C) def snprintf (buf : &c8, len : i32, format : &c8, ...) -> i32;
 extern (C) def sprintf (buf : &c8, format : &c8, ...);
@@ -84,35 +84,48 @@ pub {
         alias res
     }
 
-    
-    def if (isFloating!T2) to (T of [c32], T2) (elem : T2, prec : u32) -> dmut [c32] {
+    /**
+     * Floating point value to [c32], with default format /ddd.ddd/
+     * Where /d/ is a decimal value
+     * Params : 
+     * - prec = the number of digits after the decimal point
+     */
+    def if (isFloating!T2) to (T of [c32], T2) (elem : T2, prec : u32 = 6u32) -> dmut [c32] {
+        import std::io
         let len = cast!u32 (snprintf (cast!(&c8) (null), 0, "%.*f"s8.ptr, prec, elem));
         let dmut res = alias ['\u{0}'c8 ; new len];
         sprintf (res.ptr, "%.*f"s8.ptr, prec, elem);
         alias res.to!([c32]) ()
     }
 
-    def if (isFloating!T2) to (T of [c32], T2) (elem : T2) -> dmut [c32] {    
-        alias to!([c32]) (elem, 5u32)
-    }
-
-
-    def if (isFloating!T2) to (T of [c32], "e", T2) (elem : T2, prec : u32) -> dmut [c32] {
+    /**
+     * Floating point value to [c32], in exponant format /(-)d.ddd**e**(+\/-)ddd/
+     * Where /d/ is a decimal value
+     * Params : 
+     * - prec = the number of digits after the decimal point
+     */
+    def if (isFloating!T2) to (T of [c32], "e", T2) (elem : T2, prec : u32 = 6u32) -> dmut [c32] {
         import std::io;
-        alias if elem < 0.0 {
-            alias ("-" ~ to!([c32], "e") (-elem, prec))
-        } else {
-            let mut z = elem, mut exp = 0;
-            while (z >= 10.0) {
-                exp += 1;
-                println (z, " ", z >= 10.0);
-                z = z / 10.;
-                println (z, " ", z >= 10.0);
-            }
-            alias alias (to!([c32]) (z) ~ "e" ~ to!([c32]) (exp))
-        }
+        let len = cast!u32 (snprintf (cast!(&c8) (null), 0, "%.*e"s8.ptr, prec, elem));
+        let dmut res = alias ['\u{0}'c8 ; new len];
+        sprintf (res.ptr, "%.*e"s8.ptr, prec, elem);
+        alias res.to!([c32]) ()
     }
 
+    /**
+     * Floating point value to [c32], in hexadecimal format
+     */
+    def if (isFloating!T2) to (T of [c32], "a", T2) (elem : T2) -> dmut [c32] {
+        import std::io;
+        let len = cast!u32 (snprintf (cast!(&c8) (null), 0, "%a"s8.ptr, elem));
+        let dmut res = alias ['\u{0}'c8 ; new len];
+        sprintf (res.ptr, "%a"s8.ptr, elem);
+        alias res.to!([c32]) ()
+    }
+
+    /**
+     * Array of char to integral
+     */
     def if (isIntegral!T) to (T) (elem : [c32]) -> T {
         let mut res = T::init;
         

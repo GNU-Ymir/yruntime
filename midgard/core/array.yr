@@ -4,7 +4,7 @@ mod allocMod (T) {
     pub extern (C) def _yrt_new_array (_ : usize, _ : u64)-> mut [mut T];
 }
 
-pub def binop ("~", C of [U], U) (a : C, b : C) -> mut [mut U] {
+pub def opBinary ("~", C of [U], U) (a : C, b : C) -> mut [mut U] {
     let mut res : [mut U] = alias allocMod!(U)::_yrt_new_array (sizeof U, a.len + b.len);
     for i in 0_u64 .. a.len {
         cte if (is!U (T of [J], J))
@@ -24,10 +24,20 @@ pub def binop ("~", C of [U], U) (a : C, b : C) -> mut [mut U] {
     alias res
 }
 
-pub def binop ("==", C of [U], U) (a : C, b : C) -> bool {
+pub def opBinary ("==", C of [U], U) (a : C, b : C) -> bool {
     if (a.len != b.len) return false;
     for i in 0u64 .. a.len {
         if !(a [i] == b [i]) return false;
     }
     return true;
+}
+
+pub def opCmp (C of [U], U) (a : C, b : C) -> i32 {
+    import std::algorithm::comparison;
+    let min_len = min (a.len, b.len);
+    for i in 0u64 .. min_len {
+        if (a [i] < b [i]) return -1
+        else if (a [i] > b [i]) return 1
+    }
+    return 0;
 }

@@ -84,6 +84,14 @@ extern "C" void _yrt_putwchar (unsigned int code) {
     printf ("%s", toUtf8 (code, c));    
 }
 
+extern "C" void _yrt_printf32 (float x) {
+    printf ("%f", x);
+}
+
+extern "C" void _yrt_printf64 (double x) {
+    printf ("%lf", x);
+}
+
 extern "C" unsigned int _yrt_getwchar () {
     char c[5];
     scanf ("%c", &c[0]);

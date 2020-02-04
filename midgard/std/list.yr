@@ -1,63 +1,384 @@
-mod std::list
-import std::memory;
-import std::io
-import std::abort
-    
-mod inner {
-    struct 
-    | value : T
-    | next : &(Node!(T)) = null
-     -> Node (T);
-}
+mod std::list;
+import std::io;
+import std::traits;
+import core::typeinfo, core::duplication;
+import std::option;
 
+pub {
 
-pub struct
-| head : &(inner::Node!T) = null
- -> List (T);
+    /**
+     * A list is a collection of values, it is implemented as a simple linked list container.
+     * Warning : 
+     * =======================
+     * A list is not thread safe, if it is mutable, if
+     * multiple thread try to modify the list at the same time, it
+     * could occur data races.
+     * =======================
+     * Example : 
+     * ===========
+     * let mut l = List!(i32)::new ();
+     * for i in 0 .. 4 {
+     *     (alias l).insert (i);
+     * }
+     * println (l); // 0::1::2::3 
+     * (alias l).pop ();
+     * println (l); // 0::1::2
+     * =========== 
+     * 
+     */
+    class @final List (T) {
 
+        let mut _head : Node = Empty::new ();
 
-pub def push (T) (a : List!T, b : T) -> List!T {
-    return if (a.head is null) {
-        List!T (head->alloc (inner::Node!T (b)))
-    } else
-        List!T(head->pushNode!(T) (a.head, b))
-}
+        /**
+         * Create an empty list
+         */
+        self () {}
 
+        /**
+         * Params :
+         * - head = the head that with be the head of the list
+         */
+        prv self (mut head : Node) with _head = alias head {}
+        
+        /**
+         * Insert a new element at the end of the list
+         * Example : 
+         * =========
+         * let mut l = List!(i32)::new ();
+         * for i in 0 .. 4 {
+         *     (alias l).insert (i);
+         * }
+         * println (l); // 0::1::2::3
+         * =========
+         * Complexity: O(n), with n the length of the list
+         */
+        def insert (mut self, t : T) {
+            (alias self).insert (ref self._head, t);
+        }
 
-def pushNode (T) (a : &(inner::Node!T), b : T) -> &(inner::Node!T) {
-    if a is null 
-        alloc (inner::Node!T(b))
-    else
-        alloc (inner::Node!T ((*a).value, next->pushNode ((*a).next, b)))    
-}
+        /**
+         * Insert a new element at the end of the list
+         * Complexity: O(n), with n the length of the list
+         */
+        prv def insert (mut self, ref mut head : Node, t : T) {
+            match (ref head) {
+                Value!(T) (next-> ref mut x : _) => (alias self).insert (ref x, t);
+                Empty () => {
+                    head = Value!(T)::new (t);
+                }
+            } 
+        }
 
+        /**
+         * Insert a new value at the front of the list
+         * Example : 
+         * ==========
+         * let mut l = List!(i32)::new ();
+         * for i in 0 .. 4 {
+         *     (alias l).insertFront (i);
+         * }
+         * println (l); // 3::2::1::0
+         * ==========
+         * Complexity: O(1)
+         */
+        def insertFront (mut self, t : T) {
+            self._head = Value!(T)::new (t, alias self._head);
+        }
+        
+        /**
+         * Returns: a mutable copy of this list, with the value inserted a the end
+         * Example : 
+         * =========
+         * let mut l = List!(i32)::new ();
+         * for i in 0 .. 4 {
+         *     (alias l).insert (i);
+         * }
+         * let z = l.insert (42);
+         * println (l); // 0::1::2::3
+         * println (z); // 0::1::2::3::42
+         * =========
+         * Complexity : O (n), with n the length of the list
+         */
+        def insert (self, t : T) -> mut List!(T) {
+            List!(T)::new (alias self.imutInsert (self._head, t))
+        }
 
-pub def pop (T) (a : List!T) -> (T, List!T) {
-    if (a.head is null) {
-        abort ();
+        /**
+         * Insert a new element at the end on a duplicated list
+         * Complexity: O (n), with n the length of the list
+         */
+        prv def imutInsert (self, head : Node, t : T) -> mut Node {
+            match (head) {
+                Value!(T) (value -> z : _, next-> x : _) => {
+                    alias (Value!(T)::new (z, alias self.imutInsert (x, t)))
+                }
+                _ => {
+                    alias (Value!(T)::new (t))
+                }
+            }
+        }
+        
+        /**
+         * Remove the last element of the list, if any
+         * Example : 
+         * ===========
+         * let mut l = List!(i32)::new ();
+         * for i in 0 .. 4 {
+         *     (alias l).insert (i);
+         * }
+         * println (l); // 0::1::2::3
+         * (alias l).pop ();
+         * println (l); // 0::1::2
+         * ===========
+         * Complexity: O(n), with n the length of the list
+         */
+        def pop (mut self) {
+            (alias self).pop (ref self._head)
+        }        
+
+        /**
+         * Remove the last element of the list, if any
+         * Complexity: O(n), with n the length of the list
+         */
+        prv def pop (mut self, ref mut head : Node) {
+            match (ref head) {
+                Value!(T) (next-> ref mut x : _) => {
+                    match (x) {
+                        Value!(T) () => {
+                            (alias self).pop (ref x)
+                        }
+                        Empty () => {
+                            head = Empty::new ();
+                        }
+                    }
+                }
+            }
+        }
+
+        /**
+         * Remove the first element of the list, if any
+         * Example : 
+         * ==============
+         * let mut l = List!(i32)::new ();
+         * for i in 0 .. 4 {
+         *     (alias l).insert (i);
+         * }
+         * println (l); // 0::1::2::3
+         * (alias l).popFront ();
+         * println (l); // 1::2::3
+         * ===============
+         * Complexity: O(1)
+         */
+        def popFront (mut self) {
+            match (ref (self._head)) {
+                Value!(T) (next -> ref mut x : _) => {
+                    self._head = alias x;
+                }
+            }
+        }
+        
+        /**
+         * Remove the last element of the list, but on a duplicated
+         * Example : 
+         * ==========
+         * let mut list = List!(i32)::new ();
+         * for i in 0 .. 4 {
+         *     (alias l).insert (i);    
+         * }
+         * let z = l.pop ();
+         * println (l); // 0::1::2::3
+         * println (z); // 0::1::2
+         * ==========
+         * Complexity: O(n), with n the length of the list
+         */
+        def pop (self) -> mut List!(T) {
+            List!(T)::new (alias self.imutPop (self._head))
+        }
+
+        prv def imutPop (self, head : Node) -> mut Node {
+            match (head) {
+                Value!(T) (value-> z : _, next-> x : _) => {
+                    match (x) {
+                        Value!(T) () => {
+                            alias Value!(T)::new (z, alias (self.imutPop (x)))
+                        }
+                        _ => {
+                            let m : Node = Empty::new ();
+                            m
+                        }
+                    }
+                }
+                _ => {
+                    let z : Node = Empty::new ();
+                    z
+                }
+            }
+        }
+                /**
+         * Remove the last element of the list, but on a duplicated
+         * Example : 
+         * ==========
+         * let mut list = List!(i32)::new ();
+         * for i in 0 .. 4 {
+         *     (alias l).insert (i);    
+         * }
+         * let z = l.popFront ();
+         * println (l); // 0::1::2::3
+         * println (z); // 1::2::3
+         * ==========
+         * Complexity: O(n), with n the length of the list
+         */
+        def popFront (self) -> mut List!(T) {
+            let mut aux = dcopy self;
+            (alias aux).popFront ();
+            alias aux
+        }
+        
+        /**
+         * Returns: the element at the place i in the list 
+         * Example : 
+         * ============
+         * let l = List!(T)::new ();
+         * // ...
+         * println (l [23]);
+         * ============
+         * Complexity : O (min (n, i)), with n the length of the list
+         */
+        def if (isIntegral!I) opIndex (I) (self, i : I) -> Option!(T) {
+            self.get (self._head, cast!I (0u32), i)
+        }
+
+        /**
+         * Returns: the element at the i-th place in the list
+         * Complexity : O (min (n, i)), with n the length of the list
+         */
+        prv def get (I) (self, head : Node, current : I, i : I) -> Option!(T) {
+            match (head) {
+                Value!(T) (value-> v : _, next-> n : _) => {
+                    if (i == current) Some!(T)::new (v)
+                    else self.get (n, current + cast!I (1u32), i)
+                }
+                _ => {
+                    let m : Option!(T) = std::option::None!(T)::new ();
+                    m
+                }
+            }
+        }
+
+        /**
+         * Returns : the length of the list
+         * Complexity: O (n), with n the length of the list
+         */
+        def length (self) -> usize {
+            self.getLength (self._head)
+        }
+
+        prv def getLength (self, head : Node) -> usize {
+            match (head) {
+                Value!(T) (next-> x : _) => {
+                    self.getLength (x) + 1us
+                }
+                _ => {
+                    0us
+                }
+            }
+        }
+        
+        impl std::io::Printable {
+            over print (self) {
+                print (self._head);                
+            }
+        }
+
+        impl core::duplication::Copiable {
+            over deepCopy (self) -> mut List!(T) {
+                List!(T)::new (dcopy self._head)
+            } 
+        }
+        
     }
     
-    let (x, y) = popNode!(T) (a.head);
-    return (x, List!T (head->y));
 }
 
-def popNode (T) (a : &(inner::Node!T)) -> (T, &(inner::Node!T)) {
-    if ((*a).next is null) {
-        return ((*a).value, cast!(&(inner::Node!T)) (null))
-    }
-    
-    let (x, y) = popNode ((*a).next);
-    (x, alloc (inner::Node!(T) ((*a).value, next->y)))        
-}
+prv {
+    /**
+     * This is the internal part of a list
+     * This cannot go outside of this module, and is only used to represent a list
+     * There are two type of node : 
+     * - Value (T), where T is a type of value, that is contained by it
+     * - Empty, an empty node that end the list
+     * Example : 
+     * =============
+     * let x : Node = Value!(i32)::new (42);
+     * let y : Node = Empty::new ();
+     * println (x, " and ", y);
+     * =============
+     */
+    class @abstract Node {
+        self () {}
 
+        impl std::io::Printable;
 
-pub def printList (T) (a : List!T) {        
-    let mut current = a.head;
-    while current !is null {
-        print ("[");
-        print ((*current).value);
-        print ("]::");
-        current = (*current).next;
+        impl core::duplication::Copiable;
     }
-    println ("NIL");
+
+    /**
+     * This is a node of a list containing a value, and pointing to the next element of the list
+     * The content of the list is immutable
+     */
+    class Value (T) over Node {
+
+        /**
+         * The value contained in the node
+         */
+        pub let value : T;
+
+        /**
+         * Pointer to the next element
+         */
+        pub let mut next : Node = Empty::new ();
+
+        /**
+         * Create a node, with a given value 
+         */
+        self (value : T) with value = value {}
+
+        
+        self (value : T, mut next : Node) with value = value, next = alias next {}
+        
+        over print (self) {
+            cte if (is!(T)(X impl Printable) || isPrimitive!(T))
+                print (self.value)
+            else
+                print ("Node!(", (self.value)::typeinfo.name, ")");
+            
+            match (self.next) { // print next iif it is a value
+                Value!(T) () => {
+                    print ("::", self.next);
+                }
+            }            
+        }
+
+        over deepCopy (self) -> mut Node {
+            Value!(T)::new (self.value, dcopy self.next)
+        }
+        
+    }
+
+    /**
+     * This is a empty node, that marks the end of a list
+     */
+    class Empty over Node {
+        self () {}
+
+        over print (self) {
+            print ("Empty");
+        }
+
+        over deepCopy (self) -> mut Node {
+            Empty::new ()
+        }
+    }
+
 }

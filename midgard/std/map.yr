@@ -1,219 +1,255 @@
-// mod std.map;
-// import std.memory;
-// import std.list;
+mod std::map;
+import std::io;
+import std::traits;
+import core::typeinfo, core::duplication;
+import std::option;
+import std::algorithm::comparison;
 
-// public {
-//     __macro map {
-//         (+elem: ($x: expr "=>" $y: expr, ",")) {
-//             let res = Map!(typeof (mut elem.0.x), typeof (mut elem.0.y))::init ();
-//             cte for i in elem {
-//                 res.insert (i.x, i.y);
-//             }
-//             res;
-//         }        
-//     }
-// }
+pub {
 
-// mod Map (K, V) {
-//     def init () {
-//         return BTreeMap!(mut K, mut V) {null, 0UL};
-//     }
-// }
+    /**
+     * A map is a collection of values that associate keys to values. 
+     * Each key can appear only once in the map
+     * Warning : 
+     * ===========
+     * A map is not thread safe, if it is mutable, if
+     * multiple thread try to modify the map at the same time, it
+     * could occur data races.
+     * ===========
+     * Example : 
+     * ==========
+     * let mut m = Map!([c32], i32)::new ()
+     * (alias m).insert ("foo", 1)
+     * (alias m).insert ("bar", 2);
+     * println (m); // {foo=> 1, bar=> 2}
+     * ==========
+     * The implementation used is a tree map, and the tree is assured to be balanced at each insertion
+     * The values of the map are immutable, but the map itself is mutable
+     */
+    class @final Map (K, V) {
 
-// struct (K, V)
-// | head : p!(inner::Node!(K, V))
-// | len : u64
-//  -> BTreeMap;
+        let mut _head : Node = Empty::new ();
 
-// def insert (K, V) (ref map : BTreeMap!(K, V), const key : K, value : V) {
-//     if (map.head is null) {
-//         map.head = alloc (inner::Node!(const K, mut V) {key, value, null, null});
-//         map.len = 1UL;
-//     } else {
-//         inner::insert (map.head, map, key, value);        
-//     }
-// }
+        /**
+         * A new empty map
+         */
+        self () {}
 
-// def remove (K, V) (ref map : BTreeMap!(K, V), const key : K) {
-//     let rm = inner::remove (map.head, key);
-//     if rm { map.len = map.len - 1UL; }
-// }
+        /**
+         * Insert a new element in the map
+         * Example : 
+         * ===========
+         * let mut m = Map!(i32, i32)::new ();
+         * (alias m).insert (12, 34);
+         * println (m); // {12=> 34}
+         * ===========
+         */
+        def insert (mut self, k : K, v : V) {
+            self._head = alias ((alias self).insert (alias self._head, k, v));
+        }
 
+        def insert (self, mut head : Node, k : K, v : V) -> mut Node {
+            match (ref head) {
+                Empty () => {
+                    return Value!(K, V)::new (k, v);
+                }
+                Value!(K, V) (key-> key : _, left-> ref mut left : _, right-> ref mut right : _) => {
+                    if (key > k) {
+                        left = alias (self.insert (alias left, k, v));
+                    } else if (key < k) {
+                        right = alias (self.insert (alias right, k, v));
+                    } else {
+                        return alias (Value!(K, V)::new (k, v, alias left, alias right));
+                    }
+                    head.height = max (left.height, right.height) + 1us;
+                    
+                    let balance = left.height -:i64 right.height;
+                    
+                    let l_key = match (left) { Value!(K, V) (key-> x : _) => { x } _ => k }
+                    let r_key = match (right) { Value!(K, V) (key-> x : _) => { x } _ => k }
+                    
+                    if (balance > 1 && k < l_key)
+                        return alias (self.rightRotate (alias head));
 
-// def opIndex (K, V) (ref map : BTreeMap!(K, V), const key : K)-> ref V {
-//     let res = inner::getOrInsert (map.head, key);
-//     return *res;
-// }
+                    if (balance > 1 && k > l_key) {
+                        left = alias self.leftRotate (alias left);
+                        return alias self.rightRotate (alias head);
+                    }
 
-// def opBinary ("in", K, V) (key : K, ref map : BTreeMap!(K, V))-> p!V {
-//     return inner::get (map.head, key);
-// }
+                    if (balance < -1 && k > r_key) {
+                        return alias (self.leftRotate (alias head));
+                    }
+                    
+                    if (balance < -1 && k < r_key) {
+                        right = alias self.rightRotate (alias right);
+                        return alias self.rightRotate (alias head);
+                    }
+                }
+            }
+            return alias head;
+        }
 
-// def opBinary ("in", K, V) (key : K, const map : BTreeMap!(K, V))-> const p!V {
-//     return inner::get (map.head, key);
-// }
+        prv def leftRotate (self, mut node : Node) -> mut Node {
+            match (ref node) {
+                mut x : Value!(K, V) = Value!(K, V) (right-> ref mut right : _) => {
+                    match (ref right) {
+                        mut y : Value!(K, V) => {
+                            let mut T2 = alias y.left;
+                            y.left = alias node;                            
+                            x.right = alias T2;
+                            
+                            y.height = 1us + max (y.left.height, y.right.height);
+                            x.height = 1us + max (x.left.height, x.right.height);
+                            
+                            return alias y;       
+                        }
+                    };
+                }                
+            }
 
-// def print (K, V) (const map : BTreeMap!(K, V)) {
-//     print ('{');
-//     inner::print (map.head);
-//     print ('}');
-// }
+            return alias node;
+        }
 
-// def printTree (K, V) (map : BTreeMap!(K, V)) {
-//     inner::printTree (map.head, 0);
-// }
+        prv def rightRotate (self, mut node : Node) -> mut Node {
+            match (ref node) {
+                mut x : Value!(K, V) => {
+                    match (ref x.left) {
+                        mut y : Value!(K, V) => {
+                            
+                            let mut T2 = alias y.right;
+                            y.right = alias node;
+                            x.left = alias T2;
 
-// def opIter (2, K, V) (ref set : BTreeMap!(K, V)) {
-//     let x = inner::It!(K, V) {List!(p!(inner::Node!(K, V)))::init};
-//     if (set.head !is null) {
-//         x.stack.push (set.head);
-//         inner::findLeftMostChild (x);
-//     }    
-//     return x;
-// }
+                            y.height = 1us + max (y.left.height, y.right.height);
+                            x.height = 1us + max (x.left.height, x.right.height);
+                            
+                            return alias y;       
+                        }
+                    }
+                }                
+            }
 
-// def @inline get (0, K, V) (ref it : inner::It!(K, V)) -> const K {
-//     return it.stack.back ().key;
-// }
+            return alias node;
+        }
 
-// def @inline get (1, K, V) (ref it : inner::It!(K, V)) -> ref V {
-//     return it.stack.back ().value;
-// }
-
-// def next (K, V) (ref it : inner::It!(K, V)) {
-//     let np = it.stack.pop ();
-//     if np.right !is null {
-//         it.stack.push (np.right);
-//         inner::findLeftMostChild (it);
-//     }
-// }
-
-// def isEnd (K, V) (ref it : inner::It!(K, V)) {
-//     return (it.stack.empty ());
-// }
-
-
-// private mod inner {
-
-//     struct (K, V)
-//     | key : const K
-//     | value : V
-//     | left : p!(inner::Node!(K, V))
-//     | right : p!(inner::Node!(K, V))
-//      -> Node;
+        impl std::io::Printable {
+            over print (self) {
+                print ("{", self._head, "}");
+            }
+        }
+        
+    }
     
-//     def insert (K, V) (ref node : p!(Node!(K, V)), ref map : BTreeMap!(K, V), const key : K, value : V) {
-//         if (node is null) {
-//             node = alloc (Node!(const K, mut V) {key, value, null, null});
-//             map.len = map.len + 1UL;
-//         } else {
-//             if (node.key > key) {
-//                 node.left.insert (map, key, value);
-//             } else if node.key < key {
-//                 node.right.insert (map, key, value);
-//             } else node.value = value;
-//         }
-//     }
+}
 
-//     def get (K, V) (ref node : p!(Node!(K, V)), const key : K) -> p!V {
-//         if (node is null) return null;
-//         else {
-//             if (node.key == key) return &node.value;
-//             else if node.key >= key {
-//                 return node.left.get (key);
-//             } else return node.right.get (key);
-//         }
-//     }
+pub {
 
-//     def get (K, V) (const node : p!(Node!(K, V)), const key : K) -> const p!V {
-//         if (node is null) return null;
-//         else {
-//             if (node.key == key) return &node.value;
-//             else if node.key >= key {
-//                 return node.left.get (key);
-//             } else return node.right.get (key);
-//         }
-//     }
+    /**
+     * This is the internal part of a map
+     * This cannot go outside of this module, and is only used to represent a map
+     * There are two type of nodes : 
+     * - Value (K, V), where K is a type of Key, and V is a type of Value
+     * - Empty, an empty node
+     */
+    class @abstract Node {
 
-//     def getOrInsert (K, V) (ref node : p!(Node!(K, V)), const key : K) -> p!V {
-//         if (node is null) {
-//             node = alloc (Node!(mut K, mut V){key, V::init, null, null});
-//             return &node.value;
-//         } else {
-//             if (node.key == key) return &node.value;
-//             else if node.key >= key {
-//                 return node.left.getOrInsert (key);
-//             } else return node.right.getOrInsert (key);
-//         }
-//     }
+        /**
+         * The height of the node = 1 + max (height (left), height (right))
+         */
+        pub let mut height : usize = 0us;
+        
+        self () {}
+        
+        impl std::io::Printable;
 
-//     def remove (K, V) (ref node : p!(Node!(K, V)), const key : K) {
-//         if (node !is null) {
-//             if (node.key == key) {
-//                 if node.left is null {
-//                     node = node.right;
-//                 } else if node.right is null {
-//                     node = node.left;
-//                 } else {
-//                     let right = node.right.getAndRemoveMin ();
-//                     node.key = right.key;
-//                     node.value = right.value;
-//                 }
-//                 return true;
-//             } else if (node.key >= key) {
-//                 return node.left.remove (key);
-//             } else return node.right.remove (key);
-//         } return false;
-//     }
+        impl core::duplication::Copiable;
+    }
 
-//     def getAndRemoveMin (K, V) (ref node : p!(Node!(K, V))) {
-//         if node.left is null {
-//             let ret = node;
-//             if node.right !is null {
-//                 node = node.right;
-//             } else node = null;
-//             return ret;
-//         } else return node.left.getAndRemoveMin ();    
-//     }
+    /**
+     * This is a node of a list containing a value, and pointing to the next element of the list
+     * The content of the list is immutable
+     */
+    class Value (K, V) over Node {
 
-//     def print (K, V) (const node : p!(Node!(K, V))) {
-//         if (node !is null) {
-//             if (node.left !is null) {
-//                 print (node.left);
-//                 print (", ");
-//             }
-//             print (node.key, " => ", node.value);
-//             if (node.right !is null) {
-//                 print (", ");
-//                 print (node.right);
-//             }
-//         }
-//     }
+        /**
+         * The key contained in the node
+         */
+        pub let key : K;
 
-//     def printTree (K, V) (const node : p!(Node!(K, V)), x : i32) {
-//         for i in 0 .. x
-//             print ("\t|: ");
-//         if node !is null {
-//             println (node.key, " => ", node.value);
-//             node.left.printTree (x + 1);
-//             node.right.printTree (x + 1);
-//         } else println ("\\_");
-//     }
+        /**
+         * The value contained in the node
+         */
+        pub let value : V;
+        
+        /**
+         * Pointer to the left element
+         */
+        pub let mut left : Node = Empty::new ();
 
-//     struct (K, V)
-//     | stack : List!(p!(Node!(K, V)))
-//      -> It;
+        /**
+         * Pointer to the right element
+         */
+        pub let mut right : Node = Empty::new ();
+        
+        /**
+         * Create a node, with a given value 
+         */
+        self (key : K, value : V) with key = key, value = value {
+            self.height = 0us;
+        }
 
-//     def findLeftMostChild (K, V) (ref it : It!(K, V)) {
-//         if (!it.stack.empty ()) {
-//             let node = it.stack.back ();
-//             if node !is null {
-//                 while node.left !is null {
-//                     push (it.stack, node.left);
-//                     node = node.left;
-//                 }
-//             }
-//         }
-//     }
+        
+        self (key : K, value : V, mut left : Node, mut right : Node) with
+            key = key,
+            value = value,
+            left = alias left,
+            right = alias right
+        {
+            import std::algorithm::comparison;
+            self.height = 1us + max (self.left.height, self.right.height)
+        }
 
-// }
+        over print (self) {            
+            match (self.left) {
+                l : Value!(K, V) =>
+                    print (l, ", ");
+            }            
+
+            cte if (is!(K)(X impl Printable) || isPrimitive!(K))
+                print (self.key)
+            else
+                print ((self.key)::typeinfo.name);
+            
+            print ("=> ");
+            
+            cte if (is!(V)(X impl Printable) || isPrimitive!(V))
+                print (self.value)
+            else
+                print ((self.value)::typeinfo.name);
+
+            match (self.right) {
+                r : Value!(K, V) =>
+                    print (", ", r);                
+            }
+        }                
+
+        over deepCopy (self) -> mut Node {
+            Value!(K, V)::new (self.key, self.value, dcopy self.left, dcopy self.right)
+        }
+        
+    }
+
+    /**
+     * This is a empty node, that marks the end of a list
+     */
+    class Empty over Node {
+        self () {}
+
+        over print (self) {}
+
+        over deepCopy (self) -> mut Node {
+            Empty::new ()
+        }
+    }
+
+}

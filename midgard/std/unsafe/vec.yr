@@ -1,0 +1,113 @@
+mod std::unsafe::vec;
+import std::io, std::traits;
+
+mod Copy (T) {
+    pub extern (C) def memcpy (a : &T, b : &T, len : usize);
+}
+
+pub {
+
+    /**
+     * Vectors are never deeply mutable 
+     */
+    class Vec (T) {        
+        /**
+         * The value of the vector
+         */
+        let mut _content : [mut T];
+
+        /**
+         * The len of the vector, different of the _content.len
+         * _content.len is the capacity
+         */
+        let mut _len : usize = 0us; 
+
+        /**
+         * Init the vector with values
+         */
+        self (init : [T])
+            with _content = copy init,
+                 _len = cast!usize (self._content.len)
+        {}
+
+        /**
+         * Init the vector with nothing 
+         */
+        self ()
+            with _content = [],
+                 _len = 0us
+        {}
+
+        /**
+         * Add an element in the vector
+         * 
+         */
+        def push (mut self, elem : T) {
+            if (self._len == self._content.len) {
+                (alias self).reallocate ();
+            }
+
+            self._content [self._len] = elem;
+            self._len += 1us;
+        }
+
+        def pop (mut self) {
+            if (self._len > 0us) {
+                self._len -= 1us;
+            }
+        }
+
+        def if (isIntegral!Z) opIndex (Z) (mut self, i : Z) -> ref mut T {
+            import std::conv;
+            assert (cast!usize (i) < self._len, "Out of array, size = " ~ cast!u64 (self._len).to![c32]);
+            return ref self._content [i]
+        }
+        
+        def if (isIntegral!Z) opIndex (Z) (self, i : Z) -> T {
+            import std::conv;
+            assert (cast!usize (i) < self._len, "Out of array,size = " ~ cast!u64 (self._len).to![c32]);
+            return self._content [i]
+        }        
+
+        /**
+         * Returns: a slice of the data contained in the vector
+         */
+        def opIndex (self) -> [T] {
+            self._content [0us .. self._len]
+        }
+
+        /**
+         * Returns: a slice of the data contained in the vector
+         */
+        def opIndex (mut self) -> mut [mut T] {
+            alias self._content [0us .. self._len]
+        }
+        
+        def len (self)-> usize 
+            self._len
+        
+        
+        impl Printable {
+            over print (self) {
+                print ("vec!", T::typeid, " [")
+                for i in 0us .. self._len {
+                    if (i != 0us) print (", ");
+                    print (self._content [i]);
+                }
+                print ("]");
+            }
+        }
+        
+        prv def reallocate (mut self) {
+            import std::memory;
+            
+            let n_capa = if (self._len != 0us) self._len * 2us else 2us;
+            let mut aux : [mut T] = alias allocArray!(T) (cast!u64 (n_capa));
+            if (self._len != 0us) 
+                Copy!(T)::memcpy (aux.ptr, self._content.ptr, self._len * sizeof T);
+            self._content = alias aux;
+        }
+    }
+    
+}
+

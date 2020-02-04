@@ -1,5 +1,6 @@
 mod std::any;
-import std::io
+import std::io;
+import core::typeinfo, core::duplication;
     
 pub {
     /**
@@ -9,7 +10,10 @@ pub {
     class @abstract Any {
         self () {}
         
-        impl Printable;        
+        impl Printable;
+
+        impl core::duplication::Copiable ;
+        
     }
 
 
@@ -24,6 +28,10 @@ pub {
         over print (self) {
             print (self.value);
         }
+
+        over deepCopy (self) -> mut Any {
+            Some!(T)::new (self.value)
+        }
     }
 
     /**
@@ -34,6 +42,10 @@ pub {
 
         over print (self) {
             print ("None");
+        }
+
+        over deepCopy (self) -> mut Any {
+            None::new ()
         }
     }    
 

@@ -1,0 +1,79 @@
+mod std::option;
+import std::io, std::traits;
+import core::typeinfo;
+
+pub {
+
+    /**
+     * A result is the type option of Ymir
+     * It can be either Succ or Err, and have a value only if it is a Succ
+     */
+    class @abstract Option (T) {
+        self () {}
+
+        impl Printable;       
+    }
+
+    /**
+     * The success value when returning a result
+     * Example : 
+     * --------------
+     * import std::io, std::errors;
+     *
+     * def foo () -> Option!(i32) {
+     *     Some!(i32)::new (12)
+     * }
+     * 
+     * def main () {
+     *    let value = foo ();
+     *    match (value) {
+     *       Some!(i32) (result-> x : i32) {
+     *           println ("Result of foo is : ", x);
+     *       }
+     *    }
+     * }
+     * --------------
+     */
+    class Some (T) over Option!(T) {
+
+        pub let result : T;
+        
+        self (x : T) with result = x {}
+
+        over print (self) {
+            cte if (is!(T)(X impl Printable) || isPrimitive!(T))
+                print (self.result)
+            else
+                print ("Some!(", (result)::typeinfo.name, ")")
+        }        
+    }
+
+    /**
+     * The error value when returning nothing
+     * Example : 
+     * --------------
+     * import std::io, std::errors;
+     *
+     * def foo () -> Option!(i32) {
+     *     None!(i32)::new ()
+     * }
+     * 
+     * def main () {
+     *    let value = foo ();
+     *    match (value) {
+     *       None!(i32)() {
+     *          println ("Foo didn't return any value!");
+     *       }
+     *    }
+     * }
+     * --------------
+     */
+    class None (T) over Option!(T) {
+        self () {}
+
+        over print (self) {
+            print ("None");
+        }
+    }
+    
+}
