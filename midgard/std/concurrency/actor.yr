@@ -1,0 +1,47 @@
+mod std::concurrency::actor;
+import std::io;
+import core::typeinfo, core::duplication;
+
+
+/**
+ * Lib pthread, create a thread
+ */
+extern (C) def pthread_create (mut thread : &(mut usize), attr : &void, call : fn (mut Actor)-> void, mut data : Actor);
+
+/**
+ * Wait the end of a thread
+ */
+extern (C) def pthread_join (thread : usize, attr : &void);
+
+
+/**
+ * Class and pointer have the same size, so there is no problem for pthread
+ * And the class will be ok to run
+ */
+def threadFunc (mut actor : Actor) -> void {
+    (alias actor).run ();
+}
+
+pub class Actor {
+
+    pub let mut _id = 0us;
+    
+    self () {}
+
+    /**
+     * The things to do in the thread
+     */
+    def run (self)-> void {}
+
+    /**
+     * Spawn a new actor, in a thread
+     */
+    def spawn (mut self) {
+        pthread_create (alias (&self._id), null, &threadFunc, alias self);
+    }
+
+    def join (self) {
+        pthread_join (self._id, null);
+    }
+    
+}

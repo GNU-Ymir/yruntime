@@ -1,4 +1,4 @@
-mod std::map;
+mod std::container::set;
 import std::io;
 import std::traits;
 import core::typeinfo, core::duplication;
@@ -8,79 +8,83 @@ import std::algorithm::comparison;
 pub {
 
     /**
-     * A map is a collection of values that associate keys to values. 
-     * Each key can appear only once in the map
-     * Warning : 
+     * A set is a collection of values, that are stored in a tree
+     * Each value could appear only once in the set
+     * The set is sorted
      * ===========
-     * A map is not thread safe, if it is mutable, if
-     * multiple thread try to modify the map at the same time, it
+     * A set is not thread safe, if it is mutable, if
+     * multiple thread try to modify the set at the same time, it
      * could occur data races.
      * ===========
      * Example : 
-     * ==========
-     * let mut m = Map!([c32], i32)::new ()
-     * (alias m).insert ("foo", 1)
-     * (alias m).insert ("bar", 2);
-     * println (m); // {foo=> 1, bar=> 2}
-     * ==========
-     * The implementation used is a tree map, and the tree is assured to be balanced at each insertion
-     * The values of the map are immutable, but the map itself is mutable
+     * ===========
+     * let mut s = Set!(i32)::new ();
+     * (alias s).insert ("
+     * ===========
      */
-    class @final Map (K, V) {
+    class @final Set (T) {
 
         let mut _head : Node = Empty::new ();
-
+        
         /**
-         * A new empty map
+         * A new empty set
          */
         self () {}
 
+        /** Used for deep copy */
+        prv self (mut head : Node) with _head = alias head {}
+        
         /**
-         * Insert a new element in the map
+         * Insert a new element in the set
          * Example : 
          * ===========
-         * let mut m = Map!(i32, i32)::new ();
-         * (alias m).insert (12, 34);
-         * println (m); // {12=> 34}
+         * let mut m = Set!(i32)::new ();
+         * (alias m).insert (12);
+         * println (m); // {12}
          * ===========
+         * Complexity : O (h), where h is the height of the tree
          */
-        def insert (mut self, k : K, v : V) {
-            self._head = alias ((alias self).insert (alias self._head, k, v));
+        def insert (mut self, v : T) {
+            self._head = alias ((alias self).insert (alias self._head, v));
         }
 
-        def insert (self, mut head : Node, k : K, v : V) -> mut Node {
+        /**
+         * Insert a new element in the map, or replace it if it already exists
+         * Complexity : O(h), where h is the height of the tree
+         */
+        prv def insert (self, mut head : Node, v : T) -> mut Node {
             match (ref head) {
                 Empty () => {
-                    return Value!(K, V)::new (k, v);
+                    return Value!(T)::new (v);
                 }
-                Value!(K, V) (key-> key : _, left-> ref mut left : _, right-> ref mut right : _) => {
-                    if (key > k) {
-                        left = alias (self.insert (alias left, k, v));
-                    } else if (key < k) {
-                        right = alias (self.insert (alias right, k, v));
+                Value!(T) (value-> value : _, left-> ref mut left : _, right-> ref mut right : _) => {
+                    if (value > v) {
+                        left = alias (self.insert (alias left, v));
+                    } else if (value < v) {
+                        right = alias (self.insert (alias right, v));
                     } else {
-                        return alias (Value!(K, V)::new (k, v, alias left, alias right));
+                        return alias (Value!(T)::new (v, alias left, alias right));
                     }
-                    head.height = max (left.height, right.height) + 1us;
                     
+                    head.height = max (left.height, right.height) + 1us;                    
                     let balance = left.height -:i64 right.height;
                     
-                    let l_key = match (left) { Value!(K, V) (key-> x : _) => { x } _ => k }
-                    let r_key = match (right) { Value!(K, V) (key-> x : _) => { x } _ => k }
+                    let l_value = match (left) { Value!(T) (value-> x : _) => { x } _ => v }
+                    let r_value = match (right) { Value!(T) (value-> x : _) => { x } _ => v }
                     
-                    if (balance > 1 && k < l_key)
+                    if (balance > 1 && v < l_value)
                         return alias (self.rightRotate (alias head));
 
-                    if (balance > 1 && k > l_key) {
+                    if (balance > 1 && v > l_value) {
                         left = alias self.leftRotate (alias left);
                         return alias self.rightRotate (alias head);
                     }
 
-                    if (balance < -1 && k > r_key) {
+                    if (balance < -1 && v > r_value) {
                         return alias (self.leftRotate (alias head));
                     }
                     
-                    if (balance < -1 && k < r_key) {
+                    if (balance < -1 && v < r_value) {
                         right = alias self.rightRotate (alias right);
                         return alias self.rightRotate (alias head);
                     }
@@ -89,32 +93,36 @@ pub {
             return alias head;
         }
 
+        /**
+         * Perform a left rotation on a node to balance the tree
+         * Complexity : O (1)
+         */
         prv def leftRotate (self, mut node : Node) -> mut Node {
             match (ref node) {
-                mut x : Value!(K, V) = Value!(K, V) (right-> ref mut right : _) => {
-                    match (ref right) {
-                        mut y : Value!(K, V) => {
-                            let mut T2 = alias y.left;
-                            y.left = alias node;                            
-                            x.right = alias T2;
-                            
-                            y.height = 1us + max (y.left.height, y.right.height);
-                            x.height = 1us + max (x.left.height, x.right.height);
-                            
-                            return alias y;       
-                        }
-                    };
+                mut x : Value!(T) = Value!(T) (right-> mut y : Value!(T)) => {
+                    let mut T2 = alias y.left;
+                    y.left = alias node;                            
+                    x.right = alias T2;
+                    
+                    y.height = 1us + max (y.left.height, y.right.height);
+                    x.height = 1us + max (x.left.height, x.right.height);
+                    
+                    return alias y;                                       
                 }                
             }
 
             return alias node;
         }
 
+        /**
+         * Perform a right rotation on a node to balance the tree
+         * Complexity : O (1)
+         */
         prv def rightRotate (self, mut node : Node) -> mut Node {
             match (ref node) {
-                mut x : Value!(K, V) => {
+                mut x : Value!(T) => {
                     match (ref x.left) {
-                        mut y : Value!(K, V) => {
+                        mut y : Value!(T) => {
                             
                             let mut T2 = alias y.right;
                             y.right = alias node;
@@ -128,9 +136,34 @@ pub {
                     }
                 }                
             }
-
             return alias node;
         }
+
+
+        /**
+         * Returns : true, if the set contains the value /v/, and false otherwise
+         */
+        def opContain (self, v : T) -> bool {
+            self.find (self._head, v)
+        }
+
+        /**
+         * Returns : true, if the set contains the value /v/, and false otherwise
+         * Complexity : O (h), where h is the height of the tree
+         */
+        prv def find (self, head : Node, v : T) -> bool {
+            match (head) {
+                Value!(T) (value-> value : _, left-> l : _, right-> r : _) => {
+                    if (v == value) true
+                    else if (v < value) self.find (l, v)
+                    else self.find (r, v)
+                }
+                _ => {
+                    false
+                }
+            }
+        }
+
 
         impl std::io::Printable {
             over print (self) {
@@ -140,15 +173,17 @@ pub {
         
     }
     
+
 }
+
 
 pub {
 
     /**
-     * This is the internal part of a map
-     * This cannot go outside of this module, and is only used to represent a map
+     * This is the internal part of a set
+     * This cannot go outside of this module, and is only used to represent a set
      * There are two type of nodes : 
-     * - Value (K, V), where K is a type of Key, and V is a type of Value
+     * - Value (V), where V is a type of Value
      * - Empty, an empty node
      */
     class @abstract Node {
@@ -169,12 +204,7 @@ pub {
      * This is a node of a list containing a value, and pointing to the next element of the list
      * The content of the list is immutable
      */
-    class Value (K, V) over Node {
-
-        /**
-         * The key contained in the node
-         */
-        pub let key : K;
+    class Value (V) over Node {
 
         /**
          * The value contained in the node
@@ -194,13 +224,12 @@ pub {
         /**
          * Create a node, with a given value 
          */
-        self (key : K, value : V) with key = key, value = value {
+        self (value : V) with value = value {
             self.height = 0us;
         }
 
         
-        self (key : K, value : V, mut left : Node, mut right : Node) with
-            key = key,
+        self (value : V, mut left : Node, mut right : Node) with
             value = value,
             left = alias left,
             right = alias right
@@ -211,16 +240,9 @@ pub {
 
         over print (self) {            
             match (self.left) {
-                l : Value!(K, V) =>
+                l : Value!(V) =>
                     print (l, ", ");
             }            
-
-            cte if (is!(K)(X impl Printable) || isPrimitive!(K))
-                print (self.key)
-            else
-                print ((self.key)::typeinfo.name);
-            
-            print ("=> ");
             
             cte if (is!(V)(X impl Printable) || isPrimitive!(V))
                 print (self.value)
@@ -228,13 +250,13 @@ pub {
                 print ((self.value)::typeinfo.name);
 
             match (self.right) {
-                r : Value!(K, V) =>
+                r : Value!(V) =>
                     print (", ", r);                
             }
         }                
 
         over deepCopy (self) -> mut Node {
-            Value!(K, V)::new (self.key, self.value, dcopy self.left, dcopy self.right)
+            Value!(V)::new (self.value, dcopy self.left, dcopy self.right)
         }
         
     }
