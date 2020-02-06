@@ -1,0 +1,112 @@
+mod std::concurrency::thread;
+import std::io, std::concurrency::message;
+import std::any;
+import core::typeinfo, core::duplication;
+
+
+/**
+ * Lib pthread, create a thread
+ */
+extern (C) def pthread_create (mut thread : &(mut usize), attr : &void, call : fn (mut Thread)-> void, mut data : Thread);
+
+/**
+ * Wait the end of a thread
+ */
+extern (C) def pthread_join (thread : usize, attr : &void);
+
+
+/**
+ * Class and pointer have the same size, so there is no problem for pthread
+ * And the class will be ok to run
+ */
+def threadFunc (mut actor : Thread) -> void {
+    (alias actor).run ();
+}
+
+/**
+ * Example : 
+ * =================
+ * mod main;
+ *
+ * import std::concurrency::actor;
+ * import std::io;
+ *
+ * extern (C) def usleep (time : u32);
+ *
+ * class MyThread over Actor {
+ *
+ *    self () {}
+ *  
+ *    over run (mut self) {
+ *        usleep (1000_000_u32);
+ *        println ("Ready to recv message !");
+ *        loop {
+ *            let msg = self.recv ();
+ *            println (msg);
+ *        }
+ *     }
+ * }
+ *
+ *
+ * def main () {
+ *     let mut x = MyThread::new ();
+ *     (alias x).spawn ();
+ *     let dmut array = [1, 2, 3, 4, 5];
+ *     loop {
+ *         x.send (array);
+ *         usleep (1000_000_u32);
+ *     }
+ *
+ *     array [0] = 9;
+ *     (alias x).join ();
+ * }
+ * ====================
+ * A thread is a sequence of instruction that are managed independently
+ * They are used to perform asynchronus operation
+ */
+pub class Thread {
+
+    let mut _id = 0us;
+
+    let mut _pipe = Pipe::new ();
+    
+    self () {}
+
+    /**
+     * The things to do in the thread
+     * This method is launched in the thread, and is the entry point of the thread
+     */
+    def run (mut self)-> void {}
+
+    /**
+     * Send a message to the thread
+     * The message will be encapsulated in an Any type (Cf. std::any)
+     * The data won't be modified in the thread, it is garanteed by the compiler
+     * The thread that is performing the send, will be blocked until the Thread is in recv state
+     */
+    def send (T) (self, x : T) {
+        let value = Some!(T)::new (x);       
+        self._pipe.write (value);
+    }
+
+    /**
+     * Recv a message using the pipe of this thread
+     * Normally this function is used within the context of the run method
+     * Block the execution until the thread effectively received something
+     */
+    def recv (self)-> Any {
+        self._pipe.read!(Any)()
+    }
+    
+    /**
+     * Start the thread
+     */
+    def spawn (mut self) {
+        pthread_create (alias (&self._id), null, &threadFunc, alias self);
+    }
+
+    def join (self) {
+        pthread_join (self._id, null);
+    }
+    
+}

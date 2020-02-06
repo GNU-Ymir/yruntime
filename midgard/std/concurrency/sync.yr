@@ -1,0 +1,76 @@
+mod std::concurrency::sync;
+import std::c::thread;
+import core::typeinfo, core::duplication;
+
+pub {
+    
+    /**
+     * Mutex are used to perform synchronization between basic threads
+     */
+    class @final Mutex {
+
+        pub let _lock : pthread_mutex_t;
+
+        /**
+         * New mutex that allows synchronization between threads
+         */
+        self () with _lock = pthread_mutex_t::init {
+            pthread_mutex_init (&self._lock, null);
+        }
+
+        /**
+         * Wait for the mutex to be free
+         * And then lock it
+         */
+        def lock (self) {
+            pthread_mutex_lock (&self._lock);
+        }
+
+        /**
+         * Unlock the mutex
+         */
+        def unlock (self) {
+            pthread_mutex_unlock (&self._lock);            
+        }
+        
+    }
+
+    class @final Semaphore {
+
+        let _sem : sem_t;
+
+        self () with _sem = sem_t::init {
+            sem_init (&self._sem, 0, 0);
+        }
+
+        def post (self) {
+            sem_post (&self._sem);
+        }
+
+        def wait (self) {
+            sem_wait (&self._sem);
+        }
+
+    }
+    
+    class @final Condition {
+
+        let _cond : pthread_cond_t;
+        
+        self () with _cond = pthread_cond_t::init {
+            pthread_cond_init (&self._cond, null);
+        }
+
+        def wait (self, mutex : Mutex) {
+            pthread_cond_wait (&self._cond, &mutex._lock);
+        }
+
+        def signal (self) {
+            pthread_cond_signal (&self._cond);
+        }
+
+        
+    }
+    
+    
+}

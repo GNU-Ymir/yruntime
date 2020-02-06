@@ -1,5 +1,6 @@
 mod std::concurrency::actor;
-import std::io;
+import std::io, std::concurrency::message;
+import std::any;
 import core::typeinfo, core::duplication;
 
 
@@ -24,15 +25,26 @@ def threadFunc (mut actor : Actor) -> void {
 
 pub class Actor {
 
-    pub let mut _id = 0us;
+    let mut _id = 0us;
+
+    let mut _pipe = Pipe::new ();
     
     self () {}
 
     /**
      * The things to do in the thread
      */
-    def run (self)-> void {}
+    def run (mut self)-> void {}
 
+    def send (T) (mut self, x : T) {
+        let value = Some!(T)::new (x);       
+        (alias self._pipe).write (value);
+    }
+
+    def recv (mut self)-> Any {
+        (alias self._pipe).read!(Any)()
+    }
+    
     /**
      * Spawn a new actor, in a thread
      */
