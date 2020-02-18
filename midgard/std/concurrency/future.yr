@@ -1,0 +1,144 @@
+mod std::concurrency::future;
+import std::concurrency::thread;
+import std::concurrency::sync;
+import core::typeinfo, core::duplication;
+import std::option;
+
+class @abstract FutureThread (T) over Thread {
+
+    pub let mut value : Option!T = std::option::None ();
+    pub let running : Atomic!bool = Atomic!(bool)::new (true);
+    
+    self () {}
+}
+
+class FutureThFn (T) over FutureThread!T {
+
+    let func : fn()-> T;
+
+    self (func : fn()-> T) with func = func {}
+    
+    over run (mut self) {
+        self.value = std::option::Some!(T)::new (self.func ());
+        (alias self.running).apply (|ref mut x : bool| -> void {
+            x = false;
+        });
+    }
+    
+}
+
+class FutureThDg (T) over FutureThread!T {
+
+    let func : dg()-> T;
+
+    self (func : dg()-> T) with func = func {}
+    
+    over run (mut self) {
+        self.value = std::option::Some!(T)::new (self.func ());
+        (alias self.running).apply (|ref mut x : bool| -> void {
+            x = false;
+        });
+    }
+    
+}
+
+class @abstract FutureThread (T of void) over Thread {
+    pub let running : Atomic!bool = Atomic!(bool)::new (true);
+    self () {}
+}
+
+class FutureThFn (T of void) over FutureThread {
+
+    let func : fn()-> T;
+    self (func : fn()-> T) with func = func {}
+    
+    over run (mut self) {
+        self.func ();
+        (alias self.running).apply (|ref mut x : bool| -> void {
+            x = false;
+        });
+    }    
+    
+}
+
+class FutureThDg (T of void) over FutureThread {
+
+    let func : dg()-> T;
+    self (func : dg()-> T) with func = func {}
+    
+    over run (mut self) {
+        self.func ();
+        (alias self.running).apply (|ref mut x : bool| -> void {
+            x = false;
+        });
+    }
+}
+
+pub {
+    
+    class Future (T) {
+        
+        let mut fth : FutureThread!T;
+        
+        self (func : fn ()-> T) with fth = FutureThFn!(T)::new (func) {
+            (alias self.fth).spawn ();
+        }
+        
+        self (func : dg ()-> T) with fth = FutureThDg!(T)::new (func) {
+            (alias self.fth).spawn ();
+        }
+        
+        def complete (self)-> std::option::Option!(T) {            
+            if (self.fth.running)
+                self.fth.join ();
+            
+            self.fth.value
+        }
+
+        def interrupt (mut self)-> void {            
+            (alias (self.fth)).kill ();
+            (alias self.running).apply (|ref mut x : bool| -> void {
+                x = false;
+            });
+        }
+        
+    }
+
+    class Future (T of void) {
+        
+        let mut fth : FutureThread!T;
+        
+        self (func : fn ()-> T) with fth = FutureThFn!(T)::new (func) {
+            (alias self.fth).spawn ();
+        }
+        
+        self (func : dg ()-> T) with fth = FutureThDg!(T)::new (func) {
+            (alias self.fth).spawn ();
+        }
+        
+        def complete (self)-> void {
+            if (self.fth.running) {
+                self.fth.join ();
+            }
+        }
+
+        def interrupt (mut self)-> void {            
+            (alias (self.fth)).kill ();
+            (alias self.running).apply (|ref mut x : bool| -> void {
+                x = false;
+            });
+        }
+        
+    }
+
+    def future (T) (func : dg()-> T) -> mut Future!T {
+        let mut f = Future!(T)::new (func);    
+        f
+    }
+
+    def future (T) (func : fn()-> T) -> mut Future!T {
+        let mut f = Future!(T)::new (func);    
+        f
+    }
+
+}

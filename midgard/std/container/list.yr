@@ -20,11 +20,11 @@ pub {
      * for i in 0 .. 4 {
      *     (alias l).insert (i);
      * }
-     * println (l); // 0::1::2::3 
+     * println (l); // 3::2::1::0 
      * (alias l).pop ();
-     * println (l); // 0::1::2
+     * println (l); // 2::1::0
      * =========== 
-     * 
+     * It is the implementation of a LIFO (Last In First Out)
      */
     class @final List (T) {
 
@@ -33,7 +33,7 @@ pub {
         /**
          * Create an empty list
          */
-        self () {}
+        pub self () {}
 
         /**
          * Params :
@@ -47,13 +47,13 @@ pub {
          * =========
          * let mut l = List!(i32)::new ();
          * for i in 0 .. 4 {
-         *     (alias l).insert (i);
+         *     (alias l).insertBacl (i);
          * }
          * println (l); // 0::1::2::3
          * =========
          * Complexity: O(n), with n the length of the list
          */
-        def insert (mut self, t : T) {
+        pub def insertBack (mut self, t : T) {
             (alias self).insert (ref self._head, t);
         }
 
@@ -61,9 +61,9 @@ pub {
          * Insert a new element at the end of the list
          * Complexity: O(n), with n the length of the list
          */
-        prv def insert (mut self, ref mut head : Node, t : T) {
+        prv def insertBack (mut self, ref mut head : Node, t : T) {
             match (ref head) {
-                Value!(T) (next-> ref mut x : _) => (alias self).insert (ref x, t);
+                Value!(T) (next-> ref mut x : _) => (alias self).insertBack (ref x, t);
                 Empty () => {
                     head = Value!(T)::new (t);
                 }
@@ -76,13 +76,13 @@ pub {
          * ==========
          * let mut l = List!(i32)::new ();
          * for i in 0 .. 4 {
-         *     (alias l).insertFront (i);
+         *     (alias l).insert (i);
          * }
          * println (l); // 3::2::1::0
          * ==========
          * Complexity: O(1)
          */
-        def insertFront (mut self, t : T) {
+        pub def insert (mut self, t : T) {
             self._head = Value!(T)::new (t, alias self._head);
         }
         
@@ -92,26 +92,26 @@ pub {
          * =========
          * let mut l = List!(i32)::new ();
          * for i in 0 .. 4 {
-         *     (alias l).insert (i);
+         *     (alias l).insertBack (i);
          * }
-         * let z = l.insert (42);
+         * let z = l.insertBack (42);
          * println (l); // 0::1::2::3
          * println (z); // 0::1::2::3::42
          * =========
          * Complexity : O (n), with n the length of the list
          */
-        def insert (self, t : T) -> mut List!(T) {
-            List!(T)::new (alias self.imutInsert (self._head, t))
+        pub def insertBack (self, t : T) -> mut List!(T) {
+            List!(T)::new (alias self.imutInsertBack (self._head, t))
         }
 
         /**
          * Insert a new element at the end on a duplicated list
          * Complexity: O (n), with n the length of the list
          */
-        prv def imutInsert (self, head : Node, t : T) -> mut Node {
+        prv def imutInsertBack (self, head : Node, t : T) -> mut Node {
             match (head) {
                 Value!(T) (value -> z : _, next-> x : _) => {
-                    alias (Value!(T)::new (z, alias self.imutInsert (x, t)))
+                    alias (Value!(T)::new (z, alias self.imutInsertBack (x, t)))
                 }
                 _ => {
                     alias (Value!(T)::new (t))
@@ -125,23 +125,23 @@ pub {
          * ===========
          * let mut l = List!(i32)::new ();
          * for i in 0 .. 4 {
-         *     (alias l).insert (i);
+         *     (alias l).insertBack (i);
          * }
          * println (l); // 0::1::2::3
-         * (alias l).pop ();
+         * (alias l).popBack ();
          * println (l); // 0::1::2
          * ===========
          * Complexity: O(n), with n the length of the list
          */
-        def pop (mut self) {
-            (alias self).pop (ref self._head)
+        pub def popBack (mut self) {
+            (alias self).popBack (ref self._head)
         }        
 
         /**
          * Remove the last element of the list, if any
          * Complexity: O(n), with n the length of the list
          */
-        prv def pop (mut self, ref mut head : Node) {
+        prv def popBack (mut self, ref mut head : Node) {
             match (ref head) {
                 Value!(T) (next-> ref mut x : _) => {
                     match (x) {
@@ -162,15 +162,15 @@ pub {
          * ==============
          * let mut l = List!(i32)::new ();
          * for i in 0 .. 4 {
-         *     (alias l).insert (i);
+         *     (alias l).insertBack (i);
          * }
          * println (l); // 0::1::2::3
-         * (alias l).popFront ();
+         * (alias l).pop ();
          * println (l); // 1::2::3
          * ===============
          * Complexity: O(1)
          */
-        def popFront (mut self) {
+        pub def pop (mut self) {
             match (ref (self._head)) {
                 Value!(T) (next -> ref mut x : _) => {
                     self._head = alias x;
@@ -184,24 +184,24 @@ pub {
          * ==========
          * let mut list = List!(i32)::new ();
          * for i in 0 .. 4 {
-         *     (alias l).insert (i);    
+         *     (alias l).insertBack (i);    
          * }
-         * let z = l.pop ();
+         * let z = l.popBack ();
          * println (l); // 0::1::2::3
          * println (z); // 0::1::2
          * ==========
          * Complexity: O(n), with n the length of the list
          */
-        def pop (self) -> mut List!(T) {
-            List!(T)::new (alias self.imutPop (self._head))
+        pub def popBack (self) -> mut List!(T) {
+            List!(T)::new (alias self.imutPopBack (self._head))
         }
 
-        prv def imutPop (self, head : Node) -> mut Node {
+        prv def imutPopBack (self, head : Node) -> mut Node {
             match (head) {
                 Value!(T) (value-> z : _, next-> x : _) => {
                     match (x) {
                         Value!(T) () => {
-                            alias Value!(T)::new (z, alias (self.imutPop (x)))
+                            alias Value!(T)::new (z, alias (self.imutPopBack (x)))
                         }
                         _ => {
                             let m : Node = Empty::new ();
@@ -221,17 +221,17 @@ pub {
          * ==========
          * let mut list = List!(i32)::new ();
          * for i in 0 .. 4 {
-         *     (alias l).insert (i);    
+         *     (alias l).insertBack (i);    
          * }
-         * let z = l.popFront ();
+         * let z = l.pop ();
          * println (l); // 0::1::2::3
          * println (z); // 1::2::3
          * ==========
          * Complexity: O(n), with n the length of the list
          */
-        def popFront (self) -> mut List!(T) {
+        pub def pop (self) -> mut List!(T) {
             let mut aux = dcopy self;
-            (alias aux).popFront ();
+            (alias aux).pop ();
             alias aux
         }
         
@@ -245,7 +245,7 @@ pub {
          * ============
          * Complexity : O (min (n, i)), with n the length of the list
          */
-        def if (isIntegral!I) opIndex (I) (self, i : I) -> Option!(T) {
+        pub def if (isIntegral!I) opIndex (I) (self, i : I) -> Option!(T) {
             self.get (self._head, cast!I (0u32), i)
         }
 
@@ -270,7 +270,7 @@ pub {
          * Returns : the length of the list
          * Complexity: O (n), with n the length of the list
          */
-        def length (self) -> usize {
+        pub def length (self) -> usize {
             self.getLength (self._head)
         }
 
@@ -286,13 +286,13 @@ pub {
         }
         
         impl std::io::Printable {
-            over print (self) {
+            pub over print (self) {
                 print (self._head);                
             }
         }
 
         impl core::duplication::Copiable {
-            over deepCopy (self) -> mut List!(T) {
+            pub over deepCopy (self) -> mut List!(T) {
                 List!(T)::new (dcopy self._head)
             } 
         }
@@ -342,12 +342,12 @@ prv {
         /**
          * Create a node, with a given value 
          */
-        self (value : T) with value = value {}
+        pub self (value : T) with value = value {}
 
         
-        self (value : T, mut next : Node) with value = value, next = alias next {}
+        pub self (value : T, mut next : Node) with value = value, next = alias next {}
         
-        over print (self) {
+        pub over print (self) {
             cte if (is!(T)(X impl Printable) || isPrimitive!(T))
                 print (self.value)
             else
@@ -360,7 +360,7 @@ prv {
             }            
         }
 
-        over deepCopy (self) -> mut Node {
+        pub over deepCopy (self) -> mut Node {
             Value!(T)::new (self.value, dcopy self.next)
         }
         
@@ -370,14 +370,14 @@ prv {
      * This is a empty node, that marks the end of a list
      */
     class Empty over Node {
-        self () {}
+        pub self () {}
 
-        over print (self) {
+        pub over print (self) {
             print ("Empty");
         }
 
-        over deepCopy (self) -> mut Node {
-            Empty::new ()
+        pub over deepCopy (self) -> mut Node {
+            alias Empty::new ()
         }
     }
 

@@ -7,13 +7,17 @@ import core::typeinfo, core::duplication;
 /**
  * Lib pthread, create a thread
  */
-extern (C) def pthread_create (mut thread : &(mut usize), attr : &void, call : fn (mut Thread)-> void, mut data : Thread);
+extern (C) def _yrt_thread_create (mut thread : &(mut usize), attr : &void, call : fn (mut Thread)-> void, mut data : Thread);
 
 /**
  * Wait the end of a thread
  */
-extern (C) def pthread_join (thread : usize, attr : &void);
+extern (C) def _yrt_thread_join (thread : usize, attr : &void);
 
+/**
+ * Interrupt the thread
+ */
+extern (C) def _yrt_thread_cancel (thread : usize, attr : &void);
 
 /**
  * Class and pointer have the same size, so there is no problem for pthread
@@ -70,22 +74,21 @@ pub class Thread {
 
     let mut _pipe = Pipe::new ();
     
-    self () {}
+    pub self () {}
 
     /**
      * The things to do in the thread
      * This method is launched in the thread, and is the entry point of the thread
      */
-    def run (mut self)-> void {}
+    pub def run (mut self)-> void {}
 
     /**
      * Send a message to the thread
      * The message will be encapsulated in an Any type (Cf. std::any)
-     * The data won't be modified in the thread, it is garanteed by the compiler
      * The thread that is performing the send, will be blocked until the Thread is in recv state
      */
-    def send (T) (self, x : T) {
-        let value = Some!(T)::new (x);       
+    pub def send (T) (self, x : T) {
+        let mut value = Some!(T)::new (x);       
         self._pipe.write (value);
     }
 
@@ -94,19 +97,26 @@ pub class Thread {
      * Normally this function is used within the context of the run method
      * Block the execution until the thread effectively received something
      */
-    def recv (self)-> Any {
+    pub def recv (self)-> Any {
         self._pipe.read!(Any)()
     }
+
+    pub def getId (self) -> usize 
+        self._id
     
     /**
      * Start the thread
      */
-    def spawn (mut self) {
-        pthread_create (alias (&self._id), null, &threadFunc, alias self);
+    pub def spawn (mut self) {
+        _yrt_thread_create (alias (&self._id), null, &threadFunc, alias self);
     }
 
-    def join (self) {
-        pthread_join (self._id, null);
+    pub def join (self) {
+        _yrt_thread_join (self._id, null);
+    }
+
+    pub def kill (mut self) {
+        _yrt_thread_cancel (self._id, null);
     }
     
 }

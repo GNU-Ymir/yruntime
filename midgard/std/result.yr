@@ -1,4 +1,4 @@
-mod std::option;
+mod std::result;
 import std::io, std::traits;
 import core::typeinfo;
 
@@ -8,7 +8,7 @@ pub {
      * A result is the type option of Ymir
      * It can be either Succ or Err, and have a value only if it is a Succ
      */
-    class @abstract Option (T) {
+    class @abstract Result (T) {
         pub self () {}
 
         impl Printable;       
@@ -34,11 +34,15 @@ pub {
      * }
      * --------------
      */
-    class Some (T) over Option!(T) {
+    class Ok (T) over Result!(T) {
 
-        pub let result : T;
+        pub let mut result : T;
 
-        pub self (x : T) with result = x {}        
+        cte if (is!(T)(alias X)) {
+            pub self (mut x : T) with result = alias x {}
+        } else {
+            pub self (x : T) with result = x {}
+        }
 
         pub over print (self) {
             cte if (is!(T)(X impl Printable) || isPrimitive!(T))
@@ -68,11 +72,14 @@ pub {
      * }
      * --------------
      */
-    class None (T) over Option!(T) {
-        pub self () {}
+    class Err (T) over Result!(T) {
+
+        pub let msg : [c32];
+        
+        pub self (msg : [c32]) with msg = msg {}
 
         pub over print (self) {
-            print ("None");
+            print ("Err (", self.msg, ")");
         }
     }
     
