@@ -2,7 +2,7 @@ mod std::concurrency::message;
 import std::io, std::c::thread;
 import std::concurrency::sync;
 import core::typeinfo, core::duplication;
-import core::exception;
+import core::exception, core::array;
 
 extern (C) def pipe (streams : &(i32));
 
@@ -37,8 +37,10 @@ pub {
         pub self () {
             let mut pipes : [mut i32] = [0, 0];
             pipe (pipes.ptr);
-            self._read = pipes [0];
-            self._write = pipes [1];
+            {
+                self._read = pipes [0];
+                self._write = pipes [1];
+            } catch {_ => {}}
         }
 
         pub def read (class T) (self) -> T {                        

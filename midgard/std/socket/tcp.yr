@@ -19,13 +19,13 @@ pub mod Tcp {
     | mut remote_addr : IpAddr
      -> TcpStream;
 
-    pub def bind (addr : [c32]) -> TcpListener {
+    pub def bind (addr : [c32], port : u16) -> TcpListener {
         import std::io;
         let sock = C::socket (cast!i32 (AddrFamily::INET), SocketType::SOCK_STREAM, 0);
         if sock == -1
             println ("Error while creating the socket");
         
-        let mut ipaddr = toIpAddr (addr);
+        let mut ipaddr = toIpAddr (addr, port);
         let mut raddr = SockAddrIn (
             cast!i16 (AddrFamily::INET),
             htons (ipaddr.port),
@@ -66,10 +66,10 @@ pub mod Tcp {
         
     }
 
-    pub def connect (addr : [c32]) -> TcpStream {
+    pub def connect (addr : [c32], port : u16) -> TcpStream {
         import std::io;
         let sock = C::socket (cast!i32 (AddrFamily::INET), SocketType::SOCK_STREAM, 0);
-        let ipaddr = toIpAddr (addr);
+        let ipaddr = toIpAddr (addr, port);
 
         let remoteAddr = SockAddrIn (
             cast!i16 (AddrFamily::INET),

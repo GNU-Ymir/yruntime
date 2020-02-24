@@ -1,18 +1,43 @@
 mod core::exception;
 import core::typeinfo;
+import std::io;
+
+extern (C) def _yrt_exc_rethrow ();
 
 pub alias _yrt_jmp_buf_type = [u8 ; 200];
 
-pub struct
-| msg : [c32]
- -> AssertError;
 
-pub def abort (test : bool, msg : [c32]) {
-    if (!test)
-        throw AssertError (msg)
+pub class @abstract Exception {
+    self () {}
+
+    impl std::io::Printable;
 }
 
-pub def abort (test : bool) {
+pub class AssertError over Exception {
+    pub let msg : [c32];
+
+    pub self (msg : [c32]) with msg = msg {}
+
+    pub over print (self) {
+        print ("AssertError (", self.msg, ")");
+    }
+}
+
+
+pub def abort (test : bool, msg : [c32])
+    throws AssertError
+{
     if (!test)
-        throw AssertError ("")
+        throw AssertError::new (msg)
+}
+
+pub def abort (test : bool)
+    throws AssertError
+{
+    if (!test)
+        throw AssertError::new ("")
+}
+
+pub def rethrow () {
+    _yrt_exc_rethrow ();
 }

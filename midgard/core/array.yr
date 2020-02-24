@@ -1,7 +1,23 @@
 mod core::array;
+import core::exception, core::typeinfo;
+import std::io;
 
 mod allocMod (T) {
     pub extern (C) def _yrt_new_array (_ : usize, _ : u64)-> mut [mut T];
+}
+
+pub class OutOfArray over Exception {
+    pub self () {}
+
+    pub over print (self) {
+        print (typeof (self)::typeid);
+    }
+}
+
+pub def outOfArray ()
+    throws OutOfArray
+{
+    throw OutOfArray::new ();
 }
 
 pub def opBinary ("~", C of [U], U) (a : C, b : C) -> mut [mut U] {
@@ -22,6 +38,11 @@ pub def opBinary ("~", C of [U], U) (a : C, b : C) -> mut [mut U] {
     }
     
     alias res
+} catch {
+    _ => {
+        let mut res : [mut U] = [];
+        return alias res;
+    }
 }
 
 pub def opBinary ("==", C of [U], U) (a : C, b : C) -> bool {
@@ -30,7 +51,10 @@ pub def opBinary ("==", C of [U], U) (a : C, b : C) -> bool {
         if !(a [i] == b [i]) return false;
     }
     return true;
+} catch {
+    _ => false
 }
+
 
 pub def opCmp (C of [U], U) (a : C, b : C) -> i32 {
     import std::algorithm::comparison;
@@ -40,4 +64,8 @@ pub def opCmp (C of [U], U) (a : C, b : C) -> i32 {
         else if (a [i] > b [i]) return 1
     }
     return 0;
+} catch {
+    _ => 1 // arbitrary !
 }
+
+

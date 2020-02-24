@@ -31,19 +31,6 @@ pub struct
 | segments : [u16 ; 8]
  -> IpV6Addr;
     
-pub def toIpAddr (str : [c32]) -> IpAddr {
-    import std::io;
-    let index = str.lastIndexOf (':');
-    if index == str.len {
-        return IpAddr (IpVersion::V4, IpAddrC (v4->IpV4Addr (0u32)), 0u16);
-    }
-    
-    let port = str [index + 1_u64 .. str.len].to!u16;
-    let mut aux : [mut c32] = copy str [0u64 .. index + 1_u64];
-    aux [index] = '\u{0}';
-    
-    if (aux.len == 0u64) 
-        IpAddr (IpVersion::V4, IpAddrC (v4->IpV4Addr (AddrType::IN_ADDR_ANY)), port)        
-    else
-        IpAddr (IpVersion::V4, IpAddrC (v4->IpV4Addr (inet_addr (aux.ptr))), port)            
+pub def toIpAddr (str : [c32], port : u16) -> IpAddr {        
+    IpAddr (IpVersion::V4, IpAddrC (v4->IpV4Addr (inet_addr (str.ptr))), port)
 }    
