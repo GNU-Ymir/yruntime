@@ -9,7 +9,7 @@ file(
 )
 
 add_library (gyruntime ${SRC})
-target_link_libraries (gyruntime -lpthread -lgc)
+# target_link_libraries (gyruntime INTERFACE) #
 install (TARGETS gyruntime DESTINATION /usr/lib/)
 include_directories(${CMAKE_SOURCE_DIR}/include/)
 

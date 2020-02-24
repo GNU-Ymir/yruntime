@@ -1,5 +1,7 @@
 #include <array.hh>
 #include <memory.h>
+
+#define GC_THREADS
 #include <gc/gc.h>
 
 extern "C" Array _yrt_dup_slice (Array arr, unsigned long size) {
@@ -16,9 +18,16 @@ extern "C" Array _yrt_alloc_array (void* data, unsigned long size, unsigned long
     return Array {len, x};
 }
 
+
+extern "C" void* _yrt_new_block (unsigned long size, unsigned long len) {
+    auto x = (char*) GC_malloc (len * size);
+    //memset (x, 0, len * size);
+    return x;
+}
+
 extern "C" Array _yrt_new_array (unsigned long size, unsigned long len) {
     auto x = (char*) GC_malloc (len * size);
-    memset (x, 0, len * size);
+    //memset (x, 0, len * size);
     return Array {len, x};
 }
 
