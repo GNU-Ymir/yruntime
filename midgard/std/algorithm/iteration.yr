@@ -8,10 +8,19 @@ pub {
     /**
      * Create a copy of an array, where an operation is done on each index
      * $\forall i \in a, FUN (i)$
-     * FUN is a function pointer (cte time), that apply an operation on a type U and return an element T
+     * Templates : 
+     * - FUN = a function pointer (cte time), that apply an operation on a type U and return an element T
+     * Params : 
+     * - a = an array of type U
+     * Example : 
+     * ===============
+     * let a = [1, 2, 3];
+     * let res = a.map!|x| => x + 1;
+     * println (res); // [2, 3, 4]
+     * ===============
      */
     def map (FUN : fn (U) -> T, C of [U], U, T) (a : C) -> mut [mut T] {
-        let mut b : [mut T] = alias allocArray!T (a.len);
+        let mut b : [mut T] = allocArray!T (a.len);  // fast allocation, no need to init all the index     
         for it in 0_u64 .. b.len {
             cte if (is!T (X of [J], J)) 
                 b [it] = alias FUN (a [it])
@@ -19,13 +28,25 @@ pub {
                 b [it] = FUN (a [it])
         }
         alias b
-    }
+    } catch {
+        _ => return alias []
+    }     
 
     /**
-     * 
+     * Perform a generalized prefix sum operation
+     * Templates : 
+     * - FUN = a function pointer that applies an operation on two elements
+     * Params : 
+     * - a = an array of U
+     * Example : 
+     * ==============
+     * let a = [1, 2, 3];
+     * let res = a.scan!|x, y| => x + y;
+     * println (res); // [1, 3, 6]
+     * ==============
      */
     def scan (FUN : fn (U, U)-> U, C of [U], U) (a : C) -> mut [mut U] {
-        let mut b : [mut U] = alias [U::init ; new a.len];
+        let mut b : [mut U] = allocArray!U (a.len);  // fast allocation, no need to init all the index     ;
         if b.len != 0_u64 {
             b [0] = a [0];
             for i in 1_u64 .. a.len {
@@ -33,21 +54,61 @@ pub {
             }
         }
         alias b
+    } catch {
+        _ =>
+            return alias []
     }
 
+    /**
+     * Run a function on each element
+     * Templates : 
+     * - FUN = a function that perform an operation on an element of type U
+     * Params : 
+     * a = an array of type U
+     * Example : 
+     * ============
+     * let a = [1, 2, 3];
+     * a.each!|x| => println (x);    
+     * ============
+     */
     def each (FUN : fn (U)-> void, C of [U], U) (a : C) -> void {
         for i in a
             FUN (i)
     }
 
-    def fold (FUN : fn (U, U)-> U, C of [U], U) (a : C) -> U {
+    /**
+     * Reduce an array into one value
+     * Throws : 
+     * OutOfArray = This assume the array has at least one value
+     * Templates : 
+     * FUN = a function applying commutative operation on two element
+     * Params : 
+     * a = an array of U
+     * Example : 
+     * ==============     
+     * {
+     *     let a = [1, 2, 3]
+     *     let b = a.fold!|x, y| => x + y;
+     *     println (b);
+     * } catch {
+     *     x : OutOfArray =>
+     *      println (x.getStackTrace ());
+     * } 
+     * ==============
+     */
+    def fold (FUN : fn (U, U)-> U, C of [U], U) (a : C) -> U
+        throws OutOfArray
+    {
+        if (a.len == 0_u64) 
+            throw OutOfArray::new ();
+        
         if a.len == 1_u64
             a [0]
         else {
-            let len_2 = a.len / 2_u64;            
-            FUN (fold (a[0_u64..len_2]), fold (a[len_2 .. a.len]))
+            let len_2 = a.len / 2_u64;
+            FUN (fold (a[0_u64 .. len_2]), fold (a[len_2 .. a.len]))
         }
     }
-    
+        
 }
 

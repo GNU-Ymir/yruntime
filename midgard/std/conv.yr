@@ -1,6 +1,7 @@
 mod std::conv;
 import std::traits;
 import core::array;
+import std::c::string;
 
 extern (C) def snprintf (buf : &c8, len : i32, format : &c8, ...) -> i32;
 extern (C) def sprintf (buf : &c8, format : &c8, ...);
@@ -12,15 +13,20 @@ pub {
      * An array of c8
      */
     def to (T of [c8]) (a : &c8) -> dmut [c8] {
-        if (a is null || *a == '\u{0}') return [];
-        let dmut ret = ['\u{0}' ; new strlen (a)];
+        if (a is null || *a == '\u{0}'c8) return [];
+        let dmut ret = ['\u{0}'c8 ; new strlen (a)];
         let mut b = a, mut it = 0u32;
-        while *b != '\u{0}' {
+        while *b != '\u{0}'c8 {
             ret [it] = *b;
             b = b + 1u32;
             it += 1u32;
         }
         alias ret
+    } catch {
+        _ : OutOfArray =>
+            []
+        _ : SegFault =>
+            []
     }
 
     /**
@@ -32,9 +38,10 @@ pub {
      * assert (z == "123");
      * --------------
      */
-    def if (isIntegral!T2) to (T of [c32], T2) (elem : T2) -> dmut [c32] {    
+    def if (isIntegral!T2) to (T of [c32], T2) (elem : T2) -> dmut [c32] {
+        import std::io;
         if (elem < cast!(T2)(0)) {
-            return alias ("-" ~ to!([c32]) (-elem));
+            return ("-" ~ to!([c32]) (-elem));
         } else if (elem == cast!(T2)(0))
             return copy "0";
         
@@ -44,13 +51,17 @@ pub {
             size += 1u64;
         }
 
-        let mut res : [mut c32] = alias ['\u{0}' ; new size];
+        let mut res : [mut c32] = ['\u{0}' ; new size];
         let mut aux = elem;
         for it in 0u64 .. size {
             res [size - it - 1u64] = to!c32 (aux % cast!T2 (10i8));
             aux /= cast!T2 (10i8);
         }
         alias res
+    } catch {
+        _ : OutOfArray => {
+            []
+        }
     }
 
     /**
@@ -77,11 +88,15 @@ pub {
      * Transform a array of c8 into an array of c32
      */
     def to (T of [c32]) (elem : [c8]) -> dmut [c32] {
-        let dmut res = alias ['\u{0}'; new elem.len];
+        let dmut res = ['\u{0}'; new elem.len];
         for i in 0u64 .. elem.len {
             res [i] = cast!(c32) (elem [i])
         }
         alias res
+    } catch {
+        _ : OutOfArray => {
+            []
+        }
     }
 
     /**
@@ -93,7 +108,7 @@ pub {
     def if (isFloating!T2) to (T of [c32], T2) (elem : T2, prec : u32 = 6u32) -> dmut [c32] {
         import std::io
         let len = cast!u32 (snprintf (cast!(&c8) (null), 0, "%.*f"s8.ptr, prec, elem));
-        let dmut res = alias ['\u{0}'c8 ; new len];
+        let dmut res = ['\u{0}'c8 ; new len];
         sprintf (res.ptr, "%.*f"s8.ptr, prec, elem);
         alias res.to!([c32]) ()
     }

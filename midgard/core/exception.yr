@@ -3,14 +3,22 @@ import core::typeinfo;
 import std::io;
 
 extern (C) def _yrt_exc_rethrow ();
+extern (C) def _yrt_exc_get_stack_trace ()-> [c8];
 
 pub alias _yrt_jmp_buf_type = [u8 ; 200];
 
 
 pub class @abstract Exception {
-    self () {}
+
+    let trace : [c8];
+    
+    self () with trace = _yrt_exc_get_stack_trace () {}
 
     impl std::io::Printable;
+
+    pub def @final getStackTrace (self) -> [c8] {
+        self.trace
+    }
 }
 
 pub class AssertError over Exception {
@@ -23,6 +31,14 @@ pub class AssertError over Exception {
     }
 }
 
+
+pub class SegFault over Exception {
+    pub self () {}
+
+    pub over print (self) {
+        print ("SegFault (\n", self.getStackTrace (), ")");
+    }
+}
 
 pub def abort (test : bool, msg : [c32])
     throws AssertError
@@ -40,4 +56,10 @@ pub def abort (test : bool)
 
 pub def rethrow () {
     _yrt_exc_rethrow ();
+}
+
+pub extern (C) def _yrt_throw_seg_fault () -> void
+    throws SegFault
+{
+    throw SegFault::new ()
 }
