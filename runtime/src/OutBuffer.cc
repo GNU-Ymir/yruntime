@@ -1,5 +1,6 @@
 #include <OutBuffer.hh>
 #include <string.h>
+#include <gc/gc.h>
 
 void write_ (OutBuffer& buf, const char* cs) {
     auto cslen = strlen (cs);
@@ -86,12 +87,13 @@ void resize (OutBuffer& buf, ulong len) {
     else if (buf.capacity * 2 < len) buf.capacity = len + buf.capacity + 1;
     else buf.capacity = (buf.capacity * 2) + 1;
 	
-    char* aux = (char*) malloc (sizeof(char) * buf.capacity);
+    char* aux = (char*) GC_malloc (sizeof(char) * buf.capacity);
 
     for (uint i = 0 ; i < buf.len ; i ++)
 	aux [i] = buf.current [i];
-	
-    free (buf.current);
+
+    if (buf.current != NULL)
+	GC_free (buf.current);
     buf.current = aux;
 }
     

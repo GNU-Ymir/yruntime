@@ -8,52 +8,59 @@
 #include <unistd.h>
 #include <OutBuffer.hh>
 
+extern "C" void _yrt_throw_seg_fault ();
 
-
-void runCommand (char *sys) {
+void runCommand (OutBuffer & buf, char *sys) {
     auto fp = popen (sys, "r");
-    if (fp == NULL) {
-	printf ("Failed to run command %s\n", sys);
-	exit (1);
-    }
+    if (fp != NULL) {       
+	char path[255];
+	memset (path, 0, 255 - 1);
     
-    char path[255];
-    memset (path, 0, 255 - 1);    
-    printf ("in function : ");
-    auto func = fgets (path, 255 - 1, fp);
-    printf ("%s", func);
-    printf ("\t%s", fgets (path, 255 - 1, fp));    
-    pclose (fp);
+	write_ (buf, " in function : ");
+	auto func = fgets (path, 255 - 1, fp);
+	write_ (buf, func);
+	fgets (path, 255 -1, fp);
+	if (path [0] != '?') {
+	    write_ (buf, "└──>");
+	    write_ (buf, path);
+	}
+	pclose (fp);
+    }
 }
 
-void bt_sighandler(int sig, struct sigcontext ctx) {
+extern "C" Array _yrt_exc_get_stack_trace () {
     void *trace[16];
     char **messages = (char **)NULL;
-    int i, trace_size = 0;
 
-    printf("Got signal %d\n", sig);
-    trace_size = backtrace(trace, 16);
+    auto trace_size = backtrace(trace, 16);
     messages = backtrace_symbols(trace, trace_size);
     /* skip first stack frame (points here) */
-    printf("[bt] Execution path:\n");
-    for (i=2; i<trace_size; ++i)
-	{
-	    printf("[bt] #%d ", i - 1);
-	    /* find first occurence of '(' or ' ' in message[i] and assume
-	     * everything before that is the file name. (Don't go beyond 0 though
-	     * (string terminator)*/
-	    size_t p = 0;
-	    while(messages[i][p] != '(' && messages[i][p] != ' '
-		  && messages[i][p] != 0)
-		++p;
+    OutBuffer buf;
+    
+    write_ (buf, "[bt] Execution path:\n");
+    for (int i=2; i<trace_size; ++i)
+    	{
+    	    write_ (buf, "[bt] #");
+	    write_ (buf, i - 1);
+	    
+    	    /* find first occurence of '(' or ' ' in message[i] and assume
+    	     * everything before that is the file name. (Don't go beyond 0 though
+    	     * (string terminator)*/
+    	    size_t p = 0;
+    	    while(messages[i][p] != '(' && messages[i][p] != ' '
+    		  && messages[i][p] != 0)
+    		++p;
 
-	    char syscom[256];
-	    snprintf(syscom, 256, "addr2line %p -f -e %.*s", trace[i], (int) p, messages[i]);
+    	    char syscom[256];
+    	    snprintf(syscom, 256, "addr2line %p -f -e %.*s", trace[i], (int) p, messages[i]);
 
-	    runCommand (syscom);
-	}
+	    runCommand (buf, syscom);
+    	}
+    return {buf.len, buf.current};
+}
 
-    exit(1);
+void bt_sighandler(int sig, struct sigcontext ctx) {    
+    _yrt_throw_seg_fault ();    
 }
 
 void installHandler () {
@@ -64,9 +71,9 @@ void installHandler () {
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART;
 
-    sigaction(SIGSEGV, &sa, NULL);
-    sigaction(SIGUSR1, &sa, NULL);
-    sigaction(SIGABRT, &sa, NULL);
+    sigaction(SIGSEGV, &sa, NULL); // On seg fault we throw an exception
+    // sigaction(SIGUSR1, &sa, NULL);
+    // sigaction(SIGABRT, &sa, NULL); // Not abort, because it is the thing happening when a exception is not caught
 }
 
 extern "C" void _y_error (unsigned long len, char * ptr) {
@@ -89,6 +96,7 @@ extern "C" int _yrt_run_main_debug (int argc, char ** argv, int(*y_main) (Array)
 }
 
 extern "C" int _yrt_run_main (int argc, char ** argv, int(*y_main) (Array)) {
+    installHandler ();
     //auto args = (Array*) malloc (sizeof (Array) * argc);
     // for (int i = 0 ; i < argc ; i++) {
     // 	args [i] = utf8toUtf32 (argv [i]);
