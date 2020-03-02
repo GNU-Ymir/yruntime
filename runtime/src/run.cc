@@ -7,8 +7,13 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <OutBuffer.hh>
+#include <throw.hh>
+#include <gc/gc.h>
 
 extern "C" void _yrt_throw_seg_fault ();
+
+
+bool DEBUG = false;
 
 void runCommand (OutBuffer & buf, char *sys) {
     auto fp = popen (sys, "r");
@@ -19,8 +24,8 @@ void runCommand (OutBuffer & buf, char *sys) {
 	write_ (buf, " in function : ");
 	auto func = fgets (path, 255 - 1, fp);
 	write_ (buf, func);
-	fgets (path, 255 -1, fp);
-	if (path [0] != '?') {
+	char* ret = fgets (path, 255 -1, fp);
+	if (path [0] != '?' && ret != NULL) {
 	    write_ (buf, "└──>");
 	    write_ (buf, path);
 	}
@@ -29,6 +34,42 @@ void runCommand (OutBuffer & buf, char *sys) {
 }
 
 extern "C" Array _yrt_exc_get_stack_trace () {
+    if (DEBUG) {	
+	void *trace[16];
+	char **messages = (char **)NULL;
+
+	auto trace_size = backtrace(trace, 16);
+	messages = backtrace_symbols(trace, trace_size);
+	/* skip first stack frame (points here) */
+	OutBuffer buf;
+    
+	write_ (buf, "[bt] Execution path:\n");
+	for (int i=2; i<trace_size; ++i)
+	    {
+		write_ (buf, "[bt] #");
+		write_ (buf, i - 1);
+	    
+		/* find first occurence of '(' or ' ' in message[i] and assume
+		 * everything before that is the file name. (Don't go beyond 0 though
+		 * (string terminator)*/
+		size_t p = 0;
+		while(messages[i][p] != '(' && messages[i][p] != ' '
+		      && messages[i][p] != 0)
+		    ++p;
+
+		char syscom[256];
+		snprintf(syscom, 256, "addr2line %p -f -e %.*s", trace[i], (int) p, messages[i]);
+
+		runCommand (buf, syscom);
+	    }
+    
+	return {buf.len, buf.current};
+    } else {
+	return {0, NULL};
+    }
+}
+
+extern "C" Array _yrt_exc_get_stack_loc () {
     void *trace[16];
     char **messages = (char **)NULL;
 
@@ -38,7 +79,7 @@ extern "C" Array _yrt_exc_get_stack_trace () {
     OutBuffer buf;
     
     write_ (buf, "[bt] Execution path:\n");
-    for (int i=2; i<trace_size; ++i)
+    for (int i=2; i<3; ++i)
     	{
     	    write_ (buf, "[bt] #");
 	    write_ (buf, i - 1);
@@ -85,7 +126,10 @@ extern "C" void _y_error (unsigned long len, char * ptr) {
 }
 
 extern "C" int _yrt_run_main_debug (int argc, char ** argv, int(*y_main) (Array)) {
+    DEBUG = true;
     installHandler ();
+    _yrt_exc_init ();
+    
     auto args = (Array*) malloc (sizeof (Array) * argc);
     for (int i = 0 ; i < argc ; i++) {
 	args [i] = {strlen (argv [i]), argv [i]};
@@ -96,7 +140,9 @@ extern "C" int _yrt_run_main_debug (int argc, char ** argv, int(*y_main) (Array)
 }
 
 extern "C" int _yrt_run_main (int argc, char ** argv, int(*y_main) (Array)) {
+    DEBUG = false;
     installHandler ();
+    _yrt_exc_init ();
     //auto args = (Array*) malloc (sizeof (Array) * argc);
     // for (int i = 0 ; i < argc ; i++) {
     // 	args [i] = utf8toUtf32 (argv [i]);
