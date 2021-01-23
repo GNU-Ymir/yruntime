@@ -1,8 +1,9 @@
 #include <stdio.h>
+#include "../include/print.h"
 
 typedef unsigned int uint;
 
-char* toUtf8 (unsigned int code, char chars[5]) {
+char* _yrt_to_utf8 (unsigned int code, char chars[5]) {
     if (code <= 0x7F) {
 	chars[0] = (code & 0x7F); chars[1] = '\0';
     } else if (code <= 0x7FF) {
@@ -45,7 +46,7 @@ size_t utf8_codepoint_size (char c) {
     return 4;
 }
 
-unsigned int toUtf32 (char* text) {
+unsigned int _yrt_to_utf32 (char* text) {
     size_t byte_count = utf8_codepoint_size(text[0]);
 			
     uint a = 0, b = 0, c = 0, d = 0;
@@ -79,34 +80,35 @@ unsigned int toUtf32 (char* text) {
     return ((b0 << 18) | (b1 << 12) | (b2 << 6) | b3);    
 }
 
-extern "C" void _yrt_putwchar (unsigned int code) {
+void _yrt_putwchar (unsigned int code) {
     char c[5];
-    printf ("%s", toUtf8 (code, c));    
+    printf ("%s", _yrt_to_utf8 (code, c));    
 }
 
-extern "C" void _yrt_printf32 (float x) {
+void _yrt_printf32 (float x) {
     printf ("%f", x);
 }
 
-extern "C" void _yrt_printf64 (double x) {
+void _yrt_printf64 (double x) {
     printf ("%lf", x);
 }
 
-extern "C" unsigned int _yrt_getwchar () {
+unsigned int _yrt_getwchar () {
     char c[5];
-    scanf ("%c", &c[0]);
+    int ig = scanf ("%c", &c[0]);
     size_t size = utf8_codepoint_size (c[0]);
-    for (int i = 1 ; i < (int) size ; i++)
-	scanf ("%c", &c[i]);
+    for (int i = 1 ; i < (int) size ; i++) {
+	int ig_ = scanf ("%c", &c[i]);
+    }
     
-    return toUtf32 (c);
+    return _yrt_to_utf32 (c);
 }
 
-extern "C" unsigned int _yrt_getwchar_in_file (FILE * file) {
+unsigned int _yrt_getwchar_in_file (FILE * file) {
     char c[5];
     c[0] = fgetc (file);
     size_t size = utf8_codepoint_size (c[0]);
     for (int i = 1 ; i < (int) size; i ++)
 	c[i + 1] = fgetc (file);
-    return toUtf32 (c);
+    return _yrt_to_utf32 (c);
 }

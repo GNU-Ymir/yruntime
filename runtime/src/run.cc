@@ -1,3 +1,4 @@
+
 #include <array.hh>
 #include <string.h>
 #include <stdlib.h>
@@ -9,6 +10,15 @@
 #include <OutBuffer.hh>
 #include <throw.hh>
 #include <gc/gc.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <execinfo.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <sstream>
+
 
 extern "C" void _yrt_throw_seg_fault ();
 
@@ -53,12 +63,15 @@ extern "C" Array _yrt_exc_get_stack_trace () {
 		 * everything before that is the file name. (Don't go beyond 0 though
 		 * (string terminator)*/
 		size_t p = 0;
-		while(messages[i][p] != '(' && messages[i][p] != ' '
-		      && messages[i][p] != 0)
-		    ++p;
-
-		char syscom[256];
-		snprintf(syscom, 256, "addr2line %p -f -e %.*s", trace[i], (int) p, messages[i]);
+		char file[245];
+		while(messages[i][p] != '(' && messages[i][p] != 0) {
+		    file[p] = messages [i][p];
+		    p += 1;
+		}
+		file [p] = '\0';
+			       		
+		char syscom[512];
+		snprintf(syscom, 512, "addr2line %p -f -e %s", trace[i], file);
 
 		runCommand (buf, syscom);
 	    }

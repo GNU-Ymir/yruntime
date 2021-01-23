@@ -1,14 +1,16 @@
-#pragma once
-#include <array.hh>
+#ifndef _YTYPEINFO_H_
+#define _YTYPEINFO_H_
 
-struct TypeInfo {    
+#include "ymemory.h"
+
+typedef struct {    
     unsigned int id;
     unsigned long size;
-    Array inner;
-    Array name;
-};
+    _yarray inner;
+    _yarray name;
+}  _ytype_info;
 
-enum TypeIDs {
+enum _ytype_ids {
     ARRAY        = 1,
     BOOL         = 2,
     CHAR         = 3,
@@ -26,5 +28,10 @@ enum TypeIDs {
 };
 
 
-extern "C" bool _Y4core8typeinfo6equalsF4core8typeinfo8TypeInfo4core8typeinfo8TypeInfoZb (TypeInfo a, TypeInfo b);
-extern "C" bool _yrt_type_equals (TypeInfo a, TypeInfo b);
+/**
+ * Verify the equallity between the type a and the type b 
+ * 
+ */
+char _yrt_type_equals (_ytype_info a, _ytype_info b);
+
+#endif
