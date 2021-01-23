@@ -1,122 +1,193 @@
 mod std::concurrency::thread;
-import std::io, std::concurrency::message;
-import std::any;
-import core::typeinfo, core::duplication;
+
+import core::typeinfo;
+
+import etc::runtime::thread;
+import std::io;
+import std::concurrency::pipe;
+
+pub struct
+| mut id : usize
+| pipe : &Pipe
+ -> Thread;
 
 
 /**
- * Lib pthread, create a thread
- */
-extern (C) def _yrt_thread_create (mut thread : &(mut usize), attr : &void, call : fn (mut Thread)-> void, mut data : Thread);
-
-/**
- * Wait the end of a thread
- */
-extern (C) def _yrt_thread_join (thread : usize, attr : &void);
-
-/**
- * Interrupt the thread
- */
-extern (C) def _yrt_thread_cancel (thread : usize, attr : &void);
-
-/**
- * Class and pointer have the same size, so there is no problem for pthread
- * And the class will be ok to run
- */
-def threadFunc (mut actor : Thread) -> void {
-    (alias actor).run ();
-}
-
-/**
- * Example : 
- * =================
- * mod main;
- *
- * import std::concurrency::actor;
+ * Spawn the function inside of a thread
+ * @warning: This type of thread are heavy thread
+ * @info: to spawn light thread, use std::concurrency::future module instead
+ * @params: 
+ *    - func: the function to run inside a thread
+ * 
+ * @example: 
+ * ============
  * import std::io;
+ * import std::concurrency::thread;
+ * import std::any;
  *
- * extern (C) def usleep (time : u32);
- *
- * class MyThread over Thread {
- *
- *    pub self () {}
- *  
- *    pub over run (mut self) {
- *        usleep (1000_000_u32);
- *        println ("Ready to recv message !");
- *        loop {
- *            let msg = self.recv ();
- *            println (msg);
- *        }
- *     }
+ * def thread_func (th : Thread) -> void {
+ *   let msg = th.pipe.read ();
+ *   match msg {
+ *      x : &Some!(i32) => {
+ *          println ("Ping : ", x);
+ *          th.pipe.write (x.unwrap () + 19);
+ *      }
+ *   }
  * }
- *
  *
  * def main () {
- *     let mut x = MyThread::new ();
- *     (alias x).spawn ();
- *     let dmut array = [1, 2, 3, 4, 5];
- *     loop {
- *         x.send (array);
- *         usleep (1000_000_u32);
- *     }
- *
- *     array [0] = 9;
- *     (alias x).join ();
+ *   let th = spawn (&thread_func);
+ *   th.pipe.write (23);
+ *   println ("Pong : ", th.pipe.read ());
+ *   th.join ();
  * }
- * ====================
- * A thread is a sequence of instruction that are managed independently
- * They are used to perform asynchronus operation
+ * ============
  */
-pub class Thread {
+pub def spawn (func : fn (Thread) -> void) -> Thread {
+    let dmut th = internal::FnThreadLauncher::new (func);    
+    Runtime!(&internal::FnThreadLauncher)::_yrt_thread_create (alias &(th.th_content.id), null, &internal::thread_fn_main, th);
+    th.th_content
+}
 
-    let mut _id = 0us;
+/**
+ * Spawn a function from a closure inside a thread
+ * @warning: This type of thread are heavy thread
+ * @info: to spawn light thread, use std::concurrency::future module instead
+ * @params: 
+ *    - func: the function to run inside a thread
+ * 
+ * @example: 
+ * ==========
+ * import std::box;
+ * 
+ * let dmut i = Box::new (0); // a box is a reference, so it's modification will be visible from a closure
+ * let th = spawn (move |_| => {
+ *      loop {
+ *         println ("I : ", i.get ()); // accessible by closure
+ *         if (i.get () == 1) break {}
+ *      }
+ * });
+ * 
+ * i:.set (1);
+ * th.join ();
+ * ==========
+ */
+pub def spawn (func : dg (Thread)-> void)-> Thread {
+    let dmut th = internal::DgThreadLauncher::new (func, true);
+    Runtime!(&internal::DgThreadLauncher)::_yrt_thread_create (alias &(th.th_content.id), null, &internal::thread_dg_main, th);
+    th.th_content
+}
 
-    let mut _pipe = Pipe::new ();
-    
-    pub self () {}
+
+/**
+ * Spawn a thread by does not create pipe description
+ */
+pub def spawnNoPipe (func : dg (Thread)-> void)-> Thread {
+    let dmut th = internal::DgThreadLauncher::new (func, false);
+    Runtime!(&internal::DgThreadLauncher)::_yrt_thread_create (alias &(th.th_content.id), null, &internal::thread_dg_main, th);
+    th.th_content
+}
+
+
+/**
+ * Wait the end of execution of a thread
+ * @params: 
+ *    - th: the thread to wait
+ * @example: 
+ * =============
+ * let x = spawn (|_| => {
+ *     for i in 0 .. 1_000_000 {
+ *         println (i);
+ *     }
+ * });
+ * 
+ * x.join ();
+ * println ("Printed a million times already !");
+ * =============
+ */
+pub def join (th : Thread) -> void {
+    _yrt_thread_join (th.id, null);           
+}
+
+/**
+ * Kill a running thread
+ * @params: 
+ *    - th: the thread to kill
+ * @example: 
+ * ==============
+ * let x = spawn (|_| => {
+ *    loop {
+ *       println ("Looping forever?");
+ *    }
+ * });
+ * x.kill ();
+ * println ("I guess not!");
+ * ==============
+ */
+pub def kill (th : Thread) -> void {
+    _yrt_thread_cancel (th.id);           
+}
+
+
+mod Runtime (class T) {
+    pub extern (C) def _yrt_thread_create (dmut id : &usize, attr : &void, func : fn (T)-> void, data : T)-> i32;
+}
+
+mod internal { 
 
     /**
-     * The things to do in the thread
-     * This method is launched in the thread, and is the entry point of the thread
+     * This function is used to run a thread in a runtime created
+     * thread We cannot directly give the closure of run, for obvious
+     * reason, this function is a proxy that perform a sort of closure
+     * on the thread
      */
-    pub def run (mut self)-> void {}
-
-    /**
-     * Send a message to the thread
-     * The message will be encapsulated in an Any type (Cf. std::any)
-     * The thread that is performing the send, will be blocked until the Thread is in recv state
-     */
-    pub def send (T) (self, x : T) {
-        let mut value = Some!(T)::new (x);       
-        self._pipe.write (value);
+    pub def thread_fn_main (actor : &FnThreadLauncher) -> void {
+        actor.func (actor.th_content);
     }
 
     /**
-     * Recv a message using the pipe of this thread
-     * Normally this function is used within the context of the run method
-     * Block the execution until the thread effectively received something
+     * A thread is a sequence of instruction that are managed independently
+     * They are used to perform asynchronus operation
      */
-    pub def recv (self)-> Any {
-        self._pipe.read!(Any)()
+    pub class @final FnThreadLauncher {
+
+        // The id and the pipe to communicate with the spawned thread
+        pub let dmut th_content : Thread = Thread (0us, Pipe::new ());
+
+        // The function that is launch for the thread
+        pub let func : fn (Thread)-> void;
+        
+        pub self (func: fn (Thread)-> void) with func = func {}
+            
     }
 
-    pub def getId (self) -> usize 
-        self._id
-    
     /**
-     * Start the thread
+     * This function is used to run a thread in a runtime created
+     * thread We cannot directly give the closure of run, for obvious
+     * reason, this function is a proxy that perform a sort of closure
+     * on the thread
      */
-    pub def spawn (mut self) {
-        _yrt_thread_create (alias (&self._id), null, &threadFunc, alias self);
+    pub def thread_dg_main (actor : &DgThreadLauncher) -> void {
+        actor.func (actor.th_content);
     }
 
-    pub def join (self) {
-        _yrt_thread_join (self._id, null);
+    /**
+     * A thread is a sequence of instruction that are managed independently
+     * They are used to perform asynchronus operation
+     */
+    pub class @final DgThreadLauncher {
+
+        // The id and the pipe to communicate with the spawned thread
+        pub let dmut th_content : Thread = Thread (0us, Pipe::new ());
+
+        // The function that is launch for the thread
+        pub let func : dg (Thread)-> void;
+                
+        pub self (func: dg (Thread)-> void, pipes : bool)
+            with th_content = Thread (0us, Pipe::new (pipes)), func = func {}
+            
     }
 
-    pub def kill (mut self) {
-        _yrt_thread_cancel (self._id, null);
-    }
     
 }
+

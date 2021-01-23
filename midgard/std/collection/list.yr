@@ -1,0 +1,522 @@
+mod std::collection::list;
+
+import core::typeinfo;
+import core::duplication;
+import core::exception;
+import core::array;
+
+import std::collection::seq;
+import std::io;
+import std::option;
+
+/**
+ * Macro that can be used to declare a list easily
+ * @example: 
+ * =============
+ * let x = list#{(1)::(2)::(3)};
+ * let y = list#[1, 2, 3];
+ * =============
+ */
+pub macro list {
+    
+    pub self (fst = __expr rest=("," val=__expr)*) skips (" " | "\n" | "\t" | "\r") {
+        let dmut z = List!(typeof (#(fst)))::new ();
+        z:.push (#(fst));
+        #(for i in rest) {
+            z:.push (#(i::val))
+        }
+        alias z
+    }
+    
+    pub self ("(" fst = __expr ")" rest=("::" "(" val=__expr ")")*) skips (" " | "\n" | "\t" | "\r") {
+        let dmut z = List!(typeof (#(fst)))::new ();
+        z:.push (#(fst));
+        #(for i in rest) {
+            z:.push (#(i::val))
+        }
+        alias z
+    }
+
+}
+
+
+/**
+ * A doubly linked list
+ * This class allows to push and pop elements from either end in constant time 
+ * It stores immutable values but is itself mutable 
+ */
+pub class @final List (T) {
+
+    let dmut _head : &ListNode!(T) = Empty!(T)::new ();
+
+    let dmut _tail : &ListNode!(T) = Empty!(T)::new ();
+
+    let mut _len : u64 = 0u64;
+    
+    /**
+     * Create an empty list
+     * @example: 
+     * ===========
+     * let x = List!(i32)::new ();
+     * 
+     * assert (x.isEmpty ());
+     * ===========
+     */
+    pub self () {}
+
+
+    prv self (dmut head : &ListNode!(T), dmut tail : &ListNode!(T), len : u64)
+        with _head = alias head, _tail = alias tail, _len = len
+    {}
+    
+    /**
+     * Push an element at the end of the list
+     * @params:
+     *    - val: the element to append
+     * @example: 
+     * ============
+     * let dmut x = List!(i32)::new ();
+     * x:.push (1);
+     * x:.push (1);
+     * assert (x.len () == 2);
+     * ============
+     * @complexity: O (1)
+     */
+    pub def push (mut self, val : T)-> void {
+        match self._tail {            
+            dmut tail: &ListValue!(T) => {
+                let dmut n_node = ListValue!(T)::new (val, alias tail, alias tail.next);
+                tail.next = alias n_node;
+                self._tail = alias n_node;            
+            }
+            _ => {
+                self._head = ListValue!(T)::new (val, alias self._tail, alias self._head);
+                self._tail = alias self._head;
+            }
+        }
+        self._len += 1u64; 
+    }
+    
+    /**
+     * Pop the last element of the list and return it
+     * @throws: 
+     *    - &OutOfArray: if the list is empty
+     * @example: 
+     * =============
+     * let dmut x = List!(i32)::new ();
+     * x:.push (1);
+     * {
+     *    assert (x:.unsafePop () == 1);
+     * } catch (
+     *    _: &OutOfArray => 
+     *        println ("List was empty");
+     * } 
+     * =============
+     * @complexity: O (1)
+     */
+    pub def unsafePop (mut self) -> T
+        throws &OutOfArray
+    {
+        match self._tail {
+            dmut tail : &ListValue!(T) => {
+                let ret = tail.value;
+                match tail.prev {
+                    dmut prev : &ListValue!(T) => {
+                        prev.next = alias tail.next;
+                        self._tail = alias prev;
+                    }
+                    _ => { // Only on element
+                        self._head = alias tail.prev;
+                        self._tail = alias self._head;
+                    }
+                }
+                
+                self._len -= 1u64; 
+                return ret;
+            }
+            _ => throw OutOfArray::new ();
+        }
+    }
+    
+    /**
+     * Pop the last element of the list and return it inside an option type
+     * @example: 
+     * =============
+     * let dmut x = List!(i32)::new ();
+     * x:.push (1);
+     * assert (x:.pop () == 1);
+     * =============
+     * @complexity: O (1)
+     */
+    pub def pop (mut self) -> &Option!(T) {
+        match self._tail {
+            dmut tail : &ListValue!(T) => {
+                let ret = tail.value;
+                match tail.prev {
+                    dmut prev : &ListValue!(T) => {
+                        prev.next = alias tail.next;
+                        self._tail = alias prev;
+                    }
+                    _ => { // Only on element
+                        self._head = alias tail.prev;
+                        self._tail = alias self._head;
+                    }
+                }
+                
+                self._len -= 1u64; 
+                return Some!(T)::new (ret);
+            }
+            _ => return None!(T)::new ();
+        }
+    }
+
+    /**
+     * Push an element at the beginning of the list
+     * @params: 
+     *    - val: the value to push
+     * @example: 
+     * ==============
+     * let dmut x = List!(i32)::new ();
+     * x:.pushFront (1);
+     * assert (x.len () == 1);
+     * ==============
+     * @complexity: O (1)
+     */    
+    pub def pushFront (mut self, val : T) -> void {
+         match self._head {            
+            dmut head: &ListValue!(T) => {
+                let dmut n_node = ListValue!(T)::new (val, alias head.prev, alias head);
+                head.prev = alias n_node;
+                self._head = alias n_node;            
+            }
+            _ => {
+                self._head = ListValue!(T)::new (val, alias self._tail, alias self._head);
+                self._tail = alias self._head;
+            }
+        }
+        self._len += 1u64; 
+    }
+
+    /**
+     * Remove the first element of the list and return it
+     * @throws: 
+     *    - &OutOfArray: if the list was empty
+     * @example: 
+     * ============
+     * let dmut x = List!(i32)::new ();
+     * x:.push (12);
+     * assert (x:.unsafePopFront () == 12);
+     * ============
+     * @complexity: O(1)
+     */
+    pub def unsafepopFront (mut self) -> T
+        throws &OutOfArray
+    {
+        match self._head {
+            dmut head : &ListValue!(T) => {
+                let ret = head.value;
+                match head.next {
+                    dmut next : &ListValue!(T) => {
+                        next.prev = alias head.prev;
+                        self._head = alias next;
+                    }
+                    _ => { // Only on element
+                        self._head = alias head.next;
+                        self._tail = alias self._head;
+                    }
+                }
+                
+                self._len -= 1u64; 
+                return ret;
+            }
+            _ => throw OutOfArray::new ();
+        }
+    }
+   
+    /**
+     * Remove the first element of the list and return it in an option type
+     * @example: 
+     * ============
+     * let dmut x = List!(i32)::new ();
+     * x:.push (12);
+     * assert (x:.popFront () == 12);
+     * ============
+     * @complexity: O(1)
+     */
+    pub def popFront (mut self) -> &Option!(T)
+    {
+        match self._head {
+            dmut head : &ListValue!(T) => {
+                let ret = head.value;
+                match head.next {
+                    dmut next : &ListValue!(T) => {
+                        next.prev = alias head.prev;
+                        self._head = alias next;
+                    }
+                    _ => { // Only on element
+                        self._head = alias head.next;
+                        self._tail = alias self._head;
+                    }
+                }
+                
+                self._len -= 1u64; 
+                return Some!(T)::new (ret);
+            }
+            _ => return None!(T)::new ();
+        }
+    }
+
+    /**
+     * @returns: true if the list is empty
+     * @complexity: O (1)
+     */
+    pub def isEmpty (self) -> bool {
+        self._len == 0u64
+    }
+
+    /**
+     * Remove all the elements from the list
+     * @complexity: O (1)
+     */
+    pub def clear (mut self) -> void {
+        match self._head {
+            dmut head : &ListValue!(T) => { // To avoid useless allocations
+                self._head = alias head.prev;
+                self._tail = alias self._tail;
+            }
+            _ => {}
+        }
+    }
+
+    /**
+     * @returns: the value of the first element contained in the list, None if the list is empty
+     * @complexity: O(1)
+     */
+    pub def front (self) -> &Option!(T) {
+        match self._head {
+            head: &ListValue!(T) => { Some!(T)::new (head.value) }
+            _ => { None!(T)::new () }
+        }
+    }
+
+    /**
+     * @returns: the value of the last element contained in the list, None if the list is empty
+     * @complexity: O(1)
+     */
+    pub def back (self) -> &Option!(T) {
+        match self._tail {
+            tail : &ListValue!(T) => { Some!(T)::new (tail.value) }
+            _ => { None!(T)::new () }
+        }
+    }
+
+    /**
+     * This method is used to traverse the list with an iterator
+     * @example: 
+     * ==========
+     * let list = list#{1, 2, 3};
+     * for v, index in list {
+     *     println (v, " ", index);
+     * }
+     * 
+     * for v in list {
+     *     println (v);
+     * }
+     * ==========
+     */
+    pub def begin (self) -> dmut &ListIterator!(T) {
+        return ListIterator!(T)::new (0u64, self._head);
+    }
+
+    /**
+     * @returns: an iterator to the end of the list, used to stop the loop
+     * @example: 
+     * ============
+     * let x = list#{1, 2, 3};
+     * let dmut beg_it = alias x.begin ();
+     * while (beg_it != x.end ()) {
+     *      println (beg_it.get!0);
+     *      beg_it:.next ();
+     * }
+     * ============
+     */
+    pub def end (self) -> &ListIterator!(T) {
+        match self._tail {
+            x : &ListValue!(T) => {
+                return ListIterator!(T)::new (self._len, x.next);
+            }
+            _ => {
+                return ListIterator!(T)::new (self._len, self._tail);
+            }
+        }
+    }
+    
+    
+    impl std::collection::seq::Seq!(T) {
+        
+        /**
+         * @returns: the number of elements contained in the list
+         * @complexity: O (1)
+         */
+        pub over len (self) -> u64 {
+            self._len
+        }
+        
+    }    
+    
+    impl std::io::Printable {
+        
+        /**
+         * Print the list to stdout
+         */
+        pub over print (self) {            
+            print ("{", self._head, "}");
+        }
+    }
+
+    impl core::duplication::Copiable {
+
+        /**
+         * List are copiable
+         * As the inner values of list is always immutable, they are not copied.
+         * Only the structure of the list is copied
+         */
+        pub over deepCopy (self) -> dmut &List!(T) {
+            let mut current = self._head;
+            let dmut empty : &ListNode!(T) = Empty!(T)::new ();
+            let dmut c : &ListNode!(T) = alias empty;
+            let dmut head = alias empty, dmut tail = alias empty;
+            let mut i = 0;
+            loop {
+                match (current) {
+                    x : &ListValue!(T) => {                        
+                        let dmut n = ListValue!(T)::new (x.value, alias c, alias empty);
+                        match c {
+                            dmut z : &ListValue!(T) => {
+                                z.next = alias n;
+                            }
+                        }
+                        
+                        c = alias n;
+                        if (i == 0) {
+                            head = alias c;
+                        }
+                        current = x.next;
+                    }
+                    _ => {
+                        tail = alias c;
+                        break {}
+                    }
+                }
+                i += 1;
+            }
+            return List!(T)::new (alias head, alias tail, self._len);
+        }
+        
+    }
+    
+}
+
+/**
+ * The content of a linked list
+ * Those nodes are only used in List, and there is no way to access them from outside
+ */
+class @abstract ListNode (T) {
+    prot self () {}
+
+    impl std::io::Printable;
+    
+}
+
+/**
+ * Encode a node of the linked list, containing a value
+ */
+class @final ListValue (T) over ListNode!T {
+
+    /// The reference to the previous node
+    pub let dmut prev : &ListNode!(T);
+
+    /// The reference to the next node 
+    pub let dmut next : &ListNode!(T);
+
+    /// The value contained in the node
+    pub let value : T;
+
+    /**
+     * Create a new node of the list
+     * @params: 
+     *    - val: the value to store
+     *    - prev: the reference to the previous node in the list
+     *    - next: the reference to the next node in the list
+     */
+    pub self (val : T, dmut prev : &ListNode!T, dmut next : &ListNode!T)
+        with prev = alias prev,
+             next = alias next,
+             value = val
+    {}    
+
+    /**
+     * Linked list are printable, this method print the value stored in the node, and the next node if it is not empty
+     */
+    pub over print (self) {
+        cte if (__pragma!compile ({print (self.value);})) {
+            print (self.value);
+            match self.next {
+                _ : &Empty!(T) => {}
+                _ => { print ("::", self.next); }
+            }
+        } else {
+            print (T::typeid);
+        } 
+    }
+    
+}
+
+/**
+ * This class encode the end of a list (in both ways previous, or next)
+ */
+class @final Empty (T) over ListNode!T {
+    pub self () {}
+
+    pub over print (self) {}
+}
+
+
+class @final ListIterator (T) {
+
+    let mut _current : &ListNode!T;
+
+    let mut _index : u64;
+
+    pub self (i : u64, node : &ListNode!T)
+        with _current = node, _index = i
+    {}
+
+    pub def next (mut self) -> void {
+        match self._current {
+            x: &ListValue!T => {
+                self._index += 1u64;
+                self._current = x.next;
+            }
+        }
+    }
+
+    pub def get (0) (self) -> &Option!(T) {
+        match self._current {
+            x : &ListValue!(T) =>
+                return Some!(T)::new (x.value);
+            _ =>
+                return None!(T)::new ();
+        }
+    }
+
+    pub def get (1) (self) -> u64 {
+        return self._index;
+    }
+
+    pub def opEquals (self, o : &ListIterator!T) -> bool {
+        self._index == o._index
+    }
+    
+}
+

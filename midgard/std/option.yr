@@ -1,101 +1,234 @@
 mod std::option;
-import std::io, std::traits;
+
+import std::conv;
+import std::io;
 import core::typeinfo;
+import core::exception;
 
-pub {
+
+/**
+ * Option type that can store a value or not
+ * This type is immutable, so it only can store immutable values
+ * @example: 
+ * ===============
+ * def foo (x : i32) -> Option!i32 {
+ *     if (x < 10) return Some::new (x);
+ *     else return None!(i32)::new ();
+ * }
+ * 
+ * let x = foo ();
+ * println (x);
+ * ===============
+ */
+pub class @abstract Option (T) {
+
+    prot self () {}
 
     /**
-     * A result is the type option of Ymir
-     * It can be either Succ or Err, and have a value only if it is a Succ
+     * @returns: the value inside the option 
+     * @throws : 
+     *    - CastFailure: if the option is empty
+     * @params: 
+     * ===============
+     * let x : &Option!i32 = Some::new (12);
+     * let y : &Option!i32 = None!(i32)::new ();
+     * {
+     *    assert (x.unwrap () == 12);
+     *    println (y.unwrap ());
+     * } catch {
+     *    ex : &CastFailure => {
+     *        println (ex);
+     *    }
+     * }
+     * ===============
      */
-    class @abstract Option (T) {
-        pub self () {}
+    pub def unwrap (self) -> T
+        throws &CastFailure {
+            throw CastFailure::new (void::typeinfo, T::typeinfo);
+        }
 
-        impl Printable;       
+    /**
+     * @returns: 
+     * the value inside the option, or v, if it is empty
+     * @params: 
+     *    - v: the value to return if option is empty
+     * @example: 
+     * ===============
+     * let x : &Option!i32 = Some::new (12);
+     * let y : &Option!i32 = None!(i32)::new ();
+     * 
+     * assert (x.getOr (1) == 12);
+     * assert (y.getOr (1) == 1);
+     * ===============
+     */
+    pub def getOr (self, v : T) -> T {
+        return v;
+    }
+
+
+    cte if (__pragma!operator ("==", T, T)) {
+        
+        /**
+         * Compare two option values
+         * @params: 
+         *    - o: the other operand
+         * @example: 
+         * ==============
+         * def foo ()-> &Option!i32 {...}
+         * if (foo () == None!(i32)::new ()) {
+         *    println ("foo returns nothing");
+         * }
+         * 
+         * ==============
+         */
+        pub def opEquals (self, _ : &Option!T) -> bool {
+            false
+        }
+
+        /**
+         * Compare an option value, and a value
+         * @params: 
+         *    - o: the value to compare with
+         * @example: 
+         * ==============
+         * def foo ()-> &Option!i32 {...}
+         * if (foo () == 12) {
+         *    println ("foo returns 12"); 
+         * }
+         * ==============
+         */
+        pub def opEquals (self, _ : T) -> bool {
+            false
+        }
+
+    }
+
+    impl std::io::Printable;
+    
+}
+
+/**
+ * Option value that stores a value
+ * @example: 
+ * =================
+ * def foo ()-> Option!i32 {
+ *     Some::new (42)
+ * }
+ * 
+ * let x = foo ();
+ * println (x);
+ * =================
+ */
+pub class @final Some (T) over Option!(T) {
+
+    let _val : T;
+
+    /**
+     * Create an option type that contains a value
+     * @params: 
+     *    - x: the value stored in the option type
+     * @example: 
+     * =============
+     * let x = Some::new (42);
+     * assert (x == 42);
+     * =============
+     */
+    pub self (x: T) with _val = x {}
+
+    /**
+     * @info: Unlike Option!T, Some always contains a value, thus it never throws something
+     * @returns: the value contained in the option 
+     * @example: 
+     * ===================
+     * let x = Some::new (12);
+     * assert (x.unwrap () == 12);
+     * ===================
+     */
+    pub over unwrap (self) -> T
+    {
+        return self._val;
     }
 
     /**
-     * The success value when returning a result
-     * Example : 
-     * --------------
-     * import std::io, std::errors;
-     *
-     * def foo () -> Option!(i32) {
-     *     Some!(i32)::new (12)
-     * }
-     * 
-     * def main () {
-     *    let value = foo ();
-     *    match (value) {
-     *       Some!(i32) (result-> x : i32) {
-     *           println ("Result of foo is : ", x);
-     *       }
-     *    }
-     * }
-     * --------------
+     * @returns: exactly self.unwrap
      */
-    class Some (T) over Option!(T) {
+    pub over getOr (self, _ : T) -> T {
+        return self._val;
+    }
 
-        pub let result : T;
+    cte if (__pragma!operator ("==", T, T)) {
+        
+        /**
+         * Compare two option values
+         * @example: 
+         * ============
+         * let x = Some::new (12);
+         * assert (x == Some::new (12));
+         * assert (x != Some::new (34));
+         * ============
+         */
+        pub over opEquals (self, o : &Option!T) -> bool {
+            match (o) {
+                s : &Some!T => { s._val == self._val }
+                _ => { false }
+            }
+        }
 
-        pub self (x : T) with result = x {}        
-
-        pub over print (self) {
-            cte if (is!(T)(X impl Printable) || isPrimitive!(T))
-                print (self.result)
-            else
-                print ("Some!(", (self.result)::typeinfo.name, ")")
-        }        
+        /**
+         * Compare an option value and a value of type T
+         * @example: 
+         * ==============
+         * let x = Some::new (12);
+         * assert (x == 12);
+         * assert (x != 34);
+         * ==============
+         */
+        pub over opEquals (self, o : T) -> bool {
+            self._val == o
+        }
+        
     }
 
     /**
-     * The error value when returning nothing
-     * Example : 
-     * --------------
-     * import std::io, std::errors;
-     *
-     * def foo () -> Option!(i32) {
-     *     None!(i32)::new ()
-     * }
-     * 
-     * def main () {
-     *    let value = foo ();
-     *    match (value) {
-     *       None!(i32)() {
-     *          println ("Foo didn't return any value!");
-     *       }
-     *    }
-     * }
-     * --------------
+     * Print the value inside the option value to stdout
+     * If the value is not printable, print its type name
      */
-    class None (T) over Option!(T) {
-        pub self () {}
-
-        pub over print (self) {
-            print ("None");
+    pub over print (self) {
+        cte if (__pragma!compile ({print (self._val)})) {
+            print (self._val);
+        } else {
+            print (T::typeid);
         }
     }
+    
+}
+
+/**
+ * A empty option value
+ * @example: 
+ * ===========
+ * let x : &Option!i32 = None!(i32)::new ();
+ * ===========
+ */
+pub class @final None (T) over Option!(T) {
+    pub self () {}
 
     /**
-     * Encapsulate a function that might throw exception into a safe function
-     * If the function throws exception return a None object
+     * Print the typeid of None!T to stdout
      */
-    def toOption (FUN : fn (X)-> T, T, X...) (params : X) -> Option!T {
-        Some::new (FUN (expand params))
-    } catch {
-        _ => // Catch anything
-	    None!(T)::new ()
+    pub over print (self) {
+        print (typeof (self)::typeid);
     }
 
-    /**
-     * Encapsulate a function that might throw exception into a safe function
-     * If the function throws exception return a None object
-     */
-    def toOption (FUN : fn ()-> T, T) () -> Option!T {
-        Some::new (FUN ())
-    } catch {
-        _ => // Catch anything
-	    None!(T)::new ()
+    cte if (__pragma!compile ("==", T, T)) {
+
+        pub over opEquals (self, _ : &Option!T) -> bool {
+            match (o) {
+                _ : &None!T => { true }
+                _ => { false }
+            }
+        }
+
     }
 
     

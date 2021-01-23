@@ -1,10 +1,39 @@
 mod core::duplication;
 
+
+mod allocMod (T) {
+    pub extern (C) def _yrt_new_array (_ : usize, _ : u64)-> dmut [T];
+    pub extern (C) def _yrt_new_block (_ : usize, _ : u64)-> dmut &(T);
+    pub extern (C) def memcpy (_ : &(T),  _ : &T, _ : usize)-> void;
+}
+
+pub def alloc (T) (a : T) -> mut & (mut T) {
+    let mut x = alias allocMod!(T)::_yrt_new_block (sizeof T, 1u64)        
+    *x = a;
+    return x;
+}
+    
+pub def allocBlock (T) (len : u64) -> dmut &T {
+    alias allocMod!(T)::_yrt_new_block (sizeof T, len)
+}
+
+pub def allocArray (T) (len : u64) -> dmut [T] {
+    alias allocMod!(T)::_yrt_new_array (sizeof T, len)
+}
+
+/**
+ * Copy the second array inside the first one, without reallocation
+ * Copy only what can be copied (max (to.len, fr.len))
+ */
+pub def memCopy (T) (fr : [T], mut to : [mut T]) {
+    let len = if (to.len < fr.len) to.len else fr.len;              
+    allocMod!(T)::memcpy (to.ptr, fr.ptr, len *:usize sizeof (T));
+}
+
 pub {
-    import std::memory;
 
     trait Copiable {
-        def deepCopy (self)-> mut (typeof self);
+        def deepCopy (self)-> dmut (typeof self);
     }
     
     def deepCopy (T) (a : T) -> mut T {

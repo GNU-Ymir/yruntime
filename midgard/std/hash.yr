@@ -1,0 +1,223 @@
+mod std::hash;
+
+/**
+ * This trait is used to implement that hash function, that can be used within the std
+ * @example: 
+ * ============
+ * import std::collection::map;
+ * 
+ * class CustomKey {
+ *     let _name : [c32];
+ *  
+ *     pub self (name : [c32]) with _name = name {}
+ * 
+ *     impl std::hash::Hashable {
+ *          pub over hash (self)-> u64 {
+ *              hash (self._name)
+ *          }
+ *     }
+ * 
+ * }
+ *  
+ * let dmut h = HashMap!(&CustomKey, u32)::new ();
+ * h:.insert (CustomKey::new ("foo"), 12);
+ * assert (h [CustomKey::new ("foo")] == 12);
+ * ============
+ */
+pub trait Hashable {
+    /**
+     * Transform an object into a u64
+     * By default, it transform the class raw data into an array
+     * @complexity: O (n), with n = recursive number of field of the class 
+     */
+    pub def hash (self)-> u64 {
+        let x = self::tupleof;
+        let p = 31u64;
+        let m = 1_000_000_009u64;
+        let mut hash_value = 0u64;
+        let mut p_pow = 1u64;
+
+        for i in x {
+            hash_value = (hash_value + (hash (i) + 1u64) * p_pow) % m;
+            p_pow = (p_pow * p) % m;
+        }
+        
+        hash_value
+    }
+}
+
+pub {
+
+    /**
+     * Transform a string into a u64
+     * @complexity: O(n), with n = str.len
+     */
+    def hash (str : [c32]) -> u64 {
+        let p = 31u64;
+        let m = 1_000_000_009u64;
+        let mut hash_value = 0u64;
+        let mut p_pow = 1u64;
+        for c in str {
+            hash_value = (hash_value + (cast!u64 (c) + 1u64) * p_pow) % m;
+            p_pow = (p_pow * p) % m;
+        }
+        hash_value
+    }
+
+    /**
+     * Transform a string into a u64
+     * @complexity: O(n), with n = str.len
+     */
+    def hash (str : [c8]) -> u64 {
+        let p = 31u64;
+        let m = 1_000_000_009u64;
+        let mut hash_value = 0u64;
+        let mut p_pow = 1u64;
+        for c in str {
+            hash_value = (hash_value + (cast!u64 (c) + 1u64) * p_pow) % m;
+            p_pow = (p_pow * p) % m;
+        }
+        hash_value
+    }
+
+    /**
+     * Transform a char into a u64
+     * @complexity: O(1)
+     */
+    def hash (c : c8) -> u64 {
+        cast!u64 (c)
+    }
+
+    /**
+     * Transform a char into a u64
+     * @complexity: O(1)
+     */
+    def hash (c : c32) -> u64 {
+        cast!u64 (c)
+    }
+
+    /**
+     * Transform a isize into a u64
+     * @complexity: O (1)
+     */
+    def hash (i : isize) -> u64 {
+        cast!u64 (i)
+    }
+
+    /**
+     * Transform a usize into a u64
+     * @complexity: O (1)
+     */
+    def hash (i : usize) -> u64 {
+        cast!u64 (i)
+    }
+
+    /**
+     * Transform a i64 into a u64
+     * @complexity: O (1)
+     */
+    def hash (i : i64) -> u64 {
+        cast!u64 (i)
+    }
+
+    /**
+     * Transform a u64 into a u64
+     * @complexity: O (1)
+     */
+    def hash (i : u64) -> u64 {
+        i
+    }
+
+    /**
+     * Transform a i32 into a u64
+     * @complexity: O (1)
+     */
+    def hash (i : i32) -> u64 {
+        cast!u64 (i)
+    }
+
+    /**
+     * Transform a u32 into a u64
+     * @complexity: O (1)
+     */
+    def hash (i : u32) -> u64 {
+        cast!u64 (i)
+    }
+
+    /**
+     * Transform a i16 into a u64
+     * @complexity: O (1)
+     */
+    def hash (i : i16) -> u64 {
+        cast!u64 (i)
+    }
+
+    /**
+     * Transform a u16 into a u64
+     * @complexity: O (1)
+     */
+    def hash (i : u16) -> u64 {
+        cast!u64 (i)
+    }
+
+    /**
+     * Transform a i8 into a u64
+     * @complexity: O (1)
+     */
+    def hash (i : i8) -> u64 {
+        cast!u64 (i)
+    }
+
+    /**
+     * Transform a u8 into a u64
+     * @complexity: O (1)
+     */
+    def hash (i : u8) -> u64 {
+        cast!u64 (i)
+    }
+
+    /**
+     * Transform a bool into a u64
+     * @complexity: O (1)
+     */
+    def hash (b : bool) -> u64 {
+        if (b) 0u64
+        else 1u64
+    }
+
+    /**
+     * Transform an array into a u64
+     * @complexity: O (n), with n = a.len
+     * @templates: 
+     *    - U: a hashable type
+     */
+    def hash (T of [U], U) (a : T) -> u64 {
+        let p = 31u64;
+        let m = 1_000_000_009u64;
+        let mut hash_value = 0u64;
+        let mut p_pow = 1u64;
+        for c in a {
+            hash_value = (hash_value + (hash (c) + 1u64) * p_pow) % m;
+            p_pow = (p_pow * p) % m;
+        }
+        hash_value
+    }
+
+    /**
+     * Transform a pointer into a u64 
+     * @complexity: O (1)
+     */
+    def if (!is!(T) (class U)) hash (T of &(U), U) (x : T) -> u64 {
+        Runtime::_yrt_ptr_to_u64 (x)
+    }
+
+    /**
+     * Transform a class that implement the trait Hashable into a u64
+     * @complexity: O (1)
+     */
+    def hash (T impl Hashable) (a : T) -> u64 {
+        a.hash ()
+    }
+
+    
+}

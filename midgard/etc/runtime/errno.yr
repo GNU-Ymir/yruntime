@@ -1,10 +1,9 @@
-mod std::c::errno;
+mod etc::runtime::errno;
 
-extern (C) def __get_errno__ ()-> ErrnoValue;
-extern (C) def __set_errno__ (err : ErrnoValue)-> void;
+extern (C) def _yrt_get_errno_ ()-> ErrnoValue;
+extern (C) def _yrt_set_errno_ (err : ErrnoValue)-> void;
 
-pub {
-    enum : i32
+pub enum : i32
 | EPERM              = 1
 | ENOENT             = 2
 | ESRCH              = 3
@@ -141,21 +140,20 @@ pub {
 | EHWPOISON          = 133        
  -> ErrnoValue;
 
-    /**
-     * Returns: the value of errno
-     */
-    def errno ()-> ErrnoValue {
-        return __get_errno__ ();
-    }
+/**
+ * Returns: the value of errno
+ */
+pub def errno ()-> ErrnoValue {
+    return _yrt_get_errno_ ();
+}
 
-    /**
-     * Set the value of errno
-     * Params : 
-     * - val, the value to set to errno
-     * Returns : The value of errno
-     */
-    def errno (val : ErrnoValue)-> ErrnoValue {
-        __set_errno__ (val);
-        return __get_errno__ ();
-    }
+/**
+ * Set the value of errno
+ * Params : 
+ * - val, the value to set to errno
+ * Returns : The value of errno
+ */
+pub def errno (val : ErrnoValue)-> ErrnoValue {
+    _yrt_set_errno_ (val);
+    return _yrt_get_errno_ ();
 }

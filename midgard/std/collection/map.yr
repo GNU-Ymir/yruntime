@@ -1,0 +1,847 @@
+mod std::collection::map;
+
+import core::typeinfo;
+import core::duplication;
+import core::exception;
+import core::array;
+
+import std::io;
+import std::hash;
+import std::option;
+import std::conv;
+
+/**
+ * The number or allocated node at initialization
+ */
+prv enum : u64
+| DEFAULT_ALLOC_SIZE = 10u64
+ -> MapConst;
+
+
+/**
+ * Macro used to construct a HashMap with literals
+ * @example: 
+ * ============
+ * let dmut x = hmap#{"foo" => 12, "bar" => 45, "baz" => 89};
+ * cte assert (is!(typeof (x)) (T of &HashMap!([c32], i32)));
+ * assert (x["foo"] == 12);
+ * ============
+ */
+pub macro hmap {
+
+    pub self (fst=(key=__expr "=>" val=__expr) rest=("," key=__expr "=>" val=__expr)*) skips (" " | "\n" | "\t" | "\r") {
+        let dmut z = HashMap!(typeof (#(fst::key)), typeof (#(fst::val)))::new ();
+        z:.insert (#(fst::key), #(fst::val));
+        #(for x in rest) {
+            z:.insert (#(x::key), #(x::val));
+        }
+        alias z
+    }
+    
+}
+
+
+/**
+ * A hash map implementation that associated a key to a value
+ * The data in the map are unordered
+ * @drawbacks: 
+ * ==============
+ * The keys in the hash map are considered equivalent if their hash is equivalent
+ * Depending on the hash function, there may be collisions
+ * ==============
+ *
+ * @example: 
+ * ==========
+ * let dmut x = HashMap!([c32], i32)::new ();
+ * x:.insert ("foo", 12);
+ * x:.insert ("bar", 32);
+ * assert (x ["foo"] == 12 && x ["bar"] == 32);
+ * ==========
+ */
+pub class @final HashMap (K, V) {
+
+    /**
+     * Assertion to avoid tones of error printing, if the key is not usable
+     */
+    cte assert (__pragma!compile ({hash!K;}) || __pragma!compile ({hash(K::init);}), "unusable key type : K = (" ~ K ~ ") must be hashable");
+    
+    let dmut _data : [dmut &MapNode!(K, V)] = [];
+    
+    let mut _loaded : u64 = 0u64;
+
+    let mut _size : u64 = 0u64;
+
+    let _load_factor = 75u64;
+
+    let _min_load_factor = 50u64; 
+
+    /// Allocated only once, to optimize memory usage
+    let dmut _empty : dmut &MapNode!(K, V) = Empty!(K, V)::new ();
+
+    /**
+     * Create a new empty hash map, with a default loaded factor of 0.75 , and a minimum load factor or 0.5
+     * Does not allocate memory until first insertion
+     */
+    pub self () {}
+
+    /**
+     * Create a new empty hash map, with a default allocated table of size len
+     * @params:
+     *    - len: the size of the table reserved to avoid growing
+     */
+    pub self (len : u64) {
+        let dmut aux = core::duplication::allocArray!(&MapNode!(K, V)) (len);
+
+        for i in 0u64 .. aux.len {
+            aux [i] = alias self._empty;
+        }
+        
+        self._data = alias aux;
+    } catch {
+        _ : &OutOfArray => { } // Can't happen
+    }
+
+    
+    /**
+     * Insert a new element inside the map
+     * If the key is already found (hash (key)), then the value is updated
+     * @params: 
+     *    - key: the key 
+     *    - val: the value
+     * @complexity: O (1 + n/k + z) with n the number of possible collision, and k the number of keys, and z the time taken by resizing if the load is higher than the load factor, in average n/k and z are negligeable
+     * @example: 
+     * ==========
+     * let dmut x = HashMap!([c32], i32)::new ();
+     * x:.insert ("foo", 12);
+     * x:.insert ("bar", 32);
+     * assert (x ["foo"] == 12 && x ["bar"] == 32);
+     * x:.insert ("test", 24);
+     * assert (x ["test"] == 24);
+     * ==========
+     */
+    pub def insert (mut self, key : K, val : V) -> void {        
+        if (self._data.len == 0u64) { self:.grow (); }
+        else if ((self._loaded * 100u64) / (self._data.len) > self._load_factor) { self:.grow (); }        
+        let h = hash (key); 
+        self:.insertFast (h, key, val);
+    }
+    
+    /**
+     * Find the value associated to the key, and return it in an option type
+     * @params:
+     *    - key: the key
+     * @example: 
+     * ============
+     * let dmut x = HashMap!([c32], i32)::new ();
+     * x:.insert ("foo", 32);
+     * assert (x.find ("foo") == 32);
+     * assert (x.find ("bar") == None!(i32)::new ());
+     * ============
+     * @complexity: O (1 + n/k), with n the number of possible collision and k the number of keys, in average n/k are negligeable
+     */
+    pub def find (self, key : K) -> &Option!(V) {
+        if (self._data.len != 0u64) {
+            let h = hash (key);
+            match (self._data [h % self._data.len]) {
+                x : &MapValue!(K, V) =>
+                    return x.find (h);
+            }
+        }
+        None!(V)::new ()
+    } catch {
+        _ : &OutOfArray => { // Can't happen
+            None!(V)::new ()
+        }
+    }
+
+    /**
+     * Search the key in the map, 
+     * @returns: true if found, false otherwise
+     * @example: 
+     * =============
+     * let dmut x = HashMap!([c32], i32)::new ();
+     * x:.insert ("foo", 32);
+     * assert ("foo" in x);
+     * =============
+     * @complexity: O (1 + n/k), with n the number of possible collision and k the number of keys, in average n/k are negligeable
+     */
+    pub def opContains (self, key: K) -> bool {
+        if (self._data.len != 0u64) {
+            let h = hash (key);        
+            match (self._data [h % self._data.len]) {
+                x : &MapValue!(K, V) => {
+                    return x.opContains (h);
+                }
+            }
+        }
+        false
+    } catch {
+        _ : &OutOfArray => // Can't happen
+            false
+    }
+    
+    /**
+     * Remove the key in the map
+     * If the key was not present, do nothing
+     * @params: 
+     *    - key: the key to remove
+     * @example: 
+     * ===========
+     * let dmut x = HashMap!([c32], i32)::new ();
+     * x:.insert ("foo", 12);
+     * x:.remove ("foo");
+     * assert (x ["foo"] == None!(i32)::new ());
+     * x:.remove ("bar"); // does nothing
+     * ===========
+     * @complexity: O (1 + n/k + z) with n the number of possible collision, and k the number of keys, and z the time taken by resizing if the load is lower than the min load factor, in average n/k and z are negligeable
+     */
+    pub def remove (mut self, key : K) -> void {
+        if (self._data.len != 0u64) {
+            let h = hash (key);
+            match (self._data [h % self._data.len]) {
+                dmut x : &MapValue!(K, V) => {
+                    let mut removed = false;
+                    
+                    self._data [h % self._data.len] = alias x:.remove (h, ref removed);
+                    match self._data [h % self._data.len] {
+                        _ : &Empty!(K, V) => {
+                            self._loaded -= 1u64;
+                        }
+                    }
+                    
+                    if (removed) {
+                        self._size -= 1u64;                    
+                    }
+                }
+            }
+            
+            if ((self._loaded * 100u64) / (self._data.len) < self._min_load_factor) { self:.shrink (); }
+        }
+    } catch {
+        _ : &OutOfArray => { } // Can't happen
+    }
+
+    /**
+     * Simply do a find, this is just for syntax enhancing
+     * @example: 
+     * =============
+     * let dmut x = HashMap!([c32], i32)::new ();
+     * x:.insert ("foo", 12);
+     * assert (x ["foo"] == 12);
+     * assert (x ["bar"] == None!(i32)::new ());
+     * =============
+     */
+    pub def opIndex (self, k : K) -> &Option!(V) {
+        self.find (k)
+    }
+
+    /**
+     * Simply do an insert, this is just for syntax enhancing
+     * @example: 
+     * =============
+     * let dmut x = HashMap!([c32], i32)::new ();
+     * (alias x)["foo"] = 12;
+     * (alias x)["foo"] = 24;
+     * assert (x ["foo"] == 24);
+     * =============
+     */
+    pub def opIndexAssign (mut self, k : K, v : V) {
+        self:.insert (k, v);
+    }
+
+    /**
+     * Remove all the entries contained in the map
+     * @example: 
+     * =============
+     * let dmut x = HashMap!([c32], i32)::new ();
+     * x:.insert ("foo", 34);
+     * x:.insert ("bar", 45);
+     * x:.clear ();
+     * assert (x.isEmpty ());
+     * =============
+     * @complexity: O (1)
+     */
+    pub def clear (mut self) {
+        self._data = [];
+        self._loaded = 0u64;
+        self._size = 0u64;
+    }    
+
+    /**
+     * The number of element contained in the map
+     * @example: 
+     * ==========
+     * let dmut x = HashMap!([c32], i32)::new ()
+     * x:.insert ("foo", 34);
+     * x:.insert ("bar", 45);
+     * assert (x.len () == 2u64);
+     * ==========
+     */
+    pub def len (self) -> u64 {
+        self._size
+    }
+
+    /**
+     * Iteration over the map can be done with map iterators
+     * This iterators implement the ymir interface for iteration with one or two variable (next, get!0, get!1)
+     * @example: 
+     * ============
+     * let dmut x = HashMap!([c32], i32)::new ();
+     * x:.insert ("foo", 12);
+     * x:.insert ("bar", 12);
+     * for k, v in x {
+     *     println (k, " ", v);
+     * }
+     * 
+     * for k in x {
+     *     println (k);
+     * }
+     * ============
+     * @return: an iterator on the beginning of the map
+     */
+    pub def begin (self) -> dmut &MapIterator!(K, V) {
+        if (self._loaded != 0u64) {
+            for i in 0u64 .. self._data.len {
+                match self._data [i] {
+                    _ : &MapValue!(K, V) =>
+                        return MapIterator!(K, V)::new (i, 0u64, self._data, self._data [i]);
+                }
+            }
+        } catch {
+            _ : &OutOfArray => {} 
+        }
+        MapIterator!(K, V)::new (0u64, 0u64, [], self._empty)
+    } 
+
+    /**
+     * @returns: the iterator pointing to the end of the map
+     */
+    pub def end (self) -> &MapIterator!(K, V) {
+        MapIterator!(K, V)::new (0u64, 0u64, [], self._empty)
+    }
+    
+    
+    /**
+     * Insert an element in the hash map, without making the table grow
+     * @assume: the table is able to contain the value to insert
+     * @params:
+     *    - h: the hash value of the key (== hash (key))
+     *    - key: the key 
+     *    - val: the value
+     */
+    prv def insertFast (mut self, h : u64, key : K, val : V) {
+        let mut inserted = false;
+        match self._data [h % self._data.len] {
+            dmut x : &MapValue!(K, V) => {
+                inserted = x:.insert (h, key, val);
+            }
+            _  => {
+                self._data [h % self._data.len] = MapValue!(K, V)::new (h, key, val, alias self._empty);
+                self._loaded += 1u64;
+                inserted = true;
+            }
+        }
+        if (inserted) {
+            self._size += 1u64;
+        }
+    }  catch {
+        _ : &OutOfArray => {} // Can't happen
+    }
+
+
+    /**
+     * Make the table containing the values shrink
+     * @complexity: O (n + m), with n the new size, and m the number of element contained in the old table that are reinserted
+     */
+    prv def shrink (mut self) -> void {
+        if (self._loaded == 0u64) {
+            self._data = []; return {}
+        }
+        
+        let n_len = self._data.len / 2u64;
+        let dmut aux = core::duplication::allocArray!(&MapNode!(K, V)) (n_len);
+
+        for i in 0u64 .. aux.len {
+            aux [i] = alias self._empty;
+        }
+
+        let old = self._data;
+        self._data = alias aux;
+        self._loaded = 0u64;
+        self._size = 0u64;
+
+        for i in 0u64 .. old.len {
+            let mut current = old [i];
+            loop {
+                match current {
+                    x : &MapValue!(K, V) => {
+                        self:.insertFast (x.h, x.key, x.val);
+                        current = x.next;
+                    }
+                    _ => {
+                        break {}
+                    }
+                }
+            }
+        }
+    } catch {
+        _ : &OutOfArray => { } // Can't happen
+    }
+
+    /**
+     * Make the table containing the values grow
+     * This function is called when the _load_factor is reached
+     * If the table was empty it is allocated with a size of MapConst::DEFAULT_ALLOC_SIZE,
+     * otherwise the size is mutliplied by 2
+     * @complexity: O (n + m), with n the new size, and m the number of element contained in the old table that are reinserted
+     */
+    prv def grow (mut self) -> void {
+        if (self._data.len == 0u64) {
+            self._data = core::duplication::allocArray!(&MapNode!(K, V)) (MapConst::DEFAULT_ALLOC_SIZE);
+            for i in 0u64 .. self._data.len {
+                self._data [i] = alias self._empty;
+            }
+        } else {
+            let n_len = self._data.len * 2u64;
+            let dmut aux = core::duplication::allocArray!(&MapNode!(K, V)) (n_len);
+            // Filling the data with empty elements, to be usable, allocArray is not safe!?
+            for i in 0u64 .. aux.len {
+                aux [i] = alias self._empty;
+            }
+            
+            // Clear the map
+            let old = self._data;
+            self._data = alias aux;
+            self._loaded = 0u64;
+            self._size = 0u64;
+
+            // Add all the old values 
+            for i in 0u64 .. old.len {
+                let mut current = old [i];
+                loop {
+                    match current {
+                        x : &MapValue!(K, V) => {
+                            self:.insertFast (x.h, x.key, x.val);
+                            current = x.next;
+                        }
+                        _ => {
+                            break {}
+                        }
+                    }
+                }
+            }
+            
+        }
+    } catch {
+        _ : &OutOfArray => {} // Can't happen
+    }
+
+    impl std::io::Printable {
+
+        /**
+         * Print the hashmap to stdout, in one line (depending on print of K, and V)
+         * @example: 
+         * ===========
+         * let x = hmap#{"foo" => 12, "bar" => 42};
+         * println (x); // {bar=>42, foo=>12}
+         * ===========
+         */
+        pub over print (self) {
+            print ('{'c8);
+            let mut i = 0u64;
+            for node in self._data {
+                match node {
+                    _ : &MapValue!(K, V) => {
+                        if (i != 0u64) { print (','c8); print (' 'c8); }
+                        print (node);
+                        i = 1u64;
+                    }
+                }
+            }
+            print ('}'c8);
+        }
+    }
+
+    impl core::duplication::Copiable {
+
+        /**
+         * Hash map are copiable
+         * Because internal values of hash map are immutable, they are not copied
+         * The copy is only applied on the structure of the map
+         * @example: 
+         * ==========
+         * let dmut a = [1, 2, 3];
+         * let x = hmap#{"foo" => a};
+         * 
+         * let dmut y = dcopy x;
+         * y:.insert ("bar", a);
+         * 
+         * a [0] = 89;
+         * println (x); // {foo=>[89, 2, 3]}
+         * println (y); // {bar=>[2, 3, 4], foo=>[89, 2, 3]}
+         * ==========
+         * @complexity: O(n), with n the number of elements in the map
+         */
+        pub over deepCopy (self) -> dmut &(HashMap!(K, V)) {
+            let dmut res = HashMap!(K, V)::new (self._data.len);
+            
+            // Add all the values 
+            for i in 0u64 .. self._data.len {
+                let mut current = self._data [i];
+                loop {
+                    match current {
+                        x : &MapValue!(K, V) => {
+                            res:.insertFast (x.h, x.key, x.val); // Insert fast, the array is already able of inserting things
+                            current = x.next;
+                        }
+                        _ => {
+                            break {}
+                        }
+                    }
+                }
+            } catch {
+                _ : &OutOfArray => { } // Can't happen
+            }
+            
+            alias res
+        }
+        
+    }
+    
+    
+}
+
+/**
+ * The structure of the content of a hashmap is an array of simple linked list
+ * The following class is the ancestor of the class that are used in the map to encode this linked list
+ */    
+class @abstract MapNode (K, V) {
+    prot self () {}
+    
+    pub def opEquals (self, o : &MapNode!(K, V))-> bool;
+    
+    impl std::io::Printable;
+}
+
+/**
+ * The map value encode a node in the linked list that contains a value
+ * It has a successor, and thus cannot be the final node of a linked list
+ * @example: 
+ * ==========
+ * let list = MapValue!(i32, i32)::new (hash (12), 12, 42, 
+ *                                      MapValue!(i32, i32)::new (hash (23), 23, 89, 
+ *                                                                Empty!(i32, i32)::new ()
+ *                                      )
+ *            );
+ * 
+ * ==========
+ */
+class @final MapValue (K, V) over MapNode!(K, V) {
+
+    /// The following node in the list
+    pub let dmut next : &MapNode!(K, V);
+
+    /// The result of hash (key), used to compare two MapValues (and avoid recomputing the value each time)
+    pub let h : u64;
+
+    /// The actual key stored in the node
+    pub let key : K;
+
+    /// The value associated with the key (it is mutable, because we can update it when inserting)
+    pub let mut val : V;
+
+    /**
+     * @params:
+     *    - h: the result of hash (key), to avoid recomputation
+     *    - key: the key stored in the node
+     *    - val: the value stored in the node
+     *    - next: the reference to the next node in the list (empty or value)
+     */
+    pub self (h : u64, key : K, val : V, dmut next : &MapNode!(K, V))
+        with next = alias next,
+             key = key,
+             val = val,
+             h = h
+    {}
+
+    /**
+     * MapNode are Printable, thus MapValue too
+     * This print the key and the value stored in the node, and the next element of the list if it is not empty
+     * @example: 
+     * ============
+     * let x = MapValue!([c32], i32)::new (hash("foo"),"foo", 42, Empty!([c32], i32)::new ());
+     * println (x); // foo=>42
+     * ============
+     */
+    pub over print (self) {
+        cte if (__pragma!compile ({print (self.key);})) {
+            print (self.key, "=>");
+        } else { print (K::typeid, "=>"); }
+        
+        cte if (__pragma!compile ({print (self.val);})) {
+            print (self.val);
+        } else { print (V::typeid); }
+        
+        match self.next {
+            _ : &Empty!(K, V) => {}
+            _ => { print (", ", self.next); }
+        }
+    }
+
+    /**
+     * Insert a new element in the list, or replace an element if there is already a node whose hash value is equals to h
+     * @params:
+     *    - h: the hash of the key to insert
+     *    - key: the key to insert
+     *    - val: the value associated to the key
+     * @returns: true if a new node has been allocated, false otherwise
+     */
+    pub def insert (mut self, h : u64, key : K, val : V) -> bool {
+        if (self.h == h) {
+            self.val = val;
+        } else {
+            match (self.next) {
+                dmut x : &MapValue!(K, V) => {
+                    return x:.insert (h, key, val);
+                }
+                _ => {
+                    self.next = MapValue::new (h, key, val, alias self.next);
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /**
+     * Find the value associated with the key whose hash is h
+     * @params: 
+     *    - h: the hash of the key
+     * @returns: the value in an option type, or None if there is no node containing a hash equal to h
+     * @complexity: O (n), with n the length of the list
+     */
+    pub def find (self, h : u64) -> &Option!(V) {
+        if (self.h == h) {
+            return Some!(V)::new (self.val);
+        } else {
+            match (self.next) {
+                x : &MapValue!(K, V) => {
+                    return x.find (h);
+                }
+            }
+            return None!(V)::new ();
+        }
+    }
+
+    /**
+     * Remove the key inside the list, if there is no node containing the value, just return the list as it was
+     * @info: the returned list is not a copy, no allocation are made
+     * @complexity: O (n), with n the length of the list
+     * @returns: 
+     *    - rm: true if a node has been removed, false otherwise
+     *    - the list, with no node containing the hash h,
+     * ===========
+     */
+    pub def remove (mut self, h : u64, ref mut rm : bool) -> dmut &MapNode!(K, V) {
+        if (self.h == h) {
+            rm = true;
+            return alias self.next;
+        } else {
+            match (self.next) {
+                dmut x : &MapValue!(K, V) => {
+                    self.next = alias x:.remove (h, ref rm);
+                }
+            }
+            return alias self;
+        }
+    }
+
+    /**
+     * Search the linked list for a node whose contained hash is h
+     * @returns: true, if such a node was found, false otherwise
+     * @complexity: O (n), with n the length of the list
+     */
+    pub def opContains (self, h : u64) -> bool {
+        if (self.h == h) {
+            true
+        } else {
+            match (self.next) {
+                x : &MapValue!(K, V) => {
+                    return x.opContains (h);
+                }
+            }
+            false
+        }  
+    }
+
+    /**
+     * Compare two nodes
+     * They are equals, if their h is equals
+     */
+    pub over opEquals (self, o : &MapNode!(K, V))-> bool {
+        match o {
+            x : &MapValue!(K, V) =>
+                return x.h == self.h;
+        }
+        return false;
+    }
+    
+}
+
+/**
+ * An empty node encode the end of a list in a hash map
+ * They store no values
+ */
+class @final Empty (K, V) over MapNode!(K, V) {
+    pub self () {}
+    
+    /**
+     * Do nothing
+     */
+    pub over print (self) {}
+
+    /**
+     * Compare two nodes
+     * Empty is equals to other empty nodes
+     */
+    pub over opEquals (self, o : &MapNode!(K, V))-> bool {
+        match o {
+            _ : &Empty!(K, V) =>
+                return true;
+        }
+        return false;
+    }
+}
+
+/**
+ * The map iterator class is used to traverse a map
+ * It can be acquired in a hash map with the methods begin (), and end ()
+ * @example: 
+ * =============
+ * let dmut x = HashMap!([c32], i32)::new ();
+ * x:.insert ("foo", 12);
+ * let dmut beg_it = alias x.begin (); 
+ * assert (beg_it.get!0 == "foo");
+ * assert (beg_it.get!1 == 12);
+ * 
+ * beg_it:.next (); // next iteration
+ * assert (beg_it == x.end ()); 
+ * =============
+ */
+class @final MapIterator (K, V) {
+
+    /// A reference on the table contained in the map we are traversing
+    let mut _data : [&MapNode!(K, V)];
+
+    /// The current index of the iterator, in the table
+    let mut _index : u64;
+
+    /// The current index in the current branch (linked list of MapValues)
+    let mut _branch : u64 = 0u64;
+
+    /// The reference on node containing the value we are pointing at
+    let mut _currentNode : &MapNode!(K, V);
+
+    /**
+     * An iterator is always constructed to point somewhere, or must point to (0, 0, [], empty)
+     * @params: 
+     *    - i: the index in the table of this iterator
+     *    - branch: the index in the branch at iterator i
+     *    - data: the table of data
+     *    - current: the current traversed node in the branch (data [i][branch])
+     */
+    pub self (i : u64, branch : u64, data : [&MapNode!(K, V)], current : &MapNode!(K, V))
+        with _data = data,
+             _index = i,
+             _branch = branch,
+             _currentNode = current
+    {}        
+
+    /**
+     * Two iterators are equals, if the current nodes are equals
+     */
+    pub def opEquals (self, o : &MapIterator!(K, V)) -> bool {
+        self._currentNode == o._currentNode
+    }
+
+    /**
+     * @returns: 
+     * =======
+     * the key of the current node, in an option type
+     * None, it the current node is empty
+     * =======     
+     */
+    pub def get (0) (self) -> &Option!(K) {
+        match (self._currentNode) {
+            x : &MapValue!(K, V) =>
+                return Some!(K)::new (x.key);
+        }
+        return None!(K)::new ();
+    }
+
+    /**
+     * @returns: 
+     * =======
+     * the value of the current node, in an option type
+     * None, it the current node is empty
+     * =======     
+     */
+    pub def get (1) (self) -> &Option!(V) {
+        match (self._currentNode) {
+            x : &MapValue!(K, V) =>
+                return Some!(V)::new (x.val);
+        }
+        return None!(V)::new ();
+    }
+
+    /**
+     * Create a new iterator that point to the next value contained in the map
+     * If there is no more value, the returned iterator is equals to map.end ()
+     * @example: 
+     * ===========
+     * let dmut x = HashMap!([c32], i32)::new ();
+     * x:.insert ("foo", 12);
+     * x:.insert ("bar", 12);
+     * let dmut it = alias x.begin ();
+     * let end = x.end (); // put in a var to avoid multiple useless calls and allocations
+     * while (it != end) {
+     *    println (it.get!0, " ", it.get!1);
+     *    it:.next ();
+     * }
+     * ===========
+     */
+    pub def next (mut self) -> void {
+        match (self._currentNode) {
+            x : &MapValue!(K, V) => {
+                match (x.next) {
+                    _ : &MapValue!(K, V) => {
+                        self._branch += 1u64;
+                        self._currentNode = x.next;
+                        return {}
+                    }
+                }
+            }
+        }            
+
+        if (self._index + 1u64 < self._data.len) {
+            for j in (self._index + 1u64).. self._data.len {
+                match (self._data [j]) {
+                    _ : &MapValue!(K, V) => {
+                        self._branch = 0u64;
+                        self._index = j;
+                        self._currentNode = self._data [j];
+                        return {};
+                    }
+                }
+            }
+        } catch {
+            _ : &OutOfArray => { } 
+        }
+
+        self._data = [];
+        self._currentNode = Empty!(K, V)::new ();
+        self._index = 0u64;
+        self._branch = 0u64;
+    }
+    
+}

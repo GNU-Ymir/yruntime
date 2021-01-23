@@ -1,5 +1,5 @@
 mod std::io;
-//import core::array;
+
 import core::exception, core::typeinfo, core::array;
 
 extern (C) def putchar (c : c8);
@@ -27,14 +27,14 @@ println ("Test on : ", a);
  */
 pub trait Printable {
     pub def print (self)-> void {
-        print (typeof (self)::typeid);
+        print (typeof (self)::typeid,  (self::tupleof,));
     }
 }
 
 pub {
     /**
      * Print a char of size 8 in stdout
-     * Params : 
+     * @params : 
      * - c, the char to print
      */
     def print (c : c8) -> void
@@ -42,7 +42,7 @@ pub {
 
     /**
      * Print a char of size 32 in stdout
-     * Params : 
+     * @params : 
      * - c, the char to print
      */
     def print (c : c32) -> void
@@ -50,7 +50,7 @@ pub {
 
     /**
      * Print an array of c32 in stdout
-     * Params : 
+     * @params : 
      * - s, the string to print
      */
     def print (s : [c32]) -> void {
@@ -59,11 +59,12 @@ pub {
             print (s [i]);
             i = i + 1_u64;
         }
-    } catch { _ => {}}
-
+    } catch { _ => {
+    }}
+    
     /**
      * Print an array of c8 in stdout
-     * Params : 
+     * @params : 
      * - s, the string to print
      */
     def print (s : [c8]) -> void {
@@ -73,10 +74,10 @@ pub {
             i = i + 1_u64;
         }
     } catch { _ => {}}
-
+    
     /**
      * Print a isize to stdout
-     * Params:
+     * @params:
      * i, the int to print
      */
     def print (i : isize) -> void
@@ -84,7 +85,7 @@ pub {
 
     /**
      * Print a usize to stdout
-     * Params:
+     * @params:
      * i, the int to print
      */
     def print (i : usize) -> void
@@ -92,7 +93,7 @@ pub {
     
     /**
      * Print a i64 to stdout
-     * Params:
+     * @params:
      * i, the int to print
      */
     def print (i : i64) -> void
@@ -100,7 +101,7 @@ pub {
 
     /**
      * Print a i32 to stdout
-     * Params:
+     * @params:
      * i, the int to print
      */
     def print (i : i32) -> void
@@ -108,7 +109,7 @@ pub {
 
     /**
      * Print a i16 to stdout
-     * Params:
+     * @params:
      * i, the int to print
      */
     def print (i : i16) -> void
@@ -116,7 +117,7 @@ pub {
 
     /**
      * Print a i8 to stdout
-     * Params:
+     * @params:
      * i, the int to print
      */
     def print (i : i8) -> void
@@ -124,7 +125,7 @@ pub {
 
     /**
      * Print a u64 to stdout
-     * Params:
+     * @params:
      * i, the int to print
      */
     def print (i : u64) -> void
@@ -132,7 +133,7 @@ pub {
         
     /**
      * Print a u32 to stdout
-     * Params:
+     * @params:
      * i, the int to print
      */
     def print (i : u32) -> void
@@ -140,7 +141,7 @@ pub {
 
     /**
      * Print a u16 to stdout
-     * Params:
+     * @params:
      * i, the int to print
      */
     def print (i : u16) -> void
@@ -148,7 +149,7 @@ pub {
 
     /** 
      * Print a u8 to stdout
-     * Params:
+     * @params:
      * i, the int to print
      */
     def print (i : u8) -> void
@@ -160,7 +161,7 @@ pub {
         
     /**
      * Print a float value of size 64 to stdout
-     * Params:
+     * @params:
      * - f, the float to print
      */
     def print (f : f64) -> void {
@@ -169,7 +170,7 @@ pub {
         
     /**
      * Print a float value of size 32 to stdout
-     * Params:
+     * @params:
      * - f, the float to print
      */
     def print (f : f32) -> void {
@@ -178,7 +179,7 @@ pub {
 
     /**
      * Print a bool value to stdout
-     * Params:
+     * @params:
      * - b, the bool to print
      */
     def print (b : bool) -> void {
@@ -190,9 +191,9 @@ pub {
 
     /**
      * Print an array of type U to stdout
-     * Params:
+     * @params:
      * - a, an array to print
-     * Templates : 
+     * @templates : 
      * - T, an array type
      * - U, any 
      */
@@ -211,9 +212,9 @@ pub {
 
     /**
      * Print a static array of type U to stdout
-     * Params : 
+     * @params : 
      * - a, an array to print
-     * Templates : 
+     * @templates : 
      * - T, an static array type 
      * - U, any
      * - N, the static size 
@@ -228,18 +229,42 @@ pub {
         print (']'c8);
     } catch {
         _ => {
-            // Don't do anything this is impossible to get there
+            // Don't do anything it is impossible to get there
         }
     }
     
     /**
      * Print multiple elements to stdout
      */
-    def print (F, T...) (a : F, b : T) {
+    def print  (F, T...) (a : F, b : T) {
         print (a);
-        print (expand b);
+        cte if (is!T (Z of (U,), U...)) {
+            for i in b 
+                print (i);
+        } else {
+            print (b);
+        }
+    }
+    
+    def print (T of (U,), U...) (a : T) {
+        print ('(');
+        let mut j = 0;
+        for i in a {
+            if j != 0 {
+                print (',');
+            }
+            print (i);
+            j += 1;
+        }
+        print (')');
     }
 
+    def print (_ : ()) {
+        print ('('c8,')'c8);
+    }
+
+    def print () {}
+    
     /**
      * Print a struct to stdout
      */
@@ -254,22 +279,28 @@ pub {
         print (")");
     }
 
+    /**
+     * Print a class that implement the trait Printable to stdout
+     */
     def print (T impl Printable) (a : T)-> void {
         a.print ();
     }
     
-    /**
-     * Print multiple elements to stdout
-     * And end with a `'\n'_c8`
-     */
-    def println (F...) (a : F) {
-        print (expand a);
+
+    def println (T...) (a : T) {
+        cte if (is!T (Z of (U,), U...)) {
+            for i in a 
+                print (i);
+        } else {
+            print (a);
+        }
+        
         print ('\n'c8);
     }
-
+    
     /**
      * Read a i32 from the stdin
-     * Returns : a i32
+     * @returns : a i32
      */
     def read (T of i32) () -> i32 {
         let mut x : i32 = 0;
@@ -279,7 +310,7 @@ pub {
 
     /**
      * Read a u64 from the stdin
-     * Returns : a u64
+     * @returns : a u64
      */
     def read (T of u64) () -> u64 {
         let mut x : u64 = 0_u64;
@@ -289,7 +320,7 @@ pub {
 
     /**
      * Read a c8 from the stdin
-     * Returns : a c8
+     * @returns : a c8
      */
     def read (T of c8) () -> c8 {
         let mut x : c8 = '\u{0}'c8;
@@ -299,7 +330,7 @@ pub {
 
     /**
      * Read a c8 from the stdin, and return it as a c32
-     * Returns : a c32
+     * @returns : a c32
      */
     def read (T of c32) () -> c32 {
         _yrt_getwchar ()       

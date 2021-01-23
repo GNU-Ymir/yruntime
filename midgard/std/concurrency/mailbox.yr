@@ -1,2 +1,93 @@
 mod std::concurrency::mailbox;
 
+import core::typeinfo;
+import std::collection::list;
+import std::concurrency::sync;
+import std::any;
+import std::option;
+import std::io;
+
+/**
+ * A mail box is a way of sending messages between threads in a non blocking manner unlike pipes
+ * Its implementation is just an atomic list (Cf. std::collection::list)
+ * @example: 
+ * ===========
+ * let dmut box = MailBox::new ();
+ * let th = spawn (move |_| => {
+ *     loop {
+ *         let msg = box:.receive!(i32) ();
+ *         match msg {
+ *             x : &Some!(i32) => {
+ *                 println ("Finally received a message : ", x, " !!");
+ *                 break {}
+ *             }
+ *             _ => {
+ *                 println ("Still waiting for a mail");
+ *             }
+ *         }
+ *     }
+ * });
+ * 
+ * for i in 0 .. 1_000_000 {} // unecessarily long useless action
+ * 
+ * box:.send (42);
+ * th.join ();
+ * =======
+ */
+pub class @final MailBox (T) {
+
+    let dmut _mails = List!(T)::new ();
+
+    let _mutex = Mutex::new ();
+    
+    pub self () {}
+
+    /**
+     * Send a mail in the mail box
+     * @info: this function is not blocking
+     * @params: 
+     *    - x: the value to send 
+     * @templates: 
+     *    - T: any type
+     */
+    pub def send (mut self, x : T) -> void {
+        //println ("lock");
+        self._mutex.lock ();        
+        self._mails:.push (x);
+        self._mutex.unlock ();
+        //println ("unlock");
+    }
+
+    /**
+     * Check if there is mail to receive in the mail box, and return it encapsulated in option type
+     * @info: this function is not blocking
+     * @templates: 
+     *     - T: any type
+     * @return: 
+     *    - Some!(T): if a message was found in the box
+     */
+    pub def receive (mut self) -> &Option!T {
+        //println ("lock");
+        self._mutex.lock ();
+        let ret : &Option!T = self._mails:.popFront ();
+        self._mutex.unlock ();
+        //println ("unlock");
+        ret
+    }    
+
+    /**
+     * @returns: the number of mails in the box
+     */
+    pub def len (self) -> u64 {
+        //println ("lock");
+        self._mutex.lock ();
+        let res = self._mails.len ();
+        self._mutex.unlock ();
+        //println ("unlock");
+        res
+    }
+    
+}
+
+
+

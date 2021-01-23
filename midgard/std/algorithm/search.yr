@@ -1,0 +1,91 @@
+mod std::algorithm::search;
+import std::collection::seq;
+import std::conv;
+
+/**
+ * Verify if all elements of a verify the predicate
+ * @params: 
+ *    - a: an array of elements
+ * @templates: 
+ *    - F: a predicate to verify 
+ * @example: 
+ * ===========
+ * let a = [1, 2, 3];
+ * assert (a.all!(|x| => x <= 3)());
+ * ===========
+ */
+pub def all (F : fn (U)-> bool, T of [U], U) (a : T) -> bool {
+    for i in a {
+        if (!F (i)) return false;
+    }
+    return true;
+}
+
+/**
+ * Verify if all elements of a verify the predicate
+ * @params: 
+ *    - a: a sequence of elements, iterable on the value to test
+ * @assume: the iteration give an option type
+ * @templates: 
+ *    - F: a predicate to verify 
+ * @example: 
+ * ===========
+ * let a = vec #[1, 2, 3];
+ * assert (a.all!(|x| => x <= 3)());
+ * ===========
+ */
+pub def all (F : fn (U)-> bool, T impl Seq!(U), U) (a : T) -> bool {
+    for i in a {
+        {
+        if (!F (i.unwrap ())) return false;
+        } catch {
+            _ : &CastFailure => { return false; }
+        }
+    }
+    return true;
+}
+
+/**
+ * Verify that at least one element verifies the predicate
+ * @params: 
+ *    - a: an array of elements
+ * @templates: 
+ *    - F: a predicate to verify
+ * @example: 
+ * ============
+ * let a = [1, 2, 3];
+ * assert (a.any!(|x| => x == 1) ());
+ * assert (!a.any!(|x| => x == 4) ());
+ * ============
+ */
+pub def any (F : fn (U)-> bool, T of [U], U) (a : T)-> bool {
+    for i in a {
+        if (F (i)) return true;
+    }
+    return false;
+}
+
+/**
+ * Verify that at least one element verifies the predicate
+ * @params: 
+ *    - a: a sequence of elements, iteration on the value to test
+ * @assume: the iteration give an option type
+ * @templates: 
+ *    - F: a predicate to verify
+ * @example: 
+ * ============
+ * let a = vec #[1, 2, 3];
+ * assert (a.any!(|x| => x == 1) ());
+ * assert (!a.any!(|x| => x == 4) ());
+ * ============
+ */
+pub def any (F : fn (U)-> bool, T impl Seq!(U), U) (a : T)-> bool {
+    for i in a {
+        {
+            if (F (i.unwrap ())) return true;
+        } catch {
+            _ : &CastFailure => { }
+        }
+    }
+    return false;
+}

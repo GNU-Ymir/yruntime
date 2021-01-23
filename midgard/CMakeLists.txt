@@ -1,7 +1,7 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 2.6)
 PROJECT(Midgard C)
 SET(CMAKE_C_COMPILER "gyc")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -fPIC")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC -g")
 
 FILE (
   GLOB_RECURSE
@@ -15,6 +15,14 @@ FILE (
   std/*.yr
   )
 
+
+FILE (
+  GLOB_RECURSE
+  SRC_ETC
+  etc/*.yr
+  )
+
+
 FILE (
   GLOB_RECURSE
   SRC_CORE_C
@@ -27,10 +35,10 @@ FILE (
   std/*.c
   )
 
-SET_SOURCE_FILES_PROPERTIES(${SRC_CORE} ${SRC_STD} PROPERTIES LANGUAGE C)
+SET_SOURCE_FILES_PROPERTIES(${SRC_CORE} ${SRC_STD} ${SRC_ETC} PROPERTIES LANGUAGE C)
 SET_SOURCE_FILES_PROPERTIES(${SRC_CORE} ${SRC_STD} PROPERTIES COMPILE_FLAGS "-nostdinc")
 
-add_library (gymidgard ${SRC_CORE} ${SRC_STD} ${SRC_CORE_C} ${SRC_STD_C})
+add_library (gymidgard ${SRC_CORE} ${SRC_STD} ${SRC_ETC} ${SRC_CORE_C} ${SRC_STD_C})
 target_link_libraries (gymidgard -lpthread -lgc -lgyruntime -lgmp)
 install (TARGETS gymidgard DESTINATION /usr/lib/)
 include_directories(${CMAKE_SOURCE_DIR})

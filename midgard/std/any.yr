@@ -1,53 +1,99 @@
 mod std::any;
+import std::conv;
 import std::io;
-import core::typeinfo, core::duplication;
+
+import core::typeinfo;
+
+/**
+ * An any type, that can store anything
+ * This type is immutable, so it only can store immutable value
+ */
+pub class @abstract Any {
+
+    /**
+     * The class is abstract, 
+     * only the successor have acces to the constructor
+     */
+    prot self () {}
+
+    /**
+     * Transform self into T
+     * @throws: 
+     *     - CastFailure: if self doen't store a value of type T
+     * @templates: 
+     *    - T: any type
+     */
+    pub def unwrap (T) (self) -> T
+        throws &CastFailure
+    {
+        match (self) {
+            s : &Some!(T) => { return s.get () }
+            _ : &Any => { throw CastFailure::new ((Some!T)::typeinfo, self::typeinfo) }
+        }
+    }
+
+    /**
+     * An any type is printable
+     */
+    impl std::io::Printable;
+
+}
+
+
+/**
+ * An any value, that actually store a value
+ * @templates: 
+ *    - T: the type of value that is stored
+ * @info: the stored value is immutable
+ */
+pub class Some (T) over Any {
+
+    /// The value
+    let _val : T;
+
+    /**
+     * @params: 
+     *    - val: a value of type T
+     */
+    pub self (val : T) with _val = val {}
+
+    /**
+     * @returns: the value stored
+     */    
+    pub def unwrap (self)-> T {
+        self._val
+    }
     
-pub {
     /**
-     * Ancestor class of all type
-     * An any type is relativaly similar to type Option, but doesn't have a default type
+     * Print the value of type T to stdout
+     * If T is not printable, just print its type
      */
-    class @abstract Any {
-        pub self () {}
-        
-        impl Printable;
-
-        impl core::duplication::Copiable ;
-        
-    }
-
-
-    /**
-     * This class is used to have a data in an any value
-     */
-    class Some (T) over Any {
-        pub let value : T;
-
-
-        pub self (x : T) with value = x {}        
-
-        pub over print (self) {
-            print (self.value);
-        }
-
-        pub over deepCopy (self) -> mut Any {
-            Some!(T)::new (self.value)
+    pub over print (self) {
+        cte if (__pragma!compile ({ print (self._val); })) {
+            print (self._val);
+        } else {
+            print (T::typeid);
         }
     }
+        
+}
+
+/**
+ * An any value, that stores nothing
+ * It can be used as a unit type 
+ */
+pub class None over Any {
 
     /**
-     * Any can have type none, when no value is used
+     * Stores nothing
      */
-    class None over Any {
-        pub self () {}
+    pub self () {}
 
-        pub over print (self) {
-            print ("None");
-        }
-
-        pub over deepCopy (self) -> mut Any {
-            alias None::new ()
-        }
-    }    
-
+    /**
+     * Prints it type name
+     */
+    pub over print (self) {
+        print (typeof (self)::typeid);
+    }
+    
 }

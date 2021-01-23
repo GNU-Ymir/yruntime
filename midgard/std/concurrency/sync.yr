@@ -1,155 +1,85 @@
 mod std::concurrency::sync;
-import std::c::thread;
-import core::typeinfo, core::duplication;
-import std::io, std::traits;
 
-pub {
-    
+import core::typeinfo;
+import etc::runtime::thread;
+
+/**
+ * Mutex are used to perform synchronization between basic threads
+ * @example: 
+ * ===========
+ * let mutex = Mutex::new ();
+ * {
+ *     mutex.lock (); 
+ *     // Do some atomic computation
+ * } exit {
+ *     mutex.unlock ();
+ * }
+ * ===========
+ */
+pub class @final Mutex {
+
+    pub let _lock : _yrt_thread_mutex_t;
+
     /**
-     * Mutex are used to perform synchronization between basic threads
+     * New mutex that allows synchronization between threads
      */
-    class @final Mutex {
-
-        pub let _lock : _yrt_thread_mutex_t;
-
-        /**
-         * New mutex that allows synchronization between threads
-         */
-        pub self () with _lock = _yrt_thread_mutex_t::init {
-            _yrt_thread_mutex_init (&self._lock, null);
-        }
-
-        /**
-         * Wait for the mutex to be free
-         * And then lock it
-         */
-        pub def lock (self) {
-            _yrt_thread_mutex_lock (&self._lock);
-        }
-
-        /**
-         * Unlock the mutex
-         */
-        pub def unlock (self) {
-            _yrt_thread_mutex_unlock (&self._lock);            
-        }
-        
+    pub self () with _lock = _yrt_thread_mutex_t::init {
+        _yrt_thread_mutex_init (&self._lock, null);
     }
 
-    class @final Semaphore {
-
-        let _sem : sem_t;
-
-        pub self () with _sem = sem_t::init {
-            _yrt_thread_sem_init (&self._sem, 0, 0);
-        }
-
-        pub def post (self) {
-            _yrt_thread_sem_post (&self._sem);
-        }
-
-        pub def wait (self) {
-            _yrt_thread_sem_wait (&self._sem);
-        }
-
-    }
-    
-    class @final Condition {
-
-        let _cond : _yrt_thread_cond_t;
-        
-        pub self () with _cond = _yrt_thread_cond_t::init {
-            _yrt_thread_cond_init (&self._cond, null);
-        }
-
-        pub def wait (self, mutex : Mutex) {
-            _yrt_thread_cond_wait (&self._cond, &mutex._lock);
-        }
-
-        pub def signal (self) {
-            _yrt_thread_cond_signal (&self._cond);
-        }
-        
+    /**
+     * Wait for the mutex to be free
+     * And then lock it
+     */
+    pub def lock (self) {
+        _yrt_thread_mutex_lock (&self._lock);
     }
 
-    class @final Atomic (T) {
-
-        let mut _atom : T;
-        
-        let mutex : Mutex = Mutex::new ();
-        
-        cte if isPrimitive!T {
-            pub self (atom : T) with _atom = atom {}
-        } else {
-            pub self (mut atom : T) with _atom = alias atom {}
-        }
-
-        pub def apply (X) (mut self, foo : fn (ref mut T)-> X)-> X {
-            self.mutex.lock ();
-            let res =  foo (ref (self._atom));
-            self.mutex.unlock ();
-            res
-        }
-
-        pub def apply (mut self, foo : fn (ref mut T)-> void)-> void {
-            self.mutex.lock ();
-            foo (ref self._atom);
-            self.mutex.unlock ();
-        }
-
-
-        pub def apply (X) (self, foo : fn (T)-> X)-> X {
-            self.mutex.lock ();
-            let res = foo (self._atom);
-            self.mutex.unlock ();
-            res
-        }
-
-        pub def apply (self, foo : fn (T)-> void)-> void {
-            self.mutex.lock ();
-            foo (self._atom);
-            self.mutex.unlock ();
-        }
-        
-        pub def apply (X) (mut self, foo : dg (ref mut T)-> X)-> X {
-            self.mutex.lock ();
-            let res =  foo (ref (self._atom));
-            self.mutex.unlock ();
-            res
-        }
-
-        pub def apply (mut self, foo : dg (ref mut T)-> void)-> void {
-            self.mutex.lock ();
-            foo (ref self._atom);
-            self.mutex.unlock ();
-        }
-
-
-        pub def apply (X) (self, foo : dg (T)-> X)-> X {
-            self.mutex.lock ();
-            let res = foo (self._atom);
-            self.mutex.unlock ();
-            res
-        }
-        
-        pub def apply (self, foo : dg (T)-> void)-> void {
-            self.mutex.lock ();
-            foo (self._atom);
-            self.mutex.unlock ();
-        }
-
-        impl std::io::Printable {
-            pub over print (self) {
-                self.mutex.lock ();
-                cte if (is!(T)(X impl Printable) || isPrimitive!(T))
-                    print (self._atom)
-                else
-                    print ("Some!(", (self._atom)::typeinfo.name, ")")
-                self.mutex.unlock ();
-            }
-        }
-        
+    /**
+     * Unlock the mutex
+     */
+    pub def unlock (self) {
+        _yrt_thread_mutex_unlock (&self._lock);            
     }
-    
     
 }
+
+/**
+ * Semaphore are used to perform synchronization between basic threads
+ */
+pub class @final Semaphore {
+
+    let _sem : sem_t;
+    
+    pub self () with _sem = sem_t::init {
+        _yrt_thread_sem_init (&self._sem, 0, 0);
+    }
+    
+    pub def post (self) {
+        _yrt_thread_sem_post (&self._sem);
+    }
+    
+    pub def wait (self) {
+        _yrt_thread_sem_wait (&self._sem);
+    }
+    
+}
+    
+pub class @final Condition {
+    
+    let _cond : _yrt_thread_cond_t;
+    
+    pub self () with _cond = _yrt_thread_cond_t::init {
+        _yrt_thread_cond_init (&self._cond, null);
+    }
+    
+    pub def wait (self, mutex : &(Mutex)) {
+        _yrt_thread_cond_wait (&self._cond, &mutex._lock);
+    }
+    
+    pub def signal (self) {
+        _yrt_thread_cond_signal (&self._cond);
+    }
+    
+}
+

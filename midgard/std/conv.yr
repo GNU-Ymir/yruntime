@@ -1,160 +1,756 @@
 mod std::conv;
-import std::traits;
-import core::array;
-import std::c::string;
+import std::io;
 
-extern (C) def snprintf (buf : &c8, len : i32, format : &c8, ...) -> i32;
-extern (C) def sprintf (buf : &c8, format : &c8, ...);
+import core::typeinfo;
+import core::exception;
+
+mod Runtime {
+    pub extern (C) def _yrt_ulong_to_double (a : u64)-> f64;
+    
+    pub extern (C) def _yrt_long_to_double (a : i64)-> f64;
+    
+    pub extern (C) def _yrt_uint_to_float (a : u32)-> f32;
+    
+    pub extern (C) def _yrt_int_to_float (a : i32)-> f32;
+
+    pub extern (C) def _yrt_double_to_ulong (a : f64)-> u64;
+    
+    pub extern (C) def _yrt_double_to_long (a : f64)-> i64;
+    
+    pub extern (C) def _yrt_float_to_uint (a : f32)-> u32;
+    
+    pub extern (C) def _yrt_float_to_int (a : f32)-> i32;
+}
+
+
+/**
+ * This class can be thrown when a dynamic cast was unsuccessful 
+ * It doen't have a real meaning in the language, as it can't really happen
+ * But we can force it
+ * @example : 
+ * ===============
+ * class @abstract X { ... }
+ * class Y over X { ... }
+ * class Z over X { ... }
+ * 
+ * def enforce_Y  (a : &X) throws &std::conv::CastFailure
+ * {
+ *    match (a) {
+ *        _ : &Y => {
+ *             println (\"Success\");
+ *        }
+ *        _ => {
+ *          throw CastFailure::new (a::typeinfo, Y::typeinfo);
+ *        }
+ *     }
+ * } 
+ * 
+ * def main () {
+ *     enforce_Y (Z::new ());
+ * } catch {
+ *     x : _ => println (x);
+ * }
+ * 
+ * ===============
+ */
+pub class CastFailure over core::exception::Exception {
+
+    /// The type from which we want a cast    
+    let _fr : TypeInfo;
+
+    /// The type to which we want a cast
+    let _to : TypeInfo;
+
+    /**
+     * @params: 
+     *    - from, the type from which we want a cast
+     *    - to, the type to which we want a cast
+     */
+    pub self (from : TypeInfo, to : TypeInfo) with _fr = from, _to = to {}
+
+    /**
+     * Just print the error to stdout
+     */
+    pub over print (self) {
+        print ("Cast failed : ", self._fr.name, " => ", self._to.name);
+    }
+    
+}
 
 pub {
+    
     /**
-     * Transform a string of c8, c-like formated i.e. an array of c8 ending by a '\u{0}'
-     * Returns: 
-     * An array of c8
+     * Transform a u32 into a string
+     * @example: 
+     * ==========
+     * let x = to![c32] (12u32);
+     * assert (x == "12");
+     * ==========
      */
-    def to (T of [c8]) (a : &c8) -> dmut [c8] {
-        if (a is null || *a == '\u{0}'c8) return [];
-        let dmut ret = ['\u{0}'c8 ; new strlen (a)];
-        let mut b = a, mut it = 0u32;
-        while *b != '\u{0}'c8 {
-            ret [it] = *b;
-            b = b + 1u32;
-            it += 1u32;
+    def to (T of [c32]) (a : u64) -> [c32] {
+        let mut n = a;
+        let mut len = 0u64;
+        while n > 0u64 {
+            len += 1u64;
+            n /= 10u64;
         }
-        alias ret
-    } catch {
-        _ : OutOfArray =>
-            []
-        _ : SegFault =>
-            []
-    }
-
-    /**
-     * Transforms an integer into a formatted array of c32, with the base 10
-     * Example : 
-     * --------------
-     * let x = 123;
-     * let z = x.to!([c32]) ();
-     * assert (z == "123");
-     * --------------
-     */
-    def if (isIntegral!T2) to (T of [c32], T2) (elem : T2) -> dmut [c32] {
-        import std::io;
-        if (elem < cast!(T2)(0)) {
-            return ("-" ~ to!([c32]) (-elem));
-        } else if (elem == cast!(T2)(0))
-            return copy "0";
         
-        let mut nb = elem, mut size = 0u64;
-        while nb > cast!T2 (0) {
-            nb /= cast!T2 (10i8);
-            size += 1u64;
-        }
-
-        let mut res : [mut c32] = ['\u{0}' ; new size];
-        let mut aux = elem;
-        for it in 0u64 .. size {
-            res [size - it - 1u64] = to!c32 (aux % cast!T2 (10i8));
-            aux /= cast!T2 (10i8);
-        }
-        alias res
-    } catch {
-        _ : OutOfArray => {
-            []
-        }
-    }
-
-    /**
-     * Transform an integer into a c32
-     * Warning: only work if /elem/ is < 10
-     */
-    def if (isIntegral!T2) to (T of c32, T2) (elem : T2) -> c32 {
-        match (elem) {
-            cast!T2 (0) => {'0'}
-            cast!T2 (1) => {'1'}
-            cast!T2 (2) => {'2'}
-            cast!T2 (3) => {'3'}
-            cast!T2 (4) => {'4'}
-            cast!T2 (5) => {'5'}
-            cast!T2 (6) => {'6'}
-            cast!T2 (7) => {'7'}
-            cast!T2 (8) => {'8'}
-            cast!T2 (9) => {'9'}
-            _ => '_'
-        }
-    }
-
-    /**
-     * Transform a array of c8 into an array of c32
-     */
-    def to (T of [c32]) (elem : [c8]) -> dmut [c32] {
-        let dmut res = ['\u{0}'; new elem.len];
-        for i in 0u64 .. elem.len {
-            res [i] = cast!(c32) (elem [i])
-        }
-        alias res
-    } catch {
-        _ : OutOfArray => {
-            []
-        }
-    }
-
-    /**
-     * Floating point value to [c32], with default format /ddd.ddd/
-     * Where /d/ is a decimal value
-     * Params : 
-     * - prec = the number of digits after the decimal point
-     */
-    def if (isFloating!T2) to (T of [c32], T2) (elem : T2, prec : u32 = 6u32) -> dmut [c32] {
-        import std::io
-        let len = cast!u32 (snprintf (cast!(&c8) (null), 0, "%.*f"s8.ptr, prec, elem));
-        let dmut res = ['\u{0}'c8 ; new len];
-        sprintf (res.ptr, "%.*f"s8.ptr, prec, elem);
-        alias res.to!([c32]) ()
-    }
-
-    /**
-     * Floating point value to [c32], in exponant format /(-)d.ddd**e**(+\/-)ddd/
-     * Where /d/ is a decimal value
-     * Params : 
-     * - prec = the number of digits after the decimal point
-     */
-    def if (isFloating!T2) to (T of [c32], "e", T2) (elem : T2, prec : u32 = 6u32) -> dmut [c32] {
-        import std::io;
-        let len = cast!u32 (snprintf (cast!(&c8) (null), 0, "%.*e"s8.ptr, prec, elem));
-        let dmut res = alias ['\u{0}'c8 ; new len];
-        sprintf (res.ptr, "%.*e"s8.ptr, prec, elem);
-        alias res.to!([c32]) ()
-    }
-
-    /**
-     * Floating point value to [c32], in hexadecimal format
-     */
-    def if (isFloating!T2) to (T of [c32], "a", T2) (elem : T2) -> dmut [c32] {
-        import std::io;
-        let len = cast!u32 (snprintf (cast!(&c8) (null), 0, "%a"s8.ptr, elem));
-        let dmut res = alias ['\u{0}'c8 ; new len];
-        sprintf (res.ptr, "%a"s8.ptr, elem);
-        alias res.to!([c32]) ()
-    }
-
-    /**
-     * Array of char to integral
-     */
-    def if (isIntegral!T) to (T) (elem : [c32]) -> T {
-        let mut res = T::init;
-        
-        let mut i = cast!i32 (elem.len) - 1;
-        let mut  mul = cast!T (1);
-
-        while i >= 0 {
-            if elem [i] != ' ' {
-                res += (cast!T(elem [i]) - cast!T ('0')) * mul;
-                mul *= cast!T(10);
-            }
-            i -= 1;
-        }
+        let dmut res = core::duplication::allocArray!(c32)(len);
+        let mut j = 1u64;
+        for i in len .. 0u64 {
+            res [i - 1u64] = to!c32 (a / j % 10u64);
+            j *= 10u64;
+        } catch {
+            _ : &OutOfArray => { }
+        }        
         
         res
+    }
+
+    /**
+     * Transform a i32 into a string
+     * @example:
+     * ===========
+     * let x = to![c32] (-12);
+     * assert (x == "-12");
+     * ===========
+     */
+    def to (T of [c32]) (a : i64) -> [c32] {
+        let (mut n, mut len, sign) = if (a < 0i64) {
+            (- a, 0u64, true)
+        } else { (a, 0u64, false) }
+                
+        while n > 0i64 {
+            len += 1u64;
+            n /= 10i64;
+        }
+        
+        let mut j = 1i64;
+        if (!sign) {
+            let dmut res = core::duplication::allocArray!(c32)(len);
+            for i in len .. 0u64 {
+                res [i - 1u64] = to!c32 (a / j % 10i64);
+                j *= 10i64;
+            } catch {
+                _ : &OutOfArray => { }
+            }
+            res
+        } else {
+            let dmut res = core::duplication::allocArray!(c32)(len + 1u64);
+            {
+                for i in len .. 0u64 {
+                    res [i] = to!c32 (-a / j % 10i64);
+                    j *= 10i64;
+                }
+                res [0] = '-';
+            } catch {
+                _ : &OutOfArray => { }
+            }
+            res
+        }        
+    }
+
+    /**
+     * Transform is i32 into a string
+     * @example: 
+     * ============
+     * assert (to![c32] (12) == "12")
+     * ============
+     */
+    def to (T of [c32]) (a : i32) -> [c32] {
+        to![c32](cast!i64 (a))
+    }
+
+    /**
+     * Transform is u32 into a string
+     * @example: 
+     * ============
+     * assert (to![c32] (12u32) == "12")
+     * ============
+     */
+    def to (T of [c32]) (a : u32) -> [c32] {
+        to![c32](cast!u64 (a))
+    }
+
+    /**
+     * Transform is i16 into a string
+     * @example: 
+     * ============
+     * assert (to![c32] (12i16) == "12")
+     * ============
+     */
+    def to (T of [c32]) (a : i16) -> [c32] {
+        to![c32](cast!i64 (a))
+    }
+
+    /**
+     * Transform is u16 into a string
+     * @example: 
+     * ============
+     * assert (to![c32] (12u16) == "12")
+     * ============
+     */
+    def to (T of [c32]) (a : u16) -> [c32] {
+        to![c32](cast!u64 (a))
+    }
+
+    /**
+     * Transform is i8 into a string
+     * @example: 
+     * ============
+     * assert (to![c32] (12i8) == "12")
+     * ============
+     */
+    def to (T of [c32]) (a : i8) -> [c32] {
+        to![c32](cast!i64 (a))
+    }
+
+    /**
+     * Transform is u8 into a string
+     * @example: 
+     * ============
+     * assert (to![c32] (12u8) == "12")
+     * ============
+     */
+    def to (T of [c32]) (a : u8) -> [c32] {
+        to![c32](cast!u64 (a))
+    }
+
+    /**
+     * Transform a u32 into a string
+     * @example: 
+     * ==========
+     * let x = to![c8] (12u32);
+     * assert (x == "12");
+     * ==========
+     */
+    def to (T of [c8]) (a : u64) -> [c8] {
+        let mut n = a;
+        let mut len = 0u64;
+        while n > 0u64 {
+            len += 1u64;
+            n /= 10u64;
+        }
+        
+        let dmut res = core::duplication::allocArray!(c8)(len);
+        let mut j = 1u64;
+        for i in len .. 0u64 {
+            res [i - 1u64] = to!c8 (a / j % 10u64);
+            j *= 10u64;
+        } catch {
+            _ : &OutOfArray => { }
+        }        
+        
+        res
+    }
+
+    /**
+     * Transform a i32 into a string
+     * @example:
+     * ===========
+     * let x = to![c8] (-12);
+     * assert (x == "-12");
+     * ===========
+     */
+    def to (T of [c8]) (a : i64) -> [c8] {
+        let (mut n, mut len, sign) = if (a < 0i64) {
+            (- a, 0u64, true)
+        } else { (a, 0u64, false) }
+                
+        while n > 0i64 {
+            len += 1u64;
+            n /= 10i64;
+        }
+        
+        let mut j = 1i64;
+        if (!sign) {
+            let dmut res = core::duplication::allocArray!(c8)(len);
+            for i in len .. 0u64 {
+                res [i - 1u64] = to!c8 (a / j % 10i64);
+                j *= 10i64;
+            } catch {
+                _ : &OutOfArray => { }
+            }
+            res
+        } else {
+            let dmut res = core::duplication::allocArray!(c8)(len + 1u64);
+            {
+                for i in len .. 0u64 {
+                    res [i] = to!c8 (-a / j % 10i64);
+                    j *= 10i64;
+                }
+                res [0] = '-';
+            } catch {
+                _ : &OutOfArray => { }
+            }
+            res
+        }        
+    }
+
+    /**
+     * Transform is i32 into a string
+     * @example: 
+     * ============
+     * assert (to![c8] (12) == "12"s8)
+     * ============
+     */
+    def to (T of [c8]) (a : i32) -> [c8] {
+        to![c8](cast!i64 (a))
+    }
+
+    /**
+     * Transform is u32 into a string
+     * @example: 
+     * ============
+     * assert (to![c8] (12u32) == "12"s8)
+     * ============
+     */
+    def to (T of [c8]) (a : u32) -> [c8] {
+        to![c8](cast!u64 (a))
+    }
+
+    /**
+     * Transform is i16 into a string
+     * @example: 
+     * ============
+     * assert (to![c8] (12i16) == "12"s8)
+     * ============
+     */
+    def to (T of [c8]) (a : i16) -> [c8] {
+        to![c8](cast!i64 (a))
+    }
+
+    /**
+     * Transform is u16 into a string
+     * @example: 
+     * ============
+     * assert (to![c8] (12u16) == "12"s8)
+     * ============
+     */
+    def to (T of [c8]) (a : u16) -> [c8] {
+        to![c8](cast!u64 (a))
+    }
+
+    /**
+     * Transform is i8 into a string
+     * @example: 
+     * ============
+     * assert (to![c8] (12i8) == "12"s8)
+     * ============
+     */
+    def to (T of [c8]) (a : i8) -> [c8] {
+        to![c8](cast!i64 (a))
+    }
+
+    /**
+     * Transform is u8 into a string
+     * @example: 
+     * ============
+     * assert (to![c8] (12u8) == "12"s8)
+     * ============
+     */
+    def to (T of [c8]) (a : u8) -> [c8] {
+        to![c8](cast!u64 (a))
+    }
+
+    /**
+     * Transform a u64 into a f64
+     * @example: 
+     * ==========
+     * let x = to!f64 (12u64);
+     * assert (x == 12.0);
+     * ==========
+     */
+    def to (T of f64) (a : u64) -> f64 {
+        Runtime::_yrt_ulong_to_double (a)
+    }
+
+    /**
+     * Transform a i64 into a f64
+     * @example: 
+     * ==========
+     * let x = to!f64 (12i64);
+     * assert (x == 12.0);
+     * ==========
+     */
+    def to (T of f64) (a : i64) -> f64 {
+        Runtime::_yrt_long_to_double (a)
+    }
+
+
+    /**
+     * Transform a i32 into a f64
+     * @example: 
+     * ==========
+     * let x = to!f64 (12);
+     * assert (x == 12.0);
+     * ==========
+     */
+    def to (T of f64) (a : i32) -> f64 {
+        Runtime::_yrt_long_to_double (cast!i64 (a))
+    }
+
+    /**
+     * Transform a u32 into a f64
+     * @example: 
+     * ==========
+     * let x = to!f64 (12);
+     * assert (x == 12.0);
+     * ==========
+     */
+    def to (T of f64) (a : u32) -> f64 {
+        Runtime::_yrt_ulong_to_double (cast!u64 (a))
+    }
+
+    /**
+     * Transform a i32 into a f32
+     * @example: 
+     * ==========
+     * let x = to!f32 (12);
+     * assert (x == 12.0f);
+     * ==========
+     */
+    def to (T of f32) (a : i32) -> f32 {
+        Runtime::_yrt_int_to_float (a)
+    }
+
+    /**
+     * Transform a u32 into a f32
+     * @example: 
+     * ==========
+     * let x = to!f32 (12);
+     * assert (x == 12.0f);
+     * ==========
+     */
+    def to (T of f32) (a : u32) -> f32 {
+        Runtime::_yrt_uint_to_float (a)
+    }
+
+    /**
+     * Transform a f64 into a i64
+     * @example:
+     * ============
+     * let x = to!i64 (12.0);
+     * assert (x == 12i64);
+     * ============
+     */
+    def to (T of i64) (a : f64) -> i64 {
+        Runtime::_yrt_double_to_long (a)
+    }
+
+    /**
+     * Transform a f64 into a u64
+     * @example:
+     * ============
+     * let x = to!u64 (12.0);
+     * assert (x == 12u64);
+     * ============
+     */
+    def to (T of u64) (a : f64) -> u64 {
+        Runtime::_yrt_double_to_ulong (a)
+    }
+
+
+    /**
+     * Transform a f32 into a i32
+     * @example:
+     * ============
+     * let x = to!i32 (12.f);
+     * assert (x == 12);
+     * ============
+     */
+    def to (T of i32) (a : f32) -> i32 {
+        Runtime::_yrt_float_to_int (a)
+    }
+
+    /**
+     * Transform a f32 into a u32
+     * @example:
+     * ============
+     * let x = to!u32 (12.f);
+     * assert (x == 12u32);
+     * ============
+     */
+    def to (T of u32) (a : f32) -> u32 {
+        Runtime::_yrt_float_to_uint (a)
+    }
+
+    /**
+     * Transform a f32 into a i64
+     * @example:
+     * ============
+     * let x = to!i64 (12.f);
+     * assert (x == 12i64);
+     * ============
+     */
+    def to (T of i64) (a : f32) -> i64 {
+        cast!i64 (Runtime::_yrt_float_to_int (a))
+    }
+
+    /**
+     * Transform a f32 into a u64
+     * @example:
+     * ============
+     * let x = to!u64 (12.f);
+     * assert (x == 12u64);
+     * ============
+     */
+    def to (T of u64) (a : f32) -> u64 {
+        cast!u64 (Runtime::_yrt_float_to_uint (a))
+    }
+
+    /**
+     * Transform a string into a u64
+     * @throws: 
+     *    - &CastFailure: if the string does not contain a valid u32 literal
+     * @example:
+     * ===============
+     * let x = ("12").(to!u64);
+     * assert (x == 12);
+     * ===============
+     * @assume: the string is stripped, so the only possible char are [0-9]
+     */
+    def to (T of u64) (str : [c32])-> u64
+        throws &CastFailure
+    {
+        let mut j = 1u64;
+        let mut res = 0u64;
+        for i in str.len .. 0u64 {
+            if (str [i - 1u64] >= '0' && str [i - 1u64] <= '9') {                
+                res = res + (j * to!u64 (str [i - 1u64]));
+            } else {
+                throw CastFailure::new ([c32]::typeinfo, u64::typeinfo); 
+            }
+            j *= 10u64;
+        } catch {
+            _ : &OutOfArray => { } // Can't happen
+            x : &CastFailure => {
+                throw x;
+            }
+        }
+        res
+    }
+
+    /**
+     * Transform a string into a i64
+     * @throws: 
+     *    - &CastFailure: if the string does not contain a valid u32 literal
+     * @example:
+     * ===============
+     * let x = ("-12").(to!i64);
+     * assert (x == -12);
+     * ===============
+     * @assume: the string is stripped, so the only possible char are [0-9] and '-'
+     */
+    def to (T of i64) (str : [c32])-> i64
+        throws &CastFailure
+    {
+        let mut j = 1u64;
+        let mut res = 0i64;
+        for i in str.len .. 0u64 {
+            if (str [i - 1u64] >= '0' && str [i - 1u64] <= '9') {                
+                res = res + cast!i64 ((j * to!u64 (str [i - 1u64])));
+            } else if (i == 1u64 && str [i - 1u64] == '-') {
+                res = -res;
+            } else {
+                throw CastFailure::new ([c32]::typeinfo, u64::typeinfo); 
+            }
+            j *= 10u64;
+        } catch {
+            _ : &OutOfArray => { } // Can't happen
+            x : &CastFailure => {
+                throw x;
+            }
+        }
+        res
+    }
+
+    /**
+     * Transform a string into a u64
+     * @throws: 
+     *    - &CastFailure: if the string does not contain a valid u32 literal
+     * @example:
+     * ===============
+     * let x = ("12"s8).(to!u64);
+     * assert (x == 12);
+     * ===============
+     * @assume: the string is stripped, so the only possible char are [0-9]
+     */
+    def to (T of u64) (str : [c8])-> u64
+        throws &CastFailure
+    {
+        let mut j = 1u64;
+        let mut res = 0u64;
+        for i in str.len .. 0u64 {
+            if (str [i - 1u64] >= '0'c8 && str [i - 1u64] <= '9'c8) {                
+                res = res + (j * to!u64 (str [i - 1u64]));
+            } else {
+                throw CastFailure::new ([c32]::typeinfo, u64::typeinfo); 
+            }
+            j *= 10u64;
+        } catch {
+            _ : &OutOfArray => { } // Can't happen
+            x : &CastFailure => {
+                throw x;
+            }
+        }
+        res
+    }
+
+    /**
+     * Transform a string into a i64
+     * @throws: 
+     *    - &CastFailure: if the string does not contain a valid u32 literal
+     * @example:
+     * ===============
+     * let x = ("-12").(to!i64);
+     * assert (x == -12);
+     * ===============
+     * @assume: the string is stripped, so the only possible char are [0-9] and '-'
+     */
+    def to (T of i64) (str : [c8])-> i64
+        throws &CastFailure
+    {
+        let mut j = 1u64;
+        let mut res = 0i64;
+        for i in str.len .. 0u64 {
+            if (str [i - 1u64] >= '0'c8 && str [i - 1u64] <= '9'c8) {                
+                res = res + cast!i64 ((j * to!u64 (str [i - 1u64])));
+            } else if (i == 1u64 && str [i - 1u64] == '-'c8) {
+                res = -res;
+            } else {
+                throw CastFailure::new ([c32]::typeinfo, u64::typeinfo); 
+            }
+            j *= 10u64;
+        } catch {
+            _ : &OutOfArray => { } // Can't happen
+            x : &CastFailure => {
+                throw x;
+            }
+        }
+        res
+    }
+    
+}
+
+/**
+ * @assume: a < 10
+ * Transform a u64 into a c8
+ */
+def to (T of c8) (a : u64) -> c8 {
+    match a {
+        0u32 => { '0'c8 }
+        1u32 => { '1'c8 }
+        2u32 => { '2'c8 }
+        3u32 => { '3'c8 }
+        4u32 => { '4'c8 }
+        5u32 => { '5'c8 }
+        6u32 => { '6'c8 }
+        7u32 => { '7'c8 }
+        8u32 => { '8'c8 }
+        9u32 => { '9'c8 }
+        _ => { '\u{0}'c8 }
+    }
+}
+
+/**
+ * @assume: a < 10 and a >= 0
+ * Transform a i64 into a c8
+ */
+def to (T of c8) (a : i64) -> c8 {
+    match a {
+        0 => { '0'c8 }
+        1 => { '1'c8 }
+        2 => { '2'c8 }
+        3 => { '3'c8 }
+        4 => { '4'c8 }
+        5 => { '5'c8 }
+        6 => { '6'c8 }
+        7 => { '7'c8 }
+        8 => { '8'c8 }
+        9 => { '9'c8 }
+        _ => { '\u{0}' }
+    }
+}
+
+
+/**
+ * @assume: a < 10 
+ * Transform a u64 into a c32
+ */
+def to (T of c32) (a : u64) -> c32 {
+    match a {
+        0u32 => { '0' }
+        1u32 => { '1' }
+        2u32 => { '2' }
+        3u32 => { '3' }
+        4u32 => { '4' }
+        5u32 => { '5' }
+        6u32 => { '6' }
+        7u32 => { '7' }
+        8u32 => { '8' }
+        9u32 => { '9' }
+        _ => { '\u{0}' }
+    }
+}
+
+/**
+ * @assume: a < 10 and a >= 0
+ * Transform a u64 into a c32
+ */
+def to (T of c32) (a : i64) -> c32 {
+    match a {
+        0 => { '0' }
+        1 => { '1' }
+        2 => { '2' }
+        3 => { '3' }
+        4 => { '4' }
+        5 => { '5' }
+        6 => { '6' }
+        7 => { '7' }
+        8 => { '8' }
+        9 => { '9' }
+        _ => { '\u{0}' }
+    }
+}
+
+
+/**
+ * Transform a c32 into a u64
+ * @assume: a >= '0' and a <= '9'
+ */
+def to (T of u64) (a : c32) -> u64 {
+    match a {
+        '0' => { 0u64 }
+        '1' => { 1u64 }
+        '2' => { 2u64 }
+        '3' => { 3u64 }
+        '4' => { 4u64 }
+        '5' => { 5u64 }
+        '6' => { 6u64 }
+        '7' => { 7u64 }
+        '8' => { 8u64 }
+        '9' => { 9u64 }
+        _ => { 0u64 }            
+    }
+}
+
+/**
+ * Transform a c8 into a u64
+ * @assume: a >= '0' and a <= '9'
+ */
+def to (T of u64) (a : c8) -> u64 {
+    match a {
+        '0'c8 => { 0u64 }
+        '1'c8 => { 1u64 }
+        '2'c8 => { 2u64 }
+        '3'c8 => { 3u64 }
+        '4'c8 => { 4u64 }
+        '5'c8 => { 5u64 }
+        '6'c8 => { 6u64 }
+        '7'c8 => { 7u64 }
+        '8'c8 => { 8u64 }
+        '9'c8 => { 9u64 }
+        _ => { 0u64 }            
     }
 }

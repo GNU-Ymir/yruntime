@@ -1,0 +1,60 @@
+mod std::box;
+
+/**
+ * A box class is a mutable pointer to a value that is allocated on the heap
+ * They can be used to change values of closure, inside a closure
+ * @example: 
+ * =============
+ * import std::box;
+ * 
+ * def foo () -> (dg () -> i32) {
+ *    let dmut x = Box::new (0);
+ *    let closure = move || {
+ *        x.get ()
+ *    };
+ *    x:.set(42);
+ *    return closure;
+ * }
+ * 
+ * def main () 
+ *     throws &AssertError 
+ * {
+ *     let enclosed_value = foo ();
+ *     assert (enclosed_value () == 42);
+ * }
+ * =============
+ */
+pub class @final Box (T) {
+
+    pub let mut _value : T;
+
+    /**
+     * Create a new box on the heap with a default value
+     * @params: 
+     *    - x: the value to store
+     */
+    pub self (x : T) with _value = x {}
+
+    /**
+     * Change the value in the box
+     */
+    pub def set (mut self, x : T) -> void {
+        self._value = x;
+    }
+
+    /**
+     * @returns: the value stored in the box
+     */
+    pub def get (self) -> T {
+        self._value
+    }
+
+    /**
+     * Alias of self.get ()
+     * @returns: the value stored in the box
+     */
+    pub def opUnary("*") (self) -> T {
+        self._value
+    }
+            
+}

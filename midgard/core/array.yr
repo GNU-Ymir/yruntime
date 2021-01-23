@@ -15,57 +15,9 @@ pub class OutOfArray over Exception {
 }
 
 pub def outOfArray ()
-    throws OutOfArray
+    throws &OutOfArray
 {
     throw OutOfArray::new ();
-}
-
-pub def opBinary ("~", C of [U], U) (a : C, b : C) -> mut [mut U] {
-    let mut res : [mut U] = alias allocMod!(U)::_yrt_new_array (sizeof U, a.len + b.len);
-    for i in 0_u64 .. a.len {
-        cte if (is!U (T of [J], J))
-            res [i] = alias a [i]
-        else
-            res [i] = a [i]
-    }
-
-    for j in 0_u64 .. b.len {
-        cte if (is!U (T of [J], J)) {
-            res [j + a.len] = alias b [j]
-        } else {
-            res [j + a.len] = b [j];
-        }
-    }
-    
-    alias res
-} catch {
-    _ => {
-        let mut res : [mut U] = [];
-        return alias res;
-    }
-}
-
-pub def opBinary ("==", C of [U], U) (a : C, b : C) -> bool {
-    if (a.len != b.len) return false;
-    for i in 0u64 .. a.len {
-        if !(a [i] == b [i]) return false;
-    }
-    return true;
-} catch {
-    _ => false
-}
-
-
-pub def opCmp (C of [U], U) (a : C, b : C) -> i32 {
-    import std::algorithm::comparison;
-    let min_len = min (a.len, b.len);
-    for i in 0u64 .. min_len {
-        if (a [i] < b [i]) return -1
-        else if (a [i] > b [i]) return 1
-    }
-    return 0;
-} catch {
-    _ => 1 // arbitrary !
 }
 
 

@@ -1,144 +1,281 @@
 mod std::concurrency::future;
-import std::concurrency::thread;
-import std::concurrency::sync;
-import core::typeinfo, core::duplication;
+
+import core::typeinfo;
+import core::array;
+import core::exception;
+
 import std::option;
+import std::concurrency::task;
+import std::concurrency::sync;
+import std::io;
 
-class @abstract FutureThread (T) over Thread {
+/**
+ * Future is a placeholder for a value that may not exists yet
+ * Its value is computed asynchronusely using a TaskPool
+ * The task pool is a global task pool initialized when asking for the first future of the program
+ * The number of thread in this task pool is the number of cores available in the system - 1, or 1 if there is only one
+ * It can be initialized by hand before, see std::concurrency::future::setFutureTaskPool;
+ * @example: 
+ * =============
+ * def foo ()-> Future!i32 {
+ *    future (|| {
+ *         heavy_computation ();
+ *         42
+ *    })
+ * }
+ * 
+ * let x = foo ();
+ * heavy_computation_2 ();
+ * assert (x.wait () == 42);
+ * =============
+ */
+pub class @abstract Future (T) {
 
-    pub let mut value : Option!T = std::option::None ();
-    pub let running : Atomic!bool = Atomic!(bool)::new (true);
+    let mut _mutex = Mutex::new ();
     
-    self () {}
-}
+    let mut _cond = Condition::new ();
 
-class FutureThFn (T) over FutureThread!T {
+    cte if (!is!T (U of void)) {
+        let mut _value : &Option!T;
+    }
 
-    let func : fn()-> T;
+    let mut _finalized = false;
 
-    self (func : fn()-> T) with func = func {}
+    cte if (!is!T (U of void)) {
+        prot self () with _value = None!(T)::new () {}
+    } else {
+        prot self () {}
+    }
+
+    /**
+     * Execute the future in the current thread
+     */
+    pub def execute (mut self);
+
+    /**
+     * Wait the end of the execution of the future, and return the value in an option type
+     * @info: this is passive waiting, so what you want to do in case you need the result of the future
+     * @example: 
+     * =============
+     * =============
+     */
+    cte if (!is!T (U of void)) {
+        pub def @final wait (self)-> &Option!T {
+            self._mutex.lock ();
+            if (!self._finalized) 
+                self._cond.wait (self._mutex);
+            self._mutex.unlock ();
+            self._value
+        }
+    } else {
+        pub def @final wait (self) {
+            self._mutex.lock ();
+            if (!self._finalized) 
+                self._cond.wait (self._mutex);
+            self._mutex.unlock ();
+        }
+    }
+
+    /**
+     * Tell if the computation of the value is finished
+     * @example: 
+     * ============
+     * let f = future (|| => {
+     *         // heavy computation stuff 
+     *         42
+     * });
+     * while !f.isFinished { // active waiting
+     *      println ("Waiting for the value of the future");
+     *      println ("Maybe we should use this time to do real computation ?");
+     * }
+     * assert (f.wait () == 42); // this will not really waits the future is already finished
+     * ============
+     */
+    pub def @final isFinished (self) -> bool {
+        self._finalized
+    }
     
-    over run (mut self) {
-        self.value = std::option::Some!(T)::new (self.func ());
-        (alias self.running).apply (|ref mut x : bool| -> void {
-            x = false;
-        });
+    /**
+     * Emit the signal (thread condition), to inform that the future value is computed 
+     */
+    prot def @final signal (mut self) {
+        self._mutex.lock ();
+        self._finalized = true;
+        self._cond.signal ();
+        self._mutex.unlock ();
     }
     
 }
 
-class FutureThDg (T) over FutureThread!T {
+/**
+ * Set the task pool that will be used to compute the futures
+ * @example: 
+ * =============
+ * import std::concurrency::task; 
+ * 
+ * let dmut pool = TaskPool::new ();
+ * setFutureTaskPool (alias pool);
+ * let f = future (|| => {
+ *     // ...
+ * });
+ * 
+ * pool.join ();
+ * assert (f.isFinished ());
+ * =============
+ */
+pub def setFutureTaskPool (dmut pool : &TaskPool) -> void {
+    internal::__pool__ = [alias pool];
+}
 
-    let func : dg()-> T;
+/**
+ * Create a future value, and submit it to the task pool for future execution
+ * @example: 
+ * ===========
+ * let f = future (|| => {
+ *       heavy_computation_stuff ();
+ *       42
+ * }); 
+ * // future execution is made asynchronusely
+ * assert (f.wait () == 42);
+ * ===========
+ */
+pub def future (T) (func : fn ()-> T) -> &Future!T {
+    let dmut fut = internal::FnFuture::new (func);
+    let dmut pool = internal::getTaskPool ();
+    pool:.submit (&(fut:.execute));
+    fut
+}
 
-    self (func : dg()-> T) with func = func {}
-    
-    over run (mut self) {
-        self.value = std::option::Some!(T)::new (self.func ());
-        (alias self.running).apply (|ref mut x : bool| -> void {
-            x = false;
-        });
+/**
+ * Create a future value, and submit it to the task pool for future execution
+ * @example: 
+ * ===========
+ * let i = 42;
+ * let f = future (move || => {
+ *       heavy_computation_stuff ();
+ *       i
+ * }); 
+ * // future execution is made asynchronusely
+ * assert (f.wait () == 42);
+ * ===========
+ */
+pub def future (T) (func : dg ()-> T) -> &Future!T {
+    let dmut fut = internal::DgFuture::new (func);
+    let dmut pool = internal::getTaskPool ();
+    pool:.submit (&(fut:.execute));
+    fut
+}
+
+/**
+ * Create a future value, and submit it to the task pool for future execution
+ * @example: 
+ * ===========
+ * let dmut pool = TaskPool::new (1u64);
+ * let f = future (alias pool, || => {
+ *       heavy_computation_stuff ();
+ *       42
+ * }); 
+ * // future execution is made asynchronusely
+ * assert (f.wait () == 42);
+ * ===========
+ */
+pub def future (T) (dmut pool : &TaskPool, func : fn ()-> T) -> &Future!T {
+    let dmut fut = internal::FnFuture::new (func);
+    pool:.submit (&(fut:.execute));
+    fut
+}
+
+/**
+ * Create a future value, and submit it to the task pool for future execution
+ * @example: 
+ * ===========
+ * let i = 42;
+ * let f = future (move || => {
+ *       heavy_computation_stuff ();
+ *       i
+ * }); 
+ * // future execution is made asynchronusely
+ * assert (f.wait () == 42);
+ * ===========
+ */
+pub def future (T) (dmut pool : &TaskPool, func : dg ()-> T) -> &Future!T {
+    let dmut fut = internal::DgFuture::new (func);
+    pool:.submit (&(fut:.execute));
+    fut
+}
+
+mod internal {
+
+    pub static mut __pool__ : dmut [&TaskPool] = [];
+
+    /**
+     * Get the global task pool for processing futures
+     * The number of thread in the task pool is set to the number of cores available on the system - 1, or 1 if there is only 1
+     * @example: 
+     * ==============
+     * import etc::c::sysinfo;
+     * import std::algorithm::comparison;
+     * 
+     * let dmut pool = internal::getTaskPool ();
+     * assert (pool.getNbThreads () == max (get_nprocs () - 1, 1));
+     * ==============
+     */
+    pub def getTaskPool () -> dmut &TaskPool {
+        if (__pool__.len == 0u64) {
+            __pool__ = [TaskPool::new ()];
+        }
+        {
+            return alias __pool__ [0];
+        } catch {
+            _ => return TaskPool::new (); // can't happen, but ...
+        }
     }
-    
-}
 
-class @abstract FutureThread (T of void) over Thread {
-    pub let running : Atomic!bool = Atomic!(bool)::new (true);
-    self () {}
-}
+    /**
+     * A future value that creates the value from a function
+     */
+    pub class @final FnFuture (T) over Future!T {
 
-class FutureThFn (T of void) over FutureThread {
+        let _func : fn () -> T;
 
-    let func : fn()-> T;
-    self (func : fn()-> T) with func = func {}
-    
-    over run (mut self) {
-        self.func ();
-        (alias self.running).apply (|ref mut x : bool| -> void {
-            x = false;
-        });
-    }    
-    
-}
+        pub self (func : fn () -> T) with _func = func {}
 
-class FutureThDg (T of void) over FutureThread {
-
-    let func : dg()-> T;
-    self (func : dg()-> T) with func = func {}
-    
-    over run (mut self) {
-        self.func ();
-        (alias self.running).apply (|ref mut x : bool| -> void {
-            x = false;
-        });
-    }
-}
-
-pub {
-    
-    class Future (T) {
-        
-        let mut fth : FutureThread!T;
-        
-        self (func : fn ()-> T) with fth = FutureThFn!(T)::new (func) {
-            (alias self.fth).spawn ();
-        }
-        
-        self (func : dg ()-> T) with fth = FutureThDg!(T)::new (func) {
-            (alias self.fth).spawn ();
-        }
-        
-        def complete (self)-> std::option::Option!(T) {            
-            if (self.fth.running)
-                self.fth.join ();
-            
-            self.fth.value
-        }
-
-        def interrupt (mut self)-> void {            
-            (alias (self.fth)).kill ();
-            (alias self.running).apply (|ref mut x : bool| -> void {
-                x = false;
-            });
-        }
-        
-    }
-
-    class Future (T of void) {
-        
-        let mut fth : FutureThread!T;
-        
-        self (func : fn ()-> T) with fth = FutureThFn!(T)::new (func) {
-            (alias self.fth).spawn ();
-        }
-        
-        self (func : dg ()-> T) with fth = FutureThDg!(T)::new (func) {
-            (alias self.fth).spawn ();
-        }
-        
-        def complete (self)-> void {
-            if (self.fth.running) {
-                self.fth.join ();
+        /**
+         * Put the value inside the result value of the future, and emit the signal (cf Future::signal)
+         */
+        pub over execute (mut self) {
+            cte if (!is!T (U of void)) {
+                self._value = Some::new (self._func ());
+            } else {
+                self._func ();
             }
+            
+            self:.signal ()
         }
+    }
 
-        def interrupt (mut self)-> void {            
-            (alias (self.fth)).kill ();
-            (alias self.running).apply (|ref mut x : bool| -> void {
-                x = false;
-            });
+    /**
+     * A future value that creates the value from a closure
+     */
+    pub class @final DgFuture (T) over Future!T {
+
+        let _func : dg () -> T;
+
+        pub self (func : dg ()-> T) with _func = func {}
+        
+        /**
+         * Put the value inside the result value of the future, and emit the signal (cf Future::signal)
+         */
+        pub over execute (mut self) {
+            cte if (!is!T (U of void)) {
+                self._value = Some::new (self._func ());
+            } else {
+                self._func ();
+            }
+            
+            self:.signal ()
         }
         
     }
-
-    def future (T) (func : dg()-> T) -> mut Future!T {
-        let mut f = Future!(T)::new (func);    
-        f
-    }
-
-    def future (T) (func : fn()-> T) -> mut Future!T {
-        let mut f = Future!(T)::new (func);    
-        f
-    }
-
+    
 }

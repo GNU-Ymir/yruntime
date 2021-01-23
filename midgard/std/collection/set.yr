@@ -1,0 +1,732 @@
+mod std::collection::set;
+
+import core::typeinfo;
+import core::duplication;
+import core::exception;
+import core::array;
+
+import std::collection::seq;
+import std::io;
+import std::hash;
+import std::option;
+import std::conv;
+
+/**
+ * The number of allocated node in the table of a HashSet
+ */
+prv enum : u64
+| DEFAULT_ALLOC_SIZE = 10u64
+ -> SetConst;
+
+
+/**
+ * Macro that can be used to declare a set as a literal
+ * @example: 
+ * ============
+ * let x = hset#{1, 2, 3};
+ * println (x); // {1, 2, 3};
+ * ============
+ */
+pub macro hset {
+
+    pub self (fst=__expr rest=("," val = __expr)*) skips (" " | "\n" | "\r" | "\t") {
+        let dmut z = HashSet!(typeof (#(fst)))::new ();
+        z:.insert (#(fst));
+        #(for i in rest) {
+            z:.insert (#(i::val));
+        }
+        alias z
+    }
+    
+}
+
+
+/**
+ * A hash set implementation that stores a list of uniq values
+ * The data in the set are unordered
+ * @drawbacks 
+ * ============
+ * The value contained in the hash set are considered equivalent if their hash is equivalent
+ * Depending on the hash function, there may be more or less collisions
+ * ============
+ * 
+ * @example : 
+ * =============
+ * let dmut x = HashSet!([c32], i32)::new ();
+ * x:.insert ("foo");
+ * x:.insert ("foo");
+ * x:.insert ("bar");
+ * assert (x.len () == 2u64);
+ * =============
+ */
+pub class @final HashSet (T) {
+
+    /**
+     * Assertion to avoid tones of error printing, if the key is not usable
+     */
+    cte assert (__pragma!compile ({hash!T;}) || __pragma!compile ({hash (T::init)}), "unusable element type : (" ~ T ~ ") must be hashable");
+
+    let dmut _data : [dmut &SetNode!(T)] = [];
+
+    let mut _loaded : u64 = 0u64;
+
+    let mut _size : u64 = 0u64;
+
+    let _load_factor = 75u64;
+
+    let _min_load_factor = 50u64;
+
+    /// Allocated only once to optimize memory usage
+    let dmut _empty : dmut &SetNode!(T) = Empty!(T)::new ();
+
+    /**
+     * Create a new empty set, with a default loaded factor of 0.75, and minimum load factor of 0.5
+     * Does not allocate memory until first insertion
+     */
+    pub self () {}
+    
+    /**
+     * Create a new empty hash set, with a default allocated table of size len
+     * @params:
+     *    - len: the size of the table reserved to avoid growing
+     */
+    pub self (len : u64) {
+        let dmut aux = core::duplication::allocArray!(&SetNode!(T)) (len);
+
+        for i in 0u64 .. aux.len {
+            aux [i] = alias self._empty;
+        }
+        
+        self._data = alias aux;
+    } catch {
+        _ : &OutOfArray => { } // Can't happen
+    }
+    
+    /**
+     * Insert a new element inside the set
+     * If the element was already in the set, does nothing
+     * @params:
+     *    - val: the value to insert
+     * @complexity: O (1 + n/k + z) with n the number of possible collision, and k the number of elements in the set, and z the time taken by resizing if the load is higher than the load factor, in average n/k and z are negligeable
+     * @example: 
+     * ============
+     * let dmut x = HashSet!([c32])::new ();
+     * x:.insert ("foo");
+     * x:.insert ("bar");
+     * x:.insert ("foo");
+     * assert (x.len () == 2u64);
+     * ============
+     */
+    pub def insert (mut self, val : T) -> void {
+        if (self._data.len == 0u64) { self:.grow (); }
+        else if ((self._loaded * 100u64) / (self._data.len) > self._load_factor) { self:.grow (); }
+        
+        let h = hash (val);
+        self:.insertFast (h, val);
+    }
+
+    /**
+     * Search the value in the set
+     * @returns: true if the value is in the set, false otherwise
+     * @example: 
+     * ============
+     * let dmut x = HashSet!([c32])::new ();
+     * x:.insert ("foo");
+     * assert ("foo" in x);
+     * assert ("bar" !in x);
+     * ============
+     * @complexity: O (1 + n/k), with n the number of possible collision and k the number of elements in the set, in average n/k are negligeable
+     */
+    pub def opContains (self, val : T) -> bool {
+        if (self._data.len != 0u64) {
+            let h = hash (val);        
+            match (self._data [h % self._data.len]) {
+                x : &SetValue!(T) =>
+                    return x.opContains (h);
+            }
+        }
+        false                   
+    } catch {
+        _ : &OutOfArray => // Can't happen
+            false
+    }
+
+
+    /**
+     * Remove an element from the set
+     * If the value was no present, does nothing
+     * @params: 
+     *    - val: the value to remove
+     * @example:
+     * ==========
+     * let dmut x = HashSet!([c32])::new ();
+     * x:.insert ("foo");
+     * x:.remove ("foo");
+     * x:.remove ("bar");
+     * assert (x.len () == 0);
+     * ==========
+     * @complexity: O (1 + n/k), with n the number of possible collision and k the number of elements in the set, in average n/k are negligeable
+     */
+    pub def remove (mut self, val : T) -> void {
+        if self._data.len != 0u64 {
+            let h = hash (val);
+            match (self._data [h % self._data.len]) {
+                dmut x : &SetValue!(T) => {
+                    let mut removed = false;
+                    self._data [h % self._data.len] = alias x:.remove (h, ref removed);
+                    match self._data [h % self._data.len] {
+                        _: &Empty!(T) => {
+                            self._loaded -= 1u64;
+                        }
+                    }
+                    if (removed) { self._size -= 1u64; }
+                }                
+            }
+            if ((self._loaded * 100u64) / self._data.len < self._min_load_factor) { self:.shrink (); }
+        }
+    } catch {
+        _ : &OutOfArray => { } // Can't happen
+    }
+
+    /**
+     * Remove all the elements contained in the set
+     * @example: 
+     * ===========
+     * let dmut x = HashSet!([c32])::new ();
+     * x:.insert ("foo");
+     * x:.insert ("bar");
+     * x:.insert ("baz");
+     * assert (x.len () == 3u64);
+     * x:.clear ();
+     * assert (x.len () == 0u64);
+     * ===========
+     * @complexity: O (1)
+     */
+    pub def clear (mut self) {
+        self._data = [];
+        self._loaded = 0u64;
+        self._size = 0u64;
+    }
+
+    /**
+     * Iteration over the set can be done with set iterators
+     * This iterators implement the ymir interface for iteration with one or two variable (next, get!0, get!1)
+     * @example: 
+     * ============
+     * let dmut x = HashSet!([c32])::new ();
+     * x:.insert ("foo");
+     * x:.insert ("bar");
+     * for v in x {
+     *     println (v);
+     * }    
+     * ============
+     * @return: an iterator on the beginning of the set
+     */
+
+    pub def begin (self) -> dmut &SetIterator!T {
+        if (self._loaded != 0u64) {
+            for i in 0u64 .. self._data.len {
+                match self._data [i] {
+                    _ : &SetValue!(T) =>
+                        return SetIterator!(T)::new (i, 0u64, self._data, self._data [i]);
+                }
+            }
+        } catch {
+            _ : &OutOfArray => {} 
+        }
+        
+        SetIterator!(T)::new (0u64, 0u64, [], self._empty)  
+    }
+
+    /**
+     * @returns: the iterator on the end of the set
+     */
+    pub def end (self) -> &SetIterator!T {
+        SetIterator!(T)::new (0u64, 0u64, [], self._empty)
+    }
+    
+        
+    impl std::collection::seq::Seq!T {
+
+        /**
+         * The number of elements contained in the set
+         * @example: 
+         * ==========
+         * let dmut x = HashSet!([c32])::new ();
+         * x:.insert ("foo");
+         * x:.insert ("foo");
+         * x:.insert ("bar");
+         * assert (x.len () == 2u64);
+         * ==========
+         */
+        pub over len (self) -> u64 {
+            self._size
+        }
+        
+    }
+
+    impl std::io::Printable {
+
+        /**
+         * Print the hash set to stdout
+         * @example: 
+         * =========
+         * let x = hset#{"foo", "bar"};
+         * println (x); // {bar, foo}
+         * =========
+         */
+        pub over print (self) {
+            print ('{'c8);
+            let mut i = 0u64;
+            for node in self._data {
+                match node {
+                    _ : &SetValue!(T) => {
+                        if (i != 0u64) { print (','c8); print (' 'c8); }
+                        print (node);
+                        i = 1u64;
+                    }
+                }
+            }
+            print ('}'c8);
+        }
+        
+    }
+
+    impl core::duplication::Copiable {
+
+        /**
+         * Hash set are copiable
+         * Because internal values of hash set are immutable, they are not copied
+         * The copy is only applied on the structure of the set
+         * @example: 
+         * =============
+         * let x = hset#{"foo", "bar"};
+         * let dmut y = dcopy x;
+         * y:.insert ("baz");
+         * println (x); // {bar, foo}
+         * println (y); // {baz, bar, foo}
+         * =============
+         */
+        pub over deepCopy (self)-> dmut &HashSet!(T) {
+            let dmut res = HashSet!(T)::new (self._data.len);
+            
+            // Add all the values 
+            for i in 0u64 .. self._data.len {
+                let mut current = self._data [i];
+                loop {
+                    match current {
+                        x : &SetValue!(T) => {
+                            res:.insertFast (x.h, x.val);
+                            current = x.next;
+                        }
+                        _ => {
+                            break {}
+                        }
+                    }
+                }
+            } catch {
+                _ : &OutOfArray => { } // Can't happen
+            }
+            
+            alias res
+        }
+        
+    }
+    
+
+    /**
+     * Insert an element in the hash set, without making the table grow 
+     * @assume: the table is able to contain the value to insert
+     * @params: 
+     *    - h: the hash of the value
+     *    - val: the value to insert
+     */
+    prv def insertFast (mut self, h : u64, val : T) {
+        let mut inserted = false;
+        match self._data [h % self._data.len] {
+            dmut x : &SetValue!(T) => {
+                inserted = x:.insert (h, val);
+            }
+            _ => {
+                self._data [h % self._data.len] = SetValue!(T)::new (h, val, alias self._empty);
+                self._loaded += 1u64;
+                inserted = true;
+            }
+        }
+        if (inserted) {
+            self._size += 1u64;
+        }
+    } catch {
+        _ : &OutOfArray => { } // Can't happen
+    }
+
+    /**
+     * Make the table containing the value shrink
+     * @complexity: O (n + m), with n the new size, and m the number of element contained in the old table and reinserted
+     */
+    prv def shrink (mut self) -> void {
+        if (self._loaded == 0u64) {
+            self._data = [];
+            return {}
+        }
+
+        let n_len = self._data.len / 2u64;
+        let dmut aux = core::duplication::allocArray!(&SetNode!(T)) (n_len);
+
+        for i in 0u64 .. aux.len {
+            aux [i] = alias self._empty;
+        }
+
+        let old = self._data;
+        self._data = alias aux;
+        self._loaded = 0u64;
+        self._size = 0u64;
+
+        for i in 0u64 .. old.len {
+            let mut current = old [i];
+            loop {
+                match current {
+                    x : &SetValue!(T) => {
+                        self:.insertFast (x.h, x.val);
+                        current = x.next;
+                    }
+                    _ => {
+                        break {}
+                    }
+                }
+            }
+        }        
+    } catch {
+        _ : &OutOfArray => { } // Can't happen
+    }
+
+    /**
+     * Make the table containing the values grow
+     * This function is called when the _load_factor is reached
+     * If the table was empty it is allocated with a size of SetConst::DEFAULT_ALLOC_SIZE,
+     * otherwise the size is mutliplied by 2
+     * @complexity: O (n + m), with n the new size, and m the number of element contained in the old table that are reinserted
+     */
+    prv def grow (mut self) -> void {
+        if (self._data.len == 0u64) {
+            self._data = core::duplication::allocArray!(&SetNode!(T)) (SetConst::DEFAULT_ALLOC_SIZE);
+            for i in 0u64 .. self._data.len {
+                self._data [i] = alias self._empty;
+            }
+        } else {
+            let n_len = self._data.len * 2u64;
+            let dmut aux = core::duplication::allocArray!(&SetNode!(T)) (n_len);
+            // Filling the data with empty elements, to be usable, allocArray is not safe!?
+            for i in 0u64 .. aux.len {
+                aux [i] = alias self._empty;
+            }
+            
+            // Clear the set
+            let old = self._data;
+            self._data = alias aux;
+            self._loaded = 0u64;
+            self._size = 0u64;
+
+            // Add all the old values 
+            for i in 0u64 .. old.len {
+                let mut current = old [i];
+                loop {
+                    match current {
+                        x : &SetValue!(T) => {
+                            self:.insertFast (x.h, x.val);
+                            current = x.next;
+                        }
+                        _ => {
+                            break {}
+                        }
+                    }
+                }
+            }
+        }
+    } catch {
+        _ : &OutOfArray => { } // Can't happen
+    }
+    
+    
+}
+
+
+/**
+ * Each index of a table of a hash set is a linked list
+ * This list is composed of SetNode(s)
+ */
+class @abstract SetNode (T) {
+    prot self () {}
+
+    pub def opEquals (self, o : &SetNode!T) -> bool;
+
+    impl std::io::Printable;
+}
+
+/**
+ * An actual node of the list that contains a value
+ * @example: 
+ * ===========
+ * let list = SetValue!(i32)::new (hash (12), 12, SetValue!(i32)::new (hash(42), 42, Empty!(i32)::new ()));
+ * ===========
+ */
+class @final SetValue (T) over SetNode!T {
+
+    // The reference to the next element of the list
+    pub let dmut next : &SetNode!T;
+
+    // The hash of the value contained in the list
+    pub let h : u64;
+
+    // The value contained in the list
+    pub let val : T;
+
+    /**
+     * @params: 
+     *    - h: == hash (val)
+     *    - val: the value to store
+     *    - next: the reference to the next element of the list
+     */
+    pub self (h : u64, val : T, dmut next : &SetNode!T)
+        with next = alias next, h = h, val = val
+    {}
+
+    /**
+     * Print the linked list to stdout
+     * @example: 
+     * ===========
+     * let list = SetValue!(i32)::new (hash (12), 12, SetValue!(i32)::new (hash(42), 42, Empty!(i32)::new ()));
+     * println (list); // 12, 42
+     * ===========
+     */
+    pub over print (self) {
+        cte if (__pragma!compile ({print (self.val);})) {
+            print (self.val);
+        } else { print (T::typeid); }
+        
+        match self.next {
+            _ : &Empty!(T) => {}
+            _ => { print (", ", self.next); }
+        }
+    }
+
+    /**
+     * Insert a new element in the list if it does not already exists
+     * @params: 
+     *    - h: == hash (val)
+     *    - val: the value to insert
+     * @complexity: O (n), with n the length of the list
+     * @returns: true if a new node has been allocated, false otherwise
+     */
+    pub def insert (mut self, h : u64, val : T) -> bool {
+        if (self.h != h) {
+            match (self.next) {
+                dmut x : &SetValue!T => {
+                    return x:.insert (h, val);
+                }
+                _ => {
+                    self.next = SetValue::new (h, val, alias self.next);
+                    return true;
+                }
+            }
+        }
+        false                
+    }
+
+    /**
+     * Remove the key inside the list, if there is no node containing the value, just return the list as it was
+     * @info: the returned list is not a copy, no allocation are made
+     * @complexity: O (n), with n the length of the list
+     * @returns: 
+     *    - rm: true if a node has been removed, false otherwise
+     *    - the list, with no node containing the hash h
+     */
+    pub def remove (mut self, h : u64, ref mut rm : bool) -> dmut &SetNode!T {
+        if (self.h == h) {
+            rm = true;
+            return alias self.next;
+        } else {
+            match self.next {
+                dmut x : &SetValue!T => {
+                    self.next = alias x:.remove (h, ref rm);
+                }
+            }
+            return alias self;
+        }
+    }
+
+    /**
+     * Search a node whose hash key is h in the linked list
+     * @returns: true if such node exists, false otherwise
+     * @complexity: O (n), with n the length of the list
+     */
+    pub def opContains (self, h : u64) -> bool {
+        if (self.h == h) {
+            true
+        } else {
+            match (self.next) {
+                x : &SetValue!(T) => {
+                    return x.opContains (h);
+                }
+            }
+            false
+        }
+    }
+
+    /**
+     * Compare two nodes
+     * @returns: true if o is SetValue and o.h == self.h, false otherwise
+     */
+    pub over opEquals (self, o : &SetNode!T) -> bool {
+        match o {
+            x : &SetValue!T => {
+                return x.h == self.h;
+            }
+        }
+        false
+    }
+    
+}
+
+
+/**
+ * An empty node that encode the end of a linked list in a set
+ */
+class @final Empty (T) over SetNode!(T) {
+    pub self () { }
+
+    /**
+     * Do nothing
+     */
+    pub over print (self) {}
+
+    /**
+     * Compare two nodes
+     * @returns: true if o is Empty!T
+     */
+    pub over opEquals (self, o : &SetNode!(T)) -> bool {
+        match o {
+            _ : &Empty!(T) =>
+                return true;
+        }
+        return false;
+    }
+    
+}
+
+
+/**
+ * The set iterator class is used to traverse a set
+ * It can be acquired in a hash set with the methods begin () and end ()
+ * @example: 
+ * ===========
+ * let x = hset#{"foo"};
+ * let dmut beg_it = x.begin ();
+ * assert (beg_it.get!0 == "foo");
+ * 
+ * beg_it:.next ();
+ * assert (beg_it == x.end ());
+ * ===========
+ */
+class @final SetIterator (T) {
+
+    let mut _data : [&SetNode!T];
+
+        /// The current index of the iterator, in the table
+    let mut _index : u64;
+
+    /// The current index in the current branch (linked list of SetValues)
+    let mut _branch : u64 = 0u64;
+
+    /// The reference on node containing the value we are pointing at
+    let mut _currentNode : &SetNode!(T);
+
+    /**
+     * An iterator is always constructed to point somewhere, or must point to (0, 0, [], empty)
+     * @params: 
+     *    - i: the index in the table of this iterator
+     *    - branch: the index in the branch at iterator i
+     *    - data: the table of data
+     *    - current: the current traversed node in the branch (data [i][branch])
+     */
+    pub self (i : u64, branch : u64, data : [&SetNode!T], current : &SetNode!T)
+        with _data = data,
+             _index = i,
+             _branch = branch,
+             _currentNode = current
+    {}        
+
+    /**
+     * Two iterators are equals, if the current nodes are equals
+     */
+    pub def opEquals (self, o : &SetIterator!T) -> bool {
+        self._currentNode == o._currentNode
+    }
+
+    /**
+     * @returns: 
+     * =======
+     * the value of the current node, in an option type
+     * None, it the current node is empty
+     * =======     
+     */
+    pub def get (0) (self) -> &Option!(T) {
+        match (self._currentNode) {
+            x : &SetValue!(T) =>
+                return Some!(T)::new (x.val);
+        }
+        return None!(T)::new ();
+    }
+
+    /**
+     * Create a new iterator that point to the next value contained in the set
+     * If there is no more value, the returned iterator is equals to set.end ()
+     * @example: 
+     * ===========
+     * let dmut x = HashSet!([c32])::new ();
+     * x:.insert ("foo");
+     * x:.insert ("bar");
+     * let dmut it = alias x.begin ();
+     * let end = x.end (); // put in a var to avoid multiple useless calls and allocations
+     * while (it != end) {
+     *    println (it.get!0);
+     *    it:.next ();
+     * }
+     * ===========
+     */
+    pub def next (mut self) -> void {
+        match (self._currentNode) {
+            x : &SetValue!(T) => {
+                match (x.next) {
+                    _ : &SetValue!T => {
+                        self._branch += 1u64;
+                        self._currentNode = x.next;
+                        return {}
+                    }
+                }
+            }
+        }            
+
+        if (self._index + 1u64 < self._data.len) {
+            for j in (self._index + 1u64).. self._data.len {
+                match (self._data [j]) {
+                    _ : &SetValue!T => {
+                        self._branch = 0u64;
+                        self._index = j;
+                        self._currentNode = self._data [j];
+                        return {};
+                    }
+                }
+            }
+        } catch {
+            _ : &OutOfArray => { } 
+        }
+
+        self._data = [];
+        self._currentNode = Empty!(T)::new ();
+        self._index = 0u64;
+        self._branch = 0u64;
+    }
+
+    
+}
