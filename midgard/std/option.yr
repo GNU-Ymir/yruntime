@@ -189,16 +189,20 @@ pub class @final Some (T) over Option!(T) {
         
     }
 
-    /**
-     * Print the value inside the option value to stdout
-     * If the value is not printable, print its type name
-     */
-    pub over print (self) {
-        cte if (__pragma!compile ({print (self._val)})) {
-            print (self._val);
-        } else {
-            print (T::typeid);
+    impl std::io::Printable {
+
+        /**
+         * Print the value inside the option value to stdout
+         * If the value is not printable, print its type name
+         */
+        pub over print (self) {
+            cte if (__pragma!compile ({print (self._val)})) {
+                print (self._val);
+            } else {
+                print (T::typeid);
+            }
         }
+        
     }
     
 }
@@ -213,11 +217,13 @@ pub class @final Some (T) over Option!(T) {
 pub class @final None (T) over Option!(T) {
     pub self () {}
 
-    /**
-     * Print the typeid of None!T to stdout
-     */
-    pub over print (self) {
-        print (typeof (self)::typeid);
+    impl std::io::Printable {
+        /**
+         * Print the typeid of None!T to stdout
+         */
+        pub over print (self) {
+            print ("None (", typeof (self)::typeid, ')');
+        }
     }
 
     cte if (__pragma!compile ("==", T, T)) {

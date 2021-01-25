@@ -491,22 +491,26 @@ class @final SetValue (T) over SetNode!T {
         with next = alias next, h = h, val = val
     {}
 
-    /**
-     * Print the linked list to stdout
-     * @example: 
-     * ===========
-     * let list = SetValue!(i32)::new (hash (12), 12, SetValue!(i32)::new (hash(42), 42, Empty!(i32)::new ()));
-     * println (list); // 12, 42
-     * ===========
-     */
-    pub over print (self) {
-        cte if (__pragma!compile ({print (self.val);})) {
-            print (self.val);
-        } else { print (T::typeid); }
-        
-        match self.next {
-            _ : &Empty!(T) => {}
-            _ => { print (", ", self.next); }
+
+    impl std::io::Printable {
+
+        /**
+         * Print the linked list to stdout
+         * @example: 
+         * ===========
+         * let list = SetValue!(i32)::new (hash (12), 12, SetValue!(i32)::new (hash(42), 42, Empty!(i32)::new ()));
+         * println (list); // 12, 42
+         * ===========
+         */
+        pub over print (self) {
+            cte if (__pragma!compile ({print (self.val);})) {
+                print (self.val);
+            } else { print (T::typeid); }
+            
+            match self.next {
+                _ : &Empty!(T) => {}
+                _ => { print (", ", self.next); }
+            }
         }
     }
 
@@ -595,10 +599,13 @@ class @final SetValue (T) over SetNode!T {
 class @final Empty (T) over SetNode!(T) {
     pub self () { }
 
-    /**
-     * Do nothing
-     */
-    pub over print (self) {}
+    impl std::io::Printable {
+
+        /**
+         * Do nothing
+         */
+        pub over print (self) {}
+    }
 
     /**
      * Compare two nodes

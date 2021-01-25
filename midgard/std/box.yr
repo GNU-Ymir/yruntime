@@ -1,8 +1,13 @@
 mod std::box;
 
+import std::io;
+
+import core::typeinfo;
+
 /**
  * A box class is a mutable pointer to a value that is allocated on the heap
  * They can be used to change values of closure, inside a closure
+ * The inner value is not mutable
  * @example: 
  * =============
  * import std::box;
@@ -31,18 +36,21 @@ pub class @final Box (T) {
     /**
      * Create a new box on the heap with a default value
      * @params: 
-     *    - x: the value to store
+     *    - v: the value to store
      */
-    pub self (x : T) with _value = x {}
+    pub self (v : T) with _value = v {}
 
     /**
      * Change the value in the box
+     * @params: 
+     *    - v: the new value to store
      */
-    pub def set (mut self, x : T) -> void {
-        self._value = x;
+    pub def set (mut self, v : T) -> void {
+        self._value = v;
     }
 
     /**
+     * Change the value in the box
      * @returns: the value stored in the box
      */
     pub def get (self) -> T {
@@ -56,5 +64,81 @@ pub class @final Box (T) {
     pub def opUnary("*") (self) -> T {
         self._value
     }
-            
+
+    /**
+     * Change the value in the box
+     * @params: 
+     *    - v: the new value to store
+     */
+    pub def opUnaryAssign ("*") (mut self, v : T) -> T {
+        self._value = v;
+        v
+    }
+
+    
+    impl std::io::Printable;    
+}
+
+/**
+ * A box class is a mutable pointer to a value that is allocated on the heap
+ * They can be used to change values of closure, inside a closure
+ * The inner value is mutable
+ */
+pub class @final Box (T of dmut U, class U) {
+
+    pub let dmut _value : T;
+
+    /**
+     * Create an new box allocated on the heap with a default value
+     * @params: 
+     *    - v : the value to store
+     */
+    pub self (dmut v : T) with _value = alias v {}
+
+    /**
+     * Change the value in the box
+     * @params: 
+     *    - v: the new value to store
+     */
+    pub def set (mut self, dmut v : T) -> void {
+        self._value = alias v;
+    }
+
+    /**
+     * Change the value in the box
+     * @returns: the value stored in the box
+     */
+    pub def get (mut self) -> dmut T {
+        alias self._value
+    }
+    
+    /**
+     * Alias of self.get ()
+     * @returns: the value stored in the box
+     */
+    pub def opUnary("*") (mut self) -> dmut T {
+        alias self._value
+    }
+
+    /**
+     * Alias of self.get ()
+     * @returns: the value stored in the box
+     */
+    pub def opUnary("*") (self) -> T {
+        self._value
+    }
+    
+    /**
+     * Change the value in the box
+     * @params: 
+     *    - v: the new value to store
+     * @returns: alias v
+     */
+    pub def opUnaryAssign ("*") (mut self, dmut v : T) -> dmut T {
+        self._value = alias v;
+        alias v
+    }
+
+    
+    impl std::io::Printable;
 }

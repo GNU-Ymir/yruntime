@@ -2,32 +2,91 @@ mod std::io;
 
 import core::exception, core::typeinfo, core::array;
 
+/**
+ * Put a simple ascii char on stdout
+ */
 extern (C) def putchar (c : c8);
+
+/**
+ * Runtime function that write a c32 char on stdout
+ */
 extern (C) def _yrt_putwchar (c : c32);
+
+/**
+ * Runtime function that read a c32 char from stdin
+ */
 extern (C) def _yrt_getwchar ()-> c32;
 
+/**
+ * C printf function 
+ */
 extern (C) def printf (c : &c8, ...);
+
+/**
+ * C scanf function
+ */
 extern (C) def scanf (c : &c8, ...);
+
+/**
+ * Runtime function that prints a f32 to stdout
+ */
 extern (C) def _yrt_printf32 (f : f32);
+
+/**
+ * Runtime function that prints a f64 to stdout
+ */
 extern (C) def _yrt_printf64 (f : f64);
 
 /**
  * This trait is to be implemented by class
  * When a class implement it, we can call the function print on it
- * Example : 
+ * @example: 
  * ====================
-class X {
-// ...
-impl Printable;
-}
-
-let a = X::new ();
-println ("Test on : ", a); 
+ * class X {
+ * // ...
+ * impl std::io::Printable;
+ * }
+ *
+ * let a = X::new ();
+ * println ("Test on : ", a); 
  * ====================
  */
 pub trait Printable {
+
+    /**
+     * Print the content of the class on stdout
+     * @returns: true if something has been printed, false otherwise    
+     */
+    prot def __stdio__printContent (self) -> bool {
+        cte if (__pragma!compile ({self::super.__stdio__printContent ();})) {
+            let printed = self::super.__stdio__printContent ();
+            if (typeof (self::local_tupleof)::arity != 0u32 && printed)
+                print (", ");
+        }
+        
+        cte if (typeof (self::local_tupleof)::arity != 0u32) {
+            let mut j = 0;
+            for i in self::local_tupleof {
+                if (j != 0) print (", ");
+                cte if (__pragma!compile ({print (i);})) {
+                    print (i);
+                } else {
+                    print (typeof (i)::typeid);
+                }
+                j += 1;
+            }
+        }
+        
+        cte (typeof (self::local_tupleof)::arity != 0u32)
+    }
+
+    /**
+     * Print the class name and content to stdout
+     */
     pub def print (self)-> void {
-        print (typeof (self)::typeid,  (self::tupleof,));
+        print (typeof (self)::typeid, '(');
+        self.__stdio__printContent ();
+        print (')');
     }
 }
 
@@ -35,7 +94,7 @@ pub {
     /**
      * Print a char of size 8 in stdout
      * @params : 
-     * - c, the char to print
+     * - c: the char to print
      */
     def print (c : c8) -> void
         putchar (c)
@@ -43,7 +102,7 @@ pub {
     /**
      * Print a char of size 32 in stdout
      * @params : 
-     * - c, the char to print
+     * - c: the char to print
      */
     def print (c : c32) -> void
         _yrt_putwchar (c)
@@ -51,7 +110,7 @@ pub {
     /**
      * Print an array of c32 in stdout
      * @params : 
-     * - s, the string to print
+     * - s: the string to print
      */
     def print (s : [c32]) -> void {
         let mut i = 0_u64;
@@ -65,7 +124,7 @@ pub {
     /**
      * Print an array of c8 in stdout
      * @params : 
-     * - s, the string to print
+     * - s: the string to print
      */
     def print (s : [c8]) -> void {
         let mut i = 0_u64;
@@ -78,7 +137,7 @@ pub {
     /**
      * Print a isize to stdout
      * @params:
-     * i, the int to print
+     *    - i: the int to print
      */
     def print (i : isize) -> void
         printf ((alias "%ld"s8).ptr, i)
@@ -86,7 +145,7 @@ pub {
     /**
      * Print a usize to stdout
      * @params:
-     * i, the int to print
+     *    - i: the int to print
      */
     def print (i : usize) -> void
         printf ((alias "%ld"s8).ptr, i)
@@ -94,7 +153,7 @@ pub {
     /**
      * Print a i64 to stdout
      * @params:
-     * i, the int to print
+     *    - i: the int to print
      */
     def print (i : i64) -> void
         printf ((alias "%ld"s8).ptr, i)
@@ -102,7 +161,7 @@ pub {
     /**
      * Print a i32 to stdout
      * @params:
-     * i, the int to print
+     *    - i: the int to print
      */
     def print (i : i32) -> void
         printf ((alias "%d"s8).ptr, i)
@@ -110,7 +169,7 @@ pub {
     /**
      * Print a i16 to stdout
      * @params:
-     * i, the int to print
+     *    - i: the int to print
      */
     def print (i : i16) -> void
         printf ((alias "%hd"s8).ptr, i)
@@ -118,7 +177,7 @@ pub {
     /**
      * Print a i8 to stdout
      * @params:
-     * i, the int to print
+     *    - i: the int to print
      */
     def print (i : i8) -> void
         printf ((alias "%hhx"s8).ptr, i)
@@ -126,7 +185,7 @@ pub {
     /**
      * Print a u64 to stdout
      * @params:
-     * i, the int to print
+     *    - i: the int to print
      */
     def print (i : u64) -> void
         printf ((alias "%lu"s8).ptr, i)
@@ -134,7 +193,7 @@ pub {
     /**
      * Print a u32 to stdout
      * @params:
-     * i, the int to print
+     *    - i: the int to print
      */
     def print (i : u32) -> void
         printf ((alias "%u"s8).ptr, i)
@@ -142,7 +201,7 @@ pub {
     /**
      * Print a u16 to stdout
      * @params:
-     * i, the int to print
+     *    - i: the int to print
      */
     def print (i : u16) -> void
         printf ((alias "%hu"s8).ptr, i)
@@ -150,19 +209,24 @@ pub {
     /** 
      * Print a u8 to stdout
      * @params:
-     * i, the int to print
+     *    - i: the int to print
      */
     def print (i : u8) -> void
         printf ((alias "%hhx"s8).ptr, i)
         
 
+    /**
+     * Print an address to stdout
+     * @params: 
+     *    - i: the address to print
+     */
     def print (i : &(void))-> void
         printf ((alias "%x"s8).ptr, i)
         
     /**
      * Print a float value of size 64 to stdout
      * @params:
-     * - f, the float to print
+     *    - f: the float to print
      */
     def print (f : f64) -> void {
         _yrt_printf64 (f);
@@ -171,7 +235,7 @@ pub {
     /**
      * Print a float value of size 32 to stdout
      * @params:
-     * - f, the float to print
+     *    - f: the float to print
      */
     def print (f : f32) -> void {
         _yrt_printf32 (f);
@@ -180,7 +244,7 @@ pub {
     /**
      * Print a bool value to stdout
      * @params:
-     * - b, the bool to print
+     *    - b: the bool to print
      */
     def print (b : bool) -> void {
         if (b) 
@@ -192,10 +256,10 @@ pub {
     /**
      * Print an array of type U to stdout
      * @params:
-     * - a, an array to print
+     *    - a: an array to print
      * @templates : 
-     * - T, an array type
-     * - U, any 
+     *    - T: a slice type
+     *    - U: any 
      */
     def print (T of [U], U) (a : T) -> void {
         let mut i = 0_u64;
@@ -213,11 +277,11 @@ pub {
     /**
      * Print a static array of type U to stdout
      * @params : 
-     * - a, an array to print
+     *    - a: an array to print
      * @templates : 
-     * - T, an static array type 
-     * - U, any
-     * - N, the static size 
+     *    - T: an static array type 
+     *    - U: any
+     *    - N: the static size 
      */
     def print (T of [U;N], U, N : usize) (a : T) -> void {
         print ('['c8);
@@ -245,7 +309,12 @@ pub {
             print (b);
         }
     }
-    
+
+    /**
+     * Print an element of type tuple to stdout
+     * @params: 
+     *    - a: a tuple of arbitrary arity
+     */
     def print (T of (U,), U...) (a : T) {
         print ('(');
         let mut j = 0;
@@ -287,6 +356,9 @@ pub {
     }
     
 
+    /**
+     * Print an arbitrary number of element on stdout, and add a return line afterwards
+     */
     def println (T...) (a : T) {
         cte if (is!T (Z of (U,), U...)) {
             for i in a 
@@ -335,9 +407,5 @@ pub {
     def read (T of c32) () -> c32 {
         _yrt_getwchar ()       
     }    
-
-}
-
-pub trait Readable {
-    pub def read (mut self)-> void;
+    
 }

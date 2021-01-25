@@ -564,27 +564,30 @@ class @final MapValue (K, V) over MapNode!(K, V) {
              h = h
     {}
 
-    /**
-     * MapNode are Printable, thus MapValue too
-     * This print the key and the value stored in the node, and the next element of the list if it is not empty
-     * @example: 
-     * ============
-     * let x = MapValue!([c32], i32)::new (hash("foo"),"foo", 42, Empty!([c32], i32)::new ());
-     * println (x); // foo=>42
-     * ============
-     */
-    pub over print (self) {
-        cte if (__pragma!compile ({print (self.key);})) {
-            print (self.key, "=>");
-        } else { print (K::typeid, "=>"); }
+    impl std::io::Printable {
         
-        cte if (__pragma!compile ({print (self.val);})) {
-            print (self.val);
-        } else { print (V::typeid); }
-        
-        match self.next {
-            _ : &Empty!(K, V) => {}
-            _ => { print (", ", self.next); }
+        /**
+         * MapNode are Printable, thus MapValue too
+         * This print the key and the value stored in the node, and the next element of the list if it is not empty
+         * @example: 
+         * ============
+         * let x = MapValue!([c32], i32)::new (hash("foo"),"foo", 42, Empty!([c32], i32)::new ());
+         * println (x); // foo=>42
+         * ============
+         */
+        pub over print (self) {
+            cte if (__pragma!compile ({print (self.key);})) {
+                print (self.key, "=>");
+            } else { print (K::typeid, "=>"); }
+            
+            cte if (__pragma!compile ({print (self.val);})) {
+                print (self.val);
+            } else { print (V::typeid); }
+            
+            match self.next {
+                _ : &Empty!(K, V) => {}
+                _ => { print (", ", self.next); }
+            }
         }
     }
 
@@ -694,11 +697,13 @@ class @final MapValue (K, V) over MapNode!(K, V) {
  */
 class @final Empty (K, V) over MapNode!(K, V) {
     pub self () {}
-    
-    /**
-     * Do nothing
-     */
-    pub over print (self) {}
+
+    impl std::io::Printable {
+        /**
+         * Do nothing
+         */
+        pub over print (self) {}
+    }
 
     /**
      * Compare two nodes
