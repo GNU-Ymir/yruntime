@@ -54,6 +54,18 @@ _ystring str_from_int (int value) {
     return ret;
 }
 
+_ystring str_from_char (char value) {
+    unsigned int len = snprintf (NULL, 0, "%c", value);
+    _ystring ret;
+    ret.capacity = 0;
+    ret.len = 0;
+    ret = str_grow (ret, len);
+       
+    sprintf (ret.data, "%c", value);
+    ret.len = len;
+    return ret;
+}
+
 _ystring str_from_ptr (void* value) {
     unsigned int len = snprintf (NULL, 0, "%p", value);
     _ystring ret;

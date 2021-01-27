@@ -175,7 +175,8 @@ void _yrt_exc_print (FILE *stream, struct _yrt_thread_stack * list)
     int * data = (int*) list-> info.name.data;
     for (unsigned int i = 0 ; i < list-> info.name.len ; i++) {
 	char c[5];
-	fprintf (stream, "%s", _yrt_to_utf8 (data [i], c));
+	int nb = 0;
+	fprintf (stream, "%s", _yrt_to_utf8 (data [i], c, &nb));
     }
     
     fprintf (stream, ".");

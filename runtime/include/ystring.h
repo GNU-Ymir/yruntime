@@ -44,6 +44,13 @@ _ystring str_concat_c_str (_ystring left, const char *right);
  */
 _ystring str_from_int (int value);
 
+
+/**
+ * Transform a int value into a string
+ */
+_ystring str_from_char (char value);
+
+
 /**
  * Transform a ptr value into a string
  */
@@ -71,6 +78,7 @@ _ystring str_copy_len (const char *data, unsigned long len);
  * @warning: the data is assumed to be null terminated
  */
 _ystring str_copy (const char * data);
+
 
 /**
  * Create a copy where capacity is equals to the length

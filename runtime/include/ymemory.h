@@ -1,5 +1,5 @@
-#ifndef _ARRAY_H_
-#define _ARRAY_H_
+#ifndef _MEMORY_H_
+#define _MEMORY_H_
 
 typedef struct {
     unsigned long len;

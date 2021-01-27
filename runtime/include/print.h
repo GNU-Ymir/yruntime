@@ -5,7 +5,7 @@
  * Trasnform a int in utf32 format into a utf8 char*
  * @return: chars
  */
-char * _yrt_to_utf8 (unsigned int code, char chars [5]);
+char * _yrt_to_utf8 (unsigned int code, char chars [5], int* nb);
 
 /**
  * Transform a utf8 text into utf32 char

@@ -1,5 +1,7 @@
 #include "../include/demangle.h"
+#include "../include/array.h"
 #include <stdio.h>
+
 
 // _Y4core5array10OutOfArray4selfFxP24x4core5array10OutOfArrayZxP24x4core5array10OutOfArray0
 
@@ -35,4 +37,36 @@ _ystring _yrt_demangle_symbol (char * data, unsigned long len) {
     } 
     
     return ret;    
+}
+
+_yrt_c8_array_ _yrt_mangle_class_name (_yrt_c8_array_ data) {
+    _ystring str = str_empty ();
+    int current = 0;
+    int start = 0;
+    int i = 0;
+    while (i < data.len) {
+	if (data.data [i] == ':') {
+	    str = str_concat (str, str_from_int (current));
+	    _ystring aux = str_create_len (data.data + start, current);
+	    str = str_concat (str, aux);
+	    start += current + 2; // skip ::
+	    current = 0;
+	    i += 1;
+	} else {
+	    current += 1;
+	}
+	i += 1;
+    }
+
+    if (current != 0) {
+	str = str_concat (str, str_from_int (current));
+	_ystring aux = str_create_len (data.data + start, current);
+	str = str_concat (str, aux);
+    }
+    
+    str = str_fit (str);
+    _yrt_c8_array_ arr;
+    arr.len = str.len;
+    arr.data = str.data;
+    return arr;
 }

@@ -1,4 +1,7 @@
 #include "../include/type.h"
+#include "../include/array.h"
+#include "../include/demangle.h"
+
 
 char _yrt_type_equals (_ytype_info a, _ytype_info b) {
     if (a.id == b.id) {
@@ -24,4 +27,50 @@ char _yrt_type_equals (_ytype_info a, _ytype_info b) {
 	}
     }
     return 0;    
+}
+
+void* _yrt_unsafe_cast (void* x) {
+    return x;
+}
+
+_yrt_c8_array_ _yrt_type_typeinfo_name (_yrt_c8_array_ mangled) {
+    _ystring name = str_fit (str_concat (str_create_len ("_Y", 2),
+					 str_concat (str_create_len (mangled.data, mangled.len), str_create_len ("TI", 2))));
+    
+    _yrt_c8_array_ arr;
+    arr.data = name.data;
+    arr.len = name.len;
+    return arr;
+}
+
+
+_yrt_c8_array_ _yrt_type_vtable_name (_yrt_c8_array_ mangled) {
+    _ystring name = str_fit (str_concat (str_create_len ("_Y", 2),
+					 str_concat (str_create_len (mangled.data, mangled.len), str_create_len ("VT", 2))));
+    
+    _yrt_c8_array_ arr;
+    arr.data = name.data;
+    arr.len = name.len;
+    return arr;
+}
+
+
+_yrt_c8_array_ _yrt_type_constructor_no_param_name (_yrt_c8_array_ mangled) {
+    _ystring name = str_concat (str_create_len ("_Y", 2),
+				str_concat (str_create_len (mangled.data, mangled.len), str_create_len ("4selfF", 6)));
+    
+    name = str_concat (name, str_create_len ("xP", 2));
+    name = str_concat (name, str_from_int (mangled.len + 1));
+    name = str_concat (name, str_create_len ("x", 1));
+    name = str_concat (name, str_create_len (mangled.data, mangled.len));
+    name = str_concat (name, str_create_len ("ZxP", 3));
+    name = str_concat (name, str_from_int (mangled.len + 1));
+    name = str_concat (name, str_create_len ("x", 1));
+    name = str_concat (name, str_create_len (mangled.data, mangled.len));
+    name = str_fit (name);
+
+    _yrt_c8_array_ arr;
+    arr.data = name.data;
+    arr.len = name.len;
+    return arr;
 }

@@ -1,31 +1,62 @@
 #include <stdio.h>
 #include "../include/print.h"
+#include "../include/array.h"
+#include <gc/gc.h>
 
 typedef unsigned int uint;
 
-char* _yrt_to_utf8 (unsigned int code, char chars[5]) {
+_yrt_c8_array_ _yrt_to_utf8_array (_yrt_c32_array_ array) {
+    unsigned long len = 0;
+    for (unsigned long i = 0 ; i < array.len ; i++) {
+	int nb = 0;
+	char buf[5];
+	_yrt_to_utf8 (array.data [i], buf, &nb);
+	len += nb;
+    }
+
+    char* result = GC_malloc (len * sizeof (char) + 1);
+    int offset = 0;
+    for (unsigned long i = 0 ; i < array.len; i++) {
+	int nb = 0;
+	_yrt_to_utf8 (array.data [i], result + offset, &nb);
+	offset += nb;
+    }
+
+    _yrt_c8_array_ arr;
+    arr.data = result;
+    arr.len = len;
+    
+    return arr;
+}
+
+char* _yrt_to_utf8 (unsigned int code, char chars[5], int * nb) {
     if (code <= 0x7F) {
 	chars[0] = (code & 0x7F); chars[1] = '\0';
+	*nb = 1;
     } else if (code <= 0x7FF) {
 	// one continuation byte
 	chars[1] = 0x80 | (code & 0x3F); code = (code >> 6);
 	chars[0] = 0xC0 | (code & 0x1F);
 	chars[2] = '\0';
+	*nb = 2;
     } else if (code <= 0xFFFF) {
 	// two continuation bytes
 	chars[2] = 0x80 | (code & 0x3F); code = (code >> 6);
 	chars[1] = 0x80 | (code & 0x3F); code = (code >> 6);
 	chars[0] = 0xE0 | (code & 0xF); chars[3] = '\0';
+	*nb = 3;
     } else if (code <= 0x10FFFF) {
 	// three continuation bytes
 	chars[3] = 0x80 | (code & 0x3F); code = (code >> 6);
 	chars[2] = 0x80 | (code & 0x3F); code = (code >> 6);
 	chars[1] = 0x80 | (code & 0x3F); code = (code >> 6);
 	chars[0] = 0xF0 | (code & 0x7); chars[4] = '\0';
+	*nb = 4;
     } else {
 	// unicode replacement character
 	chars[2] = 0xEF; chars[1] = 0xBF; chars[0] = 0xBD;
 	chars[3] = '\0';
+	*nb = 3;
     }
     return chars;
 }
@@ -82,7 +113,8 @@ unsigned int _yrt_to_utf32 (char* text) {
 
 void _yrt_putwchar (unsigned int code) {
     char c[5];
-    printf ("%s", _yrt_to_utf8 (code, c));    
+    int nb = 0;
+    printf ("%s", _yrt_to_utf8 (code, c, &nb));    
 }
 
 void _yrt_printf32 (float x) {

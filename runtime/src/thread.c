@@ -13,12 +13,12 @@
 void * _yrt_read_pipe (int stream, ulong size) {
     void * z;
     void ** x = &z; 
-    read (stream, x, size);
+    int r = read (stream, x, size);
     return *x;
 }
 
 void _yrt_write_pipe (int stream, void * data, ulong size) {    
-    write (stream, &data, size);
+    int r = write (stream, &data, size);
 }
 
 void _yrt_thread_create (pthread_t * id, pthread_attr_t* attr, void*(*call)(void*), void* data) {
