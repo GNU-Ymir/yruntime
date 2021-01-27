@@ -33,6 +33,17 @@ pub class AssertError over Exception {
     }
 }
 
+pub class RuntimeError over Exception {
+    pub let msg : [c8];
+
+    pub self (msg : [c8]) with msg = msg {}
+
+    impl std::io::Printable {
+        pub over print (self) {
+            print ("RuntimeError (", self.msg, ")");
+        }
+    }
+}
 
 pub class SegFault over Exception {
     pub self () {}
@@ -66,4 +77,11 @@ pub extern (C) def _yrt_throw_seg_fault () -> void
     throws &SegFault
 {
     throw SegFault::new ()
+}
+
+
+pub extern (C) def _yrt_throw_runtime_abort (c : [c8]) -> void
+    throws &RuntimeError
+{
+    throw RuntimeError::new (c);
 }

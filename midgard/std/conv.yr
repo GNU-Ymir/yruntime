@@ -20,6 +20,8 @@ mod Runtime {
     pub extern (C) def _yrt_float_to_uint (a : f32)-> u32;
     
     pub extern (C) def _yrt_float_to_int (a : f32)-> i32;
+
+    pub extern (C) def _yrt_to_utf8_array (s : [c32])-> dmut [c8];
 }
 
 
@@ -283,12 +285,21 @@ pub {
                     res [i] = to!c8 (-a / j % 10i64);
                     j *= 10i64;
                 }
-                res [0] = '-';
+                res [0] = '-'c8;
             } catch {
                 _ : &OutOfArray => { }
             }
             res
         }        
+    }
+
+    /**
+     * Transfrom a utf32 encoded string into a utf8 string
+     * @params :
+     *   - s: a string in utf32
+     */
+    def to (T of [c8]) (s : [c32])-> dmut [c8] {
+        alias Runtime::_yrt_to_utf8_array (s)
     }
 
     /**
@@ -673,7 +684,7 @@ def to (T of c8) (a : i64) -> c8 {
         7 => { '7'c8 }
         8 => { '8'c8 }
         9 => { '9'c8 }
-        _ => { '\u{0}' }
+        _ => { '\u{0}'c8 }
     }
 }
 
