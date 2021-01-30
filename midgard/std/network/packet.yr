@@ -1,0 +1,420 @@
+mod std::network::packet;
+
+import std::conv;
+import std::io;
+import std::any;
+import std::reflect;
+import etc::runtime::reflect;
+import std::collection::vec;
+
+import core::exception, core::typeinfo;
+import core::duplication, core::array, core::object;
+
+/**
+ * A packable class is class that can create a packet of raw data from its content
+ * Such class can also instantiate an object from a packet without calling a constructor
+ * This is very useful to send a class through network socket
+ * @example: 
+ * =============
+ * class X {
+ *    let i : [i32];
+ * 
+ *    pub self (i : [i32]) with i = i {}
+ * 
+ *    impl Printable;
+ *    impl Packable;
+ * }
+ * 
+ * def foo () -> [u8] {
+ *     let x = X::new ();
+ *     x.pack ()   
+ * }
+ * 
+ * def main () {
+ *     let packet : [u8] = foo ();
+ *     match packet.unpack () {
+ *        dmut x : &X => {
+ *             println (x);
+ *        }
+ *     }
+ * }
+ * =============
+ */
+pub trait Packable {
+    
+    /**
+     * Create a packet from the values contained in the object
+     * This will create a full copy of the data, even if the object does not exits anymore the content of the packet is still valid     
+     * Basically this function create a flattened version of the class that can be send over a socket
+     * This packet contains all the necessary information to recreate a perfect copy of the object 
+     */
+    pub def pack (self)-> [u8] {                
+        cte if (__pragma!compile ({self::super;})) {
+        }
+        
+        let name = (typeof (self)::typeid).to![c8] ();
+        let dmut array = Vec!(u8)::new ();
+        
+        internal_pack::pack (alias array, name);
+        
+        cte if (__pragma!compile ({self::super;})) {
+            cte if (is!(typeof (self::super)) (U impl Packable)) {
+                self::super.__stdnetwork__packContent (alias array);
+            }
+        }
+
+        self.__stdnetwork__packContent (alias array);
+        array:.fit ();
+        return array[];
+    }
+
+    /**
+     * Create a packet from the values contained in the class
+     * This will create a full copy of the data, even if the object does not exits anymore the content of the packet is still valid     
+     * All the packet data are append at the end of the vector
+     * @params: 
+     *     - packet: the vector to fill with object data
+     * @returns: 
+     *     - packet
+     */
+    pub def pack (self, dmut packet : &Vec!u8) {                        
+        let name = (typeof (self)::typeid).to![c8] ();        
+        internal_pack::pack (alias packet, name);
+        
+        cte if (__pragma!compile ({self::super;})) {
+            cte if (is!(typeof (self::super))(U impl Packable)) {
+                self::super.__stdnetwork__packContent (alias packet);
+            }
+        }
+        
+        self.__stdnetwork__packContent (alias packet);
+    }
+        
+    /**
+     * Initiates the content of the class from a packet
+     * Internal function for packet, that is called when we try to unpack an object
+     * @params: 
+     *    - packet: the content of the packet
+     * @info: the type of the packet is assumed already read
+     * @returns: 
+     *    - the number of bytes read inside the packet
+     */
+    pub def __stdnetwork__unpackContent (mut self, packet : [u8]) -> usize
+        throws &UnpackError
+    {
+        cte if (typeof (self::local_tupleof)::arity != 0u32) {
+            {                
+                let mut packOffset = 0u64;
+                cte if (__pragma!compile ({self::super;})) {
+                    cte if (is!(typeof (self::super))(U impl Packable)) {
+                        packOffset = cast!(u64) (self::super:.__stdnetwork__unpackContent (packet));
+                    } else {
+                        cte assert (false, "ancestor is not packable");
+                    }
+                }
+                
+                for i in self::local_fields_address {
+                    let (_, pack_len) = internal_unpack::unpack!(typeof (i)::inner) (alias (Runtime!(typeof(i), &u8)::_yrt_unsafe_cast (i)), packet [packOffset .. $]);
+                    
+                    packOffset += pack_len;
+                }
+                return cast!(usize) (packOffset);
+            } catch {
+                err : &UnpackError => {
+                    throw err;
+                }
+                _ => {
+                    throw UnpackError::new ();
+                }
+            }
+        } else cte if (__pragma!compile ({self::super;})) {
+            cte if (is!(typeof (self::super))(U impl Packable)) {
+                self::super:.__stdnetwork__unpackContent (packet)
+            } else {
+                cte assert (false, "ancestor is not packable");
+            }
+        } else {        
+            // some dummy stuff to make the compiler beleive it can throw something            
+            if (packet.len > 0us) {
+                packet[0];
+            } catch {
+                _ => {
+                    throw UnpackError::new ();
+                }
+            }
+            0us
+        }
+    }
+
+    /**
+     * Pack the content of the class inside the packet vector
+     * Internal function used by the packing system 
+     * @params: 
+     *    - packet: the vector to fill with the content of the object
+     */
+    prot def __stdnetwork__packContent (self, dmut packet : &Vec!u8)  {
+        cte if (typeof (self::local_tupleof)::arity == 0u32) {
+            packet;
+        } else {
+            for i in self::local_tupleof {
+                internal_pack::pack (alias packet, i);
+            }
+        }
+    }
+}
+
+/**
+ * Unpack a packet and allocates the class it containes
+ * @params: 
+ *    - packet: the packet to read
+ * @returns: 
+ *    - packet: the content read by the function is removed from the packet 
+ *    - The instantiated object, or std::any::None if the reading failed
+ */
+pub def unpack (mut packet : [u8])-> dmut &Object {
+    let dmut name : [c8] = [];
+    {
+        let (_, offset) = internal_unpack::unpack!([c8]) (alias cast!(&u8) (cast!(&void) (&name)), packet);
+        let dmut obj = internal_reflect::totallyUnsafeFactoryDontDoThat (name);
+        obj:.unsafeCallImplMutable!(usize) ("std::network::packet::Packable::__stdnetwork__unpackContent", packet[cast!u64 (offset) .. $]);
+        
+        return alias obj;               
+    } catch {
+        _ => {}
+    }
+    
+    return alias cast!(&Object) (std::any::None::new ());
+}
+
+/**
+ * Unpack a packet and allocates the class it containes
+ * @params: 
+ *    - packet: the packet to read
+ * @returns: 
+ *    - packet: the content read by the function is removed from the packet 
+ *    - The instantiated object
+ * @throws: 
+ *    - UnpackError: if an error occured when unpacking
+ */
+pub def unsafeUnpack (mut packet : [u8])-> dmut &Object
+    throws &UnpackError
+{
+    let dmut name : [c8] = [];
+    {
+        let (_, offset) = internal_unpack::unpack!([c8]) (alias cast!(&u8) (cast!(&void) (&name)), packet);
+        let dmut obj = internal_reflect::totallyUnsafeFactoryDontDoThat (name);
+        obj:.unsafeCallImplMutable!(usize) ("std::network::packet::Packable::__stdnetwork__unpackContent", packet[cast!u64 (offset) .. $]);
+        
+        return alias obj;               
+    } catch {
+        x : &UnpackError => {
+            throw x;
+        }
+        _ => {
+            throw UnpackError::new ();            
+        }
+    }   
+}
+
+pub class UnpackError over Exception {
+
+    pub self () {}
+
+    impl Printable;
+    
+}
+
+mod internal_pack {
+
+    pub def pack (T of [U], U) (dmut packet : &Vec!u8, data : T) {
+        pack!(u64) (alias packet, data.len);
+        for i in data {
+            pack!(U) (alias packet, i);
+        }
+    }
+
+    pub def pack (T impl Packable) (dmut packet : &Vec!u8, data : T) {
+        data.pack (alias packet);
+    }
+    
+    pub def pack (struct T) (dmut pack : &Vec!u8, data : T) {
+        for i in data::tupleof {
+            internal_pack::pack (alias pack, i);
+        }        
+    }
+
+    pub def pack (T of (U,), U...) (dmut pack : &Vec!u8, data : T) {
+        for i in data {
+            internal_pack::pack (alias pack, i);
+        }
+    }
+    
+    pub def pack (T) (dmut packet : &Vec!u8, data : T) {
+        cte if (is!(T) (class U)) {
+            cte assert (false, "Can't pack type " ~ T ~ " that does not implement packable");
+        }
+        
+        let void_ptr = cast!(&void) (&data);
+        let u8_ptr = cast!(&u8) (void_ptr);
+        for i in 0us .. sizeof (T) {
+            packet:.push (*(u8_ptr + i));
+        }
+    } catch {
+        _ => {}  // Can't happen, the pointer is in stack, there is not reason for unref a invalid pointer   
+    }
+        
+}
+
+mod internal_unpack {
+
+    pub def unpack (T) (dmut u8_ptr : &u8, packet : [u8]) -> (usize, usize)
+        throws &UnpackError
+    {
+        for i in 0us .. sizeof (T) {
+            *(u8_ptr + i) = packet [i];
+        }
+        
+        (sizeof (T), sizeof (T)) 
+    } catch {
+        _ => { throw UnpackError::new (); }
+    }
+       
+    pub def unpack (T of [U], U) (dmut c_ptr : &(u8), packet : [u8])-> (usize, usize)
+        throws &UnpackError
+    {
+        let mut len : u64 = 0u64;
+        let dmut p_len : &u8 = alias cast!(&u8) (cast!(&void) (&len));
+        
+        let (_, _offset) = unpack!(u64) (alias p_len, packet);
+        let dmut res = alias core::duplication::allocArray!(U) (len);
+        let mut offset = cast!(u64) (_offset);
+        {
+            for i in 0u64 .. len {
+                let dmut ptr : &void = alias cast!(&void) (&res [i]);
+                let (_, inner_offset) = unpack!(U) (alias (cast!(&u8) (ptr)), packet [offset .. $]);
+                offset += cast!(u64) (inner_offset);
+            }
+            
+            let mut arr_ptr : &(mut T) = alias cast!(&T) (cast!(&void) (c_ptr));
+            *arr_ptr = res;
+            
+            return (16us, cast!(usize) (offset));
+        } catch {
+            _ => {
+                throw UnpackError::new ();
+            }
+        };        
+    }
+       
+    pub def unpack (T impl Packable) (dmut c_ptr : &u8, packet : [u8])-> (usize, usize)
+        throws &UnpackError
+    {
+        let dmut name : [c8] = [];
+        {
+            let (_, mut offset) = internal_unpack::unpack!([c8]) (alias cast!(&u8) (cast!(&void) (&name)), packet);
+            let dmut obj = internal_reflect::totallyUnsafeFactoryDontDoThat (name);
+            
+            match obj {
+                dmut x : T => {
+                    offset += x:.__stdnetwork__unpackContent (packet [cast!u64 (offset) .. $]);
+                    let dmut arr_ptr : &T = alias Runtime!(&u8, &T)::_yrt_unsafe_cast (c_ptr);
+                    *arr_ptr = alias x;
+                }
+            }
+            return (8us, offset);
+        } catch {
+            ur : &UnpackError => {
+                throw ur;
+            }
+            _ => {
+                throw UnpackError::new ();
+            }
+        }        
+    }
+
+    pub def unpack (struct T) (dmut c_ptr : &u8, packet : [u8]) -> (usize, usize)
+        throws &UnpackError
+    {
+        let dmut str : &T = alias cast!(&T) (cast!(&void) (c_ptr));
+        let mut packOffset = 0u64;
+        for i in (*str)::fields_address {
+            let (_, pack_len) = internal_unpack::unpack!(typeof (i)::inner) (alias (Runtime!(typeof (i), &u8)::_yrt_unsafe_cast (i)), packet [packOffset .. $]);
+            packOffset += pack_len;
+        }
+
+        return (sizeof (T), cast!(usize) (packOffset));
+    } catch {
+        ur : &UnpackError => {
+            throw ur;
+        }
+        _ => {
+            throw UnpackError::new ();
+        }
+    }
+
+    pub def unpack (T of (U,), U...) (dmut c_ptr : &u8, packet : [u8]) -> (usize, usize)
+        throws &UnpackError
+    {
+        let mut tl : &(mut T) = alias cast!(&T) (cast!(&void) (c_ptr));
+        let mut packOffset = 0u64;
+        for ref i in (*tl) {
+            let (_, pack_len) = internal_unpack::unpack!(typeof (i)) (alias (Runtime!(typeof (i), &u8)::_yrt_unsafe_cast (ref i)), packet [packOffset .. $]);
+            packOffset += pack_len;
+        }
+        
+        return (sizeof (T), cast!(usize) (packOffset));
+    } catch {
+        ur : &UnpackError => {
+            throw ur;
+        }
+        _ => {
+            throw UnpackError::new ();
+        }
+    }
+    
+}
+
+
+mod internal_reflect {
+    /**
+     * Additional reflection function for easying packaging
+     * This function is totally unsafe to use outside package, because it will create a class without calling its constructor
+     */
+    pub def totallyUnsafeFactoryDontDoThat (name : [c32]) -> dmut &Object
+        throws &RuntimeError
+    {
+        let dmut ret = _yrt_create_class_from_name_no_construct_utf32 (name);
+        alias ret
+    }
+
+    /**
+     * Additional reflection function for easying packaging
+     * This function is totally unsafe to use outside package, because it will create a class without calling its constructor
+     */
+    pub def totallyUnsafeFactoryDontDoThat (name : [c8]) -> dmut &Object
+        throws &RuntimeError
+    {
+        let dmut ret = _yrt_create_class_from_name_no_construct (name);
+        alias ret
+    }
+}
+
+mod Runtime (F, T) {
+    
+    /**
+     * Runtime unsafe cast of a pointer to another 
+     * This is used to initialized the fields even when they are not mutable 
+     * This is unsafe but we can argue that if a class has successfuly produced a packet 
+     * Then the packet contains a valid class that can be copied as it is
+     */
+    pub extern (C) def _yrt_unsafe_cast (x : F)-> dmut T;
+
+        /**
+     * Runtime unsafe cast of a pointer to another 
+     * This is used to initialized the fields even when they are not mutable 
+     * This is unsafe but we can argue that if a class has successfuly produced a packet 
+     * Then the packet contains a valid class that can be copied as it is
+     */
+    pub extern (C) def _yrt_unsafe_cast (ref x : F)-> dmut T;
+
+}

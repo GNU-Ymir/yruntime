@@ -1,0 +1,372 @@
+mod std::reflect;
+
+import etc::runtime::reflect;
+import std::any;
+import std::option;
+import std::collection::vec;
+
+import core::typeinfo, core::object;
+import core::exception;
+
+/**
+ * Instantiate an object from the typeid of a class
+ * @info: The class must have a constructor with no parameters for the function to work properly
+ * @warning: Unlike, `factory` function, on failure this function throws an error
+ * @throws: 
+ *    - &RuntimeError: if the class does not exists, or it does not have a constructor with no parameters
+ * @params: 
+ *    - name: the typeid of a class (full typeid)
+ * @returns: the instantiated object
+ */
+pub def unsafeFactory (name : [c32]) -> dmut &Object
+    throws &RuntimeError
+{
+    let dmut ret = _yrt_create_class_from_name_utf32 (name);
+    alias ret
+}
+
+/**
+ * Instantiate an object from the typeid of a class
+ * @info: The class must have a constructor with no parameters for the function to work properly
+ * @example: 
+ * ===========
+ * mod main;
+ * import std::reflect;
+ * import std::any;
+ * 
+ * class X {
+ *    pub let i = 42;
+ * 
+ *    pub self () {}
+ *    impl std::io::Printable;
+ * }
+ * 
+ * let dmut o = factory ("main::X"); 
+ * match o {
+ *   X (i -> i : i32) => println ("Created an X (", i, ")");
+ *   None () => println ("Failed to create X");
+ * }
+ * ===========
+ * @params: 
+ *    - name: the typeid of the class (full typeid)
+ * @returns: the instantiated object, or a std::any::None object if the operation failed
+ */
+pub def factory (name : [c32]) -> dmut &Object {
+    let dmut ret = _yrt_create_class_from_name_utf32 (name);
+    alias ret
+} catch {
+    _ : &RuntimeError => {
+        alias cast!(&Object) (None::new ())
+    }
+}
+
+
+/**
+ * Instantiate an object from the typeid of a class
+ * @info: The class must have a constructor with no parameters for the function to work properly
+ * @warning: Unlike, `factory` function, on failure this function throws an error
+ * @throws: 
+ *    - &RuntimeError: if the class does not exists, or it does not have a constructor with no parameters
+ * @params: 
+ *    - name: the typeid of a class (full typeid)
+ * @returns: the instantiated object
+ */
+pub def unsafeFactory (name : [c8]) -> dmut &Object
+    throws &RuntimeError
+{
+    let dmut ret = _yrt_create_class_from_name (name);
+    alias ret
+}
+
+/**
+ * Instantiate an object from the typeid of a class
+ * @info: The class must have a constructor with no parameters for the function to work properly
+ * @example: 
+ * ===========
+ * mod main;
+ * import std::reflect;
+ * import std::any;
+ * 
+ * class X {
+ *    pub let i = 42;
+ * 
+ *    pub self () {}
+ *    impl std::io::Printable;
+ * }
+ * 
+ * let dmut o = factory ("main::X"); 
+ * match o {
+ *   X (i -> i : i32) => println ("Created an X (", i, ")");
+ *   None () => println ("Failed to create X");
+ * }
+ * ===========
+ * @params: 
+ *    - name: the typeid of the class (full typeid)
+ * @returns: the instantiated object, or a std::any::None object if the operation failed
+ */
+pub def factory (name : [c8]) -> dmut &Object {
+    let dmut ret = _yrt_create_class_from_name (name);
+    alias ret
+} catch {
+    _ : &RuntimeError => {
+        alias cast!(&Object) (None::new ())
+    }
+}
+
+/**
+ * Call a function from its name 
+ * The name of the function must be the full path of the function (module::name)
+ * @example: 
+ * ==========
+ * mod main;
+ * import std::reflect;
+ * import std::option;
+ *
+ * def foo (x : i32)-> i32 {
+ *     x + 12
+ * }
+ *
+ * let z = ("main::foo").call!(i32) (30);
+ * assert (z == 42);
+ * ==========
+ * @warning: function call does not work if any function parameter is mutable
+ */
+pub def call (T, F...) (name : [c32], params : F) -> &Option!(T) {
+    import std::io;
+    {
+        let dmut names = Vec!([c32])::new ();
+        cte if (is!F (U of (J,), J...)) {
+            for i in params {
+                names:.push (__pragma!mangle (typeof (i)::typeid));
+            }
+        } else {
+            names:.push (__pragma!mangle (typeof (params)));
+        }
+        
+        let ret = Reflect!(fn (F)-> T)::_yrt_reflect_get_function_utf32 (name, __pragma!mangle (T), names[]);
+        std::option::Some!(T)::new (ret (expand params))
+    } catch {
+        _ : &RuntimeError => {
+            std::option::None!(T)::new ()
+        }
+    }    
+}
+
+pub def call (T of void, F...) (name : [c32], params : F) -> void {
+    import std::io;
+    {
+        let dmut names = Vec!([c32])::new ();
+        cte if (is!F (U of (J,), J...)) {
+            for i in params {
+                println (typeof (i)::typeid);
+                names:.push (__pragma!mangle (typeof (i)));
+            }
+        } else {
+            names:.push (__pragma!mangle (typeof (params)));
+        }
+
+        println (names);
+        let ret = Reflect!(fn (F)-> T)::_yrt_reflect_get_function_utf32 (name, __pragma!mangle (T), names[]);
+        ret (expand params);
+    } catch {
+        err : &RuntimeError => {
+            println (err);
+        }
+    }    
+}
+
+
+/**
+ * Call a function from its name 
+ * The name of the function must be the full path of the function (module::name)
+ * @example: 
+ * ==========
+ * mod main;
+ * import std::reflect;
+ * import std::option;
+ *
+ * def foo (x : i32)-> i32 {
+ *     x + 12
+ * }
+ *
+ * let z = ("main::foo").call!(i32) (30);
+ * assert (z == 42);
+ * ==========
+ * @warning: function call does not work if any function parameter is mutable
+ * @throws: 
+ *    - &RuntimeError: if the function does not exists
+ */
+pub def unsafeCall (T, F...) (name : [c32], params : F) -> T
+    throws &RuntimeError
+{    
+    let dmut names = Vec!([c32])::new ();
+    cte if (is!F (U of (J,), J...)) {
+        for i in params {
+            names:.push (__pragma!mangle (typeof (i)::typeid));
+        }
+    } else {
+        names:.push (__pragma!mangle (typeof (params)));
+    }
+
+    let ret = Reflect!(fn (F)-> T)::_yrt_reflect_get_function_utf32 (name, __pragma!mangle (T), names[]);
+    std::option::Some!(T)::new (ret (expand params))
+}
+
+/**
+ * Call a method from its name 
+ * The name of the function must be the full path of the function (module::name)
+ * @example: 
+ * ==========
+ * mod main;
+ * import std::reflect;
+ * import std::option;
+ *
+ * class X {
+ *    let i : i32;
+ *    pub self (i : i32) with i = i {}
+ * 
+ *    pub def foo (self, i : i32) -> i32 {
+ *        self.i + i
+ *    }
+ * }
+ * 
+ * let x = X::new (12);
+ * let z = x.callMethod!(i32) ("foo", 30);
+ * assert (z == 42);
+ * ==========
+ * @warning: function call does not work if any function parameter is mutable
+ */
+pub def callMethod (T, class S, F...) (s : S, name : [c32], params : F) -> &Option!(T) {
+    import std::io;
+    {
+        let dmut names = Vec!([c32])::new ();
+        cte if (is!F (U of (J,), J...)) {
+            for i in params {
+                names:.push (__pragma!mangle (typeof (i)::typeid));
+            }
+        } else {
+            names:.push (__pragma!mangle (typeof (params)));
+        }
+
+        let s_name = s::typeinfo.name;
+        let ret = Reflect!(fn (S, F)-> T)::_yrt_reflect_get_method_utf32 (s_name, name, __pragma!mangle (T), names[]);
+        std::option::Some!(T)::new (ret (s, expand params))
+    } catch {
+        x : &RuntimeError => {
+            println (x);
+            std::option::None!(T)::new ()
+        }
+    }    
+}
+
+/**
+ * Call a method from its name 
+ * The name of the function must be the full path of the function (module::name)
+ * @example: 
+ * ==========
+ * mod main;
+ * import std::reflect;
+ * import std::option;
+ *
+ * class X {
+ *    let i = 0;
+ *    pub self () {}
+ * 
+ *    pub def foo (mut self, i : i32) -> i32 {
+ *        self._i = 12;
+ *        self._i + i
+ *    }
+ * }
+ * 
+ * let z = X::new ();
+ * let z = z:.callMethodMutable!(i32) ("foo", 30);
+ * assert (z == 42);
+ * ==========
+ * @warning: function call does not work if any function parameter is mutable
+ */
+pub def callMethodMutable (T, class S, F...) (dmut s : S, name : [c32], params : F) -> &Option!(T) {
+    {
+        let dmut names = Vec!([c32])::new ();
+        cte if (is!F (U of (J,), J...)) {
+            for i in params {
+                names:.push (__pragma!mangle (typeof (i)::typeid));
+            }
+        } else {
+            names:.push (__pragma!mangle (typeof (params)));
+        }
+
+        let s_name = s::typeinfo.name;
+        let ret = Reflect!(fn (dmut S, F)-> T)::_yrt_reflect_get_method_mutable_utf32 (s_name, name, __pragma!mangle (T), names[]);
+        std::option::Some!(T)::new (ret (alias s, expand params))
+    } catch {
+        x : &RuntimeError => {
+            std::option::None!(T)::new ()
+        }
+    }    
+}
+
+
+/**
+ * Call a method from its name 
+ * The name of the function must be the full path of the function (module::name)
+ * @example: 
+ * ==========
+ * mod main;
+ * import std::reflect;
+ * import std::io;
+ *
+ * class X {
+ *    let i = 0;
+ *    pub self () {}
+ * 
+ *    pub def foo (mut self, i : i32) -> void {
+ *        println (self._i + i);
+ *    }
+ * }
+ * 
+ * let z = factory ("main::X");
+ * z:.callMethodMutable!(void) ("foo", 30);
+ * ==========
+ * @warning: function call does not work if any function parameter is mutable
+ */
+pub def callMethodMutable (T of void, class S, F...) (dmut s : S, name : [c32], params : F) {
+    {
+        let dmut names = Vec!([c32])::new ();
+        cte if (is!F (U of (J,), J...)) {
+            for i in params {
+                names:.push (__pragma!mangle (typeof (i)::typeid));
+            }
+        } else {
+            names:.push (__pragma!mangle (typeof (params)));
+        }
+        
+        let s_name = s::typeinfo.name;
+        let ret = Reflect!(fn (dmut S, F)-> void)::_yrt_reflect_get_method_mutable_utf32 (s_name, name, __pragma!mangle (T), names[]);
+        ret (alias s, expand params);
+    } catch {
+        err : &RuntimeError => {
+            import std::io;
+            println (err);
+        }
+    }    
+}
+
+pub def unsafeCallImplMutable (T, class S, F...) (dmut s : S, name : [c32], params : F) -> T
+    throws &RuntimeError
+{
+    {
+        let dmut names = Vec!([c32])::new ();
+        cte if (is!F (U of (J,), J...)) {
+            for i in params {
+                names:.push (__pragma!mangle (typeof (i)::typeid));
+            }
+        } else {
+            names:.push (__pragma!mangle (typeof (params)));
+        }
+        
+        let s_name = s::typeinfo.name;
+        let ret = Reflect!(fn (dmut S, F)-> T)::_yrt_reflect_get_method_mutable_utf32 (s_name, name, __pragma!mangle (T), names[]);
+        ret (alias s, expand params)
+    } 
+}
+

@@ -3,7 +3,7 @@ mod std::collection::vec;
 import core::typeinfo;
 import core::duplication;
 import core::exception;
-import core::array;
+import core::array, core::object;
 
 import std::collection::seq;
 import std::io;
@@ -322,6 +322,25 @@ pub class @final Vec (T) {
         } else throw OutOfArray::new ();
     }
 
+    /**
+     * Get the slice content of the vec 
+     * @example: 
+     * ==========
+     * let dmut x = Vec!(i32)::new ();
+     * for i in 0 .. 3 {
+     *     x:.push (i);
+     * }
+     * assert (x [] == [0, 1, 2]);
+     * ==========
+     */
+    pub def opIndex (self) -> [T] {
+        self._data [0u64 .. self._len]
+    } catch {
+        _ : &OutOfArray => {
+            []
+        }
+    }
+    
 
     /**
      * Change the value in the vec at a given index
