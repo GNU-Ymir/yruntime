@@ -3,7 +3,7 @@
 
 #include <elf.h>
 #include <sys/mman.h>
-#include "array.h"
+#include "yarray.h"
 #include "type.h"
 
 /**

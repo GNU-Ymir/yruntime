@@ -140,7 +140,7 @@ void _yrt_close_bfd_file (struct bfd_handle handle) {
 }
 
 
-_yarray _yrt_exc_get_stack_trace () {
+_yrt_array_ _yrt_exc_get_stack_trace () {
     if (__YRT_DEBUG__ == 1) {
 	void *trace[16];
 	char **messages = (char **)NULL;
@@ -197,13 +197,13 @@ _yarray _yrt_exc_get_stack_trace () {
 	}
 	ret = str_concat_c_str (ret, "\n╰");
 	ret = str_fit (ret);
-	_yarray arr;
+	_yrt_array_ arr;
 	arr.len = ret.len;
 	arr.data = ret.data;
     
 	return arr;
     } else {
-	_yarray arr;
+	_yrt_array_ arr;
 	arr.len = 0;
 	arr.data = NULL;
 	return arr;
@@ -217,7 +217,7 @@ int _yrt_run_main_debug (int argc, char ** argv, int(* y_main)()) {
     installHandler ();
     _yrt_exc_init ();
 
-    _yarray arr;
+    _yrt_array_ arr;
     arr.data = argv;
     arr.len = (unsigned long) argc;
     
@@ -230,7 +230,7 @@ int _yrt_run_main (int argc, char ** argv, int(* y_main)()) {
     installHandler ();
     _yrt_exc_init ();
 
-    _yarray arr;
+    _yrt_array_ arr;
     arr.data = argv;
     arr.len = (unsigned long) argc;
     

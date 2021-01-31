@@ -6,23 +6,23 @@
 #include <gc/gc.h>
 #endif
 
-_yarray _yrt_dup_slice (_yarray arr, unsigned long size) {
+_yrt_array_ _yrt_dup_slice (_yrt_array_ arr, unsigned long size) {
     char* x = (char*) GC_malloc (arr.len * size);
     memcpy (x, arr.data, arr.len * size);
-    _yarray ret;
+    _yrt_array_ ret;
     ret.len = arr.len;
     ret.data = x;
     
     return ret;
 }
 
-_yarray _yrt_alloc_array (void* data, unsigned long size, unsigned long len) {
+_yrt_array_ _yrt_alloc_array (void* data, unsigned long size, unsigned long len) {
     char* x = (char*) GC_malloc (len * size);
     for (unsigned long i = 0 ; i < len ; i++) {
 	memcpy (x + (i*size), data, size);
     }
 
-    _yarray ret;
+    _yrt_array_ ret;
     ret.len = len;
     ret.data = x;
     
@@ -34,9 +34,9 @@ void* _yrt_new_block (unsigned long size, unsigned long len) {
     return x;
 }
 
-_yarray _yrt_new_array (unsigned long size, unsigned long len) {
+_yrt_array_ _yrt_new_array (unsigned long size, unsigned long len) {
     char * x = (char*) GC_malloc (len * size);
-    _yarray ret;
+    _yrt_array_ ret;
     ret.len = len;
     ret.data = x;
     return ret;
@@ -50,4 +50,14 @@ void* _yrt_dupl_any (void* data, unsigned long len) {
 
 void* _yrt_alloc_class (unsigned long len) {
     return GC_malloc (len);
+}
+
+_yrt_array_ _yrt_concat_slices (_yrt_array_ left, _yrt_array_ right, unsigned long size) {
+    char* x = (char*) GC_malloc ((left.len + right.len) * size);
+    memcpy (x, left.data, left.len * size);
+    memcpy (x + (left.len * size), right.data, right.len * size);
+    _yrt_array_ ret;
+    ret.data = x;
+    ret.len = left.len + right.len;
+    return ret;
 }

@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include "../include/print.h"
-#include "../include/array.h"
+#include "../include/yarray.h"
 #include <gc/gc.h>
 
 typedef unsigned int uint;

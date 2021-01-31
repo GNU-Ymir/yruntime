@@ -71,7 +71,7 @@ int _yrt_resolve_address (const char * filename, void* addr, _ystring * file, _y
  * @returns: the stack trace 
  * @warning: the result is allocated with GC, it must not be deallocated
  */
-_yarray _yrt_exc_get_stack_trace ();
+_yrt_array_ _yrt_exc_get_stack_trace ();
 
 
 /**

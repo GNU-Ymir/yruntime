@@ -1,0 +1,152 @@
+mod std::network::address;
+
+import core::object, core::typeinfo, core::exception;
+import std::io;
+
+pub class @abstract IpAddress {
+    prot self () {}
+    
+    impl std::io::Printable;
+}
+
+pub class @abstract SockAddress {
+    prot self () {}
+
+    impl std::io::Printable;
+}
+
+pub enum
+| LOCALHOST   = Ipv4Address::new (127u8, 0u8, 0u8, 1u8)
+| UNSPECIFIED = Ipv4Address::new (0u8, 0u8, 0u8, 0u8)
+| BROADCAST   = Ipv4Address::new (255u8, 255u8, 255u8, 255u8)
+ -> Ipv4;
+
+/**
+ * An ip v4 address, composed of four part A.B.C.D
+ */
+pub class Ipv4Address over IpAddress {
+
+    let _a : u8;
+    let _b : u8;
+    let _c : u8;
+    let _d : u8;
+
+    /**
+     * Create a new ip address
+     * @example: 
+     * ==========
+     * let ip = Ipv4Address::new (127u8, 0u8, 0u8, 1u8);
+     * assert (ip == Ipv4::LOCALHOST);
+     * ==========
+     */
+    pub self (a : u8, b : u8, c : u8, d : u8)
+        with _a = a,
+             _b = b,
+             _c = c,
+             _d = d
+    {}
+
+    /**
+     * @returns: true if this is a loopback address (in range 127.0.0.0/8), false otherwise
+     */
+    pub def isLoopback (self)-> bool {
+        self._a == 127u8
+    }
+
+    /**
+     * @returns: true if this is an unspecified address (0.0.0.0), false otherwise
+     */
+    pub def isUnspecified (self)-> bool {
+        (self._a == 0u8) && (self._b == 0u8) && (self._c == 0u8) && (self._d == 0u8)
+    }
+
+    /**
+     * @returns: true if this is a private address : 
+     * @info: 
+     * ============ 
+     * Private address are ranges in : 
+     *    - 10.0.0.0/8
+     *    - 172.16.0.0/12
+     *    - 192.168.0.0/16
+     * =============
+     */
+    pub def isPrivate (self)-> bool {
+        (self._a == 10u8) ||
+        (self._a == 172u8 && self._b > 16u8) ||
+        (self._a == 192u8 && self._b == 168u8)             
+    }
+
+    /**
+     * Test the equality between two ipv4 address
+     * @example: 
+     * ============
+     * assert (Ipv4Address::new (127u8, 0u8, 0u8, 1u8) == Ipv4::LOCALHOST);
+     * ============
+     */
+    pub def opEquals (self, other : &Ipv4Address) -> bool {
+        self._a == other._a &&
+        self._b == other._b &&
+        self._c == other._c &&
+        self._d == other._d 
+    }
+
+    /**
+     * Store the four part of the ip A.B.C.D in a single u64 (A << 24 | B << 16 | C << 8 | D)
+     */
+    pub def toN (self)-> u32 {
+        let mut n : u32 = 0u32;
+        let dmut pack : &u8 = alias cast!(&u8) (cast!(&void) (&n));
+        *pack = self._a;
+        *(pack + 1u32) = self._b;
+        *(pack + 2u32) = self._c;
+        *(pack + 3u32) = self._d;
+        return n;
+    } catch {
+        _ => { // Impossible
+            return 0u32;
+        }
+    }
+    
+    impl Printable;
+}
+
+
+pub class SockAddrV4 over SockAddress {
+
+    let _addr : &Ipv4Address;
+    let _port : u16;
+
+    /**
+     * Create a new sock address from a ip address and a port
+     */
+    pub self (addr : &Ipv4Address, port : u16)
+        with _addr = addr, _port = port
+    {}
+
+    /**
+     * @return: the address part 
+     * @example: 
+     * ============
+     * let s_addr : SockAddress = SockAddrV4::new (Ipv4Address (127u8, 0u8, 0u8, 1u8), 8080u16);
+     * assert (s_addr.ip () == Ipv4Address::new (127u8, 0u8, 0u8, 1u8));
+     * ============
+     */
+    pub def ip (self)-> &Ipv4Address {
+        self._addr
+    }
+
+    /**
+     * @return: the port part 
+     * @example: 
+     * ============
+     * let s_addr : SockAddress = SockAddrV4::new (Ipv4Address (127u8, 0u8, 0u8, 1u8), 8080u16);
+     * assert (s_addr.port () == 8080u16);
+     * ============
+     */
+    pub def port (self)-> u16 {
+        self._port
+    }
+
+    impl Printable;
+    
+}

@@ -19,6 +19,12 @@ pub class @abstract Exception {
     pub def @final getStackTrace (self) -> [c8] {
         self.trace
     }
+
+    pub def @final printStackTrace (self) {
+        if (self.trace.len != 0u64) {
+            print (self.trace);
+        }        
+    }
 }
 
 pub class AssertError over Exception {
@@ -29,6 +35,7 @@ pub class AssertError over Exception {
     impl std::io::Printable {
         pub over print (self) {
             print ("AssertError (", self.msg, ")");
+            self::super.printStackTrace ();
         }
     }
 }
@@ -41,6 +48,7 @@ pub class RuntimeError over Exception {
     impl std::io::Printable {
         pub over print (self) {
             print ("RuntimeError (", self.msg, ")");
+            self::super.printStackTrace ();
         }
     }
 }
@@ -51,6 +59,7 @@ pub class SegFault over Exception {
     impl std::io::Printable {
         pub over print (self) {
             print ("SegFault (\n", self.getStackTrace (), ")");
+            self::super.printStackTrace ();
         }
     }
 }

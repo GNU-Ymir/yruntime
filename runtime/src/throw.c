@@ -112,7 +112,7 @@ void _yrt_exc_pop_list (jmp_buf * j, struct _yrt_thread_stack * _list_) {
     }
 }
 
-_yarray _yrt_exc_get_stack_trace ();
+_yrt_array_ _yrt_exc_get_stack_trace ();
 
 void _yrt_exc_pop (jmp_buf * j) {
     pthread_t id = pthread_self ();

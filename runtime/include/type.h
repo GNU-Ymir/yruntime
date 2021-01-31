@@ -3,13 +3,13 @@
 
 #include "ymemory.h"
 #include "ystring.h"
-#include "array.h"
+#include "yarray.h"
 
 typedef struct {    
     unsigned int id;
     unsigned long size;
-    _yarray inner;
-    _yarray name;
+    _yrt_array_ inner;
+    _yrt_array_ name;
 }  _ytype_info;
 
 enum _ytype_ids {

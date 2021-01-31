@@ -1,16 +1,13 @@
 #ifndef _MEMORY_H_
 #define _MEMORY_H_
 
-typedef struct {
-    unsigned long len;
-    void * data;
-} _yarray;
+#include "yarray.h"
 
 /**
  * Make a copy of the slice
  * @info: allocation made with the gc
  */
-_yarray _yrt_dup_slice (_yarray, unsigned long);
+_yrt_array_ _yrt_dup_slice (_yrt_array_, unsigned long);
 
 /**
  * Allocate a new array with the GC
@@ -20,7 +17,7 @@ _yarray _yrt_dup_slice (_yarray, unsigned long);
  *    - len: the len of the array
  * @return: an allocated array with copied data inside it
  */
-_yarray _yrt_alloc_array (void* data, unsigned long size, unsigned long len);
+_yrt_array_ _yrt_alloc_array (void* data, unsigned long size, unsigned long len);
 
 /**
  * Allocate a raw segment of memory with the GC
@@ -38,7 +35,7 @@ void* _yrt_new_block (unsigned long size, unsigned long len);
  *    - len: the number of index (alloc size == len * size)
  * @return: the allocate block (GC) in a slice 
  */
-_yarray _yrt_new_array (unsigned long size, unsigned long len);
+_yrt_array_ _yrt_new_array (unsigned long size, unsigned long len);
 
 /**
  * Make a copy of a raw segment of data into another raw segment of data allocated with GC

@@ -1,0 +1,312 @@
+mod std::network::tcp;
+
+import core::object, core::typeinfo, core::exception;
+import core::duplication;
+import etc::c::socket;
+
+import std::io;
+import std::network::address;
+
+pub enum
+| ADDR_TYPE       = 0u8
+| SOCKET_CREATION = 1u8
+| BIND            = 2u8
+| LISTEN          = 3u8
+| CONNECT         = 4u8
+| ACCEPT          = 5u8
+ -> TcpErrorCode;
+
+/**
+ * Exception that can occur when trying to create a TcpListener 
+ */
+pub class TcpError over Exception {
+    
+    pub let msg  : [c32];
+    pub let code : TcpErrorCode;
+    
+    pub self (code : TcpErrorCode, msg : [c32])
+        with msg = msg,
+             code = code
+    {}
+
+    impl std::io::Printable {
+        pub over print (self) {
+            println ("TcpError (", self.code, ") : ", self.msg);
+            self::super.printStackTrace ();
+        }
+    }
+       
+}
+
+/**
+ * A tcp socket server that is listening for incoming connection
+ */
+pub class TcpListener {
+
+    /** The listening socket */
+    let mut _sockfd : i32 = 0;
+    let mut _addr : &SockAddress;
+        
+    /**
+     * Create a new TcpListener and bind it to the specific address
+     * The create listener is ready for accepting connection
+     */
+    pub self (addr : &SockAddress)
+        with _addr = addr
+        throws &TcpError
+    {
+        match addr {
+            v4 : &SockAddrV4 => {
+                self:.bindV4 (v4);
+            }
+            _ => {
+                throw TcpError::new (TcpErrorCode::ADDR_TYPE, "Unknown addr type : " ~ addr::typeinfo.name);
+            }
+        }
+    }
+
+    /**
+     * Accept a new client connection 
+     * @example: 
+     * =============
+     * pub def greets_client (client : &TcpStream) {
+     *    // Communicate with the client
+     *    client:.rawSend ("Hello !!"s8);
+     * }
+     *
+     * let dmut server = TcpListener::new ("127.0.0.1:8080");
+     * loop {
+     *    let dmut client = server:.accept ();
+     *    println ("New client connected : ", client);
+     *    greets_client (client);
+     * }
+     * =============
+     */
+    pub def accept (mut self) -> dmut &TcpStream
+        throws &TcpError
+    {
+        let mut client = sockaddr_in ();
+        let mut len = sizeof (sockaddr_in);
+
+        let sock = etc::c::socket::accept (self._sockfd, alias (&client), alias (&len));
+        if (sock < 0) {
+            throw TcpError::new (TcpErrorCode::ACCEPT, "failed to accept client");
+        }        
+        
+        return TcpStream::new (sock, self.createAddr (client));
+    }
+
+    /**
+     * Close the listener
+     */
+    pub def close (mut self) {
+        etc::c::socket::close (self._sockfd);
+        self._sockfd = 0;
+    }
+    
+    /**
+     * Bind the tcp listener to an ipv4 address
+     */
+    prv def bindV4 (mut self, ip : &SockAddrV4)
+        throws &TcpError
+    {
+        self._sockfd = etc::c::socket::socket (AddressFamily::AF_INET, SocketType::SOCK_STREAM, 0);
+        if (self._sockfd == -1) {
+            throw TcpError::new (TcpErrorCode::SOCKET_CREATION, "socket creation failed");
+        }
+
+        let mut servaddr = sockaddr_in ();
+        servaddr.sin_family = AddressFamily::AF_INET;
+        servaddr.sin_addr.s_addr = ip.ip ().toN ();
+        servaddr.sin_port        = htons (ip.port ());
+        
+        if (bind (self._sockfd, &servaddr, sizeof (sockaddr_in)) != 0) {
+            throw TcpError::new (TcpErrorCode::BIND, "socket bind failed");
+        }
+
+        if (listen (self._sockfd, 5) != 0) {
+            throw TcpError::new (TcpErrorCode::LISTEN, "socket listen failed");
+        }
+    }
+
+    /**
+     * Read a sockaddr_in structure and create the associated SockAddress
+     */
+    prv def createAddr (self, s_addr : sockaddr_in) -> &SockAddress
+        throws &TcpError
+    {
+        match s_addr.sin_family {
+            AddressFamily::AF_INET => {
+                {
+                    let h = s_addr.sin_addr.s_addr;
+                    let pack : &u8 = cast!(&u8) (cast!(&void) (&h));
+                    let a = *pack, b = *(pack + 1u32), c = *(pack + 2u32), d = *(pack + 3u32);
+                    let port : u16 = ntohs (s_addr.sin_port);
+                    return SockAddrV4::new (Ipv4Address::new (a, b, c, d), port);
+                } catch {
+                    _ => {
+                        throw TcpError::new (TcpErrorCode::ADDR_TYPE, "unknown address type");
+                    }
+                }
+            }
+            _ => {
+                throw TcpError::new (TcpErrorCode::ADDR_TYPE, "unknown address type");
+            }
+        }
+    }
+
+    impl Printable;
+    
+}
+
+/**
+ * A tcp stream is a tcp connection from a client to a server, or a server to a client
+ * It can be acquired directly by construction, or using a TcpListener
+ * @example: 
+ * ===============
+ * pub def greets_client (client : &TcpStream) {
+ *    // Communicate with the client
+ *    client:.rawSend ("Hello !!"s8);
+ * }
+ *
+ * let dmut server = TcpListener::new ("127.0.0.1:8080");
+ * loop {
+ *    let dmut client = server:.accept ();
+ *    println ("New client connected : ", client);
+ *    greets_client (client);
+ * }
+ * ===============
+ */
+pub class TcpStream {
+
+    let mut _sockfd : i32;
+    let _addr : &SockAddress;
+
+    /**
+     * Create a TcpStream on a already opened socket
+     */
+    pub self (socket : i32, addr : &SockAddress)
+        with _sockfd = socket,
+             _addr = addr
+    {}
+
+    /**
+     * Create a client to address addr
+     * The client is not connected 
+     * @example: 
+     * ==========     
+     * let addr = SockAddrV4 (Ipv4Address::new (127u8, 0u8, 0u8, 1u8), 8080u16);
+     * let dmut client = TcpStream::new (addr):.connect ();
+     * ==========
+     */
+    pub self (addr : &SockAddress)
+        with _sockfd = 0,
+             _addr = addr
+    {}
+
+    /**
+     * Connect the client to the address 
+     * @example: 
+     * ==============
+     * let addr = SockAddrV4 (Ipv4Address::new (127u8, 0u8, 0u8, 1u8), 8080u16);
+     * let dmut client = TcpStream::new (addr):.connect ();
+     * ==============
+     */
+    pub def connect (mut self) -> dmut &TcpStream
+        throws &TcpError
+    {
+        match self._addr {
+            v4 : &SockAddrV4 => {
+                self:.connectV4 (v4);
+                return alias self;
+            }
+            _ => {
+                throw TcpError::new (TcpErrorCode::ADDR_TYPE, "unknwon addr type : " ~ (self._addr)::typeinfo.name);
+            }
+        }
+    }
+    
+    /**
+     * Send data in a raw way (without packing, nor sending the size of the data)
+     * This methods are mainly used to communicate with external protocol
+     * In Ymir, it is more common to use packet sending via Packable objects
+     * @params: 
+     * - a: the data to send    
+     * @templates: 
+     *  - T: a slice type
+     *  - U: any type
+     */
+    pub def rawSend (T of [U], U) (mut self, a : T) -> void {
+        etc::c::socket::write (self._sockfd, cast!(&void) (a.ptr), sizeof (U) * cast!(usize) (a.len));
+    }
+
+    /**
+     * Receive data in a raw way (without unpacking it)
+     * @params: 
+     *   - nb: the number of element to receive (nb * sizeof(U)) will be read from the stream
+     * @templates: 
+     * - U: any type
+     */
+    pub def rawReceive (U) (mut self, nb : u64) -> dmut [U] {
+        let dmut alloc = core::duplication::allocArray!(U) (nb);
+        etc::c::socket::read (self._sockfd, alias cast!(&void) (alloc.ptr), cast!(usize) (nb * sizeof (U)));
+        return alias alloc;
+    }
+
+    /**
+     * Send a packable class through the stream
+     */
+    pub def send (T impl Packable) (mut self, a : T) -> void {
+        let packet = a.pack ();
+        // We start by sending the size of the packet
+        etc::c::socket::write (self._sockfd, cast!(&void) (&(packet.len)), sizeof (typeof (packet.len)));
+        // And then the packet
+        self:.rawSend (packet);
+    }
+
+    /**
+     * Receive a packet from the stream, and unpack it into an object
+     * @return: an object if the packet stored an object known by the current program, std::any::None otherwise
+     * @cf: std::network::packet
+     */
+    pub def receive (mut self)-> dmut &Object {
+        import std::network::packet;
+        
+        let mut size = 0u64;
+        etc::c::socket::read (self._sockfd, alias cast!(&void) (&size), sizeof (usize));
+        let packet : [u8] = self:.rawReceive!(u8) (size);
+        return packet.unpack ();
+    }
+    
+    /**
+     * Close the connection with the remote
+     */
+    pub def close (mut self) {
+        etc::c::socket::close (self._sockfd);
+        self._sockfd = 0;
+    }
+
+    prv def connectV4 (mut self, addr : &SockAddrV4)
+        throws &TcpError
+    {
+        self._sockfd = etc::c::socket::socket (AddressFamily::AF_INET, SocketType::SOCK_STREAM, 0);
+        if (self._sockfd == -1) {
+            throw TcpError::new (TcpErrorCode::SOCKET_CREATION, "failed to create socket");
+        }
+
+        let mut servaddr = sockaddr_in ();
+        
+        servaddr.sin_family = AddressFamily::AF_INET;
+        servaddr.sin_addr.s_addr = addr.ip ().toN ();
+        servaddr.sin_port =        htons (addr.port ());
+        
+        if (connect (self._sockfd, &servaddr, 16u32) != 0) {
+            throw TcpError::new (TcpErrorCode::CONNECT, "failed to connect");
+        }
+    }
+
+
+    impl std::io::Printable;
+}
+
+extern (C) def inet_addr (s: &c8)-> u64;

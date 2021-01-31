@@ -1,5 +1,4 @@
 #include "../include/demangle.h"
-#include "../include/array.h"
 #include <stdio.h>
 
 
@@ -39,7 +38,7 @@ _ystring _yrt_demangle_symbol (char * data, unsigned long len) {
     return ret;    
 }
 
-_yrt_c8_array_ _yrt_mangle_class_name (_yrt_c8_array_ data) {
+_yrt_c8_array_ _yrt_mangle_path (_yrt_c8_array_ data) {
     _ystring str = str_empty ();
     int current = 0;
     int start = 0;
@@ -52,7 +51,7 @@ _yrt_c8_array_ _yrt_mangle_class_name (_yrt_c8_array_ data) {
 	    start += current + 2; // skip ::
 	    current = 0;
 	    i += 1;
-	} else {
+	} else if (data.data [i] != '\0') {
 	    current += 1;
 	}
 	i += 1;
@@ -70,3 +69,4 @@ _yrt_c8_array_ _yrt_mangle_class_name (_yrt_c8_array_ data) {
     arr.data = str.data;
     return arr;
 }
+

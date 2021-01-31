@@ -34,6 +34,7 @@ ELFContent _yrt_elf_read (FILE * elfFile) {
 	_yrt_c8_array_ arr;
 	arr.data = str.data;
 	arr.len = str.len;
+	fclose (elfFile);
 	
 	_yrt_throw_runtime_abort (arr); // make the program abort
     }
@@ -41,6 +42,8 @@ ELFContent _yrt_elf_read (FILE * elfFile) {
     // Copy the elf file in program space
     elf.elf_size = ftell (elfFile);
     elf.elf_data = mmap (NULL, elf.elf_size, PROT_READ, MAP_PRIVATE, fileno (elfFile), 0);
+    fclose (elfFile);
+    
     if (elf.elf_data == NULL) {
 	_ystring str = str_create_len ("Could not read ELF file", 23);
 	_yrt_c8_array_ arr;
@@ -90,6 +93,7 @@ ELFContent _yrt_elf_read (FILE * elfFile) {
 	default: break;
 	}
     }
+    
     return elf;
 }
 
@@ -183,10 +187,6 @@ Elf64_Sym* _yrt_elf_find_object_in_table (ELFContent elf, const char * name) {
     return NULL;
 }
 
-void _yrt_elf_close (FILE * file) {
-    fclose (file);
-}
-
 const char* _yrt_get_executable_path (char * filepath) {
     pid_t pid = getpid();
     sprintf(filepath, "/proc/%d/exe", pid);
@@ -253,7 +253,8 @@ void* _yrt_create_class_from_name (_yrt_c8_array_ className) {
     FILE * file = fopen (_yrt_get_executable_path (path), "r");
     ELFContent elf = _yrt_elf_read (file);
     
-    _yrt_c8_array_ mangled = _yrt_mangle_class_name (className);
+    _yrt_c8_array_ mangled = _yrt_mangle_path (className);
+
     _ytype_info info = _yrt_elf_get_typeinfo (elf, mangled, className);
     void* vtable = _yrt_elf_get_vtable (elf, mangled, className);
     void*(*cstr)(void*) = (void*(*)(void*)) _yrt_elf_get_constructor_no_param (elf, mangled, className);
@@ -263,7 +264,169 @@ void* _yrt_create_class_from_name (_yrt_c8_array_ className) {
     return cstr (classData);
 }
 
+void* _yrt_create_class_from_name_no_construct (_yrt_c8_array_ className) {
+    char path [64];
+    FILE * file = fopen (_yrt_get_executable_path (path), "r");
+    ELFContent elf = _yrt_elf_read (file);
+    
+    _yrt_c8_array_ mangled = _yrt_mangle_path (className);
+
+    _ytype_info info = _yrt_elf_get_typeinfo (elf, mangled, className);
+    void* vtable = _yrt_elf_get_vtable (elf, mangled, className);
+
+
+    void* classData = _yrt_alloc_class (info.size);
+    *((void**)classData) = vtable;
+    return classData;
+}
+
 void* _yrt_create_class_from_name_utf32 (_yrt_c32_array_ classNameUtf32) {
     _yrt_c8_array_ className = _yrt_to_utf8_array (classNameUtf32);
     return _yrt_create_class_from_name (className);
+}
+
+void* _yrt_create_class_from_name_no_construct_utf32 (_yrt_c32_array_ classNameUtf32) {
+    _yrt_c8_array_ className = _yrt_to_utf8_array (classNameUtf32);
+    return _yrt_create_class_from_name_no_construct (className);
+}
+
+void * _yrt_reflect_get_function (_yrt_c8_array_ funcName, _yrt_c8_array_ retName, _yrt_array_ paramNames) {
+    _yrt_c8_array_ mangle = _yrt_mangle_path (funcName);
+    
+    _ystring name = str_create_len (mangle.data, mangle.len);
+    name = str_concat (str_create_len ("_Y", 2), name);
+    name = str_concat (name, str_create_len ("F", 1));
+    for (int i = 0 ; i < paramNames.len ; i++) {
+	name = str_concat (name, str_create_len (((_yrt_c8_array_**) paramNames.data) [i]-> data, ((_yrt_c8_array_**) paramNames.data) [i]-> len));
+    }
+    name = str_concat (name, str_create_len ("Z", 1));
+    name = str_concat (name, str_create_len (retName.data, retName.len));
+
+    char path [64];
+    FILE * file = fopen (_yrt_get_executable_path (path), "r");
+    ELFContent elf = _yrt_elf_read (file);
+    
+    Elf64_Sym * sym = _yrt_elf_find_function_in_table (elf, name.data);
+    if (sym != NULL) {
+	return (void*) sym-> st_value;
+    } else {
+	_ystring name2 = str_create ("Could not find in ELF file : symbol ");
+	name = str_fit (str_concat (name2, str_create_len (name.data, name.len)));
+	_yrt_c8_array_ arr;
+	arr.data = name2.data;
+	arr.len = name2.len;
+	
+	_yrt_throw_runtime_abort (arr);
+    }
+}
+
+void* _yrt_reflect_get_function_utf32 (_yrt_c32_array_ name, _yrt_c32_array_ _retType, _yrt_array_ _paramNames) {
+    _yrt_c8_array_ funcName = _yrt_to_utf8_array (name);    
+    _yrt_c8_array_ retType = _yrt_to_utf8_array (_retType);    
+    _yrt_array_ params = _yrt_new_array (sizeof (_yrt_c8_array_*), _paramNames.len);
+    for (int i = 0 ; i < _paramNames.len ; i++) {
+	void* j = _paramNames.data + i * sizeof (_yrt_c32_array_);
+    	_yrt_c8_array_ p_name = _yrt_to_utf8_array (*(_yrt_c32_array_*)j);
+    	((_yrt_c8_array_**) params.data) [i] = (_yrt_c8_array_*) _yrt_dupl_any (&p_name, sizeof (_yrt_c8_array_));
+    }
+    return _yrt_reflect_get_function (funcName, retType, params);
+}
+
+void * _yrt_reflect_get_method (_yrt_c8_array_ _className, _yrt_c8_array_ _funcName, _yrt_c8_array_ retName, _yrt_array_ paramNames) {
+    _yrt_c8_array_ mangle = _yrt_mangle_path (_funcName);
+    _yrt_c8_array_ mangleClassName = _yrt_mangle_path (_className);
+    
+    _ystring className = str_create_len (mangleClassName.data, mangleClassName.len);
+    _ystring funcName = str_create_len (mangle.data, mangle.len);
+    _ystring name = str_concat (str_create_len ("_Y", 2), funcName);
+    
+    name = str_concat (name, str_create_len ("FP", 2));
+    name = str_concat (name, str_from_int (className.len));
+    name = str_concat (name, className);
+    for (int i = 0 ; i < paramNames.len ; i++) {
+	name = str_concat (name, str_create_len (((_yrt_c8_array_**) paramNames.data) [i]-> data, ((_yrt_c8_array_**) paramNames.data) [i]-> len));
+    }
+    name = str_concat (name, str_create_len ("Z", 1));
+    name = str_concat (name, str_create_len (retName.data, retName.len));
+
+    char path [64];
+    FILE * file = fopen (_yrt_get_executable_path (path), "r");
+    ELFContent elf = _yrt_elf_read (file);
+    
+    Elf64_Sym * sym = _yrt_elf_find_function_in_table (elf, name.data);
+    if (sym != NULL) {
+	return (void*) sym-> st_value;
+    } else {
+	_ystring name2 = str_create ("Could not find in ELF file : symbol ");
+	name2 = str_fit (str_concat (name2, str_create_len (name.data, name.len)));
+	_yrt_c8_array_ arr;
+	arr.data = name2.data;
+	arr.len = name2.len;
+	
+	_yrt_throw_runtime_abort (arr);
+    }
+}
+
+void* _yrt_reflect_get_method_utf32 (_yrt_c32_array_ _className, _yrt_c32_array_ name, _yrt_c32_array_ _retType, _yrt_array_ _paramNames) {
+    _yrt_c8_array_ className = _yrt_to_utf8_array (_className);
+    _yrt_c8_array_ funcName = _yrt_to_utf8_array (name);    
+    _yrt_c8_array_ retType = _yrt_to_utf8_array (_retType);    
+    _yrt_array_ params = _yrt_new_array (sizeof (_yrt_c8_array_*), _paramNames.len);
+    for (int i = 0 ; i < _paramNames.len ; i++) {
+	void* j = _paramNames.data + i * sizeof (_yrt_c32_array_);
+    	_yrt_c8_array_ p_name = _yrt_to_utf8_array (*(_yrt_c32_array_*)j);
+    	((_yrt_c8_array_**) params.data) [i] = (_yrt_c8_array_*) _yrt_dupl_any (&p_name, sizeof (_yrt_c8_array_));
+    }
+    return _yrt_reflect_get_method (className, funcName, retType, params);
+}
+
+
+void * _yrt_reflect_get_method_mutable (_yrt_c8_array_ _className, _yrt_c8_array_ _funcName, _yrt_c8_array_ retName, _yrt_array_ paramNames) {
+    _yrt_c8_array_ mangle = _yrt_mangle_path (_funcName);
+    _yrt_c8_array_ mangleClassName = _yrt_mangle_path (_className);
+    
+    _ystring className = str_create_len (mangleClassName.data, mangleClassName.len);
+    _ystring funcName = str_create_len (mangle.data, mangle.len);
+    _ystring name = str_concat (str_create_len ("_Y", 2), funcName);
+    
+    name = str_concat (name, str_create_len ("FxP", 3));
+    name = str_concat (name, str_from_int (className.len + 1)); // +1 because we add an x 
+    name = str_concat (name, str_create_len ("x", 1));
+
+    name = str_concat (name, className);
+    for (int i = 0 ; i < paramNames.len ; i++) {
+	name = str_concat (name, str_create_len (((_yrt_c8_array_**) paramNames.data) [i]-> data, ((_yrt_c8_array_**) paramNames.data) [i]-> len));
+    }
+    name = str_concat (name, str_create_len ("Z", 1));
+    name = str_concat (name, str_create_len (retName.data, retName.len));
+
+    char path [64];
+    FILE * file = fopen (_yrt_get_executable_path (path), "r");
+    ELFContent elf = _yrt_elf_read (file);
+    
+    Elf64_Sym * sym = _yrt_elf_find_function_in_table (elf, name.data);
+    if (sym != NULL) {
+	return (void*) sym-> st_value;
+    } else {
+	_ystring name2 = str_create ("Could not find in ELF file : symbol ");
+	name2 = str_fit (str_concat (name2, str_create_len (name.data, name.len)));
+	_yrt_c8_array_ arr;
+	arr.data = name2.data;
+	arr.len = name2.len;
+	
+	_yrt_throw_runtime_abort (arr);
+    }
+}
+
+void* _yrt_reflect_get_method_mutable_utf32 (_yrt_c32_array_ _className, _yrt_c32_array_ name, _yrt_c32_array_ _retType, _yrt_array_ _paramNames) {
+    _yrt_c8_array_ className = _yrt_to_utf8_array (_className);
+    _yrt_c8_array_ funcName = _yrt_to_utf8_array (name);    
+    _yrt_c8_array_ retType = _yrt_to_utf8_array (_retType);    
+    _yrt_array_ params = _yrt_new_array (sizeof (_yrt_c8_array_*), _paramNames.len);
+    for (int i = 0 ; i < _paramNames.len ; i++) {
+	void* j = _paramNames.data + i * sizeof (_yrt_c32_array_);
+    	_yrt_c8_array_ p_name = _yrt_to_utf8_array (*(_yrt_c32_array_*)j);
+    	((_yrt_c8_array_**) params.data) [i] = (_yrt_c8_array_*) _yrt_dupl_any (&p_name, sizeof (_yrt_c8_array_));
+    }
+    return _yrt_reflect_get_method_mutable (className, funcName, retType, params);
 }

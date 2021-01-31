@@ -1,5 +1,4 @@
 #include "../include/type.h"
-#include "../include/array.h"
 #include "../include/demangle.h"
 
 
