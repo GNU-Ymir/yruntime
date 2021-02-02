@@ -7,6 +7,65 @@ import etc::c::socket;
 import std::io;
 import std::network::address;
 
+/**
+ * This sub module define two standard tcp function, listen, and connect
+ * @example: 
+ * =============
+ * let dmut server = Tcp::listen ("127.0.0.1:8080");
+ * loop {
+ *      let dmut client = server:.accept ();
+ *      client:.rawSend ("Hello world");
+ * }
+ * =============
+ */
+pub mod Tcp {
+
+    /**
+     * Create tcp server that waits for client connections
+     * @params: 
+     *    - addr: the address bind by the server
+     * @example: 
+     * ============
+     * let addr = SockAddrV4::new (Ipv4Address (127u8, 0u8, 0u8, 1u8), 8080u16);
+     * let dmut server = Tcp::listen (addr);
+     * loop {
+     *      let dmut client = server:.accept ();
+     *      client:.rawSend ("Hello world!");
+     * }
+     * @throws: 
+     *   - TcpError: if the creation of the server failed
+     * ============
+     */
+    pub def listen (addr : &SockAddress) -> dmut &TcpListener
+        throws &TcpError
+    {
+        return TcpListener::new (addr);
+    }
+
+    /**
+     * Create a tcp stream connected to a remote Tcp server
+     * @params: 
+     *    - addr: the remote address 
+     * @example: 
+     * =============
+     * let addr = SockAddrV4::new (Ipv4Address (127u8, 0u8, 0u8, 1u8), 8080u16);
+     * let dmut stream = Tcp::connect (addr);
+     * stream:.rawReceive!c8 (12u64);
+     * =============
+     * @returns: a TcpStream
+     * @throws: TcpError: if the connection failed
+     */
+    pub def connect (addr : &SockAddress) -> dmut &TcpStream
+        throws &TcpError
+    {
+        return TcpStream::new (addr):.connect ();
+    }
+    
+}
+
+/**
+ * The type errors that can occur when listening, or connecting to a TCP socket
+ */
 pub enum
 | ADDR_TYPE       = 0u8
 | SOCKET_CREATION = 1u8
@@ -16,8 +75,9 @@ pub enum
 | ACCEPT          = 5u8
  -> TcpErrorCode;
 
+
 /**
- * Exception that can occur when trying to create a TcpListener 
+ * Exception that can occur when trying to create a TcpListener, or a TcpStream
  */
 pub class TcpError over Exception {
     
@@ -31,8 +91,12 @@ pub class TcpError over Exception {
 
     impl std::io::Printable {
         pub over print (self) {
-            println ("TcpError (", self.code, ") : ", self.msg);
-            self::super.printStackTrace ();
+            if (self.trace.len != 0u64) {
+                println ("TcpError (", self.code, ") : ", self.msg);
+                self::super.printStackTrace ();
+            } else {
+                print ("TcpError (", self.code, ") : ", self.msg);
+            }
         }
     }
        
@@ -308,5 +372,3 @@ pub class TcpStream {
 
     impl std::io::Printable;
 }
-
-extern (C) def inet_addr (s: &c8)-> u64;

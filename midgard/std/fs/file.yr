@@ -1,0 +1,396 @@
+mod std::fs::file;
+
+import core::object, core::typeinfo, core::exception;
+import core::duplication, core::array;
+
+import etc::c::files;
+
+import std::conv;
+import std::io;
+
+
+pub mod File {
+
+    pub def open (name : [c32])-> dmut &FileStream
+        throws &FileStreamError
+    {
+        let dmut fs = FileStream::new (name);
+        fs:.open ();
+        alias fs
+    }
+      
+}
+
+pub enum
+| NOT_FOUND      = 1u8
+| FILE_CLOSED    = 2u8
+| NOT_READABLE   = 3u8
+| NOT_WRITABLE   = 4u8
+| ALREADY_EXISTS = 5u8
+ -> FileStreamErrorCode;
+
+pub class FileStreamError over Exception {
+
+    pub let msg : [c32];
+    pub let code : FileStreamErrorCode;
+    
+    pub self (code : FileStreamErrorCode, msg : [c32]) with msg = msg, code = code {}
+
+    impl std::io::Printable {
+        pub over print (self) {
+            if (self.trace.len != 0u64) {
+                println ("FileStreamError (", self.code, ") : ", self.msg);
+                self::super.printStackTrace ();
+            } else {
+                print ("FileStreamError (", self.code, ") : ", self.msg);
+            }
+        }
+    }   
+}
+
+pub class @final FileStream {
+
+    prv let dmut _handle : &(void) = null;
+    
+    prv let mut _filename : [c32];
+
+    prv let _read : bool;
+
+    prv let _write : bool;
+
+    prv let _append : bool;
+        
+    /**
+     * Create a new file stream but does not open it
+     */
+    pub self (filename : [c32], read : bool = true, write : bool = true, append : bool = false)
+        with _filename = filename,
+             _read = read,
+             _write = write,
+             _append = append
+    {}
+
+    /**
+     * Open the file 
+     * @example: 
+     * ===========
+     * let dmut fs = FileStream::new ("path/to/file.txt");
+     * {
+     *   fs:.open ();
+     *   let dmut str = fs:.readAll ();
+     * } exit {
+     *   file:.close ();
+     * } catch {
+     *   err : &FileStreamError => {
+     *     println (err);
+     *   }
+     * }
+     * ===========
+     */
+    pub def open (mut self)
+        throws &FileStreamError
+    {
+        let mode = self.createMode ();
+        self._handle = etc::c::files::fopen ((self._filename.to![c8] ()).ptr, mode.ptr);
+        if (self._handle is null) {
+            throw FileStreamError::new (FileStreamErrorCode::NOT_FOUND, "file not found : " ~ self._filename);   
+        }
+    }
+
+    /**
+     * Read all the char contained in the file from the current cursor position
+     * @example: 
+     * ==============
+     * let dmut fs = File::create ("foo.txt");
+     * fs:.write ("Hello World !"s8);
+     * fs:.seek (0u64);
+     * 
+     * let res = fs:.readAll ();
+     * assert (res == "Hello World !"s8);
+     * ==============
+     * @throws: 
+     *   - FileStreamError: if the file is not opened, or not readable
+     */
+    pub def readAll (mut self) -> dmut [c8]
+        throws &FileStreamError
+    {
+        if (self._handle is null) {
+            throw FileStreamError::new (FileStreamErrorCode::FILE_CLOSED, "file is closed");
+        } else if (!self._read) {
+            throw FileStreamError::new (FileStreamErrorCode::NOT_READABLE, "file is not readable");
+        }
+        
+        if (!etc::c::files::feof (self._handle)) {
+            let cursor = etc::c::files::ftell (self._handle);
+            etc::c::files::fseek (self._handle, 0u32, SeekWhence::SEEK_END);
+            let len = etc::c::files::ftell (self._handle) - cursor;
+            etc::c::files::fseek (self._handle, cursor, SeekWhence::SEEK_SET);
+            
+            if (len != 0u32) {
+                let dmut res = core::duplication::allocArray!(c8) (cast!(u64) (len));
+                etc::c::files::fread (alias cast!(&void) (res.ptr), cast!(u32) (sizeof (c8)), cast!(u32) (len), alias self._handle);
+                
+                return alias res
+            }
+        }
+        
+        []
+    }
+
+    /**
+     * Read the content of a file until the delimiter text if found or EOF
+     * @example: 
+     * ==============
+     * let dmut fs = File::create ("foo.txt");
+     * fs:.write ("Hello World !"s8);
+     * fs:.seek (0u64);
+     * 
+     * let res = fs:.readUntil (" !"s8);
+     * assert (res == "Hello World"s8);
+     * ==============
+     * @throws: 
+     *   - FileStreamError: if the file is not opened, or not readable
+     */
+    pub def readUntil (mut self, delim : [c8])-> dmut [c8]
+        throws &FileStreamError
+    {
+        if (self._handle is null) {
+            throw FileStreamError::new (FileStreamErrorCode::FILE_CLOSED, "file is closed");
+        } else if (!self._read) {
+            throw FileStreamError::new (FileStreamErrorCode::NOT_READABLE, "file is not readable");
+        }
+        
+        import std::collection::vec;
+        let dmut res = Vec!(mut c8)::new ();
+        let mut current = 0u64;
+        
+        while (!etc::c::files::feof (self._handle) && current < delim.len) {
+            let u : u32 = etc::c::files::fgetc (alias self._handle);
+            if (u >= u8::max) break {} // feof is not triggered before trying to read it, so this u can be eof == 256
+
+            let c = cast!(c8) (cast!(u8) (u));
+            res:.push (c);
+            {
+                if (delim [current] == c) { current += 1u64; }
+                else { current = 0u64; }
+            } catch {
+                _ : &OutOfArray => { } // Can't happen, current always < delim.len
+            }
+        }
+        
+        let mut aux : [mut c8] = core::duplication::allocArray!c8 (res.len ());
+        core::duplication::memCopy!c8 (res[], alias aux);
+        
+        return alias aux;
+    }
+
+    /**
+     * Read the content of a file until the delimiter text if found or EOF
+     * @params: 
+     *    - delim: the delimiter 
+     * @example: 
+     * ==============
+     * let dmut fs = File::create ("foo.txt");
+     * fs:.write ("Hello World !"s8);
+     * fs:.seek (0u32);
+     * 
+     * let res = fs:.readUntil (" !");
+     * assert (res == "Hello World"s8);
+     * ==============
+     * @throws: 
+     *   - FileStreamError: if the file is not opened, or not readable
+     */
+    pub def readUntil (mut self, delim : [c32])-> dmut [c8]
+        throws &FileStreamError
+    {
+        if (self._handle is null) {
+            throw FileStreamError::new (FileStreamErrorCode::FILE_CLOSED, "file is closed");
+        } else if (!self._read) {
+            throw FileStreamError::new (FileStreamErrorCode::NOT_READABLE, "file is not readable");
+        }
+        
+        return self:.readUntil (to![c8] (delim));
+    }
+
+    
+    /**
+     * Write some text to a file
+     * @throws: 
+     *   - FileStreamError: if the file is not opened, or not writable
+     */
+    pub def write (mut self, text : [c8]) -> void
+        throws &FileStreamError
+    {
+        if (self._handle is null) {
+            throw FileStreamError::new (FileStreamErrorCode::FILE_CLOSED, "file is closed");
+        } else if (!self._write && !self._append) {
+            throw FileStreamError::new (FileStreamErrorCode::NOT_WRITABLE, "file is not writable");
+        }
+        
+        etc::c::files::fwrite (cast!(&void) (text.ptr), cast!(u32) (sizeof (c8)), cast!(u32) (text.len), alias self._handle);        
+    }
+    
+
+
+    /**
+     * Read all the char contained in the file from the current cursor position
+     * @example: 
+     * ==============
+     * let dmut fs = File::create ("foo.txt");
+     * fs:.write ("Hello World !"s8);
+     * fs:.seek (0u64);
+     * 
+     * let res = fs:.readAll ();
+     * assert (res == "Hello World !"s8);
+     * ==============
+     * @throws: 
+     *   - FileStreamError: if the file is not opened, or not readable
+     */
+    pub def readBytesAll (mut self) -> dmut [u8]
+        throws &FileStreamError
+    {
+        if (self._handle is null) {
+            throw FileStreamError::new (FileStreamErrorCode::FILE_CLOSED, "file is closed");
+        } else if (!self._read) {
+            throw FileStreamError::new (FileStreamErrorCode::NOT_READABLE, "file is not readable");
+        }
+        
+        if (!etc::c::files::feof (self._handle)) {
+            let cursor = etc::c::files::ftell (self._handle);
+            etc::c::files::fseek (self._handle, 0u32, SeekWhence::SEEK_END);
+            let len = etc::c::files::ftell (self._handle) - cursor;
+            etc::c::files::fseek (self._handle, cursor, SeekWhence::SEEK_SET);
+            
+            if (len != 0u32) {
+                let dmut res = core::duplication::allocArray!(u8) (cast!(u64) (len));
+                etc::c::files::fread (alias cast!(&void) (res.ptr), cast!(u32) (sizeof (u8)), cast!(u32) (len), alias self._handle);
+                
+                return alias res
+            }
+        }
+        
+        []
+    }
+
+    /**
+     * Read the content of a file until the delimiter bytes is found or EOF
+     * @example: 
+     * ==============
+     * ==============
+     * @throws: 
+     *   - FileStreamError: if the file is not opened, are not readable
+     */
+    pub def readBytesUntil (mut self, delim : [u8])-> dmut [u8]
+        throws &FileStreamError
+    {
+        if (self._handle is null) {
+            throw FileStreamError::new (FileStreamErrorCode::FILE_CLOSED, "file is closed");
+        } else if (!self._read) {
+            throw FileStreamError::new (FileStreamErrorCode::NOT_READABLE, "file is not readable");
+        }
+        
+        import std::collection::vec;
+        let dmut res = Vec!(u8)::new ();
+        let mut current = 0u64;
+        
+        while (!etc::c::files::feof (self._handle) && current < delim.len) {
+            let u : u32 = etc::c::files::fgetc (alias self._handle);
+            if (u >= u8::max) break {} // feof is not triggered before trying to read it, so this u can be eof == 256
+
+            let c = cast!(u8) (u);
+            res:.push (c);
+            {
+                if (delim [current] == c) { current += 1u64; }
+                else { current = 0u64; }
+            } catch {
+                _ : &OutOfArray => { } // Can't happen, current always < delim.len
+            }
+        }
+        
+        let mut aux : [mut u8] = core::duplication::allocArray!u8 (res.len ());
+        core::duplication::memCopy!u8 (res[], alias aux);
+        
+        return alias aux;
+    }
+    
+    /**
+     * Write some bytes to a file
+     * @throws: 
+     *   - FileStreamError: if the file is not opened, are not writable
+     */
+    pub def writeBytes (mut self, text : [u8]) -> void
+        throws &FileStreamError
+    {
+        if (self._handle is null) {
+            throw FileStreamError::new (FileStreamErrorCode::FILE_CLOSED, "file is closed");
+        } else if (!self._write && !self._append) {
+            throw FileStreamError::new (FileStreamErrorCode::NOT_WRITABLE, "file is not writable");
+        }
+        
+        etc::c::files::fwrite (cast!(&void) (text.ptr), cast!(u32) (sizeof (u8)), cast!(u32) (text.len), alias self._handle);        
+    }
+    
+    
+    /**
+     * Move the position of the cursor of the file
+     * @info: the cursor position is relative to the beginning of the file
+     * @throws: 
+     *   - FileStreamError: if the file is not opened
+     */
+    pub def seek (mut self, cursor : u32)-> void
+        throws &FileStreamError
+    {
+        if (self._handle is null) {
+            throw FileStreamError::new (FileStreamErrorCode::FILE_CLOSED, "file is closed");
+        }
+        etc::c::files::fseek (self._handle, cursor, SeekWhence::SEEK_SET);
+    }
+
+    /**
+     * Tell the position of the cursor in the file relative to the beginning of the file
+     * @throws: 
+     *   - FileStreamError: if the file is not opened
+     */
+    pub def tell (self)-> u32
+        throws &FileStreamError
+    {
+        if (self._handle is null) {
+            throw FileStreamError::new (FileStreamErrorCode::FILE_CLOSED, "file is closed");
+        }
+        etc::c::files::ftell (self._handle)
+    }
+
+    /**
+     * @returns: the len of the file (from beginning to end)
+     */
+    pub def len (self)-> u32
+        throws &FileStreamError
+    {
+        let cursor = self.tell ();
+        fseek (self._handle, 0u32, SeekWhence::SEEK_END);
+        let len = self.tell ();
+        fseek (self._handle, cursor, SeekWhence::SEEK_SET);
+        len
+    }
+    
+    /**
+     * Close the file
+     * @info: if the file was not open, this method does nothing
+     */
+    pub def close (mut self) {
+        if (self._handle !is null) {
+            fclose (alias self._handle);
+            self._handle = null;
+        }
+    }
+
+    prv def createMode (self)-> [c8] {
+        if (self._write) return "r+"s8;
+        if (self._read && self._append) return "a+"s8;
+        if (self._append) return "a"s8;
+        
+        return "r"s8;
+    }
+    
+}
+
