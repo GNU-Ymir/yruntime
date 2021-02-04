@@ -4,7 +4,6 @@ import core::typeinfo;
 import core::array;
 import core::exception;
 
-import std::option;
 import std::concurrency::task;
 import std::concurrency::sync;
 import std::io;
@@ -36,13 +35,13 @@ pub class @abstract Future (T) {
     let mut _cond = Condition::new ();
 
     cte if (!is!T (U of void)) {
-        let mut _value : &Option!T;
+        let mut _value : (T)?;
     }
 
     let mut _finalized = false;
 
     cte if (!is!T (U of void)) {
-        prot self () with _value = None!(T)::new () {}
+        prot self () with _value = (T?)::err {}
     } else {
         prot self () {}
     }
@@ -60,7 +59,7 @@ pub class @abstract Future (T) {
      * =============
      */
     cte if (!is!T (U of void)) {
-        pub def @final wait (self)-> &Option!T {
+        pub def @final wait (self)-> (T)? {
             self._mutex.lock ();
             if (!self._finalized) 
                 self._cond.wait (self._mutex);
@@ -245,7 +244,7 @@ mod internal {
          */
         pub over execute (mut self) {
             cte if (!is!T (U of void)) {
-                self._value = Some::new (self._func ());
+                self._value = (self._func ())?;
             } else {
                 self._func ();
             }

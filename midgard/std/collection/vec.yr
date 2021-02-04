@@ -7,7 +7,7 @@ import core::array, core::object;
 
 import std::collection::seq;
 import std::io;
-import std::option;
+
 
 /**
  * Some constants for the vec implementation
@@ -134,36 +134,7 @@ pub class @final Vec (T) {
             self:.fit ();
         return ret;
     }
-
-    /**
-     * Safely remove the last element of the vector and return it
-     * @returns: the last element of the vector, or None if it was empty
-     * @example: 
-     * ==============
-     * let dmut x = Vec!(i32)::new ();
-     * 
-     * x:.push (1);
-     * assert (x:.safePop () == Some::new (1)); 
-     * assert (x:.safePop () == None!(i32)::new ());
-     * ==============
-     * @complexity: O (n), with n = self._len
-     */
-    pub def safePop (mut self) -> &Option!(T) {
-        if (self._len == 0u64) {
-            return None!(T)::new ();
-        }
-        
-        self._len -= 1u64;
-        let ret = Some::new (self._data [self._len]);
-        if (self._len < self._data.len / 2u64)
-            self:.fit ();
-        return ret;
-        
-    } catch { // cannot happen self._len is always lower or equals to self._data.len
-        _: _ => return None!(T)::new ();
-    }
     
-
     /**
      * Change the capacity of the vector to the number of element it stores
      * @example: 
@@ -297,32 +268,6 @@ pub class @final Vec (T) {
     }    
 
     /**
-     * Access value in the vec by index
-     * @params: 
-     *    - i: the index
-     * @throws: 
-     *   - &OutOfArray: if the index is not in the vector
-     * @example : 
-     * ================
-     * let dmut x = Vec!(i32)::new ();
-     * x:.push (12);
-     * {
-     *     assert (x [0] == 12);
-     * } catch {
-     *     _: &OutOfArray => {}
-     *     _: &AssertError => {}
-     * }
-     * ================
-     */
-    pub def opIndex (self, i : u64) -> T
-        throws &OutOfArray
-    {
-        if (i < self._len) {
-            return self._data [i];
-        } else throw OutOfArray::new ();
-    }
-
-    /**
      * Get the slice content of the vec 
      * @example: 
      * ==========
@@ -414,7 +359,34 @@ pub class @final Vec (T) {
         pub over len (self) -> u64 {
             self._len
         }
-
+        
+        /**
+         * Access value in the vec by index
+         * @params: 
+         *    - i: the index
+         * @throws: 
+         *   - &OutOfArray: if the index is not in the vector
+         * @complexity: O (1)
+         * @example : 
+         * ================
+         * let dmut x = Vec!(i32)::new ();
+         * x:.push (12);
+         * {
+         *     assert (x [0] == 12);
+         * } catch {
+         *     _: &OutOfArray => {}
+         *     _: &AssertError => {}
+         * }
+         * ================
+         */
+        pub over opIndex (self, i : u64) -> T
+            throws &OutOfArray
+        {
+            if (i < self._len) {
+                return self._data [i];
+            } else throw OutOfArray::new ();
+        }
+        
     }
     
     
@@ -513,16 +485,10 @@ class @final VecIterator (T) {
      * None, if the iterator points to nothing
      * =======
      */
-    pub def get (0) (self) -> &Option!T {
-        if (self._index < self._len) 
-            return Some::new (self._data [self._index]);
-        None!(T)::new ()
-    } catch {
-        _ : &OutOfArray => {
-            None!(T)::new ()
-        }
+    pub def get (0) (self) -> T? {
+        (self._data [self._index])?
     }
-
+    
     /**
      * @returns: the index in the vector, to which the iterator is pointing
      */

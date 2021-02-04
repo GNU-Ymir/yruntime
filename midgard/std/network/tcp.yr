@@ -6,6 +6,7 @@ import etc::c::socket;
 
 import std::io;
 import std::network::address;
+import std::network::packet;
 
 /**
  * This sub module define two standard tcp function, listen, and connect
@@ -333,9 +334,9 @@ pub class TcpStream {
      * @return: an object if the packet stored an object known by the current program, std::any::None otherwise
      * @cf: std::network::packet
      */
-    pub def receive (mut self)-> dmut &Object {
-        import std::network::packet;
-        
+    pub def receive (mut self)-> dmut &Object
+        throws &UnpackError
+    {        
         let mut size = 0u64;
         etc::c::socket::read (self._sockfd, alias cast!(&void) (&size), sizeof (usize));
         let packet : [u8] = self:.rawReceive!(u8) (size);

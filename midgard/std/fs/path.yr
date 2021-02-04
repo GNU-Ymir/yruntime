@@ -1,0 +1,37 @@
+mod std::fs::path;
+
+import etc::c::files;
+
+pub enum
+| Readable = 0
+| Writable = 1
+| Executable = 2
+ -> FilePermission;
+
+
+pub mod Path {
+
+    /**
+     * Check the existence of a file
+     */
+    pub def exists (name : [c8])-> bool {
+        etc::c::files::access (name.ptr, AccessMode::F_OK) == 0
+    }
+
+    pub def isWritable (name : [c8])-> bool {
+        etc::c::files::access (name.ptr, AccessMode::W_OK) == 0
+    }
+
+    pub def isReadable (name : [c8])-> bool {
+        etc::c::files::access (name.ptr, AccessMode::R_OK) == 0
+    }
+
+    pub def isExecutable (name : [c8])-> bool {
+        etc::c::files::access (name.ptr, AccessMode::X_OK) == 0
+    }
+
+    pub def createFile (name : [c8])-> bool {
+        etc::c::files::fopen (name.ptr, "w"s8.ptr) !is null       
+    }
+    
+}

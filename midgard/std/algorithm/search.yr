@@ -1,6 +1,5 @@
 mod std::algorithm::search;
 import std::collection::seq;
-import std::conv;
 
 /**
  * Verify if all elements of a verify the predicate
@@ -36,10 +35,8 @@ pub def all (F : fn (U)-> bool, T of [U], U) (a : T) -> bool {
  */
 pub def all (F : fn (U)-> bool, T impl Seq!(U), U) (a : T) -> bool {
     for i in a {
-        {
-        if (!F (i.unwrap ())) return false;
-        } catch {
-            _ : &CastFailure => { return false; }
+        match i {
+            Ok (x:_) => { if (!F (x)) return false; } 
         }
     }
     return true;
@@ -72,6 +69,7 @@ pub def any (F : fn (U)-> bool, T of [U], U) (a : T)-> bool {
  * @assume: the iteration give an option type
  * @templates: 
  *    - F: a predicate to verify
+ * @complexity: O (n), with n = a.len
  * @example: 
  * ============
  * let a = vec #[1, 2, 3];
@@ -81,11 +79,438 @@ pub def any (F : fn (U)-> bool, T of [U], U) (a : T)-> bool {
  */
 pub def any (F : fn (U)-> bool, T impl Seq!(U), U) (a : T)-> bool {
     for i in a {
-        {
-            if (F (i.unwrap ())) return true;
-        } catch {
-            _ : &CastFailure => { }
+        match i {
+            Ok (x:_) => { if (F (x)) return true; }
         }
     }
     return false;
+}
+
+/**
+ * Search an element in a slice with an equality predicate
+ * @returns: the index of the first element that is equal to elem according to the predicate
+ * @templates: 
+ *   - F: a equality function
+ * @params: 
+ *   - a: the slice to traverse
+ *   - elem: the element to find
+ * @complexity: O (n), with n = a.len
+ * @example: 
+ * ============
+ * let a = [1, 2, 3];
+ * let i = a.find!(|x,y|=> x == y) (1);
+ * let res = match i {
+ *     Ok (0u64) => true
+ *     _ => false
+ * }
+ * assert (res);
+ * ============
+ */
+pub def find (F : fn (U, U)-> bool, T of [U], U) (a : T, elem : U) -> (u64)? {
+    for i in 0u64 .. a.len {
+        match F (a [i], elem)? {
+            Ok (true) => return (i)?;
+        }
+    }
+    return (u64?)::err;
+}
+
+/**
+ * Search for an element in a slice
+ * @returns: the index of the first element in a that is equal to elem
+ * @params: 
+ *    - a: a slice to traverse
+ *    - elem: the element to search
+ * @complexity: O (n), with n = a.len
+ * @example: 
+ * ============
+ * let a = [1, 2, 3];
+ * let i = a.find (1);
+ * let res = match i {
+ *     Ok (0u64) => true
+ *     _ => false
+ * }
+ * assert (res);
+ * ============
+ */
+pub def find (T of [U], U) (a : T, elem : U) -> (u64)? {
+    for i in 0u64 .. a.len {
+        match (a [i] == elem)? {
+            Ok (true) => return (i)?
+        }
+    }
+    return (u64?)::err;
+}
+
+/**
+ * Search an element in a Seq of with an equality predicate
+ * @returns: the index of the first element that is equal to elem according to the predicate
+ * @templates: 
+ *   - F: a equality function
+ * @params: 
+ *   - a: the Seq to traverse
+ *   - elem: the element to find
+ * @complexity: O (n), with n = a.len
+ * @assume: the iteration over the sequence is the in the same order as opIndex
+ * @example: 
+ * ============
+ * let a = vec #[1, 2, 3];
+ * let i = a.find!(|x,y|=> x == y) (1);
+ * let res = match i {
+ *     Ok (0u64) => true
+ *     _ => false
+ * }
+ * assert (res);
+ * ============
+ */
+pub def find (F : fn (U, U)-> bool, T impl Seq!U, U) (a : T, elem : U) -> (u64)? {
+    let dmut i = 0u64;
+    for z in a { // We do not use opIndex, because it can have very bad complexity compared to collection iteration
+        match (z) {
+            Ok (x:_) => {
+                if (F (x, elem)) return (i)?;
+            }
+        }
+        i += 1u64;
+    }
+    return (u64?)::err;
+}
+
+/**
+ * Search for an element in a slice
+ * @returns: the index of the first element in a that is equal to elem
+ * @params: 
+ *    - a: a slice to traverse
+ *    - elem: the element to search
+ * @complexity: O (n), with n = a.len
+ * @assume: the iteration over the sequence is the in the same order as opIndex
+ * @example: 
+ * ============
+ * let a = vec #[1, 2, 3];
+ * let i = a.find (1);
+ * let res = match i {
+ *     Ok (0u64) => true
+ *     _ => false
+ * }
+ * assert (res);
+ * ============
+ */
+pub def find (T impl Seq!U, U) (a : T, elem : U) -> (u64)? {
+    let dmut i = 0u64;
+    for z in a { // We do not use opIndex, because it can have very bad complexity compared to collection iteration
+        match (z) {
+            Ok (x:_) => {
+                if (x == elem) return (i)?;
+            }
+        }
+        i += 1u64;
+    }
+    return (u64?)::err;
+}
+
+/**
+ * Count the number of element in a slice that verifies the predicates
+ * @params: 
+ *    - a: the slice to traverse
+ * @complexity: O (n), with n = a.len
+ * @example: 
+ * ============
+ * let a = [1, 2, 3];
+ * assert (a.count!(|x| => x <= 2) () == 2u64);
+ * ============
+ */
+pub def count (F : fn (U)-> bool, T of [U], U) (a : T) -> u64 {
+    let dmut nb = 0u64;
+    for i in a {
+        if (F (i)) { nb += 1u64; }
+    }
+    return nb;
+}
+
+/**
+ * Count the number of element in a sequence that verifies the predicates
+ * @params: 
+ *    - a: the sequence to traverse
+ * @complexity: O (n), with n = a.len
+ * @example: 
+ * ============
+ * let a = vec #[1, 2, 3];
+ * assert (a.count!(|x| => x <= 2) () == 2u64);
+ * ============
+ */
+pub def count (F : fn (U)-> bool, T impl Seq!U, U) (a : T) -> u64 {
+    let dmut nb = 0u64;
+    for i in a {
+        match i {
+            Ok (x:_) => {
+                if (F (x)) { nb += 1u64; }
+            }
+        }
+    }
+    return nb;
+}
+
+/**
+ * @returns: the index of the minimum element in a slice
+ * @templates: 
+ *   - F: a function that compare two element and return true if _0 < _1
+ * @params: 
+ *   - a: the slice to traverse
+ * @example: 
+ * ===========
+ * let a = [2, 1, 9, 2, 3];
+ * assert (a.minElement!(|x,y| => x < y) () == 1u64);
+ * ===========
+ * @info: if the slice is empty, the function will return 0
+ * @complexity: O (n), with n = a.len
+ */
+pub def minElement (F : fn (U, U) -> bool, T of [U], U) (a : T) -> u64 {
+    let mut index = 0u64;
+    for i in 0u64 .. a.len {
+        match (F (a [i], a [index]))? {
+            Ok (true) => {
+                index = i;
+            }
+        }
+    }
+    return index;
+}
+
+/**
+ * @returns: the index of the maximum element in a slice
+ * @templates: 
+ *   - F: a function that compare two element and return true if _0 > _1
+ * @params: 
+ *   - a: the slice to traverse
+ * @example: 
+ * ===========
+ * let a = [2, 1, 9, 2, 3];
+ * assert (a.maxElement!(|x,y| => x < y) () == 1u64); // does the same as minElement
+ * assert (a.maxElement!(|x,y| => x > y) () == 2u64);
+ * ===========
+ * @info: 
+ *   - if the slice is empty, the function will return 0
+ *   - this function does exactly the same operation as minElement!(F) (a), it is just weird to have a minElement function that actually find the maximum element
+ * @complexity: O (n), with n = a.len
+ */
+pub def maxElement (F : fn (U, U) -> bool, T of [U], U) (a : T) -> u64 {
+    let mut index = 0u64;
+    for i in 0u64 .. a.len {
+        match (F (a [i], a [index]))? {
+            Ok (true) => {
+                index = i;
+            }
+        }
+    }
+    return index;
+}
+
+
+/**
+ * @returns: the index of the minimum element in a slice
+ * @params: 
+ *   - a: the slice to traverse
+ * @example: 
+ * ===========
+ * let a = [2, 1, 9, 2, 3];
+ * assert (a.minElement () == 1u64);
+ * ===========
+ * @info: if the slice is empty, the function will return 0
+ * @complexity: O (n), with n = a.len
+ */
+pub def minElement (T of [U], U) (a : T) -> u64 {
+    let mut index = 0u64;
+    for i in 0u64 .. a.len {
+        match (a [i] < a [index])? {
+            Ok (true) => {
+                index = i;
+            }
+        }
+    }
+    return index;
+}
+
+/**
+ * @returns: the index of the maximum element in a slice
+ * @params: 
+ *   - a: the slice to traverse
+ * @example: 
+ * ===========
+ * let a = [2, 1, 9, 2, 3];
+ * assert (a.maxElement () == 2u64); // does the same as minElement
+ * ===========
+ * @info: 
+ *   - if the slice is empty, the function will return 0
+ * @complexity: O (n), with n = a.len
+ */
+pub def maxElement (T of [U], U) (a : T) -> u64 {
+    let mut index = 0u64;
+    for i in 0u64 .. a.len {
+        match (a [index] < a [i])? {
+            Ok (true) => {
+                index = i;
+            }
+        }
+    }
+    return index;
+}
+
+
+/**
+ * @returns: the index of the minimum element in a sequence
+ * @templates: 
+ *   - F: a function that compare two element and return true if _0 < _1
+ * @params: 
+ *   - a: the sequence to traverse
+ * @example: 
+ * ===========
+ * let a = vec #[2, 1, 9, 2, 3];
+ * assert (a.minElement!(|x,y| => x < y) () == 1u64);
+ * ===========
+ * @info: if the sequence is empty, the function will return 0
+ * @complexity: O (n), with n = a.len()
+ */
+pub def minElement (F : fn (U, U) -> bool, T impl Seq!U, U) (a : T) -> u64 {    
+    let mut index = 0u64;
+    let mut current = (U?)::err;
+    let mut j = 0u64;
+    for i in a {
+        match (i) {
+            Ok (x: _) => {
+                match (current) {
+                    Ok (y:_) => {
+                        if (F (x, y)) {
+                            current = i;
+                            index = j;
+                        }
+                    }
+                    Err () => {
+                        current = i;
+                        index = j;
+                    }
+                }
+            }
+        }
+        j += 1u64;
+    }
+    return index;
+}
+
+/**
+ * @returns: the index of the minimum element in a sequence
+ * @templates: 
+ *   - F: a function that compare two element and return true if _0 < _1
+ * @params: 
+ *   - a: the sequence to traverse
+ * @example: 
+ * ===========
+ * let a = vec #[2, 1, 9, 2, 3];
+ * assert (a.minElement!(|x,y| => x < y) () == 1u64);
+ * ===========
+ * @complexity: O (n), with n = a.len()
+ * @info: 
+ *   - if the sequence is empty, the function will return 0
+ *   - this function does exactly the same operation as minElement!(F) (a), it is just weird to have a minElement function that actually find the maximum element
+ */
+pub def maxElement (F : fn (U, U) -> bool, T impl Seq!U, U) (a : T) -> u64 {    
+    let mut index = 0u64;
+    let mut current = (U?)::err;
+    let mut j = 0u64;
+    for i in a {
+        match (i) {
+            Ok (x: _) => {
+                match (current) {
+                    Ok (y:_) => {
+                        if (F (x, y)) {
+                            current = i;
+                            index = j;
+                        }
+                    }
+                    Err () => {
+                        current = i;
+                        index = j;
+                    }
+                }
+            }
+        }
+        j += 1u64;
+    }
+    return index;
+}
+
+/**
+ * @returns: the index of the minimum element in a sequence
+ * @params: 
+ *   - a: the sequence to traverse
+ * @example: 
+ * ===========
+ * let a = vec #[2, 1, 9, 2, 3];
+ * assert (a.minElement!(|x,y| => x < y) () == 1u64);
+ * ===========
+ * @info: if the sequence is empty, the function will return 0
+ * @complexity: O (n), with n = a.len()
+ */
+pub def minElement (T impl Seq!U, U) (a : T) -> u64 {    
+    let mut index = 0u64;
+    let mut current = (U?)::err;
+    let mut j = 0u64;
+    for i in a {
+        match (i) {
+            Ok (x: _) => {
+                match (current) {
+                    Ok (y:_) => {
+                        if (x <  y) {
+                            current = i;
+                            index = j;
+                        }
+                    }
+                    Err () => {
+                        current = i;
+                        index = j;
+                    }
+                }
+            }
+        }
+        j += 1u64;
+    }
+    return index;
+}
+
+/**
+ * @returns: the index of the minimum element in a sequence
+ * @params: 
+ *   - a: the sequence to traverse
+ * @example: 
+ * ===========
+ * let a = vec #[2, 1, 9, 2, 3];
+ * assert (a.minElement!(|x,y| => x < y) () == 1u64);
+ * ===========
+ * @complexity: O (n), with n = a.len()
+ * @info: 
+ *   - if the sequence is empty, the function will return 0
+ */
+pub def maxElement (T impl Seq!U, U) (a : T) -> u64 {    
+    let mut index = 0u64;
+    let mut current = (U?)::err;
+    let mut j = 0u64;
+    for i in a {
+        match (i) {
+            Ok (x: _) => {
+                match (current) {
+                    Ok (y:_) => {
+                        if (y < x) {
+                            current = i;
+                            index = j;
+                        }
+                    }
+                    Err () => {
+                        current = i;
+                        index = j;
+                    }
+                }
+            }
+        }
+        j += 1u64;
+    }
+    return index;
 }

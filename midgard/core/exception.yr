@@ -14,8 +14,22 @@ pub class @abstract Exception {
 
     self () with trace = _yrt_exc_get_stack_trace () {}
 
-    impl std::io::Printable;
+    impl std::io::Printable {
+        
+        prot over __stdio__printContent (self) -> bool {
+            false            
+        }
 
+        pub over print (self)-> void {
+            print (self::typeinfo.name, ' ', '(');
+            self.__stdio__printContent ();
+            println (')',' ',':');
+            if (self.trace.len != 0u64)
+                println (self.trace);
+        }
+        
+    }
+    
     pub def @final getStackTrace (self) -> [c8] {
         self.trace
     }
@@ -34,8 +48,7 @@ pub class AssertError over Exception {
 
     impl std::io::Printable {
         pub over print (self) {
-            print ("AssertError (", self.msg, ")");
-            self::super.printStackTrace ();
+            self::super.print ();
         }
     }
 }
@@ -47,8 +60,7 @@ pub class RuntimeError over Exception {
 
     impl std::io::Printable {
         pub over print (self) {
-            print ("RuntimeError (", self.msg, ")");
-            self::super.printStackTrace ();
+            self::super.print ();
         }
     }
 }
@@ -58,8 +70,7 @@ pub class SegFault over Exception {
 
     impl std::io::Printable {
         pub over print (self) {
-            println ("SegFault ()");
-            self::super.printStackTrace ();
+            self::super.print ();
         }
     }
 }
@@ -87,7 +98,6 @@ pub extern (C) def _yrt_throw_seg_fault () -> void
 {
     throw SegFault::new ()
 }
-
 
 pub extern (C) def _yrt_throw_runtime_abort (c : [c8]) -> void
     throws &RuntimeError

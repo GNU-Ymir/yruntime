@@ -1,7 +1,8 @@
 mod std::concurrency::task;
 
 import std::io;
-import std::option;
+import core::object;
+
 import std::collection::map;
 import std::concurrency::mailbox;
 import std::concurrency::thread;
@@ -169,8 +170,8 @@ pub class @final TaskPool {
     pub def join (mut self) -> void {
         for _, Oth in self._runningThreads {
             match Oth {
-                th : &Some!(Thread) => 
-                    th.unwrap ().join ()
+                Ok (th : Thread) => 
+                    th.join ()
             }
         }
     }
@@ -196,10 +197,10 @@ pub class @final TaskPool {
                 loop {
                     let msg = self._jobs:.receive ();                    
                     match msg {
-                        x : &Some!(&Task) => {
-                            x.unwrap ().execute (i + id)
+                        Ok (x : &Task) => {
+                            x.execute (i + id)
                         }
-                        _ => {
+                        Err () => {
                             break {}
                         }
                     }
@@ -218,15 +219,15 @@ pub class @final TaskPool {
     prv def removeExitedThreads (mut self) {
         loop {
             match self._exited:.receive () {
-                x : &Some!(usize) => {
-                    let th = self._runningThreads [x.unwrap ()];
+                Ok (x : usize) => {
+                    let th = self._runningThreads [x];
                     match th {
-                        z : &Some!(Thread) => {
-                            z.unwrap ().join ();
+                        Ok (z : Thread) => {
+                            z.join ();
                             // join remove the thread from the known thread, this is necessary to avoid incapacity of creating new thread
                         }
                     }
-                    self._runningThreads:.remove (x.unwrap ())
+                    self._runningThreads:.remove (x)
                 }
                 _ => {
                     break {}

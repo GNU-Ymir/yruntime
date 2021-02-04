@@ -8,7 +8,6 @@ import core::array;
 import std::collection::seq;
 import std::io;
 import std::hash;
-import std::option;
 import std::conv;
 
 /**
@@ -170,7 +169,7 @@ pub class @final HashSet (T) {
     pub def remove (mut self, val : T) -> void {
         if self._data.len != 0u64 {
             let h = hash (val);
-            match (self._data [h % self._data.len]) {
+            match ref (self._data [h % self._data.len]) {
                 dmut x : &SetValue!(T) => {
                     let mut removed = false;
                     self._data [h % self._data.len] = alias x:.remove (h, ref removed);
@@ -244,27 +243,7 @@ pub class @final HashSet (T) {
     pub def end (self) -> &SetIterator!T {
         SetIterator!(T)::new (0u64, 0u64, [], self._empty)
     }
-    
-        
-    impl std::collection::seq::Seq!T {
-
-        /**
-         * The number of elements contained in the set
-         * @example: 
-         * ==========
-         * let dmut x = HashSet!([c32])::new ();
-         * x:.insert ("foo");
-         * x:.insert ("foo");
-         * x:.insert ("bar");
-         * assert (x.len () == 2u64);
-         * ==========
-         */
-        pub over len (self) -> u64 {
-            self._size
-        }
-        
-    }
-
+            
     impl std::io::Printable {
 
         /**
@@ -343,7 +322,7 @@ pub class @final HashSet (T) {
      */
     prv def insertFast (mut self, h : u64, val : T) {
         let mut inserted = false;
-        match self._data [h % self._data.len] {
+        match ref (self._data [h % self._data.len]) {
             dmut x : &SetValue!(T) => {
                 inserted = x:.insert (h, val);
             }
@@ -458,7 +437,7 @@ pub class @final HashSet (T) {
 class @abstract SetNode (T) {
     prot self () {}
 
-    pub def opEquals (self, o : &SetNode!T) -> bool;
+    pub def opEquals (self, _ : &SetNode!T) -> bool;
 
     impl std::io::Printable;
 }
@@ -524,7 +503,7 @@ class @final SetValue (T) over SetNode!T {
      */
     pub def insert (mut self, h : u64, val : T) -> bool {
         if (self.h != h) {
-            match (self.next) {
+            match ref self.next {
                 dmut x : &SetValue!T => {
                     return x:.insert (h, val);
                 }
@@ -550,7 +529,7 @@ class @final SetValue (T) over SetNode!T {
             rm = true;
             return alias self.next;
         } else {
-            match self.next {
+            match ref self.next {
                 dmut x : &SetValue!T => {
                     self.next = alias x:.remove (h, ref rm);
                 }
@@ -677,12 +656,12 @@ class @final SetIterator (T) {
      * None, it the current node is empty
      * =======     
      */
-    pub def get (0) (self) -> &Option!(T) {
+    pub def get (0) (self) -> (T)? {
         match (self._currentNode) {
             x : &SetValue!(T) =>
-                return Some!(T)::new (x.val);
+                return (x.val)?;
         }
-        return None!(T)::new ();
+        return (T?)::err;
     }
 
     /**

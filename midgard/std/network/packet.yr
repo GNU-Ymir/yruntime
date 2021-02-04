@@ -163,28 +163,6 @@ pub trait Packable {
     }
 }
 
-/**
- * Unpack a packet and allocates the class it containes
- * @params: 
- *    - packet: the packet to read
- * @returns: 
- *    - packet: the content read by the function is removed from the packet 
- *    - The instantiated object, or std::any::None if the reading failed
- */
-pub def unpack (mut packet : [u8])-> dmut &Object {
-    let dmut name : [c8] = [];
-    {
-        let (_, offset) = internal_unpack::unpack!([c8]) (alias cast!(&u8) (cast!(&void) (&name)), packet);
-        let dmut obj = internal_reflect::totallyUnsafeFactoryDontDoThat (name);
-        obj:.unsafeCallImplMutable!(usize) ("std::network::packet::Packable::__stdnetwork__unpackContent", packet[cast!u64 (offset) .. $]);
-        
-        return alias obj;               
-    } catch {
-        _ => {}
-    }
-    
-    return alias cast!(&Object) (std::any::None::new ());
-}
 
 /**
  * Unpack a packet and allocates the class it containes
@@ -196,14 +174,14 @@ pub def unpack (mut packet : [u8])-> dmut &Object {
  * @throws: 
  *    - UnpackError: if an error occured when unpacking
  */
-pub def unsafeUnpack (mut packet : [u8])-> dmut &Object
+pub def unpack (mut packet : [u8])-> dmut &Object
     throws &UnpackError
 {
     let dmut name : [c8] = [];
     {
         let (_, offset) = internal_unpack::unpack!([c8]) (alias cast!(&u8) (cast!(&void) (&name)), packet);
         let dmut obj = internal_reflect::totallyUnsafeFactoryDontDoThat (name);
-        obj:.unsafeCallImplMutable!(usize) ("std::network::packet::Packable::__stdnetwork__unpackContent", packet[cast!u64 (offset) .. $]);
+        obj:.callImplMutable!(usize) ("std::network::packet::Packable::__stdnetwork__unpackContent", packet[cast!u64 (offset) .. $]);
         
         return alias obj;               
     } catch {

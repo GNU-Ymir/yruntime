@@ -7,7 +7,6 @@ import core::array;
 
 import std::io;
 import std::hash;
-import std::option;
 import std::conv;
 
 /**
@@ -125,21 +124,9 @@ pub class @final HashMap (K, V) {
         let h = hash (key); 
         self:.insertFast (h, key, val);
     }
-    
-    /**
-     * Find the value associated to the key, and return it in an option type
-     * @params:
-     *    - key: the key
-     * @example: 
-     * ============
-     * let dmut x = HashMap!([c32], i32)::new ();
-     * x:.insert ("foo", 32);
-     * assert (x.find ("foo") == 32);
-     * assert (x.find ("bar") == None!(i32)::new ());
-     * ============
-     * @complexity: O (1 + n/k), with n the number of possible collision and k the number of keys, in average n/k are negligeable
-     */
-    pub def find (self, key : K) -> &Option!(V) {
+
+
+    pub def find (self, key : K) -> (V)? {
         if (self._data.len != 0u64) {
             let h = hash (key);
             match (self._data [h % self._data.len]) {
@@ -147,13 +134,14 @@ pub class @final HashMap (K, V) {
                     return x.find (h);
             }
         }
-        None!(V)::new ()
+        
+        (V?)::err
     } catch {
         _ : &OutOfArray => { // Can't happen
-            None!(V)::new ()
+            (V?)::err
         }
     }
-
+    
     /**
      * Search the key in the map, 
      * @returns: true if found, false otherwise
@@ -198,12 +186,12 @@ pub class @final HashMap (K, V) {
     pub def remove (mut self, key : K) -> void {
         if (self._data.len != 0u64) {
             let h = hash (key);
-            match (self._data [h % self._data.len]) {
+            match ref (self._data [h % self._data.len]) {
                 dmut x : &MapValue!(K, V) => {
                     let mut removed = false;
                     
                     self._data [h % self._data.len] = alias x:.remove (h, ref removed);
-                    match self._data [h % self._data.len] {
+                    match ref (self._data [h % self._data.len]) {
                         _ : &Empty!(K, V) => {
                             self._loaded -= 1u64;
                         }
@@ -231,10 +219,10 @@ pub class @final HashMap (K, V) {
      * assert (x ["bar"] == None!(i32)::new ());
      * =============
      */
-    pub def opIndex (self, k : K) -> &Option!(V) {
+    pub def opIndex (self, k : K) -> (V)? {
         self.find (k)
     }
-
+    
     /**
      * Simply do an insert, this is just for syntax enhancing
      * @example: 
@@ -331,7 +319,7 @@ pub class @final HashMap (K, V) {
      */
     prv def insertFast (mut self, h : u64, key : K, val : V) {
         let mut inserted = false;
-        match self._data [h % self._data.len] {
+        match ref (self._data [h % self._data.len]) {
             dmut x : &MapValue!(K, V) => {
                 inserted = x:.insert (h, key, val);
             }
@@ -518,7 +506,7 @@ pub class @final HashMap (K, V) {
 class @abstract MapNode (K, V) {
     prot self () {}
     
-    pub def opEquals (self, o : &MapNode!(K, V))-> bool;
+    pub def opEquals (self, _ : &MapNode!(K, V))-> bool;
     
     impl std::io::Printable;
 }
@@ -603,7 +591,7 @@ class @final MapValue (K, V) over MapNode!(K, V) {
         if (self.h == h) {
             self.val = val;
         } else {
-            match (self.next) {
+            match ref self.next {
                 dmut x : &MapValue!(K, V) => {
                     return x:.insert (h, key, val);
                 }
@@ -623,19 +611,20 @@ class @final MapValue (K, V) over MapNode!(K, V) {
      * @returns: the value in an option type, or None if there is no node containing a hash equal to h
      * @complexity: O (n), with n the length of the list
      */
-    pub def find (self, h : u64) -> &Option!(V) {
+    pub def find (self, h : u64) -> (V)? {
         if (self.h == h) {
-            return Some!(V)::new (self.val);
+            return (self.val)?;
         } else {
             match (self.next) {
                 x : &MapValue!(K, V) => {
                     return x.find (h);
                 }
             }
-            return None!(V)::new ();
+            return (V?)::err;
         }
     }
 
+    
     /**
      * Remove the key inside the list, if there is no node containing the value, just return the list as it was
      * @info: the returned list is not a copy, no allocation are made
@@ -650,7 +639,7 @@ class @final MapValue (K, V) over MapNode!(K, V) {
             rm = true;
             return alias self.next;
         } else {
-            match (self.next) {
+            match ref self.next {
                 dmut x : &MapValue!(K, V) => {
                     self.next = alias x:.remove (h, ref rm);
                 }
@@ -668,7 +657,7 @@ class @final MapValue (K, V) over MapNode!(K, V) {
         if (self.h == h) {
             true
         } else {
-            match (self.next) {
+            match self.next {
                 x : &MapValue!(K, V) => {
                     return x.opContains (h);
                 }
@@ -776,12 +765,12 @@ class @final MapIterator (K, V) {
      * None, it the current node is empty
      * =======     
      */
-    pub def get (0) (self) -> &Option!(K) {
+    pub def get (0) (self) -> (K)? {
         match (self._currentNode) {
             x : &MapValue!(K, V) =>
-                return Some!(K)::new (x.key);
+                return (x.key)?;
         }
-        return None!(K)::new ();
+        return (K?)::err;
     }
 
     /**
@@ -791,12 +780,12 @@ class @final MapIterator (K, V) {
      * None, it the current node is empty
      * =======     
      */
-    pub def get (1) (self) -> &Option!(V) {
+    pub def get (1) (self) -> (V)? {
         match (self._currentNode) {
             x : &MapValue!(K, V) =>
-                return Some!(V)::new (x.val);
+                return (x.val)?;
         }
-        return None!(V)::new ();
+        return (V?)::err;
     }
 
     /**

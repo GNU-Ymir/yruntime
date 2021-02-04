@@ -7,7 +7,6 @@ import core::array;
 
 import std::collection::seq;
 import std::io;
-import std::option;
 
 /**
  * Macro that can be used to declare a list easily
@@ -83,7 +82,7 @@ pub class @final List (T) {
      * @complexity: O (1)
      */
     pub def push (mut self, val : T)-> void {
-        match self._tail {            
+        match ref self._tail {            
             dmut tail: &ListValue!(T) => {
                 let dmut n_node = ListValue!(T)::new (val, alias tail, alias tail.next);
                 tail.next = alias n_node;
@@ -106,7 +105,7 @@ pub class @final List (T) {
      * let dmut x = List!(i32)::new ();
      * x:.push (1);
      * {
-     *    assert (x:.unsafePop () == 1);
+     *    assert (x:.pop () == 1);
      * } catch (
      *    _: &OutOfArray => 
      *        println ("List was empty");
@@ -114,13 +113,13 @@ pub class @final List (T) {
      * =============
      * @complexity: O (1)
      */
-    pub def unsafePop (mut self) -> T
+    pub def pop (mut self) -> T
         throws &OutOfArray
     {
-        match self._tail {
+        match ref self._tail {
             dmut tail : &ListValue!(T) => {
                 let ret = tail.value;
-                match tail.prev {
+                match ref tail.prev {
                     dmut prev : &ListValue!(T) => {
                         prev.next = alias tail.next;
                         self._tail = alias prev;
@@ -138,37 +137,6 @@ pub class @final List (T) {
         }
     }
     
-    /**
-     * Pop the last element of the list and return it inside an option type
-     * @example: 
-     * =============
-     * let dmut x = List!(i32)::new ();
-     * x:.push (1);
-     * assert (x:.pop () == 1);
-     * =============
-     * @complexity: O (1)
-     */
-    pub def pop (mut self) -> &Option!(T) {
-        match self._tail {
-            dmut tail : &ListValue!(T) => {
-                let ret = tail.value;
-                match tail.prev {
-                    dmut prev : &ListValue!(T) => {
-                        prev.next = alias tail.next;
-                        self._tail = alias prev;
-                    }
-                    _ => { // Only on element
-                        self._head = alias tail.prev;
-                        self._tail = alias self._head;
-                    }
-                }
-                
-                self._len -= 1u64; 
-                return Some!(T)::new (ret);
-            }
-            _ => return None!(T)::new ();
-        }
-    }
 
     /**
      * Push an element at the beginning of the list
@@ -183,7 +151,7 @@ pub class @final List (T) {
      * @complexity: O (1)
      */    
     pub def pushFront (mut self, val : T) -> void {
-         match self._head {            
+        match ref self._head {            
             dmut head: &ListValue!(T) => {
                 let dmut n_node = ListValue!(T)::new (val, alias head.prev, alias head);
                 head.prev = alias n_node;
@@ -205,17 +173,17 @@ pub class @final List (T) {
      * ============
      * let dmut x = List!(i32)::new ();
      * x:.push (12);
-     * assert (x:.unsafePopFront () == 12);
+     * assert (x:.popFront () == 12);
      * ============
      * @complexity: O(1)
      */
-    pub def unsafepopFront (mut self) -> T
+    pub def popFront (mut self) -> T
         throws &OutOfArray
     {
-        match self._head {
+        match ref self._head {
             dmut head : &ListValue!(T) => {
                 let ret = head.value;
-                match head.next {
+                match ref head.next {
                     dmut next : &ListValue!(T) => {
                         next.prev = alias head.prev;
                         self._head = alias next;
@@ -233,38 +201,6 @@ pub class @final List (T) {
         }
     }
    
-    /**
-     * Remove the first element of the list and return it in an option type
-     * @example: 
-     * ============
-     * let dmut x = List!(i32)::new ();
-     * x:.push (12);
-     * assert (x:.popFront () == 12);
-     * ============
-     * @complexity: O(1)
-     */
-    pub def popFront (mut self) -> &Option!(T)
-    {
-        match self._head {
-            dmut head : &ListValue!(T) => {
-                let ret = head.value;
-                match head.next {
-                    dmut next : &ListValue!(T) => {
-                        next.prev = alias head.prev;
-                        self._head = alias next;
-                    }
-                    _ => { // Only on element
-                        self._head = alias head.next;
-                        self._tail = alias self._head;
-                    }
-                }
-                
-                self._len -= 1u64; 
-                return Some!(T)::new (ret);
-            }
-            _ => return None!(T)::new ();
-        }
-    }
 
     /**
      * @returns: true if the list is empty
@@ -279,7 +215,7 @@ pub class @final List (T) {
      * @complexity: O (1)
      */
     pub def clear (mut self) -> void {
-        match self._head {
+        match ref self._head {
             dmut head : &ListValue!(T) => { // To avoid useless allocations
                 self._head = alias head.prev;
                 self._tail = alias self._tail;
@@ -292,22 +228,22 @@ pub class @final List (T) {
      * @returns: the value of the first element contained in the list, None if the list is empty
      * @complexity: O(1)
      */
-    pub def front (self) -> &Option!(T) {
+    pub def front (self) -> (T)? {
         match self._head {
-            head: &ListValue!(T) => { Some!(T)::new (head.value) }
-            _ => { None!(T)::new () }
+            head: &ListValue!(T) => { return (head.value)? }
         }
+        return (T?)::err;
     }
 
     /**
      * @returns: the value of the last element contained in the list, None if the list is empty
      * @complexity: O(1)
      */
-    pub def back (self) -> &Option!(T) {
+    pub def back (self) -> (T)? {
         match self._tail {
-            tail : &ListValue!(T) => { Some!(T)::new (tail.value) }
-            _ => { None!(T)::new () }
+            tail : &ListValue!(T) => { return (tail.value)?; }
         }
+        return (T?)::err;
     }
 
     /**
@@ -361,6 +297,43 @@ pub class @final List (T) {
         pub over len (self) -> u64 {
             self._len
         }
+
+        /**
+         * Access a value in the list by index
+         * @params: 
+         *   - i: the index
+         * @throws: 
+         *   - &OutOfArray: if the index is not in the list
+         * @complexity: O (i + 1)
+         * @example: 
+         * =============
+         * let dmut x = List!(i32)::new ();
+         * x:.push (12);
+         * {
+         *   assert (x [0] == 12);        
+         * } catch {
+         *    _ : &OutOfArray => {}
+         *    _ : &AssertError => {}
+         * }
+         * =============
+         */
+        pub over opIndex (self, i : u64) -> T
+            throws &OutOfArray
+        {
+            if (i > self._len) throw OutOfArray::new ();
+            
+            let mut z = 0u64;
+            for j in self {
+                if (z == i) {
+                    match j {
+                        Ok (x:_) => return x;
+                    }
+                }
+                z += 1u64;
+            }
+            
+            throw OutOfArray::new (); // Can't get here, but well
+        }
         
     }    
     
@@ -391,7 +364,7 @@ pub class @final List (T) {
                 match (current) {
                     x : &ListValue!(T) => {                        
                         let dmut n = ListValue!(T)::new (x.value, alias c, alias empty);
-                        match c {
+                        match ref c {
                             dmut z : &ListValue!(T) => {
                                 z.next = alias n;
                             }
@@ -506,12 +479,12 @@ class @final ListIterator (T) {
         }
     }
 
-    pub def get (0) (self) -> &Option!(T) {
+    pub def get (0) (self) -> (T)? {
         match self._current {
             x : &ListValue!(T) =>
-                return Some!(T)::new (x.value);
-            _ =>
-                return None!(T)::new ();
+                return (x.value)?;
+            _ => 
+                return (T?)::err;
         }
     }
 

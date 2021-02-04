@@ -1,10 +1,10 @@
 mod std::concurrency::mailbox;
 
 import core::typeinfo;
+import core::exception;
 import std::collection::list;
 import std::concurrency::sync;
 import std::any;
-import std::option;
 import std::io;
 
 /**
@@ -66,10 +66,10 @@ pub class @final MailBox (T) {
      * @return: 
      *    - Some!(T): if a message was found in the box
      */
-    pub def receive (mut self) -> &Option!T {
+    pub def receive (mut self) -> T? {
         //println ("lock");
         self._mutex.lock ();
-        let ret : &Option!T = self._mails:.popFront ();
+        let ret = self._mails:.popFront ()?;
         self._mutex.unlock ();
         //println ("unlock");
         ret
