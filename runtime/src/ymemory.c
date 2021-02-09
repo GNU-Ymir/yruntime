@@ -1,9 +1,12 @@
 #include "../include/ymemory.h"
 #include <memory.h>
+#include "../include/type.h"
+#include <stdio.h>
 
 #ifndef GC_THREADS
 #define GC_THREADS
 #include <gc/gc.h>
+#include <gc/gc_disclaim.h>
 #endif
 
 _yrt_array_ _yrt_dup_slice (_yrt_array_ arr, unsigned long size) {
@@ -48,8 +51,18 @@ void* _yrt_dupl_any (void* data, unsigned long len) {
     return x;
 }
 
-void* _yrt_alloc_class (unsigned long len) {
-    return GC_malloc (len);
+void* _yrt_alloc_class (void* vtable) {
+    // the first element stored in the vtable is the typeinfo
+    _ytype_info *ti = *((_ytype_info**) vtable);
+
+    // the second element is the destructor
+    void(*__dtor) () = *(void(*)()) ((void**) vtable + 1);
+    
+    void* cl = GC_malloc (ti-> size);    
+    *((void**)cl) = vtable; // vtable
+    *((void**)cl+1) = NULL; // monitor
+    
+    return cl;
 }
 
 _yrt_array_ _yrt_concat_slices (_yrt_array_ left, _yrt_array_ right, unsigned long size) {

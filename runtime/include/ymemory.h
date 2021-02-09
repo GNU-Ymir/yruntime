@@ -49,9 +49,9 @@ void* _yrt_dupl_any (void * data, unsigned long len);
 /**
  * Allocate a segment a memory that will be used to store a class
  * @params: 
- *    - len: the size in bytes of the class
+ *  - vtable: the vtable of the class to allocate
  * @return: an unset raw segment of data
  */
-void* _yrt_alloc_class (unsigned long len);
+void* _yrt_alloc_class (void* vtable);
 
 #endif

@@ -255,12 +255,10 @@ void* _yrt_create_class_from_name (_yrt_c8_array_ className) {
     
     _yrt_c8_array_ mangled = _yrt_mangle_path (className);
 
-    _ytype_info info = _yrt_elf_get_typeinfo (elf, mangled, className);
     void* vtable = _yrt_elf_get_vtable (elf, mangled, className);
     void*(*cstr)(void*) = (void*(*)(void*)) _yrt_elf_get_constructor_no_param (elf, mangled, className);
 
-    void* classData = _yrt_alloc_class (info.size);
-    *((void**)classData) = vtable;
+    void* classData = _yrt_alloc_class (vtable);
     return cstr (classData);
 }
 
@@ -271,12 +269,8 @@ void* _yrt_create_class_from_name_no_construct (_yrt_c8_array_ className) {
     
     _yrt_c8_array_ mangled = _yrt_mangle_path (className);
 
-    _ytype_info info = _yrt_elf_get_typeinfo (elf, mangled, className);
-    void* vtable = _yrt_elf_get_vtable (elf, mangled, className);
-
-
-    void* classData = _yrt_alloc_class (info.size);
-    *((void**)classData) = vtable;
+    void* vtable = _yrt_elf_get_vtable (elf, mangled, className);    
+    void* classData = _yrt_alloc_class (vtable);
     return classData;
 }
 

@@ -144,4 +144,41 @@ void _yrt_thread_sem_wait (sem_t * sem);
  */
 void _yrt_thread_sem_post (sem_t * sem);
 
+
+/**
+ * Get the monitor of an object, allocate it if it the first time
+ * @params:
+ *   - object: a pointer to an object 
+ */
+pthread_mutex_t * _yrt_ensure_monitor (void* object);
+
+/**
+ * Lock a mutex in an atomic block
+ * @params: 
+ *    - lock: the mutex to lock
+ */
+void _yrt_atomic_enter (pthread_mutex_t * lock);
+
+/**
+ * Unlock a mutex in an atomic block
+ * @params: 
+ *    - lock: the mutex to unlock
+ */
+void _yrt_atomic_exit (pthread_mutex_t * lock);
+
+/**
+ * Lock a monitor in an atomic block
+ * @params: 
+ *    - object: the object to lock
+ */
+void _yrt_atomic_monitor_enter (void * object);
+
+/**
+ * Unlock a monitor in an atomic block
+ * @params: 
+ *    - lock: the mutex to unlock
+ */
+void _yrt_atomic_monitor_exit (void * lock);
+
+
 #endif

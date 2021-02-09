@@ -10,6 +10,8 @@
 #include <gc/gc.h>
 #include <semaphore.h>
 
+pthread_mutex_t __monitor_mutex__ = PTHREAD_MUTEX_INITIALIZER;
+
 void * _yrt_read_pipe (int stream, ulong size) {
     void * z;
     void ** x = &z; 
@@ -79,4 +81,35 @@ void _yrt_thread_sem_wait (sem_t * sem) {
 
 void _yrt_thread_sem_post (sem_t * sem) {
     sem_post (sem);
+}
+
+pthread_mutex_t * _yrt_ensure_monitor (void* object) {
+    pthread_mutex_lock (&__monitor_mutex__);
+    pthread_mutex_t* mut = *((pthread_mutex_t**) object + 1); // skip the vtable
+    if (mut == NULL) {
+	mut = GC_malloc (sizeof (pthread_mutex_t));
+	pthread_mutex_init (mut, NULL);
+	*((pthread_mutex_t**)object+1) = mut;
+    }
+    
+    pthread_mutex_unlock (&__monitor_mutex__);
+    return mut;    
+}
+
+void _yrt_atomic_enter (pthread_mutex_t * lock) {
+    pthread_mutex_lock (lock);
+}
+
+void _yrt_atomic_exit (pthread_mutex_t * lock) {
+    pthread_mutex_unlock (lock);
+}
+
+void _yrt_atomic_monitor_enter (void* object) {
+    pthread_mutex_t * lock = _yrt_ensure_monitor (object);
+    pthread_mutex_lock (lock);
+}
+
+void _yrt_atomic_monitor_exit (void* object) {
+    pthread_mutex_t * lock = _yrt_ensure_monitor (object);
+    pthread_mutex_unlock (lock);
 }

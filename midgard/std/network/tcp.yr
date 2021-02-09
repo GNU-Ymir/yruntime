@@ -9,62 +9,6 @@ import std::network::address;
 import std::network::packet;
 
 /**
- * This sub module define two standard tcp function, listen, and connect
- * @example: 
- * =============
- * let dmut server = Tcp::listen ("127.0.0.1:8080");
- * loop {
- *      let dmut client = server:.accept ();
- *      client:.rawSend ("Hello world");
- * }
- * =============
- */
-pub mod Tcp {
-
-    /**
-     * Create tcp server that waits for client connections
-     * @params: 
-     *    - addr: the address bind by the server
-     * @example: 
-     * ============
-     * let addr = SockAddrV4::new (Ipv4Address (127u8, 0u8, 0u8, 1u8), 8080u16);
-     * let dmut server = Tcp::listen (addr);
-     * loop {
-     *      let dmut client = server:.accept ();
-     *      client:.rawSend ("Hello world!");
-     * }
-     * @throws: 
-     *   - TcpError: if the creation of the server failed
-     * ============
-     */
-    pub def listen (addr : &SockAddress) -> dmut &TcpListener
-        throws &TcpError
-    {
-        return TcpListener::new (addr);
-    }
-
-    /**
-     * Create a tcp stream connected to a remote Tcp server
-     * @params: 
-     *    - addr: the remote address 
-     * @example: 
-     * =============
-     * let addr = SockAddrV4::new (Ipv4Address (127u8, 0u8, 0u8, 1u8), 8080u16);
-     * let dmut stream = Tcp::connect (addr);
-     * stream:.rawReceive!c8 (12u64);
-     * =============
-     * @returns: a TcpStream
-     * @throws: TcpError: if the connection failed
-     */
-    pub def connect (addr : &SockAddress) -> dmut &TcpStream
-        throws &TcpError
-    {
-        return TcpStream::new (addr):.connect ();
-    }
-    
-}
-
-/**
  * The type errors that can occur when listening, or connecting to a TCP socket
  */
 pub enum
@@ -116,7 +60,7 @@ pub class TcpListener {
      * Create a new TcpListener and bind it to the specific address
      * The create listener is ready for accepting connection
      */
-    pub self (addr : &SockAddress)
+    pub self listen (addr : &SockAddress)
         with _addr = addr
         throws &TcpError
     {
@@ -261,29 +205,17 @@ pub class TcpStream {
      * @example: 
      * ==========     
      * let addr = SockAddrV4 (Ipv4Address::new (127u8, 0u8, 0u8, 1u8), 8080u16);
-     * let dmut client = TcpStream::new (addr):.connect ();
+     * let dmut client = TcpStream::connect (addr);
      * ==========
      */
-    pub self (addr : &SockAddress)
+    pub self connect (addr : &SockAddress)
         with _sockfd = 0,
              _addr = addr
-    {}
-
-    /**
-     * Connect the client to the address 
-     * @example: 
-     * ==============
-     * let addr = SockAddrV4 (Ipv4Address::new (127u8, 0u8, 0u8, 1u8), 8080u16);
-     * let dmut client = TcpStream::new (addr):.connect ();
-     * ==============
-     */
-    pub def connect (mut self) -> dmut &TcpStream
         throws &TcpError
     {
         match self._addr {
             v4 : &SockAddrV4 => {
                 self:.connectV4 (v4);
-                return alias self;
             }
             _ => {
                 throw TcpError::new (TcpErrorCode::ADDR_TYPE, "unknwon addr type : " ~ (self._addr)::typeinfo.name);

@@ -1,5 +1,6 @@
 mod std::algorithm::iteration;
 
+import core::duplication;
 import std::collection::seq;
 
 /**
@@ -36,3 +37,140 @@ pub def each (F : fn (U)-> void, T impl Seq!U, U) (a : T) {
         }
     }
 }
+
+/**
+ * Generate a new slice of which elements are obtained by applying F (x) on the elements of a
+ * @params: 
+ *   - a: a slice to traverse
+ * @example: 
+ * ===========
+ * let a = [1, 2, 3];
+ * let b = a.map!(|x| => x + 1) ();
+ * assert (b == [2, 3, 4]);
+ * ===========
+ */
+pub def map (F : fn (U)-> J, T of [U], U, J) (a : T) -> mut [mut J] {
+    let mut res : [mut J] = core::duplication::allocArray!(J) (a.len);
+    for i in 0u64 .. a.len {
+        (res [i] = F (a[i]))?
+    }
+    return alias res;
+}
+
+
+/**
+ * Generate a new slice of which elements are obtained by applying F (x) on the elements of a
+ * @params: 
+ *   - a: a slice to traverse
+ * @example: 
+ * ===========
+ * let a = [1, 2, 3];
+ * let b = a.map!(|x| => x + 1) ();
+ * assert (b == [2, 3, 4]);
+ * ===========
+ */
+pub def map (F : fn (U)-> J, T impl Seq!U, U, J) (a : T) -> mut [mut J] {
+    let mut res : [mut J] = core::duplication::allocArray!(J) (a.len ());
+    for i in 0u64 .. a.len () {
+        (res [i] = F (a[i]))?
+    }
+    return alias res;
+}
+
+/**
+ * Implement the homonym function fold
+ * This function takes a seed as initial value, the seed is set at U::init as default
+ * Then it traverse the slice and for each element x of the slice result = F (result, x)
+ * @info: the operation of the accumulator F, does not need to be commutative
+ * @returns: the accumulation of the slice and the initial seed
+ * @example: 
+ * ===============
+ * let i = [1, 2, 3];
+ * assert (i.scan!(|x,y| x + y) (0) == 6);
+ * assert (i.scan!(|x,y| x + y) (12) == 18);
+ * ===============
+ * @complexity: O (n), with n = a.len
+ */
+pub def fold (F : fn (U,U)-> U, T of [U], U) (a : T, seed : U)-> U {
+    let mut res = seed;
+    for i in a {
+        res = F (res, i);
+    }
+    res
+}
+
+/**
+ * Implement the homonym function fold
+ * This function takes a seed as initial value, the seed is set at U::init as default
+ * Then it traverse the slice and for each element x of the slice result = F (result, x)
+ * @info: the operation of the accumulator F, does not need to be commutative
+ * @returns: the accumulation of the slice and the initial seed
+ * @example: 
+ * ===============
+ * let i = [1, 2, 3];
+ * assert (i.scan!(|x,y| x + y) (0) == 6);
+ * assert (i.scan!(|x,y| x + y) (12) == 18);
+ * ===============
+ * @complexity: O (n), with n = a.len
+ */
+pub def fold (F : fn (U,U)-> U, T of [U], U) (a : T)-> U {
+    let mut res = cte if (is!U (X of f32)) 0.f else cte if (is!U (X of f64)) 0.0 else U::init;
+    for i in a {
+        res = F (res, i);
+    }
+    res
+}
+
+/**
+ * Implement the homonym function fold
+ * This function takes a seed as initial value
+ * Then it traverse the slice and for each element x of the slice result = F (result, x)
+ * @info: the operation of the accumulator F, does not need to be commutative
+ * @returns: the accumulation of the slice and the initial seed
+ * @example: 
+ * ===============
+ * let i = [1, 2, 3];
+ * assert (i.scan!(|x,y| x + y) (0) == 6);
+ * assert (i.scan!(|x,y| x + y) (12) == 18);
+ * ===============
+ * @complexity: O (n), with n = a.len
+ */
+pub def fold (F : fn (U,U)-> U, T impl Seq!U, U) (a : T, seed : U)-> U {
+    let mut res = seed;
+    for i in a {
+        match i {
+            Ok (x:_)=> {
+                res = F (res, x);
+            }
+        }
+    }
+    res
+}
+
+/**
+ * Implement the homonym function fold
+ * This function set a initial result at U::init (or 0.0 if U is a float type) as default
+ * Then it traverse the slice and for each element x of the slice result = F (result, x)
+ * @info: the operation of the accumulator F, does not need to be commutative
+ * @returns: the accumulation of the slice and the initial seed
+ * @example: 
+ * ===============
+ * let i = [1, 2, 3];
+ * assert (i.scan!(|x,y| x + y) () == 6);
+ * let j = [1., 2., 3.0];
+ * assert (i.scan!(|x,y| x + y) () == 6.0);
+ * ===============
+ * @complexity: O (n), with n = a.len
+ */
+pub def fold (F : fn (U,U)-> U, T impl Seq!U, U) (a : T)-> U {
+    let mut res = cte if (is!U (X of f32)) 0.f else cte if (is!U (X of f64)) 0.0 else U::init;
+    for i in a {
+        match i {
+            Ok (x:_)=> {
+                res = F (res, x);
+            }
+        }
+    }
+    res
+}
+

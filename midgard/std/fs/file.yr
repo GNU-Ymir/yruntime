@@ -12,16 +12,16 @@ import std::io;
 
 pub mod File {
 
-    pub def open (name : [c32], _ : bool = false)-> dmut &FileStream
+    pub def open (name : [c32], create : bool = false)-> dmut &FileStream
         throws &FileStreamError
     {
-        // if (!Path::exists (name.to![c8]())) {
-        //     if (!create) {
-        //         throw FileStreamError::new (FileStreamErrorCode::NOT_FOUND, "file not found : " ~ name);
-        //     } else {
-        //         Path::createFile (name.to![c8]());
-        //     }
-        // }  // TODO
+        if (!Path::exists (name.to![c8]())) {
+            if (!create) {
+                throw FileStreamError::new (FileStreamErrorCode::NOT_FOUND, "file not found : " ~ name);
+            } else {
+                Path::createFile (name.to![c8]());
+            }
+        }  // TODO
         
         let dmut fs = FileStream::new (name);
         fs:.open ();
@@ -31,11 +31,11 @@ pub mod File {
     pub def create (name : [c32])-> dmut &FileStream
         throws &FileStreamError
     {
-        // if (Path::exists (name.to![c8]())) {
-        //     throw FileStreamError::new (FileStreamErrorCode::ALREADY_EXISTS, "file already exists : " ~ name);
-        // } else {
-        //     Path::createFile (name.to![c8]());
-        // }
+        if (Path::exists (name.to![c8]())) {
+            throw FileStreamError::new (FileStreamErrorCode::ALREADY_EXISTS, "file already exists : " ~ name);
+        } else {
+            Path::createFile (name.to![c8]());
+        }
         
         return File::open (name);
     }

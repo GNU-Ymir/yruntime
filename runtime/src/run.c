@@ -2,6 +2,7 @@
 #include "../include/ymemory.h"
 #include "../include/throw.h"
 #include "../include/demangle.h"
+#include <gc/gc_disclaim.h>
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -216,7 +217,7 @@ int _yrt_run_main_debug (int argc, char ** argv, int(* y_main)()) {
 
     installHandler ();
     _yrt_exc_init ();
-
+        
     _yrt_array_ arr;
     arr.data = argv;
     arr.len = (unsigned long) argc;
@@ -229,7 +230,7 @@ int _yrt_run_main (int argc, char ** argv, int(* y_main)()) {
 
     installHandler ();
     _yrt_exc_init ();
-
+    
     _yrt_array_ arr;
     arr.data = argv;
     arr.len = (unsigned long) argc;
