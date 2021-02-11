@@ -1,37 +1,191 @@
 mod std::fs::path;
 
+import core::object, core::typeinfo, core::exception;
+import core::duplication, core::array, core::dispose;
+
 import etc::c::files;
-
-pub enum
-| Readable = 0
-| Writable = 1
-| Executable = 2
- -> FilePermission;
+import std::conv;
+import std::collection::vec;
+import std::io;
 
 
-pub mod Path {
+pub class @final Path {
+
+    prv let dmut _parts = Vec!([c8])::new ();
 
     /**
-     * Check the existence of a file
+     * Create a new path from a utf8 path
+     * @example: 
+     * =========
+     * let dmut path = Path::new ("foo/bar/baz.txt"s8);
+     * assert (path.parts () == ["foo"s8, "bar"s8, "baz.txt"s8]);
+     * =========
      */
-    pub def exists (name : [c8])-> bool {
-        etc::c::files::access (name.ptr, AccessMode::F_OK) == 0
+    pub self (path : [c8]) {
+        let mut last = 0u64;
+        for i in 0u64 .. path.len {
+            if (path[i] == '/'c8) {
+                self._parts:.push (copy (path[last .. i]));
+                last = i + 1u64;
+            }
+        }
+        if (last != path.len)
+            self._parts:.push (copy (path [last..$]));
+    } catch {
+        _ : &OutOfArray => {} 
     }
 
-    pub def isWritable (name : [c8])-> bool {
-        etc::c::files::access (name.ptr, AccessMode::W_OK) == 0
+    prv self (dmut path : &Vec!([c8])) with _parts = alias path {}
+    
+    /**
+     * Transform the path into a os usable path
+     * @example: 
+     * ============
+     * let dmut path = Path::new ("/"s8);
+     * path:.push ("foo"s8);
+     * path:.push ("test.txt"s8)
+     * assert (path.toStr () == "/foo/test.txt"s8);
+     * ============
+     */
+    pub def toStr (self)-> dmut [c8] {
+        let dmut res = Vec!(c8)::new ();
+        let mut fst = true;
+        for i in self._parts {
+            if !fst {
+                res:.push ('/'c8);
+            }
+            fst = false;
+            match i {
+                Ok (x: _)=> {
+                    for j in x res:.push (j);
+                }
+            }            
+        }
+        return copy res[];
     }
 
-    pub def isReadable (name : [c8])-> bool {
-        etc::c::files::access (name.ptr, AccessMode::R_OK) == 0
+    /**
+     * Append a path to the current path
+     * @example: 
+     * ===========
+     * let dmut path = Path::new ("/"s8);
+     * path:.push ("foo/bar/"s8);
+     * path:.push ("test.txt"s8)
+     * assert (path.toStr () == "/foo/bar/test.txt"s8);
+     * ===========
+     */
+    pub def push (mut self, path : [c8]) {
+        let mut last = 0u64;
+        for i in 0u64 .. path.len {
+            if (path[i] == '/'c8) {
+                self._parts:.push (copy (path[last .. i]));
+                last = i + 1u64;
+            }
+        }
+        if (last != path.len)
+            self._parts:.push (copy (path [last..$]));
+    } catch {
+        _ : &OutOfArray => {} 
     }
 
-    pub def isExecutable (name : [c8])-> bool {
-        etc::c::files::access (name.ptr, AccessMode::X_OK) == 0
+    /**
+     * @returns: the parts composing the path
+     * @example: 
+     * ==========
+     * let dmut path = Path::new ("/"s8);
+     * path:.push ("foo/bar/"s8);
+     * path:.push ("test.txt"s8)
+     * assert (path.parts () == [""s8, "foo"s8, "bar"s8, "test.txt"s8]);
+     * ==========
+     */
+    pub def parts (self)-> [[c8]] {
+        return self._parts[];
     }
 
-    pub def createFile (name : [c8])-> bool {
-        etc::c::files::fopen (name.ptr, "w"s8.ptr) !is null       
+    /**
+     * Create a new path pointing to the parent directory of the current path
+     * @info: if self points to the root dir, its parent will also point to root
+     * @example: 
+     * ===========
+     * let path = Path::new ("/foo/bar/baz.txt"s8);
+     * let parent = path.parent ();
+     * assert (parent.toStr () == "/foo/bar"s8);
+     * ===========
+     */
+    pub def parent (self)-> dmut &Path {
+        if (self._parts.len () <= 1u64) {
+            let dmut aux = Vec!([c8])::new ();
+            for i in self._parts {
+                match (i) {
+                    Ok (x:_) => 
+                        aux:.push (x);
+                }
+            }
+            return Path::new (alias aux);
+        } else {
+            let dmut aux = Vec!([c8])::new ();
+            for i in 0u64 .. self._parts.len () - 1u64 {
+                match (self._parts [i])? {
+                    Ok (x:_) => 
+                        aux:.push (x);
+                }
+            }
+            return Path::new (alias aux);
+        }
     }
+    
+    /**
+     * @returns: the file name of the current path
+     * @example: 
+     * =============
+     * let path = Path::new ("/foo/bar/baz.txt"s8);
+     * assert (path.file () == "baz.txt"s8);
+     * let path2 = Path::new (""s8);
+     * assert (path2.file () == ""s8);
+     * =============
+     */
+    pub def file (self)-> [c8] {
+        if (self._parts.len () > 0u64) {
+            return self._parts[self._parts.len () -1u64]
+        }
+        ""s8
+    } catch {
+        _ : &OutOfArray => { ""s8 }
+    }
+
+    /**
+     * @returns: a new path where the extension of the file has been removed
+     * @example: 
+     * ============
+     * let path = Path::new ("/foo/bar/baz.txt"s8).stripExtension ();
+     * assert (path.file () == "baz"s8);
+     *
+     * let path2 = Path::new ("/foo/bar/baz.tar.gz"s8).stripExtension ();
+     * assert (path2.file () == "baz.tar"s8);
+     *
+     * let path3 = Path::new ("/foo/bar/baz"s8).stripExtension ();
+     * assert (path3.file () == "baz"s8);
+     * ============
+     */
+    pub def stripExtension (self)-> dmut &Path {
+        let dmut res = self.parent ();
+        if (self._parts.len () > 0u64) {
+            let mut file = self.file ();
+            
+            for i in file.len - 1u64 ... 0u64 {
+                if (file [i] == '.'c8) {
+                    file = file[0u64..i];
+                    break {}
+                }
+            } catch {
+                _ => { }
+            }
+            res:.push (file);
+        }         
+        alias res
+    }
+
+    
+    impl std::io::Printable;
     
 }

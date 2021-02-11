@@ -1,46 +1,12 @@
 mod std::fs::file;
 
 import core::object, core::typeinfo, core::exception;
-import core::duplication, core::array;
+import core::duplication, core::array, core::dispose;
 
 import etc::c::files;
 
-import std::fs::path;
 import std::conv;
 import std::io;
-
-
-pub mod File {
-
-    pub def open (name : [c32], create : bool = false)-> dmut &FileStream
-        throws &FileStreamError
-    {
-        if (!Path::exists (name.to![c8]())) {
-            if (!create) {
-                throw FileStreamError::new (FileStreamErrorCode::NOT_FOUND, "file not found : " ~ name);
-            } else {
-                Path::createFile (name.to![c8]());
-            }
-        }  // TODO
-        
-        let dmut fs = FileStream::new (name);
-        fs:.open ();
-        alias fs
-    }
-
-    pub def create (name : [c32])-> dmut &FileStream
-        throws &FileStreamError
-    {
-        if (Path::exists (name.to![c8]())) {
-            throw FileStreamError::new (FileStreamErrorCode::ALREADY_EXISTS, "file already exists : " ~ name);
-        } else {
-            Path::createFile (name.to![c8]());
-        }
-        
-        return File::open (name);
-    }
-      
-}
 
 pub enum
 | NOT_FOUND      = 1u8
@@ -48,28 +14,42 @@ pub enum
 | NOT_READABLE   = 3u8
 | NOT_WRITABLE   = 4u8
 | ALREADY_EXISTS = 5u8
- -> FileStreamErrorCode;
+ -> FileErrorCode;
 
-pub class FileStreamError over Exception {
+pub class FileError over Exception {
 
     pub let msg : [c32];
-    pub let code : FileStreamErrorCode;
+    pub let code : FileErrorCode;
     
-    pub self (code : FileStreamErrorCode, msg : [c32]) with msg = msg, code = code {}
+    pub self (code : FileErrorCode, msg : [c32]) with msg = msg, code = code {}
 
     impl std::io::Printable {
         pub over print (self) {
             if (self.trace.len != 0u64) {
-                println ("FileStreamError (", self.code, ") : ", self.msg);
+                println ("FileError (", self.code, ") : ", self.msg);
                 self::super.printStackTrace ();
             } else {
-                print ("FileStreamError (", self.code, ") : ", self.msg);
+                print ("FileError (", self.code, ") : ", self.msg);
             }
         }
     }   
 }
 
-pub class @final FileStream {
+/**
+ * This class is a reference to a file in the file system
+ * @warning: files are disposable
+ * @example: 
+ * ===========
+ * with dmut file = File::create ("foo.txt", write-> true) {
+ *     file:.write ("Hello world !!\n"s8);
+ *  } catch {
+ *      err : &FileError => {
+ *          println (err);
+ *      }
+ *  }
+ * ===========
+ */
+pub class @final File {
 
     prv let dmut _handle : &(void) = null;
     
@@ -80,41 +60,47 @@ pub class @final FileStream {
     prv let _write : bool;
 
     prv let _append : bool;
-        
+
     /**
-     * Create a new file stream but does not open it
+     * Open a file in the file system
+     * @throws: FileError, if the file failed to be created or opened
+     * @info: if the file already existed, it will be erased
      */
-    pub self (filename : [c32], read : bool = true, write : bool = true, append : bool = false)
+    pub self create (filename : [c32], read : bool = true, write : bool = false, append : bool = false)
         with _filename = filename,
              _read = read,
-             _write = write,
+             _write = write && !append,
              _append = append
-    {}
+        throws &FileError
+    {
+        FileUtils::createFile (self._filename);
+        self:.open ();
+    }
+    
+    /**
+     * Open a file in the file system
+     * @throws: FileError, if the file does not exists
+     */
+    pub self open (filename : [c32], read : bool = true, write : bool = false, append : bool = false)
+        with _filename = filename,
+             _read = read,
+             _write = write && !append,
+             _append = append
+        throws &FileError
+    {
+        self:.open ();
+    }
 
     /**
      * Open the file 
-     * @example: 
-     * ===========
-     * let dmut fs = FileStream::new ("path/to/file.txt");
-     * {
-     *   fs:.open ();
-     *   let dmut str = fs:.readAll ();
-     * } exit {
-     *   file:.close ();
-     * } catch {
-     *   err : &FileStreamError => {
-     *     println (err);
-     *   }
-     * }
-     * ===========
      */
-    pub def open (mut self)
-        throws &FileStreamError
+    prv def open (mut self)
+        throws &FileError
     {
         let mode = self.createMode ();
         self._handle = etc::c::files::fopen ((self._filename.to![c8] ()).ptr, mode.ptr);
         if (self._handle is null) {
-            throw FileStreamError::new (FileStreamErrorCode::NOT_FOUND, "file not found : " ~ self._filename);   
+            throw FileError::new (FileErrorCode::NOT_FOUND, "file not found : " ~ self._filename);   
         }
     }
 
@@ -122,7 +108,7 @@ pub class @final FileStream {
      * Read all the char contained in the file from the current cursor position
      * @example: 
      * ==============
-     * let dmut fs = File::create ("foo.txt");
+     * let dmut fs = File::create ("foo.txt", write-> true);
      * fs:.write ("Hello World !"s8);
      * fs:.seek (0u64);
      * 
@@ -130,15 +116,15 @@ pub class @final FileStream {
      * assert (res == "Hello World !"s8);
      * ==============
      * @throws: 
-     *   - FileStreamError: if the file is not opened, or not readable
+     *   - FileError: if the file is not opened, or not readable
      */
     pub def readAll (mut self) -> dmut [c8]
-        throws &FileStreamError
+        throws &FileError
     {
         if (self._handle is null) {
-            throw FileStreamError::new (FileStreamErrorCode::FILE_CLOSED, "file is closed");
+            throw FileError::new (FileErrorCode::FILE_CLOSED, "file is closed");
         } else if (!self._read) {
-            throw FileStreamError::new (FileStreamErrorCode::NOT_READABLE, "file is not readable");
+            throw FileError::new (FileErrorCode::NOT_READABLE, "file is not readable");
         }
         
         if (!etc::c::files::feof (self._handle)) {
@@ -162,7 +148,7 @@ pub class @final FileStream {
      * Read the content of a file until the delimiter text if found or EOF
      * @example: 
      * ==============
-     * let dmut fs = File::create ("foo.txt");
+     * let dmut fs = File::create ("foo.txt", write-> true);
      * fs:.write ("Hello World !"s8);
      * fs:.seek (0u64);
      * 
@@ -170,15 +156,15 @@ pub class @final FileStream {
      * assert (res == "Hello World"s8);
      * ==============
      * @throws: 
-     *   - FileStreamError: if the file is not opened, or not readable
+     *   - FileError: if the file is not opened, or not readable
      */
     pub def readUntil (mut self, delim : [c8])-> dmut [c8]
-        throws &FileStreamError
+        throws &FileError
     {
         if (self._handle is null) {
-            throw FileStreamError::new (FileStreamErrorCode::FILE_CLOSED, "file is closed");
+            throw FileError::new (FileErrorCode::FILE_CLOSED, "file is closed");
         } else if (!self._read) {
-            throw FileStreamError::new (FileStreamErrorCode::NOT_READABLE, "file is not readable");
+            throw FileError::new (FileErrorCode::NOT_READABLE, "file is not readable");
         }
         
         import std::collection::vec;
@@ -211,7 +197,7 @@ pub class @final FileStream {
      *    - delim: the delimiter 
      * @example: 
      * ==============
-     * let dmut fs = File::create ("foo.txt");
+     * let dmut fs = File::create ("foo.txt", write-> true);
      * fs:.write ("Hello World !"s8);
      * fs:.seek (0u32);
      * 
@@ -219,15 +205,15 @@ pub class @final FileStream {
      * assert (res == "Hello World"s8);
      * ==============
      * @throws: 
-     *   - FileStreamError: if the file is not opened, or not readable
+     *   - FileError: if the file is not opened, or not readable
      */
     pub def readUntil (mut self, delim : [c32])-> dmut [c8]
-        throws &FileStreamError
+        throws &FileError
     {
         if (self._handle is null) {
-            throw FileStreamError::new (FileStreamErrorCode::FILE_CLOSED, "file is closed");
+            throw FileError::new (FileErrorCode::FILE_CLOSED, "file is closed");
         } else if (!self._read) {
-            throw FileStreamError::new (FileStreamErrorCode::NOT_READABLE, "file is not readable");
+            throw FileError::new (FileErrorCode::NOT_READABLE, "file is not readable");
         }
         
         return self:.readUntil (to![c8] (delim));
@@ -237,15 +223,15 @@ pub class @final FileStream {
     /**
      * Write some text to a file
      * @throws: 
-     *   - FileStreamError: if the file is not opened, or not writable
+     *   - FileError: if the file is not opened, or not writable
      */
     pub def write (mut self, text : [c8]) -> void
-        throws &FileStreamError
+        throws &FileError
     {
         if (self._handle is null) {
-            throw FileStreamError::new (FileStreamErrorCode::FILE_CLOSED, "file is closed");
+            throw FileError::new (FileErrorCode::FILE_CLOSED, "file is closed");
         } else if (!self._write && !self._append) {
-            throw FileStreamError::new (FileStreamErrorCode::NOT_WRITABLE, "file is not writable");
+            throw FileError::new (FileErrorCode::NOT_WRITABLE, "file is not writable");
         }
         
         etc::c::files::fwrite (cast!(&void) (text.ptr), cast!(u32) (sizeof (c8)), cast!(u32) (text.len), alias self._handle);        
@@ -257,23 +243,22 @@ pub class @final FileStream {
      * Read all the char contained in the file from the current cursor position
      * @example: 
      * ==============
-     * let dmut fs = File::create ("foo.txt");
+     * let dmut fs = File::create ("foo.txt", write-> true);
      * fs:.write ("Hello World !"s8);
-     * fs:.seek (0u64);
+     * fs:.seek (0u32);
      * 
-     * let res = fs:.readAll ();
-     * assert (res == "Hello World !"s8);
+     * let res : [u8] = fs:.readBytesAll ();
      * ==============
      * @throws: 
-     *   - FileStreamError: if the file is not opened, or not readable
+     *   - FileError: if the file is not opened, or not readable
      */
     pub def readBytesAll (mut self) -> dmut [u8]
-        throws &FileStreamError
+        throws &FileError
     {
         if (self._handle is null) {
-            throw FileStreamError::new (FileStreamErrorCode::FILE_CLOSED, "file is closed");
+            throw FileError::new (FileErrorCode::FILE_CLOSED, "file is closed");
         } else if (!self._read) {
-            throw FileStreamError::new (FileStreamErrorCode::NOT_READABLE, "file is not readable");
+            throw FileError::new (FileErrorCode::NOT_READABLE, "file is not readable");
         }
         
         if (!etc::c::files::feof (self._handle)) {
@@ -297,17 +282,22 @@ pub class @final FileStream {
      * Read the content of a file until the delimiter bytes is found or EOF
      * @example: 
      * ==============
+     * let dmut fs = File::create ("foo.txt", write-> true);
+     * fs:.write ("Hello World !"s8);
+     * fs:.seek (0u32);
+     * 
+     * let res : [u8] = fs:.readBytesUntil ([cast!(u8)('\n'c8)]);
      * ==============
      * @throws: 
-     *   - FileStreamError: if the file is not opened, are not readable
+     *   - FileError: if the file is not opened, are not readable
      */
     pub def readBytesUntil (mut self, delim : [u8])-> dmut [u8]
-        throws &FileStreamError
+        throws &FileError
     {
         if (self._handle is null) {
-            throw FileStreamError::new (FileStreamErrorCode::FILE_CLOSED, "file is closed");
+            throw FileError::new (FileErrorCode::FILE_CLOSED, "file is closed");
         } else if (!self._read) {
-            throw FileStreamError::new (FileStreamErrorCode::NOT_READABLE, "file is not readable");
+            throw FileError::new (FileErrorCode::NOT_READABLE, "file is not readable");
         }
         
         import std::collection::vec;
@@ -337,15 +327,15 @@ pub class @final FileStream {
     /**
      * Write some bytes to a file
      * @throws: 
-     *   - FileStreamError: if the file is not opened, are not writable
+     *   - FileError: if the file is not opened, are not writable
      */
     pub def writeBytes (mut self, text : [u8]) -> void
-        throws &FileStreamError
+        throws &FileError
     {
         if (self._handle is null) {
-            throw FileStreamError::new (FileStreamErrorCode::FILE_CLOSED, "file is closed");
+            throw FileError::new (FileErrorCode::FILE_CLOSED, "file is closed");
         } else if (!self._write && !self._append) {
-            throw FileStreamError::new (FileStreamErrorCode::NOT_WRITABLE, "file is not writable");
+            throw FileError::new (FileErrorCode::NOT_WRITABLE, "file is not writable");
         }
         
         etc::c::files::fwrite (cast!(&void) (text.ptr), cast!(u32) (sizeof (u8)), cast!(u32) (text.len), alias self._handle);        
@@ -356,13 +346,13 @@ pub class @final FileStream {
      * Move the position of the cursor of the file
      * @info: the cursor position is relative to the beginning of the file
      * @throws: 
-     *   - FileStreamError: if the file is not opened
+     *   - FileError: if the file is not opened
      */
     pub def seek (mut self, cursor : u32)-> void
-        throws &FileStreamError
+        throws &FileError
     {
         if (self._handle is null) {
-            throw FileStreamError::new (FileStreamErrorCode::FILE_CLOSED, "file is closed");
+            throw FileError::new (FileErrorCode::FILE_CLOSED, "file is closed");
         }
         etc::c::files::fseek (self._handle, cursor, SeekWhence::SEEK_SET);
     }
@@ -370,13 +360,13 @@ pub class @final FileStream {
     /**
      * Tell the position of the cursor in the file relative to the beginning of the file
      * @throws: 
-     *   - FileStreamError: if the file is not opened
+     *   - FileError: if the file is not opened
      */
     pub def tell (self)-> u32
-        throws &FileStreamError
+        throws &FileError
     {
         if (self._handle is null) {
-            throw FileStreamError::new (FileStreamErrorCode::FILE_CLOSED, "file is closed");
+            throw FileError::new (FileErrorCode::FILE_CLOSED, "file is closed");
         }
         etc::c::files::ftell (self._handle)
     }
@@ -385,7 +375,7 @@ pub class @final FileStream {
      * @returns: the len of the file (from beginning to end)
      */
     pub def len (self)-> u32
-        throws &FileStreamError
+        throws &FileError
     {
         let cursor = self.tell ();
         fseek (self._handle, 0u32, SeekWhence::SEEK_END);
@@ -405,6 +395,20 @@ pub class @final FileStream {
         }
     }
 
+    pub impl core::dispose::Disposable {
+        
+        /**
+         * Close the file
+         * @info: if the file was not open, this method does nothing
+         */
+        pub over dispose (mut self) -> void {
+            self:.close ();
+        }
+    }
+
+    /**
+     * Create the mode of reading 
+     */
     prv def createMode (self)-> [c8] {
         if (self._write) return "r+"s8;
         if (self._read && self._append) return "a+"s8;
@@ -415,3 +419,76 @@ pub class @final FileStream {
     
 }
 
+
+
+pub mod FileUtils {
+
+    /**
+     * Check the existence of a file
+     * @params: 
+     *  - name: the absolute path of the file (or relative to the execution)
+     * @return: true if the file exists, false otherwise
+     */
+    pub def exists (name : [c8])-> bool {
+        etc::c::files::access (name.ptr, AccessMode::F_OK) == 0
+    }
+
+    /**
+     * Check if the current user has the permission to write into the file
+     * @params: 
+     *    - name: the absolute path of the file (or relative to the execution)
+     * @return: true if the file is writable for the current user, false otherwise
+     */
+    pub def isWritable (name : [c8])-> bool {
+        etc::c::files::access (name.ptr, AccessMode::W_OK) == 0
+    }
+
+    /**
+     * Check if the current user has the permission to read into the file
+     * @params: 
+     *    - name: the absolute path of the file (or relative to the execution)
+     * @return: true if the file is readable for the current user, false otherwise
+     */
+    pub def isReadable (name : [c8])-> bool {
+        etc::c::files::access (name.ptr, AccessMode::R_OK) == 0
+    }
+
+    /**
+     * Check if the current user has the permission to execute the file
+     * @params: 
+     *    - name: the absolute path of the file (or relative to the execution)
+     * @return: true if the file is executable for the current user, false otherwise
+     */
+    pub def isExecutable (name : [c8])-> bool {
+        etc::c::files::access (name.ptr, AccessMode::X_OK) == 0
+    }
+
+    /**
+     * Create a new file 
+     * @params: 
+     *    - name: the absolute path of the file (or relative to the execution)
+     * @return: true if the creation succeded, false otherwise
+     */
+    pub def createFile (name : [c8])-> bool {
+        let f = etc::c::files::fopen (name.ptr, "w"s8.ptr);
+        let success = f !is null;
+        if (success)
+            etc::c::files::fclose (f);
+        success
+    }
+
+    /**
+     * Create a new file 
+     * @params: 
+     *    - name: the absolute path of the file (or relative to the execution)
+     * @return: true if the creation succeded, false otherwise
+     */
+    pub def createFile (name : [c32])-> bool {
+        let f = etc::c::files::fopen (((name).to![c8]()).ptr, "w"s8.ptr);
+        let success = f !is null;
+        if (success)
+            etc::c::files::fclose (f);
+        success            
+    }
+    
+}
