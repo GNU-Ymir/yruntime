@@ -45,3 +45,11 @@ fpm -s dir -t deb -n libgmidgard-{version} -v {sub-version} -C /tmp/midgard/ \
 	-d "zlib1g >= {zlib1g-version}" \
 	usr/lib
 ```
+
+## Temporary installation
+
+If you have compiled gyc yourself on your computer, and just want to
+test an updated std. You can use the script `midgard/install` that
+will install the `.yr` files in the gcc-install directory. However,
+both midgard and runtime `.so` files must be installed somewhere in
+your path for example in /usr/lib/.
