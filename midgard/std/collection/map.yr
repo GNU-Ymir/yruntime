@@ -126,7 +126,9 @@ pub class @final HashMap (K, V) {
     }
 
 
-    pub def find (self, key : K) -> (V)? {
+    pub def find (self, key : K) -> V
+        throws &OutOfArray
+    {
         if (self._data.len != 0u64) {
             let h = hash (key);
             match (self._data [h % self._data.len]) {
@@ -135,11 +137,7 @@ pub class @final HashMap (K, V) {
             }
         }
         
-        (V?)::err
-    } catch {
-        _ : &OutOfArray => { // Can't happen
-            (V?)::err
-        }
+        throw OutOfArray::new ();
     }
     
     /**
@@ -219,7 +217,9 @@ pub class @final HashMap (K, V) {
      * assert (x ["bar"] == None!(i32)::new ());
      * =============
      */
-    pub def opIndex (self, k : K) -> (V)? {
+    pub def opIndex (self, k : K) -> V
+        throws &OutOfArray
+    {
         self.find (k)
     }
     
@@ -611,16 +611,18 @@ class @final MapValue (K, V) over MapNode!(K, V) {
      * @returns: the value in an option type, or None if there is no node containing a hash equal to h
      * @complexity: O (n), with n the length of the list
      */
-    pub def find (self, h : u64) -> (V)? {
+    pub def find (self, h : u64) -> V
+        throws &OutOfArray
+    {
         if (self.h == h) {
-            return (self.val)?;
+            return self.val;
         } else {
             match (self.next) {
                 x : &MapValue!(K, V) => {
                     return x.find (h);
                 }
             }
-            return (V?)::err;
+            throw OutOfArray::new ();
         }
     }
 
@@ -722,7 +724,7 @@ class @final Empty (K, V) over MapNode!(K, V) {
  * assert (beg_it == x.end ()); 
  * =============
  */
-class @final MapIterator (K, V) {
+pub class @final MapIterator (K, V) {
 
     /// A reference on the table contained in the map we are traversing
     let mut _data : [&MapNode!(K, V)];

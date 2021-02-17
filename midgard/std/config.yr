@@ -1,0 +1,408 @@
+mod std::config;
+
+import core::object, core::typeinfo, core::exception;
+import core::array;
+
+import std::io;
+import std::collection::vec;
+import std::collection::map;
+
+/**
+ * A configuration file is composed of nodes
+ * Each node contains a different type of information
+ */
+pub class @abstract Config {
+
+    prot self () {}
+
+    impl std::io::Printable;
+    
+}
+
+/**
+ * An array is a list of nodes
+ * It has the same properties as a Vec!(&Config)
+ * @example: 
+ * ===============
+ * let dmut array = Array::new ();
+ * array:.push (Str::new ("foo"));
+ * array:.push (Int::new (42));
+ * ===============
+ */
+pub class @final Array over Config {
+
+    let dmut _content = Vec!(&Config)::new ();
+
+    /**
+     * Creates a new Array of nodes, containing a pre constructed list of Configs
+     * @params: 
+     *    - nodes: some nodes to put in the array     
+     */
+    pub self (nodes : [&Config]) {
+        for i in nodes
+            self._content:.push (i);
+    }
+
+    /**
+     * Creates a new empty Array
+     */
+    pub self () {}
+
+
+    /**
+     * Add a node at the end of the Array
+     * @example: 
+     * ==============
+     * let dmut array = Array::new ();
+     * array:.push (Int::new (1));
+     * array:.push (Int::new (2));
+     * match array [$ - 1u64] {// access the last element of the array
+     *    Int(x:_) => assert (x == 2);
+     * }
+     * ==============
+     */
+    pub def push (mut self, node : &Config) -> void {
+        self._content:.push (node);
+    }
+    
+    /**
+     * Access an element at a given Index in the array
+     * @throws: 
+     *   - &OutOfArray: if the index is not in the array
+     * @example: 
+     * =================
+     * let i : &Config = Int::new (12);
+     * let j : &Config = Int::new (42);
+     * let dmut array = Array::new ([i, j]);
+     * {
+     *     match array [0] {
+     *         Int (x:_)  => println ("index 0 contains : ", x);
+     *     }
+     * } catch {
+     *    _: &OutOfArray => println ("Array does not contain elements");
+     * }
+     * =================
+     */
+    pub def opIndex (mut self, i : u64) -> &Config
+        throws &OutOfArray
+    {
+        self._content[i]
+    }
+
+    /**
+     * Change the element at index i
+     * throws: 
+     *   - &OutOfArray: if i is not a valid index of the array
+     * @example: 
+     * ===========
+     * let i : &Config = Int::new (12);
+     * let j : &Config = Int::new (42);
+     * let dmut array = Array::new ([i]);
+     * {
+     *    (alias array) [0] = j;
+     * } catch {
+     *    _: &OutOfArray => println ("Array does not contain elements");
+     * }
+     */
+    pub def opIndexAssign (mut self, i : u64, node : &Config) -> void
+        throws &OutOfArray
+    {
+        (alias self._content) [i] = node
+    }
+
+    /**
+     * An alias to get the length of the array
+     * @example: 
+     * ===========
+     * let i : &Config = Int::new (12);
+     * let j : &Config = Int::new (42);
+     * let dmut array = Array::new ([i, j]);
+     * {
+     *    // print the last element of the array
+     *    println (array [$ - 1u64]);
+     * } catch {
+     *    _: &OutOfArray => println ("Array does not contain elements");
+     * }
+     * ===========
+     */
+    pub def opDollar (self) -> u64 {
+        self._content.len ()
+    }
+
+    /**
+     * @returns: the number of element contained in the array
+     * @example: 
+     * ==================
+     * let i : &Config = Int::new (12);
+     * let j : &Config = Int::new (42);
+     * let dmut array = Array::new ([i, j]);
+     * assert (array.len () == 2u64);
+     * ==================
+     */
+    pub def len (self) -> u64 {
+        self._content.len ()
+    }
+
+    /**
+     * Used to iterate over the array, (similar iteration as Vec!(&Config)).
+     * @example: 
+     * =============
+     * let a : &Config = Int::new (12);
+     * let b : &Config = Int::new (42);
+     * let dmut array = Array::new ([a, b]);
+     * for i, j in array {
+     *     println ("At ", j, " => ", i); // At 0 => Ok (Int (12)), At 1 => Ok (Int (42))
+     * }
+     * =============
+     */
+    pub def begin (self) -> dmut &VecIterator!(&Config) {
+        alias self._content.begin ()
+    }
+
+    /**
+     * Used to iterate over the array, (similar iteration as Vec!(&Config))
+     * @cf: begin
+     */
+    pub def end (self) -> &VecIterator!(&Config) {
+        self._content.end ()
+    }        
+
+    impl std::io::Printable {
+
+        /**
+         * Arrays are printable
+         */
+        pub over print (self) -> void {
+            print ("Array (");
+            for i, j in self._content {
+                if j != 0u64 print (", ");
+                match i {
+                    Ok (x:_) => print (x);
+                }
+            }
+            print (")");
+        }
+    }
+}
+
+/**
+ * A dictionnary associates to values to string keys
+ * It has the same properties as HashMap!([c32], &Config)
+ * @example: 
+ * ============
+ * let dmut dict = Dict::new ();
+ * dict:.insert ("foo", Str::new ("foo"));
+ * dict:.insert ("bar", Int::new (42));
+ * dict:.insert ("baz", Array::new ());
+ * ============
+ */
+pub class @final Dict over Config {
+
+    let dmut _content = HashMap!([c32], &Config)::new ();
+
+    /**
+     * Creates a new empty dictionnary
+     */
+    pub self () {}
+
+    /**
+     * Insert a new value in the dict
+     * @info: if the key was already in the dict, its old value is replaced by the new one
+     * @params: 
+     *    - k: the index key 
+     *    - value: the value to insert
+     * @example: 
+     * =============
+     * let dmut dict = Dict::new ();
+     * dict:.insert ("foo", Str::new ("foo"));
+     * dict:.insert ("foo", Int::new (42));
+     * println (dict); // Dict (foo=> Int (42))
+     * =============
+     */
+    pub def insert (mut self, k : [c32], value : &Config)-> void {
+        self._content:.insert (k, value);
+    }
+
+    /**
+     * Access the element at index k
+     * @throws: 
+     *    - &OutOfArray: if the index is not found in the dictionnary
+     * @params: 
+     *    - k: a key index
+     * @example: 
+     * ================
+     * let dmut dict = Dict::new ();
+     * dict:.insert ("foo", Str::new ("foo"););
+     * dict:.insert ("bar", Int::new (42));
+     * {
+     *     println (dict["foo"]);
+     * } catch {
+     *     _ : &OutOfArray => {
+     *         println ("foo not found in ", dict);
+     *     }
+     * }
+     * 
+     * println (dict["bar"]?); // put it in an option type
+     * ================
+     */
+    pub def opIndex (self, k : [c32])-> &Config
+        throws &OutOfArray
+    {
+        self._content [k]
+    }
+
+    /**
+     * Change the value at index k 
+     * @info: if the value was not in the dictionnary it is inserted
+     * @params: 
+     *    - k: a index key
+     *    - value: the value to insert
+     * @example: 
+     * ==============
+     * let dmut dict = Dict::new ();
+     * (alias dict) ["foo"] = Str::new ("foo");    
+     * (alias dict) ["bar"] = Int::new (42);
+     * 
+     * // replace the value at foo index
+     * (alias dict) ["foo"] = Int::new (12);
+     * ==============
+     */
+    pub def opIndexAssign (mut self, k : [c32], value : &Config) -> void {
+        self._content:.insert (k, value);
+    }
+
+    /**
+     * Check if a key can be found in the dictionnary 
+     * @params: 
+     *   - k: the key to find
+     * @example: 
+     * =================
+     * let dmut dict = Dict::new ();
+     * (alias dict) ["foo"] = Str::new ("foo");    
+     * (alias dict) ["bar"] = Int::new (42);
+     * 
+     * assert ("foo" in dict);     
+     * =================    
+     */
+    pub def opContains (self, k : [c32])-> bool {
+        k in self._content
+    }
+
+    /**
+     * Used to iterate over the dictionnary
+     * @example: 
+     * ==============
+     * let dmut dict = Dict::new ();
+     * (alias dict) ["foo"] = Str::new ("foo");    
+     * (alias dict) ["bar"] = Int::new (42);
+     * for i, j in dict {
+     *     println ("At ", i " => ", j); // At Ok(foo) => Ok (Str (foo)), At Ok (bar) => Ok (Int (42))
+     * }
+     * ==============
+     */
+    pub def begin (self) -> dmut &MapIterator!([c32], &Config) {
+        alias self._content.begin ()
+    }
+
+    /**
+     * Used to iterate over the dictionnary
+     * @cf: begin
+     */
+    pub def end (self) -> &MapIterator!([c32], &Config) {
+        self._content.end ()
+    }
+    
+    impl std::io::Printable {
+
+        /**
+         * Dictionnary are printable 
+         */
+        pub over print (self) -> void {
+            print ("Dict (");
+            let mut k = 0u64;
+            for i, j in self._content {
+                if k != 0u64 print (", ");
+                match (i) {
+                    Ok (x:_) => print (x, "=> ");
+                }
+                match (j) {
+                    Ok (x:_) => print (x);
+                }
+                k += 1u64;
+            }
+            print (")");
+        }
+    }    
+}
+
+/**
+ * Configuration encoding of an int 
+ * @example: 
+ * ============
+ * let node : &Config = Int::new (12);
+ * match node {
+ *    Int (i:_) => assert (i == 42);
+ * }
+ * ============
+ */
+pub class @final Int over Config {
+
+    pub let i : i64;
+
+    pub self (i : i64) with i = i {}
+
+    pub self (i : i32) with i = cast!i64 (i) {}
+
+    impl std::io::Printable {
+        pub over print (self) -> void {
+            print ("Int (", self.i, ")");
+        }
+    }
+}
+
+
+/**
+ * Configuration encoding of a String
+ * It contains a [c32] 
+ * @example: 
+ * ============
+ * let node : &Config = Str::new ("foo");
+ * match node {
+ *    Int (str:_) => assert (str == "foo");
+ * }
+ * ============
+ */
+pub class @final Str over Config {
+
+    pub let str : [c32];
+
+    pub self (str : [c32]) with str = str {}
+
+    impl std::io::Printable {
+        pub over print (self) -> void {
+            print ("Str (", self.str, ")");
+        }
+    }
+}
+
+/**
+ * Configuration encoding of a bool
+ * @example: 
+ * ===========
+ * let node : &Config = Bool::new (true);
+ * match node {
+ *    Bool (b:_) => assert (b == true);
+ * }
+ * ===========
+ */
+pub class @final Bool over Config {
+    pub let b : bool;
+
+    pub self (b : bool) with b = b {}
+
+    impl std::io::Printable {
+        pub over print (self)-> void {
+            print ("Bool (", self.b, ")");
+        }
+    }
+}

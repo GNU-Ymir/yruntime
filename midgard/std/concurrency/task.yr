@@ -1,7 +1,7 @@
 mod std::concurrency::task;
 
 import std::io;
-import core::object;
+import core::object, core::exception;
 
 import std::collection::map;
 import std::concurrency::mailbox;
@@ -220,7 +220,7 @@ pub class @final TaskPool {
         loop {
             match self._exited:.receive () {
                 Ok (x : usize) => {
-                    let th = self._runningThreads [x];
+                    let th = (self._runningThreads [x])?;
                     match th {
                         Ok (z : Thread) => {
                             z.join ();
