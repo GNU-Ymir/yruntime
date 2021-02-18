@@ -77,14 +77,14 @@ size_t utf8_codepoint_size (char c) {
     return 4;
 }
 
-unsigned int _yrt_to_utf32 (char* text) {
-    size_t byte_count = utf8_codepoint_size(text[0]);
+unsigned int _yrt_to_utf32 (char* text, size_t * byte_count) {
+    *byte_count = utf8_codepoint_size(text[0]);
 			
     uint a = 0, b = 0, c = 0, d = 0;
     uint a_mask, b_mask, c_mask, d_mask;
     a_mask = b_mask = c_mask = d_mask = 0b00111111;
 			
-    switch(byte_count) {
+    switch(*byte_count) {
     case 4 : {
 	a = text [0]; b = text [1]; c = text [2]; d = text [3];
 	a_mask = 0b00000111;
@@ -111,6 +111,32 @@ unsigned int _yrt_to_utf32 (char* text) {
     return ((b0 << 18) | (b1 << 12) | (b2 << 6) | b3);    
 }
 
+
+_yrt_c32_array_ _yrt_to_utf32_array (_yrt_c8_array_ array) {
+    unsigned long len = 0;
+    for (unsigned long i = 0 ; i < array.len ;) {
+	size_t nb = 0;
+	_yrt_to_utf32 (array.data + i, &nb);
+	i += nb;
+	len += 1;
+    }
+
+    unsigned int * result = GC_malloc ((len + 1) * sizeof (unsigned int));
+    int offset = 0;
+    int j = 0;
+    for (unsigned long i = 0 ; i < array.len ;) {
+	size_t nb = 0;
+	result [j] = _yrt_to_utf32 (array.data + i, &nb);
+	i += nb;
+	j += 1;
+    }
+
+    _yrt_c32_array_ arr;
+    arr.data = result;
+    arr.len = len;
+    return arr;
+}
+
 void _yrt_putwchar (unsigned int code) {
     char c[5];
     int nb = 0;
@@ -132,8 +158,9 @@ unsigned int _yrt_getwchar () {
     for (int i = 1 ; i < (int) size ; i++) {
 	int ig_ = scanf ("%c", &c[i]);
     }
-    
-    return _yrt_to_utf32 (c);
+
+    size_t nb;
+    return _yrt_to_utf32 (c, &nb);
 }
 
 unsigned int _yrt_getwchar_in_file (FILE * file) {
@@ -142,5 +169,7 @@ unsigned int _yrt_getwchar_in_file (FILE * file) {
     size_t size = utf8_codepoint_size (c[0]);
     for (int i = 1 ; i < (int) size; i ++)
 	c[i + 1] = fgetc (file);
-    return _yrt_to_utf32 (c);
+
+    size_t nb;
+    return _yrt_to_utf32 (c, &nb);
 }

@@ -141,18 +141,16 @@ void _yrt_close_bfd_file (struct bfd_handle handle) {
 }
 
 
-_yrt_array_ _yrt_exc_get_stack_trace () {
+_yrt_array_ _yrt_exc_resolve_stack_trace (_yrt_array_ syms) {
     if (__YRT_DEBUG__ == 1) {
-	void *trace[16];
+	
 	char **messages = (char **)NULL;
-
-	int trace_size = backtrace(trace, 16);
-	messages = backtrace_symbols(trace, trace_size);
+	messages = backtrace_symbols(syms.data, (int) syms.len);
 	/* skip first stack frame (points here) */
 	_ystring ret = str_empty ();
 	ret = str_concat_c_str (ret, "╭  Stack trace :");
 	
-	for (int i=2; i<trace_size; ++i)
+	for (int i=2; i < syms.len; ++i)
 	{
     	    
 	    size_t p = 0;
@@ -166,7 +164,7 @@ _yrt_array_ _yrt_exc_get_stack_trace () {
 	    _ystring file;
 	    _ystring func;
 	    int line;
-	    if (_yrt_resolve_address (filename, trace [i], &file, &func, &line)) {
+	    if (_yrt_resolve_address (filename, ((void**) syms.data) [i], &file, &func, &line)) {
 		if (file.data != NULL) {
 		    ret = str_concat_c_str (ret, "\n╞═ bt ╕ #");
 		    ret = str_concat (ret, str_from_int (i - 1));
@@ -203,6 +201,30 @@ _yrt_array_ _yrt_exc_get_stack_trace () {
 	arr.data = ret.data;
     
 	return arr;
+    } else {
+	_yrt_array_ arr;
+	arr.len = 0;
+	arr.data = NULL;
+	return arr;
+    }
+}
+
+_yrt_array_ _yrt_exc_get_stack_trace () {
+    if (__YRT_DEBUG__ == 1) {
+	void *trace[16];
+
+	int trace_size = backtrace(trace, 16);	
+
+	void** res = GC_malloc (trace_size * sizeof (void*));
+	for (int i = 0 ; i< trace_size ; i++) {
+	    res [i] = trace [i];
+	}
+	
+	_yrt_array_ arr;
+	arr.len = trace_size;
+	arr.data = res;
+	return arr;
+	
     } else {
 	_yrt_array_ arr;
 	arr.len = 0;

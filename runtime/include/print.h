@@ -10,7 +10,7 @@ char * _yrt_to_utf8 (unsigned int code, char chars [5], int* nb);
 /**
  * Transform a utf8 text into utf32 char
  */
-unsigned int _yrt_to_utf32 (char* text);
+unsigned int _yrt_to_utf32 (char* text, size_t * byte_count);
 
 /**
  * Print a utf8 char code in stdout
