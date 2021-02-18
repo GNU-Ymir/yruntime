@@ -1,0 +1,467 @@
+mod std::config::toml;
+
+import std::tokenizer;
+import std::collection::set;
+import std::config;
+
+/** 
+ * The list of tokens that can be found inside a Toml file
+ * 
+ */
+enum
+| LCRO = "["
+| RCRO = "]"
+| LACC = "{"
+| RACC = "}"
+| EQUALS = "="
+| COMA = ","
+| QUOTE = "'"
+| DQUOTE = "\""
+ -> TomlTokens;
+
+
+pub class @final SyntaxError over Exception {
+
+    pub let msg : [c32];
+    pub let line : u64;
+    pub let col : u64;
+    
+    pub self (msg : [c32], line : u64, col : u64)
+        with msg = msg, line = line, col = col
+    {}
+
+    impl std::io::Printable {
+        pub over print (self) {            
+            print ("SyntaxError (", self.line, ",", self.col, ") : ", self.msg);
+            if (self.trace.len != 0u64) {
+                println ("");
+                self::super.printStackTrace ();
+            }
+        }
+    }        
+}
+
+/**
+ * Parse a string containing a toml formated content 
+ * @example: 
+ * ================
+ * let str = "[foo]\nbar=1\nbaz=2\n"s8
+ * let config : &Dict = parse (str);
+ * ================
+ * @throws: 
+ *    - &SyntaxError: if the format is not respected in the content
+ */
+pub def parse (content : [c8])-> &Dict
+    throws &SyntaxError
+{
+    import std::conv;
+    let c = to![c32](content);
+    return parse (c);
+}
+
+
+/**
+ * Parse a string containing a toml formated content 
+ * @example: 
+ * ================
+ * let str = "[foo]\nbar=1\nbaz=2\n"
+ * let config : &Dict = parse (str);
+ * ================
+ * @throws: 
+ *    - &SyntaxError: if the format is not respected in the content
+ */
+pub def parse (content : [c32])-> &Dict
+    throws &SyntaxError
+{
+    let dmut result = Dict::new ();
+    let dmut lex = Lexer::new (content, tokens-> TomlTokens::members);
+    loop {
+        let (tok, line, col) = lex:.next ();
+        
+        if (tok == TomlTokens::LCRO) {
+            let name = lex:.next ();
+            let (next, l, c) = lex:.next ();
+            
+            if (next != TomlTokens::RCRO) throw SyntaxError::new ("expected ']' (not '" ~ tok ~ "')", l, c);
+            
+            result:.insert (name._0, parseDict (alias lex, true));            
+        } else if (tok == "") {
+            break {}
+        } else {
+            throw SyntaxError::new ("expected '[' (not '" ~ tok ~ "')", line, col);
+        }
+    }
+    
+    return result;
+}
+
+/**
+ * Inner function for parsing a dictionnary inside a toml str 
+ * @params: 
+ *    - lex: the lexer that is currently reading the content of the file
+ *    - glob: true if the dictionnary is a global dictionnary in the toml str (non global dictionnaries, are surrounded by '{' '}', and separates the items with ',')
+ * @example: 
+ * =============
+ * let glob = "foo=9\n bar=7";
+ * let loc = "{foo=9, bar=7}";
+ *
+ * let dmut glex = Lexer::new (glob, tokens-> TomlTokens::members);
+ * let gDict : &Dict = parseDict (alias glex, true);
+ * 
+ * let dmut llex = Lexer::new (loc, tokens-> TomlTokens::members);
+ * let lDict : &Dict = parseDict (alias llex, false);
+ * =============
+ * @throws: 
+ *    - &SyntaxError: if the format is not respected 
+ */
+prv def parseDict (dmut lex : &Lexer, glob : bool)-> &Dict
+    throws &SyntaxError
+{
+    let dmut dict = Dict::new ();
+    if (!glob) {
+        let (skip, l, c) = lex:.next ();
+        if (skip != TomlTokens::LACC)
+        throw SyntaxError::new ("expected '{' (not '" ~ skip ~ "')", l, c);
+    }
+
+    loop {
+        let (name, _, _) = lex:.nextNoConsume ();
+
+        if (name == "" || name == TomlTokens::LCRO) break {}
+        else lex:.next ();
+        
+        let (tok, line, col) = lex:.next ();
+        if (tok != TomlTokens::EQUALS) throw SyntaxError::new ("expected '=' (not '" ~ tok ~ "')", line, col);
+
+        dict:.insert (name, parseValue (alias lex));
+
+        if (!glob) {
+            let next = lex:.next ();
+            if (next._0 != TomlTokens::COMA && next._0 != TomlTokens::RACC) {
+                throw SyntaxError::new ("expected ',' or '}' (not '" ~ next._0 ~ "')", next._1, next._2);                
+            }
+            if (next._0 == "}") break {}
+        }
+    }
+    
+    return dict;
+}
+
+/**
+ * Internal function used for parsing arrays
+ * @params: 
+ *    - lex: the lexer containing the array
+ * @example: 
+ * =============
+ * let str = "[1, 2, 3]";
+ * let dmut lex = Lexer::new (str, tokens-> TomlTokens);
+ * let arr : &Array = parseArray (alias lex);
+ * =============
+ * @throws: 
+ *    - &SyntaxError: if the format is not respected
+ */
+prv def parseArray (dmut lex : &Lexer) -> &Array
+    throws &SyntaxError
+{
+    let dmut arr = Array::new ();
+    {
+        let (skip, l, c) = lex:.next ();
+        if (skip != "[") throw SyntaxError::new ("expected '{' (not '" ~ skip ~ "')", l, c);
+    }
+    
+    loop {
+        let (next, _, _) = lex:.nextNoConsume ();
+        if (next == "]") {
+            lex:.next ();
+            break {};
+        }
+        
+        arr:.push (parseValue (alias lex));
+        let (tok, line, col) = lex:.next ();
+        if (tok == "]") break {}
+        else if (tok != ",") {            
+            throw SyntaxError::new ("expected ']' or ',' (not '" ~ tok ~ "')", line, col);
+        }
+    }
+    
+    return arr;
+}
+
+/**
+ * Internal function used for parsing a int content inside a lexer using the toml format
+ * @params: 
+ *    - lex: the lexer containing the int
+ * @example: 
+ * =============
+ * let str = "334";
+ * let dmut lex = Lexer::new (str, tokens-> TomlTokens);
+ * let i : &Int = parseInt (alias lex);
+ * =============
+ * @throws: 
+ *    - &SyntaxError: if the format is not respected
+ */
+prv def parseInt (dmut lex : &Lexer) -> &Int
+    throws &SyntaxError
+{
+    import std::conv;
+    let (next, l, c) = lex:.next ();
+    {
+         Int::new (to!i64 (next))
+    } catch {
+        _ : &CastFailure => {
+            throw SyntaxError::new ("expected int value (not '" ~ next ~ "')", l, c);
+        }
+    }
+}
+
+/**
+ * Internal function used for parsing a string content inside a lexer using the toml format
+ * @info: the string can be surrounded by ' or by "
+ * @params: 
+ *    - lex: the lexer containing the string
+ * @example: 
+ * =============
+ * let str = "'test'";
+ * let dmut lex = Lexer::new (str, tokens-> TomlTokens);
+ * let i : &Str = parseString (alias lex);
+ * =============
+ * @throws: 
+ *    - &SyntaxError: if the format is not respected
+ */
+prv def parseString (dmut lex : &Lexer)-> &Str
+    throws &SyntaxError
+{
+
+    let mut res = "";
+    
+    let (end, line, col) = lex:.next ();
+    if (end != "'" && end != "\"") throw SyntaxError::new ("expected '\"' or '\\'' (not '" ~ end ~ "')", line, col);
+
+    lex:.doSkip (false);
+    loop {
+        let (next, l, c) = lex:.next ();
+        if (next == "") {
+            throw SyntaxError::new ("Unterminated string literal", l, c);
+        } else if (next == end) break {}
+        res = res ~ next;
+    }
+    
+    lex:.doSkip (true);
+    return Str::new (res);
+}
+
+/**
+ * Internal function used to parse a value inside a lexer using the toml format
+ * @example: 
+ * ===============
+ * let str = "'test'";
+ * let dmut lex = Lexer::new (str, tokens-> TomlTokens);
+ * let i : &Config = parseValue (alias lex);
+ * match i {
+ *      Str (str:_)=> assert (str == "test");
+ * }
+ * ===============
+ */
+prv def parseValue (dmut lex : &Lexer)-> &Config    
+    throws &SyntaxError
+{
+    let (begin, _, _) = lex:.nextNoConsume ();
+    match begin {
+        "{" => return parseDict (alias lex, false);
+        "[" => return parseArray (alias lex);
+        "'" | "\"" => return parseString (alias lex);
+        "false" => {
+            lex:.next (); 
+            return Bool::new (false);
+        }
+        "true" => {
+            lex:.next ();
+            return Bool::new (true);
+        }
+        _ => return parseInt (alias lex);
+    }
+}
+
+/**
+ * This class use a tokenizer to split a string into tokens
+ * Unlike a simple tokenizer, this class is able to skip undesirable tokens, such as white space or comments
+ * It also follow the locations of the tokens inside the string, thus enabling error pointing 
+ * @example: 
+ * =============
+ * let dmut lexer = Lexer::new ("test + foo * u", tokens-> ["+", "*"]);
+ * loop {
+ *    let (word, line, col) = lexer:.next ();
+ *    println (word, " (", line, ", ", col, ")"); // test (1, 1), + (1, 6), foo (1, 8), * (1, 12), u (1, 14), (0,0)
+ *    if line == 0 { 
+ *        break {}  // eof
+ *    } 
+ * }
+ * =============
+ */
+prv class @final Lexer {
+
+    let dmut _tzer : &Tokenizer;
+
+    let mut _content : [c32];
+
+    let dmut _comments = HashSet!([c32])::new ();
+
+    let dmut _skips = HashSet!([c32])::new ();
+    
+    let mut _doSkip = true;
+
+    let mut _line = 1u64;
+
+    let mut _col = 1u64;
+
+    /**
+     * Create a new lexer, ready to split content
+     * @params: 
+     *    - content: the content to split
+     *    - tokens: the list of tokens that split the string, (cf. Tokenizer)
+     *    - comments: the list of tokens that start a comment line (by default ["#'])
+     *    - skips: the list of tokens that will be omitted by the lexer when reading (by default [" ", "\n", "\t", "\r"])
+     * @warning: if the skips and comments token are not in tokens, they are added, so they split the content 
+     */
+    pub self (content : [c32], tokens: [[c32]] = [" "], comments : [[c32]] = ["#"], skips: [[c32]] = [" ", "\n", "\t", "\r"])
+        with _tzer = Tokenizer::new (tokens-> tokens),
+    _content = content
+    {
+        self._tzer:.insert ("\n"); // We must have a return line for the lexer to work properly
+        
+        for i in skips {
+            self._skips:.insert (i);
+            self._tzer:.insert (i);
+        }
+
+        for i in comments {
+            self._comments:.insert (i);
+            self._tzer:.insert (i);
+        }
+    }
+
+    /**
+     * Move the cursor of the lexer forward and return the word that has been read
+     * @returns: 
+     *    - ._0: the content of the word ("" if no word) 
+     *    - ._1: the line of the beginning of the word (0 if no word)
+     *    - ._2: the col of the beginning of the word (0 if no word)
+     */
+    pub def next (mut self) -> ([c32], u64, u64) {
+        loop {
+            let wd = self._tzer.next (self._content);
+            if (wd != 0u64) {
+                {
+                    let ret = self._content [0u64..wd];
+                    self._content = self._content [wd..$];
+                    
+                    let (line, col) = (self._line, self._col);                        
+                    let pos = self:.countNbLine (ret, self._line, self._col);
+                    self._line = pos._0;
+                    self._col = pos._1;
+                    
+                    if ret in self._comments {
+                        self._content = self:.skipComments (self._content);
+                        self._line += 1u64;
+                    } else if ret !in self._skips || !self._doSkip {
+                        return (ret, line, col);
+                    } 
+                } catch {
+                    _ : &OutOfArray => { } // Impossible 
+                }
+            } else {
+                break ("", 0u64, 0u64);
+            }
+        }
+    }
+
+    /**
+     * Read the next word inside the content of the lexer, but does not advance the cursor of the lexer
+     * This function is used to the next, and decide afterward to treat it or not
+     * @returns: 
+     *    - ._0: the content of the word ("" if no word) 
+     *    - ._1: the line of the beginning of the word (0 if no word)
+     *    - ._2: the col of the beginning of the word (0 if no word)
+     */
+    pub def nextNoConsume (mut self) -> ([c32], u64, u64) {
+        let mut aux_content = self._content;
+        let mut pos: (mut u64, mut u64) = (self._line, self._col);
+        
+        loop {
+            let wd = self._tzer.next (aux_content);
+            if (wd != 0u64) {
+                {
+                    let ret = aux_content [0u64..wd];
+                    aux_content = aux_content [wd..$];
+                    
+                    let (line, col) = pos;
+                    pos = self:.countNbLine (ret, pos._0, pos._1);
+                    
+                    if ret in self._comments {
+                        aux_content = self:.skipComments (aux_content);
+                        pos._0 += 1u64;
+                        
+                    } else if ret !in self._skips || !self._doSkip {
+                        return (ret, line, col);
+                    } 
+                } catch {
+                    _ : &OutOfArray => { } // Impossible 
+                }
+            } else {
+                break ("", 0u64, 0u64);
+            }
+        }
+    }
+
+    /**
+     * Tell to the lexer if it must skip the 'skips' or not
+     * @info: 
+     *   - by default the lexer skips them
+     *   - This function is used to disable token skipping when reading string content for example
+     */
+    pub def doSkip (mut self, d : bool) -> void {
+        self._doSkip = d;
+    }
+
+    /**
+     * Move the cursor of buf to the next line, in order to skip the comments
+     * @params: 
+     *   - buf: the content 
+     * @returns: a slice of content, where the first line has been removed
+     */
+    prv def skipComments (self, buf : [c32])-> mut [c32] {
+        let mut content = buf;
+        {
+            loop {
+                let wd = self._tzer.next (content);
+                if (wd == 0u64) break {}
+                let ret = content [0u64..wd];
+                content = content [wd..$];
+
+                if (ret == "\n") break {}                
+            }
+        } catch {
+            _ : &OutOfArray => { } // impossible
+        }
+        
+        return content;
+    }
+
+    /**
+     * Increment the number of line if the content of the word is a line return
+     * @returns: 
+     *   - ._0: the new line number
+     *   - ._1: the new column number
+     */
+    prv def countNbLine (self, word : [c32], line : u64, col : u64) -> (u64, u64) {
+        if (word == "\n") {
+            (line + 1u64, 1u64)
+        } else {
+            (line, col + word.len)
+        }
+    }
+    
+}
+
+
+

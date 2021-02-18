@@ -1,5 +1,6 @@
 mod std::collection::map;
 
+import core::object;
 import core::typeinfo;
 import core::duplication;
 import core::exception;
@@ -126,8 +127,7 @@ pub class @final HashMap (K, V) {
     }
 
 
-    pub def find (self, key : K) -> V
-        throws &OutOfArray
+    pub def find (self, key : K) -> V?
     {
         if (self._data.len != 0u64) {
             let h = hash (key);
@@ -135,9 +135,11 @@ pub class @final HashMap (K, V) {
                 x : &MapValue!(K, V) =>
                     return x.find (h);
             }
+        } catch {
+            _ => {} // Impossible
         }
-        
-        throw OutOfArray::new ();
+
+        return (V?)::__err__;
     }
     
     /**
@@ -220,7 +222,10 @@ pub class @final HashMap (K, V) {
     pub def opIndex (self, k : K) -> V
         throws &OutOfArray
     {
-        self.find (k)
+        match self.find (k) {
+            Ok (v:_) => { return v; }
+            _ => throw OutOfArray::new ();
+        }
     }
     
     /**
@@ -611,18 +616,17 @@ class @final MapValue (K, V) over MapNode!(K, V) {
      * @returns: the value in an option type, or None if there is no node containing a hash equal to h
      * @complexity: O (n), with n the length of the list
      */
-    pub def find (self, h : u64) -> V
-        throws &OutOfArray
-    {
+    pub def find (self, h : u64) -> V? {
         if (self.h == h) {
-            return self.val;
+            (self.val)?
         } else {
             match (self.next) {
                 x : &MapValue!(K, V) => {
                     return x.find (h);
                 }
             }
-            throw OutOfArray::new ();
+            
+            (V?)::__err__
         }
     }
 

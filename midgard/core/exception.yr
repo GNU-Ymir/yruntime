@@ -3,14 +3,15 @@ import core::typeinfo;
 import std::io;
 
 extern (C) def _yrt_exc_rethrow ();
-extern (C) def _yrt_exc_get_stack_trace ()-> [c8];
+extern (C) def _yrt_exc_get_stack_trace ()-> [&(void)];
+extern (C) def _yrt_exc_resolve_stack_trace (trc : [&void])-> [c8];
 
 pub alias _yrt_jmp_buf_type = [u8 ; 200];
 
 
 pub class @abstract Exception {
 
-    let trace : [c8];
+    let trace : [&(void)];
 
     self () with trace = _yrt_exc_get_stack_trace () {}
 
@@ -26,19 +27,19 @@ pub class @abstract Exception {
             print (')');
             if (self.trace.len != 0u64) {
                 print (':', '\n');
-                print (self.trace);
+                self.printStackTrace ();
             }
         }
         
     }
     
     pub def @final getStackTrace (self) -> [c8] {
-        self.trace
+        _yrt_exc_resolve_stack_trace (self.trace)
     }
 
     pub def @final printStackTrace (self) {
         if (self.trace.len != 0u64) {
-            print (self.trace);
+            print (_yrt_exc_resolve_stack_trace (self.trace));
         }        
     }
 }
