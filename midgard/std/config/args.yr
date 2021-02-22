@@ -1,0 +1,255 @@
+mod std::config::args;
+
+import std::conv;
+import std::lexer;
+pub import std::config;
+
+/**
+ * The list of tokens that can be found inside a list of arguments
+ * 
+ */
+enum
+| DHYPHEN = " --"
+| SHYPHEN = " -"
+| EQUALS = "="
+ -> ArgsTokens;
+
+
+/**
+ * Parse a list of string containing command line arguments 
+ * @example: 
+ * ============
+ * let line = ["a.out"s8, "-c"s8, "command"s8, "-f"s8, "file1"s8, "file2"s8, "--foo"s8, "bar", "--height"s8, "19.0"s8];
+ * let config : &Dict = parse (line);
+ * match config ["c"] {
+ *    Str (str:_)=> assert (str == "command");
+ * }
+ * match config ["f"] {
+ *    Array () => {}
+ * } 
+ * match config ["height"] {
+ *    Float (f:_) => assert (f == 19.0);
+ * }
+ * ============
+ * @warning: every string in the config result are encoded in utf32
+ */
+pub def parse (line : [[c8]])-> &Config
+    throws &SyntaxError
+{
+    let mut c32Line : [c32] = [];
+    for i in line {        
+        c32Line = c32Line ~ " " ~ i.to!([c32]) ();
+    }
+
+    parse (c32Line)   
+}
+
+/**
+ * Parse a list of string containing command line arguments 
+ * @example: 
+ * ============
+ * let line = ["a.out", "-c", "command", "-f", "file1", "file2", "--foo", "bar", "--height", "19.0"];
+ * let config : &Dict = parse (line);
+ * match config ["c"] {
+ *    Str (str:_)=> assert (str == "command");
+ * }
+ * match config ["f"] {
+ *    Array () => {}
+ * } 
+ * match config ["height"] {
+ *    Float (f:_) => assert (f == 19.0);
+ * }
+ * ============
+ */
+pub def parse (line : [[c32]])-> &Config
+    throws &SyntaxError
+{
+    let mut res = "";
+    for i in line {
+        res = res ~ " " ~ i;
+    }
+    
+    parse (res)
+}
+
+/**
+ * Parse a string containing command line arguments 
+ * @example: 
+ * ============
+ * let line = "a.out -c command -f file1 file2 --foo ba --height 19.0";
+ * let config : &Dict = parse (line);
+ * match config ["c"] {
+ *    Str (str:_)=> assert (str == "command");
+ * }
+ * match config ["f"] {
+ *    Array () => {}
+ * } 
+ * match config ["height"] {
+ *    Float (f:_) => assert (f == 19.0);
+ * }
+ * ============
+ */
+pub def parse (content : [c32]) -> &Config
+    throws &SyntaxError
+{   
+    let dmut res = Dict::new ();
+    let dmut lex = Lexer::new (content, tokens-> ArgsTokens::members);
+    loop {
+        let (tok, line, col) = lex:.next ();
+        if (tok == ArgsTokens::SHYPHEN || tok == ArgsTokens::DHYPHEN) {
+            let (name, l, c) = lex:.next ();
+            if (name in res) {
+                throw SyntaxError::new ("redefinition of argument '" ~ name ~ "'", l, c);
+            }
+            let opt = parseValues (alias lex);
+            res:.insert (name, opt);
+        } else if (tok != ArgsTokens::EQUALS && tok != "") {
+            //res:.insert (tok, None::new ());
+        } else if (tok == ArgsTokens::EQUALS) {
+            throw SyntaxError::new ("expected a value  (not '" ~ tok ~ "')", line, col);
+        } else {
+            break {}
+        }
+    }
+    
+    res
+}
+
+/**
+ * Parse a list of values, and stop the reading at the next "--", or "-"
+ * @example: 
+ * =============
+ * let line = "a b c 12.0 test --file"
+ * let dmut lex = Lexer::new (line, tokens-> ArgsTokens::members);
+ * let config = parseValues (alias lex);
+ * assert (lex:.next ()._0 == "--");
+ * =============
+ */
+prv def parseValues (dmut lex : &Lexer)-> &Config
+    throws &SyntaxError
+{
+    let dmut res : &Array = Array::new ();
+    let mut i = 0;
+
+    loop {
+        let (next, l, c) = lex:.nextNoConsume ();
+        if (next == ArgsTokens::EQUALS) {
+            lex:.next ();
+            if (i == 0) return parseValue (alias lex);
+            else throw SyntaxError::new ("expected a value  (not '" ~ next ~ "')", l, c);
+        }
+        
+        if (next != ArgsTokens::SHYPHEN && next != ArgsTokens::DHYPHEN && next != "") {
+            res:.push (parseValue (alias lex));            
+        } else break {}
+        
+        i += 1;
+    }
+    
+    if (i == 1) {
+        {    
+            res [0]
+        } catch {
+            _ : &OutOfArray => { res }
+        }
+    } else {
+        res
+    }
+}
+
+/**
+ * Parse a single value in a argument line
+ * A value can be of type bool, int, float or str
+ * @example: 
+ * ===============
+ * let str = "test 12 34.23 false 0xff";
+ * let dmut lex = Lexer::new (str, tokens-> ArgsTokens);
+ * let i : &Config = parseValue (alias lex);
+ * match i {
+ *      Str (str:_)=> assert (str == "test");
+ * }
+ * 
+ * let j : &Config = parseValue (alias lex);
+ * match j {
+ *      Int (i:_)=> assert (i == 12);
+ * }
+ *
+ * let k : &Config = parseValue (alias lex);
+ * match k {
+ *      Float (k:_)=> assert (k == 34.23);
+ * }
+ *
+ * let l : &Config = parseValue (alias lex);
+ * match l {
+ *      Bool (b:_)=> assert (b == false);
+ * }  
+ *
+ * let m : &Config = parseValue (alias lex);
+ * match m {
+ *      Int (i:_)=> assert (i == 255);
+ * }  
+ * ===============
+ */
+prv def parseValue (dmut lex : &Lexer)-> &Config {
+    let (begin, _, _) = lex:.nextNoConsume ();
+    match begin {
+        "true" => {
+            lex:.next ();
+            return Bool::new (true);
+        }
+        "false" => {
+            lex:.next ();
+            return Bool::new (false);
+        }
+        _ => {
+            let (txt, l, c) = lex:.next ();
+            {
+                return parseInt (txt, l, c);
+            } catch {
+                _ => {
+                    return Str::new (txt);
+                }
+            }
+        }
+    }    
+}
+
+
+/**
+ * Internal function used for parsing a int content inside a lexer 
+ * @params: 
+ *    - lex: the lexer containing the int
+ * @example: 
+ * =============
+ * let str = "334";
+ * let dmut lex = Lexer::new (str, tokens-> ArgsTokens);
+ * let i : &Int = parseInt (alias lex);
+ * =============
+ * @throws: 
+ *    - &SyntaxError: if the format is not respected
+ */
+prv def parseInt (txt : [c32], l : u64, c : u64) -> &Config
+    throws &SyntaxError
+{
+    import std::conv;
+    {        
+        {
+            Int::new (to!i64 (txt))
+        } catch {
+            _ => {
+                Float::new (to!(f64) (txt))
+            }
+        }    
+    } catch {
+        _ : &CastFailure => {
+            {
+                let u = to!(u32, "x") (txt);
+                Int::new (cast!i64 (u))
+            } catch {
+                _ =>  {
+                    throw SyntaxError::new ("expected int value (not '" ~ txt ~ "')", l, c);
+                }
+            }
+        }
+    }
+}

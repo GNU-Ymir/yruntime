@@ -7,6 +7,55 @@ import std::io;
 import std::collection::vec;
 import std::collection::map;
 
+
+pub class ConfigCastFailure over core::exception::Exception {
+
+
+    let _name : [c32];
+    
+    /// The type from which we want a cast    
+    let _fr : TypeInfo;
+
+    /// The type to which we want a cast
+    let _to : TypeInfo;
+
+    let _subError : (&Exception)?;
+    
+    /**
+     * @params: 
+     *    - from, the type from which we want a cast
+     *    - to, the type to which we want a cast
+     */
+    pub self (name : [c32] = "", to : TypeInfo, from : TypeInfo, subError : (&Exception)? = ((&Exception)?)::__err__) with _fr = from, _to = to, _name = name, _subError = subError  {}
+
+    impl std::io::Printable {
+
+        /**
+         * Just print the error to stdout
+         */
+        pub over print (self) {
+            print (self::typeinfo.name, ' ', '(');
+            print (self._fr.name, "-> ", self._to.name);
+            print (')');
+            if (self._name != "")
+                print (" for field : ", self._name);
+            
+            match self._subError {
+                Ok (x:_) => {
+                    println (" => ");
+                    print ("\t", x);
+                }
+                Err () => {
+                    println (":");
+                    self::super.printStackTrace ();
+                }
+            }
+        }
+        
+    }
+    
+}    
+
 /**
  * A configuration file is composed of nodes
  * Each node contains a different type of information
@@ -24,7 +73,7 @@ pub class @abstract Config {
             throw OutOfArray::new ();
         }
     }
-    
+
     pub def opIndex (self, _ : u64)-> &Config
         throws &OutOfArray
     {
@@ -51,7 +100,144 @@ pub class @abstract Config {
 
     pub def opContains (self, _ : [c32])-> bool {
         false
-    }        
+    }
+
+    /**
+     * Try to transform the configuration into a structure
+     * @example: 
+     * ============
+     * import std::config::args;
+     *
+     * struct 
+     * | foo : i64
+     * | bar : f64 
+     *  -> X;
+
+     * let opt = "./a.out --foo 12 --bar 34.23"
+     * let cfg = parse (opt);
+     * let x = cfg.to!(X) ();
+     * assert (x.foo == 12 && x.bar == 34.23);
+     * ============
+     * @throws: 
+     *   - &ConfigCastFailure: if the cast cannot be made
+     */
+    pub def to (struct T) (self) -> T
+        throws &ConfigCastFailure
+    {
+        match self {
+            x : &Dict => {
+                return x.toStruct!(T) ();
+            }
+            _ =>
+                throw ConfigCastFailure::new (T::typeinfo, self::typeinfo);
+        }
+    }
+
+    /**
+     * Transform a configuration into a i64
+     * @example: 
+     * =============
+     * let i = Int::new (12);
+     * assert (i.to!(i64) () == 12);
+     * =============
+     * @throws: 
+     *   - &ConfigCastFailure: if the cast cannot be made
+     */
+    pub def to (T of i64) (self)-> T
+        throws &ConfigCastFailure
+    {
+        match self {
+            Int (i-> i:_) => { return i; }
+            _ => {
+                throw ConfigCastFailure::new (T::typeinfo, self::typeinfo);
+            }
+        }
+    }
+
+    /**
+     * Transform a configuration into a f64
+     * @example: 
+     * =============
+     * let i = Float::new (12.0);
+     * assert (i.to!(f64) () == 12.0);
+     * =============
+     * @throws: 
+     *   - &ConfigCastFailure: if the cast cannot be made
+     */
+    pub def to (T of f64) (self)-> T
+        throws &ConfigCastFailure
+    {
+        match self {
+            Float (f-> f:_) => { return f; }
+            _ => {
+                throw ConfigCastFailure::new (T::typeinfo, self::typeinfo);
+            }
+        }
+    }
+
+    /**
+     * Transform a configuration into a string
+     * @example: 
+     * =============
+     * let i = Str::new ("foo");
+     * assert (i.to!([c32]) () == "foo");
+     * =============
+     * @throws: 
+     *   - &ConfigCastFailure: if the cast cannot be made
+     */
+    pub def to (T of [c32]) (self)-> T
+        throws &ConfigCastFailure
+    {
+        match self {
+            Str (str-> str:_) => { return str; }
+            _ => {
+                throw ConfigCastFailure::new (T::typeinfo, self::typeinfo);
+            }
+        }
+    }
+
+    /**
+     * Transform a configuration into a bool
+     * @example: 
+     * =============
+     * let i = Bool::new (false);
+     * assert (i.to!(bool) () == false);
+     * =============
+     * @throws: 
+     *   - &ConfigCastFailure: if the cast cannot be made
+     */
+    pub def to (T of bool) (self)-> T
+        throws &ConfigCastFailure
+    {
+        match self {
+            Bool (b-> b:_) => { return b; }
+            _ => {
+                throw ConfigCastFailure::new (T::typeinfo, self::typeinfo);
+            }
+        }
+    }
+
+    /**
+     * Transform a configuration into an array
+     * @example: 
+     * =============
+     * let i = Array::new (Int::new (1), Int::new (2));
+     * assert (i.to!([i32]) () == [1, 2]);
+     * =============
+     * @throws: 
+     *   - &ConfigCastFailure: if the cast cannot be made
+     */
+    pub def to (T of [U], U) (self)-> T
+        throws &ConfigCastFailure
+    {
+        match self {
+            x : &Array => { return x.toArray!(T) (); }
+            _ => {
+                return [self.to!(U) ()];
+            }
+        }
+    }
+
     
     impl std::io::Printable;
     
@@ -203,7 +389,23 @@ pub class @final Array over Config {
      */
     pub def end (self) -> &VecIterator!(&Config) {
         self._content.end ()
-    }        
+    }
+
+    pub def toArray (T of [U], U) (self) -> T
+        throws &ConfigCastFailure
+    {
+        let dmut res = Vec!(U)::new ();
+        for i in self._content {
+            match i {
+                Ok (cfg: &Config) =>  {
+                    res:.push (cfg.to!(U) ());
+                }
+            }                    
+        }
+        
+        res:.fit ();
+        return res [];
+    }
 
     impl std::io::Printable {
 
@@ -349,6 +551,62 @@ pub class @final Dict over Config {
     pub def end (self) -> &MapIterator!([c32], &Config) {
         self._content.end ()
     }
+
+    /**
+     * Transform the dictionnary into a struct
+     * @example: 
+     * ============ 
+     * import std::config::args;
+     *
+     * struct 
+     * | foo : i64
+     * | bar : f64 
+     *  -> X;
+
+     * let opt = "./a.out --foo 12 --bar 34.23"
+     * let cfg = parse (opt);
+     * let x = cfg.to!(X) ();
+     * assert (x.foo == 12 && x.bar == 34.23);
+     * ============ 
+     * @throws: 
+     *   - &ConfigCastFailure: if the configuration does not contains every field of the struct
+     * @info: if the configuration contains more information they are ignored
+     */
+    pub def toStruct (struct T) (self)-> T
+        throws &ConfigCastFailure
+    {
+        let mut t = T::init;
+        let mut j = 0;
+        let names = T::fields_name;
+        
+        for ref mut f in t::fields_address {
+            let name = names [j];
+            if (name in self) {
+                {
+                    (*f) = self [name].to!(typeof (*f)) ();
+                } catch {
+                    x : &ConfigCastFailure => {
+                        throw ConfigCastFailure::new (name-> name, T::typeinfo, self::typeinfo, subError-> (cast!(&Exception) (x))?);
+                    }
+                    _ => {
+                        throw ConfigCastFailure::new (name-> name, T::typeinfo, self::typeinfo);
+                    }
+                }
+            } else {
+                throw ConfigCastFailure::new (name-> name, T::typeinfo, None::typeinfo);
+            }
+            j += 1;
+        }
+        
+        return t;
+    } catch {
+        x : &ConfigCastFailure => {
+            throw x;
+        }
+        _  => {
+            throw ConfigCastFailure::new (T::typeinfo, self::typeinfo);
+        }
+    }
     
     impl std::io::Printable {
 
@@ -379,7 +637,7 @@ pub class @final Dict over Config {
  * ============
  * let node : &Config = Int::new (12);
  * match node {
- *    Int (i:_) => assert (i == 42);
+ *    Int (i-> i:_) => assert (i == 42);
  * }
  * ============
  */
@@ -406,7 +664,7 @@ pub class @final Int over Config {
  * ============
  * let node : &Config = Str::new ("foo");
  * match node {
- *    Int (str:_) => assert (str == "foo");
+ *    Int (str-> str:_) => assert (str == "foo");
  * }
  * ============
  */
@@ -429,7 +687,7 @@ pub class @final Str over Config {
  * ===========
  * let node : &Config = Bool::new (true);
  * match node {
- *    Bool (b:_) => assert (b == true);
+ *    Bool (b-> b:_) => assert (b == true);
  * }
  * ===========
  */
@@ -452,7 +710,7 @@ pub class @final Bool over Config {
  * ============
  * let node : &Config = Float::new (12.48)
  * match node {
- *    Float (f:_) => assert (f == 12.48);
+ *    Float (f-> f:_) => assert (f == 12.48);
  * }
  * ============
  */
@@ -464,6 +722,26 @@ pub class @final Float over Config {
     impl std::io::Printable {
         pub over print (self)-> void {
             print ("Float (", self.f, ")");
+        }
+    }
+}
+
+/**
+ * Configuration encoding of nothing
+ * @example:
+ * ===========
+ * let node : &Config = None::new ();
+ * match node {
+ *    None () => {}
+ * }
+ * ===========
+ */
+pub class @final None over Config {
+    pub self () {}
+
+    impl std::io::Printable {
+        pub over print (self)-> void {
+            print ("None ()");
         }
     }
 }

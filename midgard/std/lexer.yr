@@ -4,6 +4,28 @@ import core::object, core::typeinfo, core::array;
 import core::exception;
 import std::tokenizer;
 import std::collection::set;
+import std::io;
+
+pub class @final SyntaxError over Exception {
+
+    pub let msg : [c32];
+    pub let line : u64;
+    pub let col : u64;
+    
+    pub self (msg : [c32], line : u64, col : u64)
+        with msg = msg, line = line, col = col
+    {}
+
+    impl std::io::Printable {
+        pub over print (self) {            
+            print ("SyntaxError (", self.line, ",", self.col, ") : ", self.msg);
+            if (self.trace.len != 0u64) {
+                println ("");
+                self::super.printStackTrace ();
+            }
+        }
+    }        
+}
 
 /**
  * This class use a tokenizer to split a string into tokens
