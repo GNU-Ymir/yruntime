@@ -1,0 +1,190 @@
+mod std::lexer
+    
+import core::object, core::typeinfo, core::array;
+import core::exception;
+import std::tokenizer;
+import std::collection::set;
+
+/**
+ * This class use a tokenizer to split a string into tokens
+ * Unlike a simple tokenizer, this class is able to skip undesirable tokens, such as white space or comments
+ * It also follow the locations of the tokens inside the string, thus enabling error pointing 
+ * @example: 
+ * =============
+ * let dmut lexer = Lexer::new ("test + foo * u", tokens-> ["+", "*"]);
+ * loop {
+ *    let (word, line, col) = lexer:.next ();
+ *    println (word, " (", line, ", ", col, ")"); // test (1, 1), + (1, 6), foo (1, 8), * (1, 12), u (1, 14), (0,0)
+ *    if line == 0 { 
+ *        break {}  // eof
+ *    } 
+ * }
+ * =============
+ */
+pub class @final Lexer {
+
+    let dmut _tzer : &Tokenizer;
+
+    let mut _content : [c32];
+
+    let dmut _comments = HashSet!([c32])::new ();
+
+    let dmut _skips = HashSet!([c32])::new ();
+    
+    let mut _doSkip = true;
+
+    let mut _line = 1u64;
+
+    let mut _col = 1u64;
+
+    /**
+     * Create a new lexer, ready to split content
+     * @params: 
+     *    - content: the content to split
+     *    - tokens: the list of tokens that split the string, (cf. Tokenizer)
+     *    - comments: the list of tokens that start a comment line (by default ["#'])
+     *    - skips: the list of tokens that will be omitted by the lexer when reading (by default [" ", "\n", "\t", "\r"])
+     * @warning: if the skips and comments token are not in tokens, they are added, so they split the content 
+     */
+    pub self (content : [c32], tokens: [[c32]] = [" "], comments : [[c32]] = ["#"], skips: [[c32]] = [" ", "\n", "\t", "\r"])
+        with _tzer = Tokenizer::new (tokens-> tokens),
+    _content = content
+    {
+        self._tzer:.insert ("\n"); // We must have a return line for the lexer to work properly
+        
+        for i in skips {
+            self._skips:.insert (i);
+            self._tzer:.insert (i);
+        }
+
+        for i in comments {
+            self._comments:.insert (i);
+            self._tzer:.insert (i);
+        }
+    }
+
+    /**
+     * Move the cursor of the lexer forward and return the word that has been read
+     * @returns: 
+     *    - ._0: the content of the word ("" if no word) 
+     *    - ._1: the line of the beginning of the word (0 if no word)
+     *    - ._2: the col of the beginning of the word (0 if no word)
+     */
+    pub def next (mut self) -> ([c32], u64, u64) {
+        loop {
+            let wd = self._tzer.next (self._content);
+            if (wd != 0u64) {
+                {
+                    let ret = self._content [0u64..wd];
+                    self._content = self._content [wd..$];
+                    
+                    let (line, col) = (self._line, self._col);                        
+                    let pos = self:.countNbLine (ret, self._line, self._col);
+                    self._line = pos._0;
+                    self._col = pos._1;
+                    
+                    if ret in self._comments {
+                        self._content = self:.skipComments (self._content);
+                        self._line += 1u64;
+                    } else if ret !in self._skips || !self._doSkip {
+                        return (ret, line, col);
+                    } 
+                } catch {
+                    _ : &OutOfArray => { } // Impossible 
+                }
+            } else {
+                break ("", 0u64, 0u64);
+            }
+        }
+    }
+
+    /**
+     * Read the next word inside the content of the lexer, but does not advance the cursor of the lexer
+     * This function is used to the next, and decide afterward to treat it or not
+     * @returns: 
+     *    - ._0: the content of the word ("" if no word) 
+     *    - ._1: the line of the beginning of the word (0 if no word)
+     *    - ._2: the col of the beginning of the word (0 if no word)
+     */
+    pub def nextNoConsume (mut self) -> ([c32], u64, u64) {
+        let mut aux_content = self._content;
+        let mut pos: (mut u64, mut u64) = (self._line, self._col);
+        
+        loop {
+            let wd = self._tzer.next (aux_content);
+            if (wd != 0u64) {
+                {
+                    let ret = aux_content [0u64..wd];
+                    aux_content = aux_content [wd..$];
+                    
+                    let (line, col) = pos;
+                    pos = self:.countNbLine (ret, pos._0, pos._1);
+                    
+                    if ret in self._comments {
+                        aux_content = self:.skipComments (aux_content);
+                        pos._0 += 1u64;
+                        
+                    } else if ret !in self._skips || !self._doSkip {
+                        return (ret, line, col);
+                    } 
+                } catch {
+                    _ : &OutOfArray => { } // Impossible 
+                }
+            } else {
+                break ("", 0u64, 0u64);
+            }
+        }
+    }
+
+    /**
+     * Tell to the lexer if it must skip the 'skips' or not
+     * @info: 
+     *   - by default the lexer skips them
+     *   - This function is used to disable token skipping when reading string content for example
+     */
+    pub def doSkip (mut self, d : bool) -> void {
+        self._doSkip = d;
+    }
+
+    /**
+     * Move the cursor of buf to the next line, in order to skip the comments
+     * @params: 
+     *   - buf: the content 
+     * @returns: a slice of content, where the first line has been removed
+     */
+    prv def skipComments (self, buf : [c32])-> mut [c32] {
+        let mut content = buf;
+        {
+            loop {
+                let wd = self._tzer.next (content);
+                if (wd == 0u64) break {}
+                let ret = content [0u64..wd];
+                content = content [wd..$];
+
+                if (ret == "\n") break {}                
+            }
+        } catch {
+            _ : &OutOfArray => { } // impossible
+        }
+        
+        return content;
+    }
+
+    /**
+     * Increment the number of line if the content of the word is a line return
+     * @returns: 
+     *   - ._0: the new line number
+     *   - ._1: the new column number
+     */
+    prv def countNbLine (self, word : [c32], line : u64, col : u64) -> (u64, u64) {
+        if (word == "\n") {
+            (line + 1u64, 1u64)
+        } else {
+            (line, col + word.len)
+        }
+    }
+    
+}
+
+
+

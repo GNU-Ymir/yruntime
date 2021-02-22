@@ -628,7 +628,7 @@ pub {
     /**
      * Transform a string into a i64
      * @throws: 
-     *    - &CastFailure: if the string does not contain a valid u32 literal
+     *    - &CastFailure: if the string does not contain a valid i64 literal
      * @example:
      * ===============
      * let x = ("-12").(to!i64);
@@ -658,6 +658,106 @@ pub {
         }
         res
     }
+
+
+    /**
+     * Transform a string in hexadecimal format into a u32
+     * @throws: 
+     *    - &CastFailure: if the string does not contain a valid i32 literal
+     * @example:
+     * ===============
+     * let x = ("0xff").(to!(u32, "x"));
+     * assert (x == 255u32);
+     * ===============
+     * @assume: the string is stripped, so the only possible char are [0-9a-f], '0', 'x'
+     */
+    def to (T of u32, "x") (str : [c32])-> u32
+        throws &CastFailure
+    {
+        let mut j = 1u64;
+        let mut res = 0u32;
+        {
+            if (str.len < 2u64) throw CastFailure::new ([c32]::typeinfo, i32::typeinfo);
+            if (str [0] != '0' || str [1] != 'x') throw CastFailure::new ([c32]::typeinfo, i32::typeinfo);
+                     
+            for i in str.len .. 2u64 {
+                if (str [i - 1u64] >= '0' && str [i - 1u64] <= '9') {                
+                    res = res + cast!u32 ((j * to!u64 (str [i - 1u64])));
+                } else if (str [i - 1u64] >= 'a' && str [i - 1u64] <= 'f') {
+                    res = res + cast!u32 ((j * to!u64 (str [i - 1u64])));
+                } else if (str [i - 1u64] >= 'A' && str [i - 1u64] <= 'F') {
+                    res = res + cast!u32 ((j * to!u64 (str [i - 1u64])));
+                } else {
+                    throw CastFailure::new ([c32]::typeinfo, u64::typeinfo); 
+                }
+                j *= 16u64;
+            } 
+        } catch {
+            _ : &OutOfArray => { } // Can't happen
+            x : &CastFailure => {
+                throw x;
+            }
+        }
+        res
+    }
+
+    /**
+     * Transform a string into a f64
+     * @throws: 
+     *    - &CastFailure: if the string does not contain a valid f64 literal
+     * @example:
+     * ===============
+     * let x = ("-12.89").(to!f64);
+     * assert (x == -12.89);
+     * ===============
+     * @assume: the string is stripped, so the only possible char are [0-9], '-' and '.'
+     */
+    def to (T of f64) (str : [c32])-> f64
+        throws &CastFailure
+    {
+        let mut j = 1u64;
+        let mut z = 1u64;
+        let mut int = 0i64;
+        let mut float = 0i64;
+        let mut floating = true;
+        let mut minus = false;
+        
+        for i in str.len .. 0u64 {
+            if (str [i - 1u64] >= '0' && str [i - 1u64] <= '9') {
+                if (floating) {
+                    float = float + cast!i64 ((j * to!u64 (str [i - 1u64])));
+                    j *= 10u64;
+                } else {
+                    int = int + cast!i64 ((z * to!u64 (str [i - 1u64])));
+                    z *= 10u64;
+                } 
+            } else if (i == 1u64 && str [i - 1u64] == '-') {
+                minus = true;
+            } else if (str [i - 1u64] == '.') {
+                if !floating { // multiple points
+                    throw CastFailure::new ([c32]::typeinfo, f64::typeinfo);
+                }
+                floating = false;
+            } else {
+                throw CastFailure::new ([c32]::typeinfo, f64::typeinfo);
+            }            
+        } catch {
+            _ : &OutOfArray => { } // Can't happen
+            x : &CastFailure => {
+                throw x;
+            }
+        }
+        
+        let res : f64 = if !floating {
+            to!f64 (int) + (to!f64 (float)/to!f64 (j))
+        } else { // no points in the string
+            to!f64 (float) 
+        }
+        
+        if minus {
+            -res
+        } else res
+    }
     
 }
 
@@ -677,6 +777,13 @@ def to (T of c8) (a : u64) -> c8 {
         7u32 => { '7'c8 }
         8u32 => { '8'c8 }
         9u32 => { '9'c8 }
+        9u32 => { '9'c8 }
+        10u32 => { 'a'c8 }
+        11u32 => { 'b'c8 }
+        12u32 => { 'c'c8 }
+        13u32 => { 'd'c8 }
+        14u32 => { 'e'c8 }
+        15u32 => { 'f'c8 }
         _ => { '\u{0}'c8 }
     }
 }
@@ -697,13 +804,19 @@ def to (T of c8) (a : i64) -> c8 {
         7 => { '7'c8 }
         8 => { '8'c8 }
         9 => { '9'c8 }
+        10 => { 'a'c8 }
+        11 => { 'b'c8 }
+        12 => { 'c'c8 }
+        13 => { 'd'c8 }
+        14 => { 'e'c8 }
+        15 => { 'f'c8 }
         _ => { '\u{0}'c8 }
     }
 }
 
 
 /**
- * @assume: a < 10 
+ * @assume: a <= 15
  * Transform a u64 into a c32
  */
 def to (T of c32) (a : u64) -> c32 {
@@ -718,12 +831,18 @@ def to (T of c32) (a : u64) -> c32 {
         7u32 => { '7' }
         8u32 => { '8' }
         9u32 => { '9' }
+        10u32 => { 'a' }
+        11u32 => { 'b' }
+        12u32 => { 'c' }
+        13u32 => { 'd' }
+        14u32 => { 'e' }
+        15u32 => { 'f' }
         _ => { '\u{0}' }
     }
 }
 
 /**
- * @assume: a < 10 and a >= 0
+ * @assume: a <= 15 and a >= 0
  * Transform a u64 into a c32
  */
 def to (T of c32) (a : i64) -> c32 {
@@ -738,6 +857,12 @@ def to (T of c32) (a : i64) -> c32 {
         7 => { '7' }
         8 => { '8' }
         9 => { '9' }
+        10 => { 'a' }
+        11 => { 'b' }
+        12 => { 'c' }
+        13 => { 'd' }
+        14 => { 'e' }
+        15 => { 'f' }
         _ => { '\u{0}' }
     }
 }
@@ -745,7 +870,7 @@ def to (T of c32) (a : i64) -> c32 {
 
 /**
  * Transform a c32 into a u64
- * @assume: a >= '0' and a <= '9'
+ * @assume: a >= '0' and a <= '9' or a >= 'a' and a <= 'f'
  */
 def to (T of u64) (a : c32) -> u64 {
     match a {
@@ -759,13 +884,25 @@ def to (T of u64) (a : c32) -> u64 {
         '7' => { 7u64 }
         '8' => { 8u64 }
         '9' => { 9u64 }
+        'a' => { 10u64 }
+        'b' => { 11u64 }
+        'c' => { 12u64 }
+        'd' => { 13u64 }
+        'e' => { 14u64 }
+        'f' => { 15u64 }
+        'A' => { 10u64 }
+        'B' => { 11u64 }
+        'C' => { 12u64 }
+        'D' => { 13u64 }
+        'E' => { 14u64 }
+        'F' => { 15u64 }
         _ => { 0u64 }            
     }
 }
 
 /**
  * Transform a c8 into a u64
- * @assume: a >= '0' and a <= '9'
+ * @assume: a >= '0' and a <= '9' or a >= 'a' and a <= 'f'
  */
 def to (T of u64) (a : c8) -> u64 {
     match a {
@@ -779,6 +916,18 @@ def to (T of u64) (a : c8) -> u64 {
         '7'c8 => { 7u64 }
         '8'c8 => { 8u64 }
         '9'c8 => { 9u64 }
+        'a'c8 => { 10u64 }
+        'b'c8 => { 11u64 }
+        'c'c8 => { 12u64 }
+        'd'c8 => { 13u64 }
+        'e'c8 => { 14u64 }
+        'f'c8 => { 15u64 }
+        'A'c8 => { 10u64 }
+        'B'c8 => { 11u64 }
+        'C'c8 => { 12u64 }
+        'D'c8 => { 13u64 }
+        'E'c8 => { 14u64 }
+        'F'c8 => { 15u64 }
         _ => { 0u64 }            
     }
 }
