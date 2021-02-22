@@ -185,7 +185,7 @@ pub class @abstract Config {
      * @throws: 
      *   - &ConfigCastFailure: if the cast cannot be made
      */
-    pub def to (T of [c32]) (self)-> T
+    pub def to (T of [U], U of c32) (self)-> T
         throws &ConfigCastFailure
     {
         match self {
@@ -233,7 +233,13 @@ pub class @abstract Config {
         match self {
             x : &Array => { return x.toArray!(T) (); }
             _ => {
-                return [self.to!(U) ()];
+                cte if (is!(U)(Z of c32)) {
+                    match self {
+                        Str (str-> str:_) => { return str; }
+                    }
+                } else {
+                    return [self.to!(U) ()];
+                }
             }
         }
     }
