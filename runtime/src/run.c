@@ -233,18 +233,29 @@ _yrt_array_ _yrt_exc_get_stack_trace () {
     }
 }
 
+_yrt_array_ _yrt_create_args_array (int len, char ** argv) {
+    _yrt_array_ arr;
+    arr.data = GC_malloc (sizeof (_yrt_array_) * len);
+    arr.len = (unsigned long) len;
+
+    for (int i = 0 ; i < len ; i++) {
+	_yrt_array_ inner;
+	inner.data = argv[i];
+	inner.len = strlen (argv [i]);
+	((_yrt_array_*) arr.data)[i] = inner;
+    }
+    
+    return arr;
+}
+
 int _yrt_run_main_debug (int argc, char ** argv, int(* y_main)()) {
     __YRT_DEBUG__ = 1;
     bfd_init ();
 
     installHandler ();
     _yrt_exc_init ();
-        
-    _yrt_array_ arr;
-    arr.data = argv;
-    arr.len = (unsigned long) argc;
-    
-    return y_main (arr);    
+            
+    return y_main (_yrt_create_args_array (argc, argv));    
 }
 
 int _yrt_run_main (int argc, char ** argv, int(* y_main)()) {
@@ -253,10 +264,7 @@ int _yrt_run_main (int argc, char ** argv, int(* y_main)()) {
     installHandler ();
     _yrt_exc_init ();
     
-    _yrt_array_ arr;
-    arr.data = argv;
-    arr.len = (unsigned long) argc;
     
-    return y_main (arr);    
+    return y_main (_yrt_create_args_array (argc, argv));    
 }
 
