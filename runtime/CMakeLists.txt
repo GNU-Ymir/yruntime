@@ -12,7 +12,7 @@ add_compile_definitions(DEBUG_RUNTIME=1)
 
 
 add_library (gyruntime SHARED ${SRC})
-target_link_libraries(gyruntime PUBLIC -lbfd)
+
 install (TARGETS gyruntime DESTINATION /usr/lib/)
 include_directories(${CMAKE_SOURCE_DIR}/include/)
 
