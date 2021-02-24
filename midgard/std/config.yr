@@ -19,14 +19,14 @@ pub class ConfigCastFailure over core::exception::Exception {
     /// The type to which we want a cast
     pub let to : TypeInfo;
 
-    pub let subError : (&ConfigCastFailure)?;
+    pub let subError : (&Exception)?;
     
     /**
      * @params: 
      *    - from, the type from which we want a cast
      *    - to, the type to which we want a cast
      */
-    pub self (name : [c32] = "", to : TypeInfo, from : TypeInfo, subError : (&ConfigCastFailure)? = ((&ConfigCastFailure)?)::__err__) with fr = from, to = to, field = name, subError = subError  {}       
+    pub self (name : [c32] = "", to : TypeInfo, from : TypeInfo, subError : (&Exception)? = ((&Exception)?)::__err__) with fr = from, to = to, field = name, subError = subError  {}       
     
     impl std::io::Printable {
 
@@ -191,7 +191,7 @@ pub class @abstract Config {
         throws &ConfigCastFailure
     {
         match self {
-            Str (str-> str:_) => { return str; }
+            Str (str-> str:_) => { return str; }            
             _ => {
                 throw ConfigCastFailure::new (T::typeinfo, self::typeinfo);
             }
@@ -590,12 +590,17 @@ pub class @final Dict over Config {
                     let mut _ : &(mut typeof ((__pragma!tupleof (t)).i)) = alias ((__pragma!field_addrs (t)).i);
                 })) {                    
                     {
-                        let mut x : &(mut typeof ((__pragma!tupleof (t)).i)) = alias ((__pragma!field_addrs (t)).i);
-                        let res = self [(__pragma!field_names (T))[i]].to!(typeof(*x)) ();
-                        *x = res;
+                        cte if (__pragma!compile ({
+                            self [(__pragma!field_names (T))[i]].to!(typeof ((__pragma!tupleof (t)).i)) ();
+                        })) {
+                            let mut x : &(mut typeof ((__pragma!tupleof (t)).i)) = alias ((__pragma!field_addrs (t)).i);
+                            *x = self [(__pragma!field_names (T))[i]].to!(typeof(*x)) ();
+                        } else {
+                            cte assert (false, "Type '" ~ typeof ((__pragma!tupleof (t)).i)::typeid ~ "' cannot be encoded by a configuration");
+                        }
                     } catch {
                         err : &ConfigCastFailure => {
-                            throw ConfigCastFailure::new (name-> (__pragma!field_names (T))[i], T::typeinfo, self::typeinfo, subError-> (err)?);
+                            throw ConfigCastFailure::new (name-> (__pragma!field_names (T))[i], T::typeinfo, self::typeinfo, subError-> (cast!(&Exception) (err))?);
                         }
                         _ => {
                             throw ConfigCastFailure::new (name-> (__pragma!field_names (T))[i], T::typeinfo, self::typeinfo);
