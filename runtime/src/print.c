@@ -151,6 +151,28 @@ void _yrt_printf64 (double x) {
     printf ("%lf", x);
 }
 
+_yrt_c8_array_ _yrt_float_to_s8 (float x) {
+    int nb = snprintf (NULL, 0, "%f", x);
+    char * res = GC_malloc (nb * sizeof (char));
+    snprintf (res, nb, "%f", x);
+
+    _yrt_c8_array_ arr;
+    arr.data = res;
+    arr.len = nb;
+    return arr;
+}
+
+_yrt_c8_array_ _yrt_double_to_s8 (double x) {
+    int nb = snprintf (NULL, 0, "%lf", x);
+    char * res = GC_malloc (nb * sizeof (char));
+    snprintf (res, nb, "%lf", x);
+
+    _yrt_c8_array_ arr;
+    arr.data = res;
+    arr.len = nb;
+    return arr;
+}
+
 unsigned int _yrt_getwchar () {
     char c[5];
     int ig = scanf ("%c", &c[0]);

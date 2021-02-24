@@ -15,6 +15,7 @@ char _yrt_type_equals (_ytype_info a, _ytype_info b) {
 		if (!_yrt_type_equals (((_ytype_info*) a.inner.data) [i], ((_ytype_info*) b.inner.data) [i]))
 		    return 0;
 	    }
+	    return 1;
 	} else if (a.id == OBJECT) {
 	    if (a.name.data != b.name.data) {
 		if (a.inner.len != 0) {
