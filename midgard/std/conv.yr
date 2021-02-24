@@ -26,6 +26,10 @@ mod Runtime {
     pub extern (C) def _yrt_to_utf8_array (s : [c32])-> dmut [c8];
 
     pub extern (C) def _yrt_to_utf32_array (s : [c8])-> dmut [c32];
+
+    pub extern (C) def _yrt_double_to_s8 (s : f64)-> dmut [c8];
+
+    pub extern (C) def _yrt_float_to_s8 (s : f32)-> dmut [c8];
 }
 
 
@@ -380,6 +384,50 @@ pub {
     def to (T of [c8]) (a : u8) -> [c8] {
         to![c8](cast!u64 (a))
     }
+
+    /**
+     * Transform a f32 into a string
+     * @example: 
+     * ===========
+     * assert (to![c8] (12.8f) == "12.8"s8)
+     * ===========
+     */
+    def to (T of [c8]) (a : f32) -> [c8] {
+        Runtime::_yrt_float_to_s8 (a)
+    }
+
+    /**
+     * Transform a f64 into a string
+     * @example: 
+     * ===========
+     * assert (to![c8] (12.8) == "12.8"s8)
+     * ===========
+     */
+    def to (T of [c8]) (a : f64) -> [c8] {
+        Runtime::_yrt_double_to_s8 (a)
+    }
+
+    /**
+     * Transform a f32 into a string
+     * @example: 
+     * ===========
+     * assert (to![c32] (12.8f) == "12.8")
+     * ===========
+     */
+    def to (T of [c32]) (a : f32) -> [c32] {
+        to![c32] (Runtime::_yrt_float_to_s8 (a))
+    }
+
+    /**
+     * Transform a f64 into a string
+     * @example: 
+     * ===========
+     * assert (to![c32] (12.8) == "12.8")
+     * ===========
+     */
+    def to (T of [c32]) (a : f64) -> [c32] {
+        to![c32] (Runtime::_yrt_double_to_s8 (a))
+    } 
 
     /**
      * Transform a u64 into a f64

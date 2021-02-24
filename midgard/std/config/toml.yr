@@ -1,7 +1,8 @@
 mod std::config::toml;
 
-pub import std::config;
-import std::lexer;
+import core::typeinfo, core::array, core::exception, core::object;
+import std::config::_;
+pub import std::lexer;
 
 /** 
  * The list of tokens that can be found inside a Toml file
@@ -56,19 +57,22 @@ pub def parse (content : [c32])-> &Dict
     let dmut result = Dict::new ();
     let dmut lex = Lexer::new (content, tokens-> TomlTokens::members);
     loop {
-        let (tok, line, col) = lex:.next ();
+        let (tok, _, _) = lex:.next ();
         
         if (tok == TomlTokens::LCRO) {
             let name = lex:.next ();
             let (next, l, c) = lex:.next ();
             
-            if (next != TomlTokens::RCRO) throw SyntaxError::new ("expected ']' (not '" ~ tok ~ "')", l, c);
+            if (next != TomlTokens::RCRO) throw SyntaxError::new ("expected ']' (not '" ~ next ~ "')", l, c);
             
-            result:.insert (name._0, parseDict (alias lex, true));            
+            result:.insert (name._0, Parser::parseDict (alias lex, true));            
         } else if (tok == "") {
             break {}
         } else {
-            throw SyntaxError::new ("expected '[' (not '" ~ tok ~ "')", line, col);
+            let (next, l, c) = lex:.next ();
+            
+            if (next != TomlTokens::EQUALS) throw SyntaxError::new ("expected '=' (not '" ~ next ~ "')", l, c);
+            result:.insert (tok, Parser::parseValue (alias lex));            
         }
     }
     
@@ -76,275 +80,440 @@ pub def parse (content : [c32])-> &Dict
 }
 
 /**
- * Inner function for parsing a dictionnary inside a toml str 
- * @params: 
- *    - lex: the lexer that is currently reading the content of the file
- *    - glob: true if the dictionnary is a global dictionnary in the toml str (non global dictionnaries, are surrounded by '{' '}', and separates the items with ',')
- * @example: 
- * =============
- * let glob = "foo=9\n bar=7";
- * let loc = "{foo=9, bar=7}";
- *
- * let dmut glex = Lexer::new (glob, tokens-> TomlTokens::members);
- * let gDict : &Dict = parseDict (alias glex, true);
+ * Transform a configuration into a toml formatted string
  * 
- * let dmut llex = Lexer::new (loc, tokens-> TomlTokens::members);
- * let lDict : &Dict = parseDict (alias llex, false);
- * =============
- * @throws: 
- *    - &SyntaxError: if the format is not respected 
  */
-prv def parseDict (dmut lex : &Lexer, glob : bool)-> &Dict
-    throws &SyntaxError
-{
-    let dmut dict = Dict::new ();
-    if (!glob) {
-        let (skip, l, c) = lex:.next ();
-        if (skip != TomlTokens::LACC)
-        throw SyntaxError::new ("expected '{' (not '" ~ skip ~ "')", l, c);
-    }
-
-    loop {
-        let (name, _, _) = lex:.nextNoConsume ();
-
-        if (name == "" || name == TomlTokens::LCRO) break {}
-        else lex:.next ();
-        
-        let (tok, line, col) = lex:.next ();
-        if (tok != TomlTokens::EQUALS) throw SyntaxError::new ("expected '=' (not '" ~ tok ~ "')", line, col);
-
-        dict:.insert (name, parseValue (alias lex));
-
-        if (!glob) {
-            let next = lex:.next ();
-            if (next._0 != TomlTokens::COMA && next._0 != TomlTokens::RACC) {
-                throw SyntaxError::new ("expected ',' or '}' (not '" ~ next._0 ~ "')", next._1, next._2);                
-            }
-            if (next._0 == "}") break {}
+pub def dump (cfg : &Config)-> [c32] {
+    match cfg {
+        x : &Dict => {
+            Dumper::dumpSuperDict (x)
         }
-    }
-    
-    return dict;
-}
-
-/**
- * Internal function used for parsing arrays
- * @params: 
- *    - lex: the lexer containing the array
- * @example: 
- * =============
- * let str = "[1, 2, 3]";
- * let dmut lex = Lexer::new (str, tokens-> TomlTokens);
- * let arr : &Array = parseArray (alias lex);
- * =============
- * @throws: 
- *    - &SyntaxError: if the format is not respected
- */
-prv def parseArray (dmut lex : &Lexer) -> &Array
-    throws &SyntaxError
-{
-    let dmut arr = Array::new ();
-    {
-        let (skip, l, c) = lex:.next ();
-        if (skip != "[") throw SyntaxError::new ("expected '{' (not '" ~ skip ~ "')", l, c);
-    }
-    
-    loop {
-        let (next, _, _) = lex:.nextNoConsume ();
-        if (next == "]") {
-            lex:.next ();
-            break {};
-        }
-        
-        arr:.push (parseValue (alias lex));
-        let (tok, line, col) = lex:.next ();
-        if (tok == "]") break {}
-        else if (tok != ",") {            
-            throw SyntaxError::new ("expected ']' or ',' (not '" ~ tok ~ "')", line, col);
-        }
-    }
-    
-    return arr;
-}
-
-/**
- * Internal function used for parsing a int content inside a lexer using the toml format
- * @params: 
- *    - lex: the lexer containing the int
- * @example: 
- * =============
- * let str = "334";
- * let dmut lex = Lexer::new (str, tokens-> TomlTokens);
- * let i : &Int = parseInt (alias lex);
- * =============
- * @throws: 
- *    - &SyntaxError: if the format is not respected
- */
-prv def parseInt (dmut lex : &Lexer) -> &Config
-    throws &SyntaxError
-{
-    import std::conv;
-    let (next, l, c) = lex:.next ();
-    {
-        let (dot, _, _) = lex:.nextNoConsume ();
-        if (dot == TomlTokens::DOT) {
-            lex:.next ();
-            Float::new (f-> {
-                let aux = lex:.nextNoConsume ();
-                let mut res = next ~ dot ~ aux._0;
-                let f = to!f64 (res);
-                lex:.next ();
-                f
-            } catch {
-                _  => {
-                    {
-                        let mut res = next ~ dot;
-                        let f = to!f64 (res);
-                        f
-                    } catch {
-                        _ : &CastFailure => {
-                            throw SyntaxError::new ("expected float value (not '" ~ next ~ dot ~ "')", l, c);
-                        }
-                    }                                        
-                } 
-            })
-        } else 
-            Int::new (to!i64 (next))
-    } catch {
-        _ : &CastFailure => {
-            {
-                let u = to!(u32, "x") (next);
-                Int::new (cast!i64 (u))
-            } catch {
-                _ =>  
-                throw SyntaxError::new ("expected int value (not '" ~ next ~ "')", l, c);
-            }
-        }
-        x : &SyntaxError => throw x;
-    }
-}
-
-/**
- * Internal function used for parsing a string content inside a lexer using the toml format
- * @info: the string can be surrounded by ' or by "
- * @params: 
- *    - lex: the lexer containing the string
- * @example: 
- * =============
- * let str = "'test'";
- * let dmut lex = Lexer::new (str, tokens-> TomlTokens);
- * let i : &Str = parseString (alias lex);
- * =============
- * @throws: 
- *    - &SyntaxError: if the format is not respected
- */
-prv def parseString (dmut lex : &Lexer)-> &Str
-    throws &SyntaxError
-{
-
-    let mut res = "";
-    
-    let (end, line, col) = lex:.next ();
-    if (end != "'" && end != "\"") throw SyntaxError::new ("expected '\"' or '\\'' (not '" ~ end ~ "')", line, col);
-
-    lex:.doSkip (false);
-    loop {
-        let (next, l, c) = lex:.next ();        
-        if (next == "") {
-            throw SyntaxError::new ("Unterminated string literal", l, c);
-        } else if (next == end) break {}
-        else if (next == TomlTokens::ESCAPE) {
-            let (af, _, _) = lex:.next ();
-            match af {
-                "a" => { res = res ~ "\a"; }
-                "b" => { res = res ~ "\b"; }
-                "f" => { res = res ~ "\f"; }
-                "n" => { res = res ~ "\n"; }
-                "r" => { res = res ~ "\r"; }
-                "t" => { res = res ~ "\t"; }
-                "v" => { res = res ~ "\v"; }
-                "\\" => { res = res ~ "\\"; }
-                "\'" => { res = res ~ "'"; }
-                "\"" => { res = res ~ "\""; }
-                "\?" => { res = res ~ "\?"; }
-                "u" => { res = res ~ [parseUnicode (alias lex)]; }
-                _ => throw SyntaxError::new ("Undefined escape sequence : \\" ~ af, l, c);                
-            }
-        } else {
-            res = res ~ next;            
-        }
-    }
-    
-    lex:.doSkip (true);
-    return Str::new (res);
-}
-
-
-/**
- * Parse an unicode value into a toml content
- * @example: 
- * ============
- * let str = "{0x1F3B5}";
- * let dmut lex = Lexer::new (str, tokens-> TomlTokens);
- * let i : c32 = parseUnicode (alias lex);
- * ============
- * @assume: the \u is already read in the lexer
- */
-prv def parseUnicode (dmut lex : &Lexer)-> c32
-    throws &SyntaxError
-{
-    let (next, l, c) = lex:.next ();
-    if (next != TomlTokens::LACC) {
-        throw SyntaxError::new ("expected '{' (not '" ~ next ~ "')", l, c);
-    }
-
-    let (code, l2, c2) = lex:.next ();
-    let i = {        
-        import std::conv;
-        cast!c32 (to!(u32, "x") (code))            
-    } catch {
         _ =>
+            Dumper::dump (cfg)
+    }
+}
+
+mod Parser {
+
+    /**
+     * Inner function for parsing a dictionnary inside a toml str 
+     * @params: 
+     *    - lex: the lexer that is currently reading the content of the file
+     *    - glob: true if the dictionnary is a global dictionnary in the toml str (non global dictionnaries, are surrounded by '{' '}', and separates the items with ',')
+     * @example: 
+     * =============
+     * let glob = "foo=9\n bar=7";
+     * let loc = "{foo=9, bar=7}";
+     *
+     * let dmut glex = Lexer::new (glob, tokens-> TomlTokens::members);
+     * let gDict : &Dict = parseDict (alias glex, true);
+     * 
+     * let dmut llex = Lexer::new (loc, tokens-> TomlTokens::members);
+     * let lDict : &Dict = parseDict (alias llex, false);
+     * =============
+     * @throws: 
+     *    - &SyntaxError: if the format is not respected 
+     */
+    pub def parseDict (dmut lex : &Lexer, glob : bool)-> &Dict
+        throws &SyntaxError
+    {
+        let dmut dict = Dict::new ();
+        if (!glob) {
+            let (skip, l, c) = lex:.next ();
+            if (skip != TomlTokens::LACC)
+            throw SyntaxError::new ("expected '{' (not '" ~ skip ~ "')", l, c);
+        }
+
+        loop {
+            let (name, _, _) = lex:.nextNoConsume ();
+
+            if (name == "" || name == TomlTokens::LCRO) break {}
+            else lex:.next ();
+            
+            let (tok, line, col) = lex:.next ();
+            if (tok != TomlTokens::EQUALS) throw SyntaxError::new ("expected '=' (not '" ~ tok ~ "')", line, col);
+
+            dict:.insert (name, parseValue (alias lex));
+
+            if (!glob) {
+                let next = lex:.next ();
+                if (next._0 != TomlTokens::COMA && next._0 != TomlTokens::RACC) {
+                    throw SyntaxError::new ("expected ',' or '}' (not '" ~ next._0 ~ "')", next._1, next._2);                
+                }
+                if (next._0 == "}") break {}
+            }
+        }
+        
+        return dict;
+    }
+
+    /**
+     * Internal function used for parsing arrays
+     * @params: 
+     *    - lex: the lexer containing the array
+     * @example: 
+     * =============
+     * let str = "[1, 2, 3]";
+     * let dmut lex = Lexer::new (str, tokens-> TomlTokens);
+     * let arr : &Array = parseArray (alias lex);
+     * =============
+     * @throws: 
+     *    - &SyntaxError: if the format is not respected
+     */
+    pub def parseArray (dmut lex : &Lexer) -> &Array
+        throws &SyntaxError
+    {
+        let dmut arr = Array::new ();
+        {
+            let (skip, l, c) = lex:.next ();
+            if (skip != "[") throw SyntaxError::new ("expected '{' (not '" ~ skip ~ "')", l, c);
+        }
+        
+        loop {
+            let (next, _, _) = lex:.nextNoConsume ();
+            if (next == "]") {
+                lex:.next ();
+                break {};
+            }
+            
+            arr:.push (parseValue (alias lex));
+            let (tok, line, col) = lex:.next ();
+            if (tok == "]") break {}
+            else if (tok != ",") {            
+                throw SyntaxError::new ("expected ']' or ',' (not '" ~ tok ~ "')", line, col);
+            }
+        }
+        
+        return arr;
+    }
+
+    /**
+     * Internal function used for parsing a int content inside a lexer using the toml format
+     * @params: 
+     *    - lex: the lexer containing the int
+     * @example: 
+     * =============
+     * let str = "334";
+     * let dmut lex = Lexer::new (str, tokens-> TomlTokens);
+     * let i : &Int = parseInt (alias lex);
+     * =============
+     * @throws: 
+     *    - &SyntaxError: if the format is not respected
+     */
+    pub def parseInt (dmut lex : &Lexer) -> &Config
+        throws &SyntaxError
+    {
+        import std::conv;
+        let (next, l, c) = lex:.next ();
+        {
+            let (dot, _, _) = lex:.nextNoConsume ();
+            if (dot == TomlTokens::DOT) {
+                lex:.next ();
+                Float::new (f-> {
+                    let aux = lex:.nextNoConsume ();
+                    let mut res = next ~ dot ~ aux._0;
+                    let f = to!f64 (res);
+                    lex:.next ();
+                    f
+                } catch {
+                    _  => {
+                        {
+                            let mut res = next ~ dot;
+                            let f = to!f64 (res);
+                            f
+                        } catch {
+                            _ : &CastFailure => {
+                                throw SyntaxError::new ("expected float value (not '" ~ next ~ dot ~ "')", l, c);
+                            }
+                        }                                        
+                    } 
+                })
+            } else 
+                Int::new (to!i64 (next))
+        } catch {
+            _ : &CastFailure => {
+                {
+                    let u = to!(u32, "x") (next);
+                    Int::new (cast!i64 (u))
+                } catch {
+                    _ =>  
+                    throw SyntaxError::new ("expected int value (not '" ~ next ~ "')", l, c);
+                }
+            }
+            x : &SyntaxError => throw x;
+        }
+    }
+
+    /**
+     * Internal function used for parsing a string content inside a lexer using the toml format
+     * @info: the string can be surrounded by ' or by "
+     * @params: 
+     *    - lex: the lexer containing the string
+     * @example: 
+     * =============
+     * let str = "'test'";
+     * let dmut lex = Lexer::new (str, tokens-> TomlTokens);
+     * let i : &Str = parseString (alias lex);
+     * =============
+     * @throws: 
+     *    - &SyntaxError: if the format is not respected
+     */
+    pub def parseString (dmut lex : &Lexer)-> &Str
+        throws &SyntaxError
+    {
+
+        let mut res = "";
+        
+        let (end, line, col) = lex:.next ();
+        if (end != "'" && end != "\"") throw SyntaxError::new ("expected '\"' or '\\'' (not '" ~ end ~ "')", line, col);
+
+        lex:.doSkip (false);
+        loop {
+            let (next, l, c) = lex:.next ();        
+            if (next == "") {
+                throw SyntaxError::new ("Unterminated string literal", l, c);
+            } else if (next == end) break {}
+            else if (next == TomlTokens::ESCAPE) {
+                let (af, _, _) = lex:.next ();
+                match af {
+                    "a" => { res = res ~ "\a"; }
+                    "b" => { res = res ~ "\b"; }
+                    "f" => { res = res ~ "\f"; }
+                    "n" => { res = res ~ "\n"; }
+                    "r" => { res = res ~ "\r"; }
+                    "t" => { res = res ~ "\t"; }
+                    "v" => { res = res ~ "\v"; }
+                    "\\" => { res = res ~ "\\"; }
+                    "\'" => { res = res ~ "'"; }
+                    "\"" => { res = res ~ "\""; }
+                    "\?" => { res = res ~ "\?"; }
+                    "u" => { res = res ~ [parseUnicode (alias lex)]; }
+                    _ => throw SyntaxError::new ("Undefined escape sequence : \\" ~ af, l, c);                
+                }
+            } else {
+                res = res ~ next;            
+            }
+        }
+        
+        lex:.doSkip (true);
+        return Str::new (res);
+    }
+
+
+    /**
+     * Parse an unicode value into a toml content
+     * @example: 
+     * ============
+     * let str = "{0x1F3B5}";
+     * let dmut lex = Lexer::new (str, tokens-> TomlTokens);
+     * let i : c32 = parseUnicode (alias lex);
+     * ============
+     * @assume: the \u is already read in the lexer
+     */
+    pub def parseUnicode (dmut lex : &Lexer)-> c32
+        throws &SyntaxError
+    {
+        let (next, l, c) = lex:.next ();
+        if (next != TomlTokens::LACC) {
+            throw SyntaxError::new ("expected '{' (not '" ~ next ~ "')", l, c);
+        }
+
+        let (code, l2, c2) = lex:.next ();
+        let i = {        
+            import std::conv;
+            cast!c32 (to!(u32, "x") (code))            
+        } catch {
+            _ =>
             throw SyntaxError::new ("expected hexa code (not '" ~ code ~ "')", l2, c2);
+        }
+        
+        let (end, l_, c_) = lex:.next ();
+        if (end != TomlTokens::RACC) {
+            throw SyntaxError::new ("expected '}' (not '" ~ end ~ "')", l_, c_);
+        }
+        
+        i
     }
-    
-    let (end, l_, c_) = lex:.next ();
-    if (end != TomlTokens::RACC) {
-        throw SyntaxError::new ("expected '}' (not '" ~ end ~ "')", l_, c_);
+
+
+    /**
+     * Internal function used to parse a value inside a lexer using the toml format
+     * @example: 
+     * ===============
+     * let str = "'test'";
+     * let dmut lex = Lexer::new (str, tokens-> TomlTokens);
+     * let i : &Config = parseValue (alias lex);
+     * match i {
+     *      Str (str:_)=> assert (str == "test");
+     * }
+     * ===============
+     */
+    pub def parseValue (dmut lex : &Lexer)-> &Config    
+        throws &SyntaxError
+    {
+        let (begin, _, _) = lex:.nextNoConsume ();
+        match begin {
+            "{" => return parseDict (alias lex, false);
+            "[" => return parseArray (alias lex);
+            "'" | "\"" => return parseString (alias lex);
+            "false" => {
+                lex:.next (); 
+                return Bool::new (false);
+            }
+            "true" => {
+                lex:.next ();
+                return Bool::new (true);
+            }
+            _ => return parseInt (alias lex);
+        }
     }
-    
-    i
 }
 
+mod Dumper {
 
-/**
- * Internal function used to parse a value inside a lexer using the toml format
- * @example: 
- * ===============
- * let str = "'test'";
- * let dmut lex = Lexer::new (str, tokens-> TomlTokens);
- * let i : &Config = parseValue (alias lex);
- * match i {
- *      Str (str:_)=> assert (str == "test");
- * }
- * ===============
- */
-prv def parseValue (dmut lex : &Lexer)-> &Config    
-    throws &SyntaxError
-{
-    let (begin, _, _) = lex:.nextNoConsume ();
-    match begin {
-        "{" => return parseDict (alias lex, false);
-        "[" => return parseArray (alias lex);
-        "'" | "\"" => return parseString (alias lex);
-        "false" => {
-            lex:.next (); 
-            return Bool::new (false);
+    pub def dump (cfg : &Config, global : bool = false, indent : i32 = 0)-> [c32] {
+        import std::conv;
+        
+        match cfg {
+            x : &Dict => {
+                Dumper::dumpDict (x, global-> global, indent-> indent)
+            }
+            arr : &Array => {
+                Dumper::dumpArray (arr, indent-> indent)
+            }
+            Int(i-> i:_) => {
+                to![c32] (i)
+            }
+            Str(str-> str:_) => {
+                "\"" ~ str ~ "\""
+            }
+            Bool(b-> b:_) => {
+                if b { "true" }
+                else { "false" }
+            }
+            Float (f-> f:_) => {
+                to![c32] (f)
+            }
+            _ => { "" }
         }
-        "true" => {
-            lex:.next ();
-            return Bool::new (true);
-        }
-        _ => return parseInt (alias lex);
     }
-}
 
+    pub def dumpArray (x : &Array, indent : i32 = 0) -> [c32] {
+        let mut res = "[";
+        let mut z = 0;
+        let mut returned = false;
+        for i in x {
+            if (z != 0) {
+                res = res ~ ", ";
+                if (returned) {
+                    res = res ~ "\n";
+                    for _ in 0 .. indent + 1 {
+                        res = res ~ " ";
+                    }
+                }
+            }
+            
+            match i {
+                Ok (j: &Array) => {
+                    res = res ~ Dumper::dump (j, indent -> indent + 1);
+                    returned = true;
+                }
+                Ok (j: &Str) => {
+                    res = res ~ Dumper::dump (j, indent -> indent + 1);
+                    returned = true;
+                }
+                Ok (j: &Dict) => {
+                    res = res ~ Dumper::dump (j, indent -> indent + 1);
+                    returned = true;
+                }
+                Ok (j: _) => {
+                    res = res ~ Dumper::dump (j, indent -> indent + 1);
+                    returned = false;
+                }
+            }
+            z += 1;
+        }
+        res ~ "]"
+    }
+
+    
+    pub def dumpDict (x : &Dict, global : bool = false, indent : i32 = 0) -> [c32] {
+        if (global)
+            dumpGlobalDict (x)
+        else
+            dumpLocalDict (x, indent-> indent)
+    }
+
+    pub def dumpSuperDict (x : &Dict) -> [c32] {
+        let mut res = "";
+        for i_, j_ in x {
+            match i_ {
+                Ok (i :_) => match j_ {
+                    Ok (j: &Dict) => {
+                        res = res ~ "\n[" ~ i ~ "]\n" ~ Dumper::dump (j, global-> true) ~ "\n\n";
+                    }
+                    Ok (j: _) => {
+                        res = i ~ " = " ~ Dumper::dump (j) ~ "\n" ~ res;
+                    }
+                }
+            }
+        }
+        res
+    }
+    
+    pub def dumpLocalDict (x : &Dict, indent : i32 = 0) -> [c32] {
+        let mut res = "{";
+        let mut z = 0;
+        for i_, j_ in x {
+            if (z != 0) {
+                res = res ~ ", ";
+            }
+            
+            match i_ {
+                Ok (i :_) => match j_ {
+                    Ok (j: &Array) => {
+                        res = res ~ i ~ " = " ~ Dumper::dump (j, indent -> indent + cast!i32 (i.len) + 3);
+                    }
+                    Ok (j: &Str) => {
+                        res = res ~ i ~ " = " ~ Dumper::dump (j, indent -> indent + cast!i32 (i.len) + 3);
+                    }
+                    Ok (j: &Dict) => {
+                        res = res ~ i ~ " = " ~ Dumper::dump (j, indent -> indent + cast!i32 (i.len) + 3);
+                    }
+                    Ok (j: _) => {
+                        res = res ~ i ~ " = " ~ Dumper::dump (j, indent -> indent + cast!i32 (i.len) + 3);
+                    }
+                }            
+            }
+            z += 1;
+        }
+        
+        res ~ "}"
+    }
+
+    pub def dumpGlobalDict (x : &Dict, indent : i32 = 0) -> [c32] {
+        let mut res = "";
+        let mut z = 0;
+        for i_, j_ in x {
+            if (z != 0) {
+                for _ in 0 .. indent {
+                    res = res ~ " ";
+                }
+            }
+            
+            match i_ {
+                Ok (i :_) => match j_ {
+                    Ok (j: _) => {
+                        res = res ~ i ~ " = " ~ Dumper::dump (j, indent -> indent + cast!i32 (i.len) + 3) ~ "\n";
+                    }
+                }            
+            }
+            z += 1;
+        }
+        
+        res 
+    }
+
+    
+    
+}
