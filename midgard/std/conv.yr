@@ -806,6 +806,142 @@ pub {
             -res
         } else res
     }
+
+
+    /**
+     * Unwrap the content of an option type
+     * @example: 
+     * ==============
+     * def foo (i : i32)-> i32
+     *     throws &AssertError
+     * {
+     *     assert (i != 0);
+     *     144 / i
+     * }
+     * 
+     * let j = foo (12)?
+     * let k = foo (0)?
+     * {
+     *     println (j.unwrap ()); // prints "12"
+     *     let x = j.unwrap () 
+     *             + k.unwrap (); // throw an exception
+     *     println (x); 
+     * } catch {
+     *    err : &CastFailure => {
+     *          println (err);
+     *    }
+     * }
+     * ==============
+     * @throws : &CastFailure, if the option is empty
+     */
+    def unwrap (T) (a : T?) -> T
+        throws &CastFailure
+    {
+        match a {
+            Ok (x : _) => {
+                return x;
+            }
+            _ => {
+                throw CastFailure::new (void::typeinfo, T::typeinfo);
+            }
+        }
+    }
+
+    /**
+     * Unwrap the content of an option type containing a class type
+     * This function, unlike simple unwrap allows to cast the content of the option into the type of an child class
+     * @example: 
+     * ==================
+     * class @abstract A {
+     *   prot self () {}
+     *   impl std::io::Printable;
+     * }
+     * 
+     * class B over A {
+     *   pub self () {}
+     *   impl std::io::Printable;
+     * }
+     *
+     * class C over A {
+     *   pub self () {}
+     *   impl std::io::Printable;
+     * }
+     *
+     * def foo (i : i32) -> (&A)? {
+     *     if (i < 10) { (B::new ()?).to!(&A?) () }
+     *     else if (i < 20) { (C::new ()?).to!(&A?) () }
+     *     else (&A?)::__err__
+     * }
+     * 
+     * let x = foo (1);
+     * let y = foo (14);
+     * let z = foo (120);
+     * {
+     *    println (x.unwrap!(&B) ()); // prints "main::B ()"
+     *    println (y.unwrap!(&C) ()); // prints "main::C ()"
+     *    println (y.unwrap!(&A) ()); // prints "main::C ()"
+     *    println (z.unwrap!(&A) ()); // throw an exception
+     * } catch {
+     *     err : &CastFailure => {
+     *         println (err);
+     *     }
+     *}
+     * ==================
+     * @throws : &CastFailure, if the option is empty, or the option does not contain a value of type U
+     */
+    def if (is!U (J over T)) unwrap (U, T) (a : T?) -> U
+        throws &CastFailure
+    {
+        match a {
+            Ok (x : U) => {
+                return x;
+            }
+            Ok (z : _) => {
+                throw CastFailure::new (typeof (z)::typeinfo, T::typeinfo);
+            }
+            _ => {
+                throw CastFailure::new (void::typeinfo, T::typeinfo);
+            }
+        }
+    }
+
+    /**
+     * Transform a U? into a T? if U is over T
+     * @example: 
+     * ================
+     * class @abstract A {
+     *   prot self () {}
+     *   impl std::io::Printable;
+     * }
+     * 
+     * class B over A {
+     *   pub self () {}
+     *   impl std::io::Printable;
+     * }
+     *
+     * class C over A {
+     *   pub self () {}
+     *   impl std::io::Printable;
+     * }
+     * 
+     * def foo (i : i32) -> (&A)? {
+     *     if (i < 10) { (B::new ()?).to!(&A?) () }
+     *     else if (i < 20) { (C::new ()?).to!(&A?) () }
+     *     else (&A?)::__err__
+     * }
+     * ================
+     */
+    def to (T of I?, I, U over I) (a : U?)-> T {
+        match a {
+            Ok (x: _) => {
+                (cast!I (x))?
+            }
+            _ => {
+                (T)::__err__
+            }
+        }
+    }
+
     
 }
 

@@ -4,7 +4,7 @@ import core::typeinfo, core::array, core::exception, core::object;
 import std::config::_;
 import std::io;
 
-pub class ConfigCastFailure over core::exception::Exception {
+pub class @final ConfigError over core::exception::Exception {
 
 
     pub let field : [c32];
@@ -80,26 +80,41 @@ pub class ConfigCastFailure over core::exception::Exception {
  *    let cfg = tomlFile.parse ().to!Package ();
  *    println (cfg);
  * } catch {
- *    err: &ConfigCastFailure => { 
+ *    err: &ConfigError => { 
  *         println (err); 
  *    }
  * }
  * ============
  * @throws: 
- *   - &ConfigCastFailure: if the cast cannot be made
+ *   - &ConfigError: if the cast cannot be made
  */
 pub def to (struct T) (cfg : &Config)-> T
-    throws &ConfigCastFailure
+    throws &ConfigError
 {
     match cfg {
         x : &Dict => {
             return CfgToConfig::fromDict!T (x);
         }
         _ => {
-            throw ConfigCastFailure::new (T::typeinfo, cfg::typeinfo);
+            throw ConfigError::new (T::typeinfo, cfg::typeinfo);
         }
     }
 }
+
+pub def to (class T) (cfg : &Config)-> T
+    throws &ConfigError
+{
+    {
+        // If the constructor does not throw anything the catcher beneath will not work
+        __pragma!fake_throw (&ConfigError); 
+        T::new (cfg)
+    } catch {
+        ex : _  => {
+            throw ConfigError::new (T::typeinfo, cfg::typeinfo, subError-> ex?);
+        }
+    }    
+}
+
 
 /**
  * Transform a structure into a configuration
@@ -128,55 +143,54 @@ mod CfgToConfig {
      * ============ 
      * ============ 
      * @throws: 
-     *   - &ConfigCastFailure: if the configuration does not contains every field of the struct
+     *   - &ConfigError: if the configuration does not contains every field of the struct
      * @info: if the configuration contains more information they are ignored
      */
     pub def fromDict (struct T) (dict : &Dict)-> T
-        throws &ConfigCastFailure
+        throws &ConfigError
     {
-        let mut t = T::init;
-        cte for i in 0u32 .. typeof (__pragma!tupleof (t))::arity {
+        __pragma!fake_throw (&ConfigError); // if the struct is empty
+        let dmut t = [0u8 ; new sizeof (T)];
+        cte for i in 0us .. (__pragma!field_offsets (T)).len {
+            let offset = (__pragma!field_offsets (T)) [i];
+            let size = sizeof (__pragma!field_type (T, (__pragma!field_names (T))[i]));
+            let dmut z : &(mut void) = alias (cast!(&void) ((t [offset .. (offset + size)]).ptr));
+            
             if ((__pragma!field_names (T))[i] in dict) {
-                cte if (__pragma!compile ({
-                    let mut _ : &(mut typeof ((__pragma!tupleof (t)).i)) = alias ((__pragma!field_addrs (t)).i);
-                })) {                    
+                cte if (is!(__pragma!field_type (T, (__pragma!field_names (T))[i])) (class C) && !__pragma!compile ({
+                    to!(__pragma!field_type (T, (__pragma!field_names (T))[i])) (dict [(__pragma!field_names (T))[i]]);
+                })) {
+                    cte assert (false, "Type : '" ~ (__pragma!field_type (T, (__pragma!field_names (T))[i]))::typeid ~ "' is not decodable from a configuration, it must have a constructor with a '&Config' as parameter");
+                } else {                    
                     {
-                        cte if (__pragma!compile ({
-                            to!(typeof ((__pragma!tupleof (t)).i)) (dict [(__pragma!field_names (T))[i]]);
-                        })) {
-                            let mut x : &(mut typeof ((__pragma!tupleof (t)).i)) = alias ((__pragma!field_addrs (t)).i);
-                            *x = to!(typeof(*x)) (dict [(__pragma!field_names (T))[i]]);
-                        } else {
-                            cte assert (false, "Type '" ~ typeof ((__pragma!tupleof (t)).i)::typeid ~ "' cannot be encoded by a configuration");
-                        }
-                    } catch {
-                        err : &ConfigCastFailure => {
-                            throw ConfigCastFailure::new (name-> (__pragma!field_names (T))[i], T::typeinfo, dict::typeinfo, subError-> (cast!(&Exception) (err))?);
+                        *(cast! (&(__pragma!field_type (T, (__pragma!field_names (T))[i]))) (z)) = to!(__pragma!field_type (T, (__pragma!field_names (T))[i])) (dict [(__pragma!field_names (T))[i]]);                    
+                    } catch {                        
+                        err : &ConfigError => {
+                            throw ConfigError::new (name-> (__pragma!field_names (T))[i], T::typeinfo, dict::typeinfo, subError-> (cast!(&Exception) (err))?);
                         }
                         _ => {
-                            throw ConfigCastFailure::new (name-> (__pragma!field_names (T))[i], T::typeinfo, dict::typeinfo);
+                            throw ConfigError::new (name-> (__pragma!field_names (T))[i], T::typeinfo, dict::typeinfo);
                         }
                     }
-                } else {
-                    cte assert (false, "Field '" ~ (__pragma!field_names (T))[i] ~ "' of type " ~ T::typeid ~ " must be mutable");
                 }
             } else {                
-                cte if (!(__pragma!has_default (T))[i]) {
-                    throw ConfigCastFailure::new (name-> (__pragma!field_names (T))[i], T::typeinfo, dict::typeinfo);
+                cte if (!(__pragma!field_has_value (T))[i]) {
+                    throw ConfigError::new (name-> (__pragma!field_names (T))[i], T::typeinfo, dict::typeinfo);
+                } else {
+                    *(cast! (&(__pragma!field_type (T, (__pragma!field_names (T))[i]))) (z)) = __pragma!field_value (T, (__pragma!field_names (T))[i]);
                 }
-            }
-        }
-        
-        return t;
+            }        
+        }    
+
+        __pragma!trusted ({*(cast!(&T) (cast!(&void) (t.ptr)))})
     } catch {
-        err : &ConfigCastFailure => {
+        err : &ConfigError => {
             throw err;
         }
         _  => {
-            throw ConfigCastFailure::new (T::typeinfo, dict::typeinfo);
+            throw ConfigError::new (T::typeinfo, dict::typeinfo);
         }
     }
-
 
     /**
      * Transform an array configuration into an array
@@ -184,10 +198,10 @@ mod CfgToConfig {
      * ============ 
      * ============ 
      * @throws: 
-     *   - &ConfigCastFailure: if the configuration casting failed
+     *   - &ConfigError: if the configuration casting failed
      */
     pub def fromArray (T of [U], U) (cfg : &Array) -> T
-        throws &ConfigCastFailure
+        throws &ConfigError
     {
         import std::collection::vec;
         let dmut res = Vec!(U)::new ();
@@ -211,15 +225,15 @@ mod CfgToConfig {
      * assert (i.to!(i64) () == 12i64);
      * =============
      * @throws: 
-     *   - &ConfigCastFailure: if the cast cannot be made
+     *   - &ConfigError: if the cast cannot be made
      */
     pub def to (T of i64) (cfg : &Config)-> T
-        throws &ConfigCastFailure
+        throws &ConfigError
     {
         match cfg {
             Int (i-> i:_) => { return i; }
             _ => {
-                throw ConfigCastFailure::new (T::typeinfo, self::typeinfo);
+                throw ConfigError::new (T::typeinfo, self::typeinfo);
             }
         }
     }
@@ -232,15 +246,15 @@ mod CfgToConfig {
      * assert (i.to!(i32) () == 12);
      * =============
      * @throws: 
-     *   - &ConfigCastFailure: if the cast cannot be made
+     *   - &ConfigError: if the cast cannot be made
      */
     pub def to (T of i32) (cfg : &Config)-> T
-        throws &ConfigCastFailure
+        throws &ConfigError
     {
         match cfg {
             Int (i-> i:_) => { return cast!i32 (i); }
             _ => {
-                throw ConfigCastFailure::new (T::typeinfo, cfg::typeinfo);
+                throw ConfigError::new (T::typeinfo, cfg::typeinfo);
             }
         }
     }    
@@ -253,15 +267,15 @@ mod CfgToConfig {
      * assert (i.to!(f64) () == 12.0);
      * =============
      * @throws: 
-     *   - &ConfigCastFailure: if the cast cannot be made
+     *   - &ConfigError: if the cast cannot be made
      */
     pub def to (T of f64) (cfg : &Config)-> T
-        throws &ConfigCastFailure
+        throws &ConfigError
     {
         match cfg {
             Float (f-> f:_) => { return f; }
             _ => {
-                throw ConfigCastFailure::new (T::typeinfo, cfg::typeinfo);
+                throw ConfigError::new (T::typeinfo, cfg::typeinfo);
             }
         }
     }
@@ -274,15 +288,15 @@ mod CfgToConfig {
      * assert (i.to!([c32]) () == "foo");
      * =============
      * @throws: 
-     *   - &ConfigCastFailure: if the cast cannot be made
+     *   - &ConfigError: if the cast cannot be made
      */
     pub def to (T of [U], U of c32) (cfg : &Config)-> T
-        throws &ConfigCastFailure
+        throws &ConfigError
     {
         match cfg {
             Str (str-> str:_) => { return str; }            
             _ => {
-                throw ConfigCastFailure::new (T::typeinfo, cfg::typeinfo);
+                throw ConfigError::new (T::typeinfo, cfg::typeinfo);
             }
         }
     }
@@ -295,15 +309,15 @@ mod CfgToConfig {
      * assert (i.to!(bool) () == false);
      * =============
      * @throws: 
-     *   - &ConfigCastFailure: if the cast cannot be made
+     *   - &ConfigError: if the cast cannot be made
      */
     pub def to (T of bool) (cfg : &Config)-> T
-        throws &ConfigCastFailure
+        throws &ConfigError
     {
         match cfg {
             Bool (b-> b:_) => { return b; }
             _ => {
-                throw ConfigCastFailure::new (T::typeinfo, cfg::typeinfo);
+                throw ConfigError::new (T::typeinfo, cfg::typeinfo);
             }
         }
     }
@@ -316,10 +330,10 @@ mod CfgToConfig {
      * assert (i.to!([i32]) () == [1, 2]);
      * =============
      * @throws: 
-     *   - &ConfigCastFailure: if the cast cannot be made
+     *   - &ConfigError: if the cast cannot be made
      */
     pub def to (T of [U], U) (cfg : &Config)-> T
-        throws &ConfigCastFailure
+        throws &ConfigError
     {
         import std::collection::vec;
         match cfg {

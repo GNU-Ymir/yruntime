@@ -267,7 +267,7 @@ prv def usageValue (t : TypeInfo) -> [c32] {
     if (equals (t, f64::typeinfo)) { return usageValue!f64 (); }
     if (equals (t, [c32]::typeinfo)) { return usageValue![c32] (); }
     if (t.inner.len != 0u64)
-        return "[" ~ usageValue (t.inner [0]) ~ "... ]";
+        return __pragma!trusted ({ "[" ~ usageValue (t.inner [0]) ~ "... ]" });
     else
         return "void";
 }
@@ -337,7 +337,7 @@ prv def parseValues (struct T) (dmut lex : &Lexer, name : [c32], init : T)-> T
                             *x = parseValue!(typeof(*x)) (alias lex);
                         } else {
                             parseValue!(typeof ((__pragma!tupleof (res)).i)) (alias lex);
-                            cte assert (false, "Type '" ~ typeof ((__pragma!tupleof (res)).i)::typeid ~ "' cannot be encoded by a configuration");
+                            cte assert (false, "Type '" ~ typeof ((__pragma!tupleof (res)).i)::typeid ~ "' cannot be encoded in an argument parser");
                         }
 
                     } catch {

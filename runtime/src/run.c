@@ -194,7 +194,7 @@ _yrt_array_ _yrt_exc_resolve_stack_trace (_yrt_array_ syms) {
 	    }
 	    
 	}
-	ret = str_concat_c_str (ret, "\n╰");
+	ret = str_concat_c_str (ret, "\n╰\0");
 	ret = str_fit (ret);
 	_yrt_array_ arr;
 	arr.len = ret.len;
@@ -232,6 +232,20 @@ _yrt_array_ _yrt_exc_get_stack_trace () {
 	return arr;
     }
 }
+
+
+void _yrt_exc_panic (char *file, char *function, unsigned line)
+{
+        
+    fprintf (stderr, "Panic in file \"%s\", at line %u", file, line);
+    fprintf (stderr, ", in function \"%s\" !!! \n", function);
+    fprintf (stderr, "Please report the error at gnu.ymir@mail.com\n");
+    _yrt_array_ trace = _yrt_exc_resolve_stack_trace (_yrt_exc_get_stack_trace ());
+    if (trace.len != 0) 
+	fprintf (stderr, "%s\n", (char*) trace.data);
+    exit (-1);
+}
+
 
 _yrt_array_ _yrt_create_args_array (int len, char ** argv) {
     _yrt_array_ arr;

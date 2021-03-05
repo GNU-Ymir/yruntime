@@ -414,19 +414,19 @@ mod Dumper {
             }
             
             match i {
-                Ok (j: &Array) => {
+                j: &Array => {
                     res = res ~ Dumper::dump (j, indent -> indent + 1);
                     returned = true;
                 }
-                Ok (j: &Str) => {
+                j: &Str => {
                     res = res ~ Dumper::dump (j, indent -> indent + 1);
                     returned = true;
                 }
-                Ok (j: &Dict) => {
+                j: &Dict => {
                     res = res ~ Dumper::dump (j, indent -> indent + 1);
                     returned = true;
                 }
-                Ok (j: _) => {
+                j: _ => {
                     res = res ~ Dumper::dump (j, indent -> indent + 1);
                     returned = false;
                 }
@@ -446,16 +446,14 @@ mod Dumper {
 
     pub def dumpSuperDict (x : &Dict) -> [c32] {
         let mut res = "";
-        for i_, j_ in x {
-            match i_ {
-                Ok (i :_) => match j_ {
-                    Ok (j: &Dict) => {
-                        res = res ~ "\n[" ~ i ~ "]\n" ~ Dumper::dump (j, global-> true) ~ "\n\n";
-                    }
-                    Ok (j: _) => {
-                        res = i ~ " = " ~ Dumper::dump (j) ~ "\n" ~ res;
-                    }
+        for i, j_ in x {
+            match j_ {
+                j: &Dict => {
+                    res = res ~ "\n[" ~ i ~ "]\n" ~ Dumper::dump (j, global-> true) ~ "\n\n";
                 }
+                j: _ => {
+                    res = i ~ " = " ~ Dumper::dump (j) ~ "\n" ~ res;
+                }                
             }
         }
         res
@@ -464,25 +462,23 @@ mod Dumper {
     pub def dumpLocalDict (x : &Dict, indent : i32 = 0) -> [c32] {
         let mut res = "{";
         let mut z = 0;
-        for i_, j_ in x {
+        for i, j_ in x {
             if (z != 0) {
                 res = res ~ ", ";
             }
             
-            match i_ {
-                Ok (i :_) => match j_ {
-                    Ok (j: &Array) => {
-                        res = res ~ i ~ " = " ~ Dumper::dump (j, indent -> indent + cast!i32 (i.len) + 3);
-                    }
-                    Ok (j: &Str) => {
-                        res = res ~ i ~ " = " ~ Dumper::dump (j, indent -> indent + cast!i32 (i.len) + 3);
-                    }
-                    Ok (j: &Dict) => {
-                        res = res ~ i ~ " = " ~ Dumper::dump (j, indent -> indent + cast!i32 (i.len) + 3);
-                    }
-                    Ok (j: _) => {
-                        res = res ~ i ~ " = " ~ Dumper::dump (j, indent -> indent + cast!i32 (i.len) + 3);
-                    }
+            match j_ {
+                j: &Array => {
+                    res = res ~ i ~ " = " ~ Dumper::dump (j, indent -> indent + cast!i32 (i.len) + 3);
+                }
+                j: &Str => {
+                    res = res ~ i ~ " = " ~ Dumper::dump (j, indent -> indent + cast!i32 (i.len) + 3);
+                }
+                j: &Dict => {
+                    res = res ~ i ~ " = " ~ Dumper::dump (j, indent -> indent + cast!i32 (i.len) + 3);
+                }
+                j: _ => {
+                    res = res ~ i ~ " = " ~ Dumper::dump (j, indent -> indent + cast!i32 (i.len) + 3);             
                 }            
             }
             z += 1;
@@ -494,20 +490,13 @@ mod Dumper {
     pub def dumpGlobalDict (x : &Dict, indent : i32 = 0) -> [c32] {
         let mut res = "";
         let mut z = 0;
-        for i_, j_ in x {
+        for i, j in x {
             if (z != 0) {
                 for _ in 0 .. indent {
                     res = res ~ " ";
                 }
-            }
-            
-            match i_ {
-                Ok (i :_) => match j_ {
-                    Ok (j: _) => {
-                        res = res ~ i ~ " = " ~ Dumper::dump (j, indent -> indent + cast!i32 (i.len) + 3) ~ "\n";
-                    }
-                }            
-            }
+            }            
+            res = res ~ i ~ " = " ~ Dumper::dump (j, indent -> indent + cast!i32 (i.len) + 3) ~ "\n";
             z += 1;
         }
         
