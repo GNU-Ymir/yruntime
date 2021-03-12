@@ -9,7 +9,7 @@ import std::concurrency::sync;
 
 extern (C) def pipe (streams : &(i32));
 
-mod IOPipe (T) {
+mod IOPipe {T} {
     
     pub extern (C) def _yrt_read_pipe (stream : i32, size : usize)-> T;
     
@@ -66,11 +66,11 @@ pub class @final Pipe {
      * Get the reference of a object, that has been written in the pipe
      * @warning: it is a blocking process, the thread will wait until something is read
      */
-    pub def read (class T) (self) -> T {                        
+    pub def read {class T} (self) -> T {                        
         self._mutex.lock ();
         self._sem.post ();
         self._cond.wait (self._mutex);
-        let ret = IOPipe!(T)::_yrt_read_pipe (self._read, sizeof T);
+        let ret = IOPipe!{T}::_yrt_read_pipe (self._read, sizeof T);
         self._mutex.unlock ();
         ret
     }
@@ -79,7 +79,7 @@ pub class @final Pipe {
      * Write a reference to a object in the pipe to be read by another thread
      * @warning: it is a blocking process, the thread will wait until a thread has read the written data
      */
-    pub def write (class T) (self, x : T) {            
+    pub def write {class T} (self, x : T) {            
         self._sem.wait ();
         self._mutex.lock ();
         IOPipe!(T)::_yrt_write_pipe (self._write, x, sizeof T);
@@ -99,7 +99,7 @@ pub class @final Pipe {
      * Write the reference of an any type in the pipe
      * @warning: it is a blocking process, the thread will wait until someone is reading
      */
-    pub def write (T) (self, x : T) -> void {
+    pub def write {T} (self, x : T) -> void {
         self.write (Some!(T)::new (x))
     }    
     

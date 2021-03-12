@@ -88,7 +88,7 @@ pub class @final ConfigError over core::exception::Exception {
  * @throws: 
  *   - &ConfigError: if the cast cannot be made
  */
-pub def to (struct T) (cfg : &Config)-> T
+pub def to {struct T} (cfg : &Config)-> T
     throws &ConfigError
 {
     match cfg {
@@ -101,7 +101,7 @@ pub def to (struct T) (cfg : &Config)-> T
     }
 }
 
-pub def to (class T) (cfg : &Config)-> T
+pub def to {class T} (cfg : &Config)-> T
     throws &ConfigError
 {
     {
@@ -127,11 +127,11 @@ pub def to (class T) (cfg : &Config)-> T
  *  -> X;
  * 
  * let st = X (1, "foo", [X (2, "bar", [])]);
- * let cfg : &Config = st.to!(&Config) ();
+ * let cfg : &Config = st.to!(&Config} ();
  * ===============
  */
-pub def to (C of &Config, struct T) (value : T)-> &Config {
-    StructToCfg::to!(&Config, T) (value)
+pub def to {C of &Config, struct T} (value : T)-> &Config {
+    StructToCfg::to!(&Config, T} (value)
 }
 
 
@@ -146,7 +146,7 @@ mod CfgToConfig {
      *   - &ConfigError: if the configuration does not contains every field of the struct
      * @info: if the configuration contains more information they are ignored
      */
-    pub def fromDict (struct T) (dict : &Dict)-> T
+    pub def fromDict {struct T} (dict : &Dict)-> T
         throws &ConfigError
     {
         __pragma!fake_throw (&ConfigError); // if the struct is empty
@@ -157,7 +157,7 @@ mod CfgToConfig {
             let dmut z : &(mut void) = alias (cast!(&void) ((t [offset .. (offset + size)]).ptr));
             
             if ((__pragma!field_names (T))[i] in dict) {
-                cte if (is!(__pragma!field_type (T, (__pragma!field_names (T))[i])) (class C) && !__pragma!compile ({
+                cte if (is!(__pragma!field_type (T, (__pragma!field_names (T))[i])) {class C} && !__pragma!compile ({
                     to!(__pragma!field_type (T, (__pragma!field_names (T))[i])) (dict [(__pragma!field_names (T))[i]]);
                 })) {
                     cte assert (false, "Type : '" ~ (__pragma!field_type (T, (__pragma!field_names (T))[i]))::typeid ~ "' is not decodable from a configuration, it must have a constructor with a '&Config' as parameter");
@@ -200,15 +200,15 @@ mod CfgToConfig {
      * @throws: 
      *   - &ConfigError: if the configuration casting failed
      */
-    pub def fromArray (T of [U], U) (cfg : &Array) -> T
+    pub def fromArray {T of [U], U} (cfg : &Array) -> T
         throws &ConfigError
     {
         import std::collection::vec;
-        let dmut res = Vec!(U)::new ();
+        let dmut res = Vec!{U}::new ();
         for i in cfg {
             match i {
                 Ok (inner: &Config) =>  {
-                    res:.push (inner.to!(U) ());
+                    res:.push (inner.to!U ());
                 }
             }                    
         }
@@ -227,7 +227,7 @@ mod CfgToConfig {
      * @throws: 
      *   - &ConfigError: if the cast cannot be made
      */
-    pub def to (T of i64) (cfg : &Config)-> T
+    pub def to {T of i64} (cfg : &Config)-> T
         throws &ConfigError
     {
         match cfg {
@@ -248,7 +248,7 @@ mod CfgToConfig {
      * @throws: 
      *   - &ConfigError: if the cast cannot be made
      */
-    pub def to (T of i32) (cfg : &Config)-> T
+    pub def to {T of i32} (cfg : &Config)-> T
         throws &ConfigError
     {
         match cfg {
@@ -269,7 +269,7 @@ mod CfgToConfig {
      * @throws: 
      *   - &ConfigError: if the cast cannot be made
      */
-    pub def to (T of f64) (cfg : &Config)-> T
+    pub def to {T of f64} (cfg : &Config)-> T
         throws &ConfigError
     {
         match cfg {
@@ -290,7 +290,7 @@ mod CfgToConfig {
      * @throws: 
      *   - &ConfigError: if the cast cannot be made
      */
-    pub def to (T of [U], U of c32) (cfg : &Config)-> T
+    pub def to {T of [U], U of c32} (cfg : &Config)-> T
         throws &ConfigError
     {
         match cfg {
@@ -311,7 +311,7 @@ mod CfgToConfig {
      * @throws: 
      *   - &ConfigError: if the cast cannot be made
      */
-    pub def to (T of bool) (cfg : &Config)-> T
+    pub def to {T of bool} (cfg : &Config)-> T
         throws &ConfigError
     {
         match cfg {
@@ -332,7 +332,7 @@ mod CfgToConfig {
      * @throws: 
      *   - &ConfigError: if the cast cannot be made
      */
-    pub def to (T of [U], U) (cfg : &Config)-> T
+    pub def to {T of [U], U} (cfg : &Config)-> T
         throws &ConfigError
     {
         import std::collection::vec;
@@ -368,7 +368,7 @@ mod StructToCfg {
      * let cfg : &Config = st.to!(&Config) ();
      * ===============
      */
-    pub def to (C of &Config, struct T) (value : T)-> &Config {
+    pub def to {C of &Config, struct T} (value : T)-> &Config {
         let dmut res = Dict::new ();
         cte for i in 0u32 .. (typeof (__pragma!tupleof (value))::arity) {
             let name = (__pragma!field_names (T))[i];
@@ -394,7 +394,7 @@ mod StructToCfg {
      * let cfg : &Config = i.to!(&Config) ();
      * ============
      */
-    pub def to (C of &Config, T of i64) (value : T)-> &Config {
+    pub def to {C of &Config, T of i64} (value : T)-> &Config {
         Int::new (value)
     }
 
@@ -406,7 +406,7 @@ mod StructToCfg {
      * let cfg : &Config = i.to!(&Config) ();
      * ============
      */
-    pub def to (C of &Config, T of i32) (value : T)-> &Config {
+    pub def to {C of &Config, T of i32} (value : T)-> &Config {
         Int::new (cast!i64 (value))
     }
 
@@ -418,7 +418,7 @@ mod StructToCfg {
      * let cfg : &Config = b.to!(&Config) ();
      * ============
      */
-    pub def to (C of &Config, T of bool) (value : T)-> &Config {
+    pub def to {C of &Config, T of bool} (value : T)-> &Config {
         Bool::new (value)
     }
 
@@ -430,7 +430,7 @@ mod StructToCfg {
      * let cfg : &Config = f.to!(&Config) ();
      * ============
      */
-    pub def to (C of &Config, T of f64) (value : T)-> &Config {
+    pub def to {C of &Config, T of f64} (value : T)-> &Config {
         Float::new (value)
     }
 
@@ -442,7 +442,7 @@ mod StructToCfg {
      * let cfg : &Config = str.to!(&Config) ();
      * ============
      */
-    pub def to (C of &Config, T of [U], U of c32) (value : T)-> &Config {
+    pub def to {C of &Config, T of [U], U of c32} (value : T)-> &Config {
         Str::new (value)
     }
 
@@ -454,7 +454,7 @@ mod StructToCfg {
      * let cfg : &Config = slc.to!(&Config) ();
      * ============
      */
-    pub def to (C of &Config, T of [U], U) (value : T)-> &Config {
+    pub def to {C of &Config, T of [U], U} (value : T)-> &Config {
         let dmut arr = Array::new ();
         for i in value {
             arr:.push (StructToCfg::to!(&Config) (i));

@@ -45,11 +45,11 @@ pub macro list {
  * This class allows to push and pop elements from either end in constant time 
  * It stores immutable values but is itself mutable 
  */
-pub class @final List (T) {
+pub class @final List {T} {
 
-    let dmut _head : &ListNode!(T) = Empty!(T)::new ();
+    let dmut _head : &ListNode!{T} = Empty!{T}::new ();
 
-    let dmut _tail : &ListNode!(T) = Empty!(T)::new ();
+    let dmut _tail : &ListNode!{T} = Empty!{T}::new ();
 
     let mut _len : u64 = 0u64;
     
@@ -65,7 +65,7 @@ pub class @final List (T) {
     pub self () {}
 
 
-    prv self (dmut head : &ListNode!(T), dmut tail : &ListNode!(T), len : u64)
+    prv self (dmut head : &ListNode!{T}, dmut tail : &ListNode!{T}, len : u64)
         with _head = alias head, _tail = alias tail, _len = len
     {}
     
@@ -84,13 +84,13 @@ pub class @final List (T) {
      */
     pub def push (mut self, val : T)-> void {
         match ref self._tail {            
-            dmut tail: &ListValue!(T) => {
-                let dmut n_node = ListValue!(T)::new (val, alias tail, alias tail.next);
+            dmut tail: &ListValue!{T} => {
+                let dmut n_node = ListValue!{T}::new (val, alias tail, alias tail.next);
                 tail.next = alias n_node;
                 self._tail = alias n_node;            
             }
             _ => {
-                self._head = ListValue!(T)::new (val, alias self._tail, alias self._head);
+                self._head = ListValue!{T}::new (val, alias self._tail, alias self._head);
                 self._tail = alias self._head;
             }
         }
@@ -118,10 +118,10 @@ pub class @final List (T) {
         throws &OutOfArray
     {
         match ref self._tail {
-            dmut tail : &ListValue!(T) => {
+            dmut tail : &ListValue!{T} => {
                 let ret = tail.value;
                 match ref tail.prev {
-                    dmut prev : &ListValue!(T) => {
+                    dmut prev : &ListValue!{T} => {
                         prev.next = alias tail.next;
                         self._tail = alias prev;
                     }
@@ -153,13 +153,13 @@ pub class @final List (T) {
      */    
     pub def pushFront (mut self, val : T) -> void {
         match ref self._head {            
-            dmut head: &ListValue!(T) => {
-                let dmut n_node = ListValue!(T)::new (val, alias head.prev, alias head);
+            dmut head: &ListValue!{T} => {
+                let dmut n_node = ListValue!{T}::new (val, alias head.prev, alias head);
                 head.prev = alias n_node;
                 self._head = alias n_node;            
             }
             _ => {
-                self._head = ListValue!(T)::new (val, alias self._tail, alias self._head);
+                self._head = ListValue!{T}::new (val, alias self._tail, alias self._head);
                 self._tail = alias self._head;
             }
         }
@@ -182,10 +182,10 @@ pub class @final List (T) {
         throws &OutOfArray
     {
         match ref self._head {
-            dmut head : &ListValue!(T) => {
+            dmut head : &ListValue!{T} => {
                 let ret = head.value;
                 match ref head.next {
-                    dmut next : &ListValue!(T) => {
+                    dmut next : &ListValue!{T} => {
                         next.prev = alias head.prev;
                         self._head = alias next;
                     }
@@ -217,7 +217,7 @@ pub class @final List (T) {
      */
     pub def clear (mut self) -> void {
         match ref self._head {
-            dmut head : &ListValue!(T) => { // To avoid useless allocations
+            dmut head : &ListValue!{T} => { // To avoid useless allocations
                 self._head = alias head.prev;
                 self._tail = alias self._tail;
             }
@@ -231,7 +231,7 @@ pub class @final List (T) {
      */
     pub def front (self) -> (T)? {
         match self._head {
-            head: &ListValue!(T) => { return (head.value)? }
+            head: &ListValue!{T} => { return (head.value)? }
         }
         return (T?)::err;
     }
@@ -242,7 +242,7 @@ pub class @final List (T) {
      */
     pub def back (self) -> (T)? {
         match self._tail {
-            tail : &ListValue!(T) => { return (tail.value)?; }
+            tail : &ListValue!{T} => { return (tail.value)?; }
         }
         return (T?)::err;
     }
@@ -261,8 +261,8 @@ pub class @final List (T) {
      * }
      * ==========
      */
-    pub def begin (self) -> dmut &ListIterator!(T) {
-        return ListIterator!(T)::new (0u64, self._head);
+    pub def begin (self) -> dmut &ListIterator!{T} {
+        return ListIterator!{T}::new (0u64, self._head);
     }
 
     /**
@@ -277,19 +277,19 @@ pub class @final List (T) {
      * }
      * ============
      */
-    pub def end (self) -> &ListIterator!(T) {
+    pub def end (self) -> &ListIterator!{T} {
         match self._tail {
-            x : &ListValue!(T) => {
-                return ListIterator!(T)::new (self._len, x.next);
+            x : &ListValue!{T} => {
+                return ListIterator!{T}::new (self._len, x.next);
             }
             _ => {
-                return ListIterator!(T)::new (self._len, self._tail);
+                return ListIterator!{T}::new (self._len, self._tail);
             }
         }
     }
     
     
-    impl std::collection::seq::Seq!(T) {
+    impl std::collection::seq::Seq!{T} {
         
         /**
          * @returns: the number of elements contained in the list
@@ -353,18 +353,18 @@ pub class @final List (T) {
          * As the inner values of list is always immutable, they are not copied.
          * Only the structure of the list is copied
          */
-        pub over deepCopy (self) -> dmut &List!(T) {
+        pub over deepCopy (self) -> dmut &List!{T} {
             let mut current = self._head;
-            let dmut empty : &ListNode!(T) = Empty!(T)::new ();
-            let dmut c : &ListNode!(T) = alias empty;
+            let dmut empty : &ListNode!{T} = Empty!{T}::new ();
+            let dmut c : &ListNode!{T} = alias empty;
             let dmut head = alias empty, dmut tail = alias empty;
             let mut i = 0;
             loop {
                 match (current) {
-                    x : &ListValue!(T) => {                        
-                        let dmut n = ListValue!(T)::new (x.value, alias c, alias empty);
+                    x : &ListValue!{T} => {                        
+                        let dmut n = ListValue!{T}::new (x.value, alias c, alias empty);
                         match ref c {
-                            dmut z : &ListValue!(T) => {
+                            dmut z : &ListValue!{T} => {
                                 z.next = alias n;
                             }
                         }
@@ -382,7 +382,7 @@ pub class @final List (T) {
                 }
                 i += 1;
             }
-            return List!(T)::new (alias head, alias tail, self._len);
+            return List!{T}::new (alias head, alias tail, self._len);
         }
         
     }
@@ -393,7 +393,7 @@ pub class @final List (T) {
  * The content of a linked list
  * Those nodes are only used in List, and there is no way to access them from outside
  */
-class @abstract ListNode (T) {
+class @abstract ListNode {T} {
     prot self () {}
 
     impl std::io::Printable;
@@ -403,13 +403,13 @@ class @abstract ListNode (T) {
 /**
  * Encode a node of the linked list, containing a value
  */
-class @final ListValue (T) over ListNode!T {
+class @final ListValue {T} over ListNode!T {
 
     /// The reference to the previous node
-    pub let dmut prev : &ListNode!(T);
+    pub let dmut prev : &ListNode!{T};
 
     /// The reference to the next node 
-    pub let dmut next : &ListNode!(T);
+    pub let dmut next : &ListNode!{T};
 
     /// The value contained in the node
     pub let value : T;
@@ -436,7 +436,7 @@ class @final ListValue (T) over ListNode!T {
             cte if (__pragma!compile ({print (self.value);})) {
                 print (self.value);
                 match self.next {
-                    _ : &Empty!(T) => {}
+                    _ : &Empty!{T} => {}
                     _ => { print ("::", self.next); }
                 }
             } else {
@@ -450,7 +450,7 @@ class @final ListValue (T) over ListNode!T {
 /**
  * This class encode the end of a list (in both ways previous, or next)
  */
-class @final Empty (T) over ListNode!T {
+class @final Empty {T} over ListNode!T {
     pub self () {}
 
     impl std::io::Printable {
@@ -459,7 +459,7 @@ class @final Empty (T) over ListNode!T {
 }
 
 
-class @final ListIterator (T) {
+class @final ListIterator {T} {
 
     let mut _current : &ListNode!T;
 
@@ -478,16 +478,16 @@ class @final ListIterator (T) {
         }
     }
 
-    pub def get (0) (self) -> T {
+    pub def get {0} (self) -> T {
         match self._current {
-            x : &ListValue!(T) =>
+            x : &ListValue!{T} =>
                 return x.value; 
         }
 
         __pragma!panic ();
     }
 
-    pub def get (1) (self) -> u64 {
+    pub def get {1} (self) -> u64 {
         return self._index;
     }
 

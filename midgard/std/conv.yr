@@ -101,7 +101,8 @@ pub {
      * assert (x == "12");
      * ==========
      */
-    def to (T of [c32]) (a : u64) -> [c32] {
+    def to {T of [c32]} (a : u64) -> [c32] {
+        if (a == 0u64) return "0";
         let mut n = a;
         let mut len = 0u64;
         while n > 0u64 {
@@ -129,7 +130,8 @@ pub {
      * assert (x == "-12");
      * ===========
      */
-    def to (T of [c32]) (a : i64) -> [c32] {
+    def to {T of [c32]} (a : i64) -> [c32] {
+        if (a == 0i64) return "0";
         let (mut n, mut len, sign) = if (a < 0i64) {
             (- a, 0u64, true)
         } else { (a, 0u64, false) }
@@ -164,6 +166,9 @@ pub {
         }        
     }
 
+
+
+    
     /**
      * Transform is i32 into a string
      * @example: 
@@ -171,7 +176,7 @@ pub {
      * assert (to![c32] (12) == "12")
      * ============
      */
-    def to (T of [c32]) (a : i32) -> [c32] {
+    def to {T of [c32]} (a : i32) -> [c32] {
         to![c32](cast!i64 (a))
     }
 
@@ -182,7 +187,7 @@ pub {
      * assert (to![c32] (12u32) == "12")
      * ============
      */
-    def to (T of [c32]) (a : u32) -> [c32] {
+    def to {T of [c32]} (a : u32) -> [c32] {
         to![c32](cast!u64 (a))
     }
 
@@ -193,7 +198,7 @@ pub {
      * assert (to![c32] (12i16) == "12")
      * ============
      */
-    def to (T of [c32]) (a : i16) -> [c32] {
+    def to {T of [c32]} (a : i16) -> [c32] {
         to![c32](cast!i64 (a))
     }
 
@@ -204,7 +209,7 @@ pub {
      * assert (to![c32] (12u16) == "12")
      * ============
      */
-    def to (T of [c32]) (a : u16) -> [c32] {
+    def to {T of [c32]} (a : u16) -> [c32] {
         to![c32](cast!u64 (a))
     }
 
@@ -215,7 +220,7 @@ pub {
      * assert (to![c32] (12i8) == "12")
      * ============
      */
-    def to (T of [c32]) (a : i8) -> [c32] {
+    def to {T of [c32]} (a : i8) -> [c32] {
         to![c32](cast!i64 (a))
     }
 
@@ -226,7 +231,7 @@ pub {
      * assert (to![c32] (12u8) == "12")
      * ============
      */
-    def to (T of [c32]) (a : u8) -> [c32] {
+    def to {T of [c32]} (a : u8) -> [c32] {
         to![c32](cast!u64 (a))
     }
 
@@ -238,7 +243,8 @@ pub {
      * assert (x == "12");
      * ==========
      */
-    def to (T of [c8]) (a : u64) -> [c8] {
+    def to {T of [c8]} (a : u64) -> [c8] {
+        if (a == 0u64) return "0"s8;
         let mut n = a;
         let mut len = 0u64;
         while n > 0u64 {
@@ -266,7 +272,8 @@ pub {
      * assert (x == "-12");
      * ===========
      */
-    def to (T of [c8]) (a : i64) -> [c8] {
+    def to {T of [c8]} (a : i64) -> [c8] {
+        if (a == 0i64) return "0"s8;
         let (mut n, mut len, sign) = if (a < 0i64) {
             (- a, 0u64, true)
         } else { (a, 0u64, false) }
@@ -306,7 +313,7 @@ pub {
      * @params :
      *   - s: a string in utf32
      */
-    def to (T of [c8]) (s : [c32])-> dmut [c8] {
+    def to {T of [c8]} (s : [c32])-> dmut [c8] {
         alias Runtime::_yrt_to_utf8_array (s)
     }
     
@@ -315,10 +322,19 @@ pub {
      * @params :
      *   - s: a string in utf8
      */
-    def to (T of [c32]) (s : [c8])-> dmut [c32] {
+    def to {T of [c32]} (s : [c8])-> dmut [c32] {
         alias Runtime::_yrt_to_utf32_array (s)
     }
 
+    /**
+     * Transfrom a utf32 encoded char into a utf8 string
+     * @params :
+     *   - s: a char in utf32
+     */
+    def to {T of [c8]} (s : c32) -> dmut [c8] {
+        alias Runtime::_yrt_to_utf8_array ([s])
+    }
+    
     /**
      * Transform is i32 into a string
      * @example: 
@@ -326,7 +342,7 @@ pub {
      * assert (to![c8] (12) == "12"s8)
      * ============
      */
-    def to (T of [c8]) (a : i32) -> [c8] {
+    def to {T of [c8]} (a : i32) -> [c8] {
         to![c8](cast!i64 (a))
     }
 
@@ -337,7 +353,7 @@ pub {
      * assert (to![c8] (12u32) == "12"s8)
      * ============
      */
-    def to (T of [c8]) (a : u32) -> [c8] {
+    def to {T of [c8]} (a : u32) -> [c8] {
         to![c8](cast!u64 (a))
     }
 
@@ -348,7 +364,7 @@ pub {
      * assert (to![c8] (12i16) == "12"s8)
      * ============
      */
-    def to (T of [c8]) (a : i16) -> [c8] {
+    def to {T of [c8]} (a : i16) -> [c8] {
         to![c8](cast!i64 (a))
     }
 
@@ -359,7 +375,7 @@ pub {
      * assert (to![c8] (12u16) == "12"s8)
      * ============
      */
-    def to (T of [c8]) (a : u16) -> [c8] {
+    def to {T of [c8]} (a : u16) -> [c8] {
         to![c8](cast!u64 (a))
     }
 
@@ -370,7 +386,7 @@ pub {
      * assert (to![c8] (12i8) == "12"s8)
      * ============
      */
-    def to (T of [c8]) (a : i8) -> [c8] {
+    def to {T of [c8]} (a : i8) -> [c8] {
         to![c8](cast!i64 (a))
     }
 
@@ -381,7 +397,7 @@ pub {
      * assert (to![c8] (12u8) == "12"s8)
      * ============
      */
-    def to (T of [c8]) (a : u8) -> [c8] {
+    def to {T of [c8]} (a : u8) -> [c8] {
         to![c8](cast!u64 (a))
     }
 
@@ -392,7 +408,7 @@ pub {
      * assert (to![c8] (12.8f) == "12.8"s8)
      * ===========
      */
-    def to (T of [c8]) (a : f32) -> [c8] {
+    def to {T of [c8]} (a : f32) -> [c8] {
         Runtime::_yrt_float_to_s8 (a)
     }
 
@@ -403,7 +419,7 @@ pub {
      * assert (to![c8] (12.8) == "12.8"s8)
      * ===========
      */
-    def to (T of [c8]) (a : f64) -> [c8] {
+    def to {T of [c8]} (a : f64) -> [c8] {
         Runtime::_yrt_double_to_s8 (a)
     }
 
@@ -414,7 +430,7 @@ pub {
      * assert (to![c32] (12.8f) == "12.8")
      * ===========
      */
-    def to (T of [c32]) (a : f32) -> [c32] {
+    def to {T of [c32]} (a : f32) -> [c32] {
         to![c32] (Runtime::_yrt_float_to_s8 (a))
     }
 
@@ -425,10 +441,38 @@ pub {
      * assert (to![c32] (12.8) == "12.8")
      * ===========
      */
-    def to (T of [c32]) (a : f64) -> [c32] {
+    def to {T of [c32]} (a : f64) -> [c32] {
         to![c32] (Runtime::_yrt_double_to_s8 (a))
     } 
 
+    /**
+     * Convert a bool into a string 
+     * @example: 
+     * ===========
+     * assert (to![c8] (false) == "false"s8)
+     * ===========
+     */
+    def to {T of [c8]} (a : bool)-> [c8] {
+        if (a)
+            "true"s8
+        else
+            "false"s8
+    }
+
+    /**
+     * Convert a bool into a string 
+     * @example: 
+     * ===========
+     * assert (to![c32] (false) == "false")
+     * ===========
+     */
+    def to {T of [c32]} (a : bool)-> [c32] {
+        if (a)
+            "true"
+        else
+            "false"
+    }
+    
     /**
      * Transform a u64 into a f64
      * @example: 
@@ -437,7 +481,7 @@ pub {
      * assert (x == 12.0);
      * ==========
      */
-    def to (T of f64) (a : u64) -> f64 {
+    def to {T of f64} (a : u64) -> f64 {
         Runtime::_yrt_ulong_to_double (a)
     }
 
@@ -449,7 +493,7 @@ pub {
      * assert (x == 12.0);
      * ==========
      */
-    def to (T of f64) (a : i64) -> f64 {
+    def to {T of f64} (a : i64) -> f64 {
         Runtime::_yrt_long_to_double (a)
     }
 
@@ -462,7 +506,7 @@ pub {
      * assert (x == 12.0);
      * ==========
      */
-    def to (T of f64) (a : i32) -> f64 {
+    def to {T of f64} (a : i32) -> f64 {
         Runtime::_yrt_long_to_double (cast!i64 (a))
     }
 
@@ -474,7 +518,7 @@ pub {
      * assert (x == 12.0);
      * ==========
      */
-    def to (T of f64) (a : u32) -> f64 {
+    def to {T of f64} (a : u32) -> f64 {
         Runtime::_yrt_ulong_to_double (cast!u64 (a))
     }
 
@@ -486,7 +530,7 @@ pub {
      * assert (x == 12.0f);
      * ==========
      */
-    def to (T of f32) (a : i32) -> f32 {
+    def to {T of f32} (a : i32) -> f32 {
         Runtime::_yrt_int_to_float (a)
     }
 
@@ -498,7 +542,7 @@ pub {
      * assert (x == 12.0f);
      * ==========
      */
-    def to (T of f32) (a : u32) -> f32 {
+    def to {T of f32} (a : u32) -> f32 {
         Runtime::_yrt_uint_to_float (a)
     }
 
@@ -510,7 +554,7 @@ pub {
      * assert (x == 12i64);
      * ============
      */
-    def to (T of i64) (a : f64) -> i64 {
+    def to {T of i64} (a : f64) -> i64 {
         Runtime::_yrt_double_to_long (a)
     }
 
@@ -522,7 +566,7 @@ pub {
      * assert (x == 12u64);
      * ============
      */
-    def to (T of u64) (a : f64) -> u64 {
+    def to {T of u64} (a : f64) -> u64 {
         Runtime::_yrt_double_to_ulong (a)
     }
 
@@ -535,7 +579,7 @@ pub {
      * assert (x == 12);
      * ============
      */
-    def to (T of i32) (a : f32) -> i32 {
+    def to {T of i32} (a : f32) -> i32 {
         Runtime::_yrt_float_to_int (a)
     }
 
@@ -547,7 +591,7 @@ pub {
      * assert (x == 12u32);
      * ============
      */
-    def to (T of u32) (a : f32) -> u32 {
+    def to {T of u32} (a : f32) -> u32 {
         Runtime::_yrt_float_to_uint (a)
     }
 
@@ -559,7 +603,7 @@ pub {
      * assert (x == 12i64);
      * ============
      */
-    def to (T of i64) (a : f32) -> i64 {
+    def to {T of i64} (a : f32) -> i64 {
         cast!i64 (Runtime::_yrt_float_to_int (a))
     }
 
@@ -571,7 +615,7 @@ pub {
      * assert (x == 12u64);
      * ============
      */
-    def to (T of u64) (a : f32) -> u64 {
+    def to {T of u64} (a : f32) -> u64 {
         cast!u64 (Runtime::_yrt_float_to_uint (a))
     }
 
@@ -586,7 +630,7 @@ pub {
      * ===============
      * @assume: the string is stripped, so the only possible char are [0-9]
      */
-    def to (T of u64) (str : [c32])-> u64
+    def to {T of u64} (str : [c32])-> u64
         throws &CastFailure
     {
         let mut j = 1u64;
@@ -618,7 +662,7 @@ pub {
      * ===============
      * @assume: the string is stripped, so the only possible char are [0-9] and '-'
      */
-    def to (T of i64) (str : [c32])-> i64
+    def to {T of i64} (str : [c32])-> i64
         throws &CastFailure
     {
         let mut j = 1u64;
@@ -652,7 +696,7 @@ pub {
      * ===============
      * @assume: the string is stripped, so the only possible char are [0-9]
      */
-    def to (T of u64) (str : [c8])-> u64
+    def to {T of u64} (str : [c8])-> u64
         throws &CastFailure
     {
         let mut j = 1u64;
@@ -684,7 +728,7 @@ pub {
      * ===============
      * @assume: the string is stripped, so the only possible char are [0-9] and '-'
      */
-    def to (T of i64) (str : [c8])-> i64
+    def to {T of i64} (str : [c8])-> i64
         throws &CastFailure
     {
         let mut j = 1u64;
@@ -719,7 +763,7 @@ pub {
      * ===============
      * @assume: the string is stripped, so the only possible char are [0-9a-f], '0', 'x'
      */
-    def to (T of u32, "x") (str : [c32])-> u32
+    def to {T of u32, "x"} (str : [c32])-> u32
         throws &CastFailure
     {
         let mut j = 1u64;
@@ -760,7 +804,7 @@ pub {
      * ===============
      * @assume: the string is stripped, so the only possible char are [0-9], '-' and '.'
      */
-    def to (T of f64) (str : [c32])-> f64
+    def to {T of f64} (str : [c32])-> f64
         throws &CastFailure
     {
         let mut j = 1u64;
@@ -834,7 +878,7 @@ pub {
      * ==============
      * @throws : &CastFailure, if the option is empty
      */
-    def unwrap (T) (a : T?) -> T
+    def unwrap {T} (a : T?) -> T
         throws &CastFailure
     {
         match a {
@@ -868,8 +912,8 @@ pub {
      * }
      *
      * def foo (i : i32) -> (&A)? {
-     *     if (i < 10) { (B::new ()?).to!(&A?) () }
-     *     else if (i < 20) { (C::new ()?).to!(&A?) () }
+     *     if (i < 10) { (B::new ()?).to!(&A?} () }
+     *     else if (i < 20) { (C::new ()?).to!(&A?} () }
      *     else (&A?)::__err__
      * }
      * 
@@ -877,10 +921,10 @@ pub {
      * let y = foo (14);
      * let z = foo (120);
      * {
-     *    println (x.unwrap!(&B) ()); // prints "main::B ()"
-     *    println (y.unwrap!(&C) ()); // prints "main::C ()"
-     *    println (y.unwrap!(&A) ()); // prints "main::C ()"
-     *    println (z.unwrap!(&A) ()); // throw an exception
+     *    println (x.unwrap!(&B} ()); // prints "main::B ()"
+     *    println (y.unwrap!(&C} ()); // prints "main::C ()"
+     *    println (y.unwrap!(&A} ()); // prints "main::C ()"
+     *    println (z.unwrap!(&A} ()); // throw an exception
      * } catch {
      *     err : &CastFailure => {
      *         println (err);
@@ -889,7 +933,7 @@ pub {
      * ==================
      * @throws : &CastFailure, if the option is empty, or the option does not contain a value of type U
      */
-    def if (is!U (J over T)) unwrap (U, T) (a : T?) -> U
+    def if (is!U {J over T}) unwrap {U, T} (a : T?) -> U
         throws &CastFailure
     {
         match a {
@@ -925,13 +969,13 @@ pub {
      * }
      * 
      * def foo (i : i32) -> (&A)? {
-     *     if (i < 10) { (B::new ()?).to!(&A?) () }
-     *     else if (i < 20) { (C::new ()?).to!(&A?) () }
+     *     if (i < 10) { (B::new ()?).to!(&A?} () }
+     *     else if (i < 20) { (C::new ()?).to!(&A?} () }
      *     else (&A?)::__err__
      * }
      * ================
      */
-    def to (T of I?, I, U over I) (a : U?)-> T {
+    def to {T of I?, I, U over I} (a : U?)-> T {
         match a {
             Ok (x: _) => {
                 (cast!I (x))?
@@ -949,7 +993,7 @@ pub {
  * @assume: a < 10
  * Transform a u64 into a c8
  */
-def to (T of c8) (a : u64) -> c8 {
+def to {T of c8} (a : u64) -> c8 {
     match a {
         0u32 => { '0'c8 }
         1u32 => { '1'c8 }
@@ -976,7 +1020,7 @@ def to (T of c8) (a : u64) -> c8 {
  * @assume: a < 10 and a >= 0
  * Transform a i64 into a c8
  */
-def to (T of c8) (a : i64) -> c8 {
+def to {T of c8} (a : i64) -> c8 {
     match a {
         0 => { '0'c8 }
         1 => { '1'c8 }
@@ -1003,7 +1047,7 @@ def to (T of c8) (a : i64) -> c8 {
  * @assume: a <= 15
  * Transform a u64 into a c32
  */
-def to (T of c32) (a : u64) -> c32 {
+def to {T of c32} (a : u64) -> c32 {
     match a {
         0u32 => { '0' }
         1u32 => { '1' }
@@ -1029,7 +1073,7 @@ def to (T of c32) (a : u64) -> c32 {
  * @assume: a <= 15 and a >= 0
  * Transform a u64 into a c32
  */
-def to (T of c32) (a : i64) -> c32 {
+def to {T of c32} (a : i64) -> c32 {
     match a {
         0 => { '0' }
         1 => { '1' }
@@ -1056,7 +1100,7 @@ def to (T of c32) (a : i64) -> c32 {
  * Transform a c32 into a u64
  * @assume: a >= '0' and a <= '9' or a >= 'a' and a <= 'f'
  */
-def to (T of u64) (a : c32) -> u64 {
+def to {T of u64} (a : c32) -> u64 {
     match a {
         '0' => { 0u64 }
         '1' => { 1u64 }
@@ -1088,7 +1132,7 @@ def to (T of u64) (a : c32) -> u64 {
  * Transform a c8 into a u64
  * @assume: a >= '0' and a <= '9' or a >= 'a' and a <= 'f'
  */
-def to (T of u64) (a : c8) -> u64 {
+def to {T of u64} (a : c8) -> u64 {
     match a {
         '0'c8 => { 0u64 }
         '1'c8 => { 1u64 }

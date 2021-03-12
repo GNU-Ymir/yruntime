@@ -233,8 +233,8 @@ pub class TcpStream {
      *  - T: a slice type
      *  - U: any type
      */
-    pub def rawSend (T of [U], U) (mut self, a : T) -> void {
-        etc::c::socket::write (self._sockfd, cast!(&void) (a.ptr), sizeof (U) * cast!(usize) (a.len));
+    pub def rawSend {T of [U], U} (mut self, a : T) -> void {
+        etc::c::socket::write (self._sockfd, cast!{&void} (a.ptr), sizeof (U) * cast!(usize) (a.len));
     }
 
     /**
@@ -244,7 +244,7 @@ pub class TcpStream {
      * @templates: 
      * - U: any type
      */
-    pub def rawReceive (U) (mut self, nb : u64) -> dmut [U] {
+    pub def rawReceive {U} (mut self, nb : u64) -> dmut [U] {
         let dmut alloc = core::duplication::allocArray!(U) (nb);
         etc::c::socket::read (self._sockfd, alias cast!(&void) (alloc.ptr), cast!(usize) (nb * sizeof (U)));
         return alias alloc;
@@ -253,7 +253,7 @@ pub class TcpStream {
     /**
      * Send a packable class through the stream
      */
-    pub def send (T impl Packable) (mut self, a : T) -> void {
+    pub def send {T impl Packable} (mut self, a : T) -> void {
         let packet = a.pack ();
         // We start by sending the size of the packet
         etc::c::socket::write (self._sockfd, cast!(&void) (&(packet.len)), sizeof (typeof (packet.len)));
@@ -271,7 +271,7 @@ pub class TcpStream {
     {        
         let mut size = 0u64;
         etc::c::socket::read (self._sockfd, alias cast!(&void) (&size), sizeof (usize));
-        let packet : [u8] = self:.rawReceive!(u8) (size);
+        let packet : [u8] = self:.rawReceive!{u8} (size);
         return packet.unpack ();
     }
     

@@ -10,10 +10,10 @@ import std::collection::seq;
  * @example: 
  * ===========
  * let a = [1, 2, 3];
- * a.each!(|x| println (x)) ();
+ * a.each!{|x| println (x)} ();
  * ===========
  */
-pub def each (F : fn (U)-> void, T of [U], U) (a : T) {
+pub def each {F : fn (U)-> void, T of [U], U} (a : T) {
     for i in a {
         F (i);
     }
@@ -26,10 +26,10 @@ pub def each (F : fn (U)-> void, T of [U], U) (a : T) {
  * @example: 
  * ===========
  * let a = [1, 2, 3];
- * a.each!(|x| println (x)) ();
+ * a.each!{|x| println (x)} ();
  * ===========
  */
-pub def each (F : fn (U)-> void, T impl Seq!U, U) (a : T) {
+pub def each {F : fn (U)-> void, T impl Seq!U, U} (a : T) {
     for i in a {
         match i {
             Ok (x:_) => 
@@ -45,11 +45,11 @@ pub def each (F : fn (U)-> void, T impl Seq!U, U) (a : T) {
  * @example: 
  * ===========
  * let a = [1, 2, 3];
- * let b = a.map!(|x| => x + 1) ();
+ * let b = a.map!{|x| => x + 1} ();
  * assert (b == [2, 3, 4]);
  * ===========
  */
-pub def map (F : fn (U)-> J, T of [U], U, J) (a : T) -> mut [mut J] {
+pub def map {F : fn (U)-> J, T of [U], U, J} (a : T) -> mut [mut J] {
     let mut res : [mut J] = core::duplication::allocArray!(J) (a.len);
     for i in 0u64 .. a.len {
         (res [i] = F (a[i]))?
@@ -65,11 +65,11 @@ pub def map (F : fn (U)-> J, T of [U], U, J) (a : T) -> mut [mut J] {
  * @example: 
  * ===========
  * let a = [1, 2, 3];
- * let b = a.map!(|x| => x + 1) ();
+ * let b = a.map!{|x| => x + 1} ();
  * assert (b == [2, 3, 4]);
  * ===========
  */
-pub def map (F : fn (U)-> J, T impl Seq!U, U, J) (a : T) -> mut [mut J] {
+pub def map {F : fn (U)-> J, T impl Seq!U, U, J} (a : T) -> mut [mut J] {
     let mut res : [mut J] = core::duplication::allocArray!(J) (a.len ());
     for i in 0u64 .. a.len () {
         (res [i] = F (a[i]))?
@@ -86,12 +86,12 @@ pub def map (F : fn (U)-> J, T impl Seq!U, U, J) (a : T) -> mut [mut J] {
  * @example: 
  * ===============
  * let i = [1, 2, 3];
- * assert (i.scan!(|x,y| x + y) (0) == 6);
- * assert (i.scan!(|x,y| x + y) (12) == 18);
+ * assert (i.scan!{|x,y| x + y} (0) == 6);
+ * assert (i.scan!{|x,y| x + y} (12) == 18);
  * ===============
  * @complexity: O (n), with n = a.len
  */
-pub def fold (F : fn (U,U)-> U, T of [U], U) (a : T, seed : U)-> U {
+pub def fold {F : fn (U,U)-> U, T of [U], U} (a : T, seed : U)-> U {
     let mut res = seed;
     for i in a {
         res = F (res, i);
@@ -108,12 +108,12 @@ pub def fold (F : fn (U,U)-> U, T of [U], U) (a : T, seed : U)-> U {
  * @example: 
  * ===============
  * let i = [1, 2, 3];
- * assert (i.scan!(|x,y| x + y) (0) == 6);
- * assert (i.scan!(|x,y| x + y) (12) == 18);
+ * assert (i.scan!{|x,y| x + y} (0) == 6);
+ * assert (i.scan!{|x,y| x + y} (12) == 18);
  * ===============
  * @complexity: O (n), with n = a.len
  */
-pub def fold (F : fn (U,U)-> U, T of [U], U) (a : T)-> U {
+pub def fold {F : fn (U,U)-> U, T of [U], U} (a : T)-> U {
     let mut res = cte if (is!U (X of f32)) 0.f else cte if (is!U (X of f64)) 0.0 else U::init;
     for i in a {
         res = F (res, i);
@@ -130,12 +130,12 @@ pub def fold (F : fn (U,U)-> U, T of [U], U) (a : T)-> U {
  * @example: 
  * ===============
  * let i = [1, 2, 3];
- * assert (i.scan!(|x,y| x + y) (0) == 6);
- * assert (i.scan!(|x,y| x + y) (12) == 18);
+ * assert (i.scan!{|x,y| x + y} (0) == 6);
+ * assert (i.scan!{|x,y| x + y} (12) == 18);
  * ===============
  * @complexity: O (n), with n = a.len
  */
-pub def fold (F : fn (U,U)-> U, T impl Seq!U, U) (a : T, seed : U)-> U {
+pub def fold {F : fn (U,U)-> U, T impl Seq!U, U} (a : T, seed : U)-> U {
     let mut res = seed;
     for i in a {
         match i {
@@ -156,13 +156,13 @@ pub def fold (F : fn (U,U)-> U, T impl Seq!U, U) (a : T, seed : U)-> U {
  * @example: 
  * ===============
  * let i = [1, 2, 3];
- * assert (i.scan!(|x,y| x + y) () == 6);
+ * assert (i.scan!{|x,y| x + y} () == 6);
  * let j = [1., 2., 3.0];
- * assert (i.scan!(|x,y| x + y) () == 6.0);
+ * assert (i.scan!{|x,y| x + y} () == 6.0);
  * ===============
  * @complexity: O (n), with n = a.len
  */
-pub def fold (F : fn (U,U)-> U, T impl Seq!U, U) (a : T)-> U {
+pub def fold {F : fn (U,U)-> U, T impl Seq!U, U} (a : T)-> U {
     let mut res = cte if (is!U (X of f32)) 0.f else cte if (is!U (X of f64)) 0.0 else U::init;
     for i in a {
         match i {
