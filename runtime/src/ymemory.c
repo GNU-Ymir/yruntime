@@ -3,11 +3,12 @@
 #include "../include/type.h"
 #include <stdio.h>
 
-#ifndef GC_THREADS
-#define GC_THREADS
-#include <gc/gc.h>
-#include <gc/gc_disclaim.h>
-#endif
+/* #ifndef GC_THREADS */
+/* #define GC_THREADS */
+/* #include <gc/gc.h> */
+/* #include <gc/gc_disclaim.h> */
+/* #endif */
+#include "gc.h"
 
 _yrt_array_ _yrt_dup_slice (_yrt_array_ arr, unsigned long size) {
     char* x = (char*) GC_malloc (arr.len * size);
@@ -51,19 +52,32 @@ void* _yrt_dupl_any (void* data, unsigned long len) {
     return x;
 }
 
+void _yrt_destruct_class (GC_PTR obj, GC_PTR x) {
+    void* vtable = *((void**)obj); // vtable
+    // the second element is the destructor
+    void(*__dtor) () = *(void(**)(void*)) ((void**) vtable + 1);
+    (*__dtor) (obj);
+}
+
 void* _yrt_alloc_class (void* vtable) {
     // the first element stored in the vtable is the typeinfo
     _ytype_info *ti = *((_ytype_info**) vtable);
 
     // the second element is the destructor
-    void(*__dtor) () = *(void(*)()) ((void**) vtable + 1);
+    void(*__dtor) () = *(void(**)()) ((void**) vtable + 1);
     
-    void* cl = GC_malloc (ti-> size);    
+    void* cl = GC_MALLOC (ti-> size);    
     *((void**)cl) = vtable; // vtable
     *((void**)cl+1) = NULL; // monitor
+
+    // No need to finalize classes without destructors
+    if ((*__dtor) != NULL) {
+	GC_register_finalizer (cl, _yrt_destruct_class, NULL, NULL, NULL);
+    }
     
     return cl;
 }
+
 
 _yrt_array_ _yrt_concat_slices (_yrt_array_ left, _yrt_array_ right, unsigned long size) {
     char* x = (char*) GC_malloc ((left.len + right.len) * size);

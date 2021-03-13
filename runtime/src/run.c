@@ -223,8 +223,8 @@ _yrt_array_ _yrt_exc_get_stack_trace () {
 	_yrt_array_ arr;
 	arr.len = trace_size;
 	arr.data = res;
-	return arr;
 	
+	return arr;	
     } else {
 	_yrt_array_ arr;
 	arr.len = 0;
@@ -262,8 +262,15 @@ _yrt_array_ _yrt_create_args_array (int len, char ** argv) {
     return arr;
 }
 
+void _yrt_force_debug () {
+    __YRT_DEBUG__ = 1;
+    bfd_init ();
+}
+
 int _yrt_run_main_debug (int argc, char ** argv, int(* y_main)()) {
     __YRT_DEBUG__ = 1;
+    
+    GC_INIT ();
     bfd_init ();
 
     installHandler ();
@@ -275,6 +282,8 @@ int _yrt_run_main_debug (int argc, char ** argv, int(* y_main)()) {
 int _yrt_run_main (int argc, char ** argv, int(* y_main)()) {
     __YRT_DEBUG__ = 0;
 
+    GC_INIT ();
+    
     installHandler ();
     _yrt_exc_init ();
     

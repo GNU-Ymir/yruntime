@@ -9,7 +9,7 @@
 
 #ifndef GC_THREADS
 #define GC_THREADS
-#include <gc/gc.h>
+#include "gc.h"
 #endif
 
 void _yrt_throw_runtime_abort (_yrt_c8_array_ str);

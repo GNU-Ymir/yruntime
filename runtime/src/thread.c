@@ -7,7 +7,7 @@
 #include <pthread.h>
 
 #define GC_THREADS
-#include <gc/gc.h>
+#include "gc.h"
 #include <semaphore.h>
 
 pthread_mutex_t __monitor_mutex__ = PTHREAD_MUTEX_INITIALIZER;

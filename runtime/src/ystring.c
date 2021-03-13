@@ -2,7 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <gc/gc.h>
+#include "gc.h"
 
 _ystring str_grow (_ystring self, unsigned long min) {
     unsigned long n_len = self.len;

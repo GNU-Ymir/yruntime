@@ -134,6 +134,8 @@ void* _yrt_exc_check_type (_ytype_info info) {
     return NULL;
 }
 
+void _yrt_exc_panic (char *file, char *function, unsigned line);
+
 void _yrt_exc_throw (char *file, char *function, unsigned line, _ytype_info info, void* data)
 {
     jmp_buf j;
@@ -148,9 +150,9 @@ void _yrt_exc_throw (char *file, char *function, unsigned line, _ytype_info info
     
     /* Pop for jumping. */
     _yrt_exc_pop_list (&j, _list_);
-    
+
     /* LONGJUMP to J with nonzero value. */
-    longjmp (j, 1);
+    longjmp (j, 1);    
 }
 
 void _yrt_exc_rethrow () {
