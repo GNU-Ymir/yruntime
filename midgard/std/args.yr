@@ -1,0 +1,958 @@
+mod std::args;
+
+import core::object, core::exception, core::array, core::typeinfo;
+import std::collection::map;
+import std::collection::set;
+import std::collection::vec;
+import std::config::conv;
+import std::lexer;
+import std::io;
+
+
+extern (C) def printf (c : &c8, ...);
+
+ /*
+ * The list of tokens that can be found inside a list of arguments
+ * 
+ */
+enum
+| DHYPHEN = " --"
+| SHYPHEN = " -"
+| EQUALS = "="
+| QUOTE = "\""
+ -> ArgsTokens;
+
+/**
+ * Enumeration used to specify a parameter that can be set or not in an argument line
+ * @example: 
+ * =================
+ * let command_line = ["./a.out", "--foo"];
+ *
+ * struct 
+ * | foo : YesNo
+ * | bar : YesNo
+ *  -> MyArguments;
+ * 
+ * let parser = ArgumentParser!{MyArguments}::new ();
+ * let args : MyArguments = parser.parse (command_line);
+ * assert (args.foo && !args.bar);
+ * =================
+ */
+pub enum
+| YES = true
+| NO = false
+ -> YesNo;
+
+
+struct
+| long : [c32] // The long name of the argument (example 'foo')
+| short : [c32] // The short name of the argument (example 'f')
+| comment : [c32] // The comment printed in the help
+ -> Argument;
+
+
+/**
+ * An argument parser used to parse the argument of the command line
+ * This class takes a structure as template parameter, this structure defines the list of arguments
+ * @example: 
+ * ===========================
+ * import std::args;
+ * import std::io;
+ *
+ * struct
+ * | help : YesNo // Can be set or not
+ * | sum : YesNo  // Can be set or not  
+ * | N : [i32] // A list of integer, mandatory 
+ * | verbose : YesNo // Can be set or not  
+ * | output : [c32] = "" // A string, optional          
+ *  -> Foo;
+ *
+ * def main (args : [[c8]]) {
+ *    let x = ArgumentParser!(Foo)::new ()
+ *        :.info!"help" (short-> "h", comments-> "print this help and exit", isHelp-> true)
+ *        :.info!"sum" (comments-> "sum the integers (default find the max)")
+ *        :.info!"output" (short-> "o", comments-> "does nothing")
+ *        :.info!"verbose" (short-> "v", comments-> "prints the intermediate operations")
+ *        :.positional!"N" (comments-> "list of integers to process");    
+ *
+ *    {
+ *        let f = x.parse (args);
+ *        if (f.sum) {
+ *            let mut res = f.N [0];
+ *            for i in f.N[1u64..$] {
+ *                if (f.verbose) println (res, " + ", i, " = ", res + i);
+ *                res += i
+ *            }
+ *            println (res);
+ *        } else {
+ *            let mut res = f.N [0];
+ *            for i in f.N [1u64..$] {
+ *                if (f.verbose) println (res, " < ", i, " = ", if (res < i) i else res);
+ *                if (i > res) res = i;
+ *            }
+ *            println (res);
+ *        }
+ *    } catch {
+ *        err : &ArgumentError => {
+ *            println (x.simpleUsage ()); // Print the usage in a single line
+ *            println (x.diagnosis (err)); // Print the error in a readable way for the user
+ *        }
+ *        _ : &HelpRequired => {
+ *            println (x.usage ()); // Print the help in multiple line
+ *        }
+ *        err: _ => {
+ *            println (err);
+ *        }
+ *    }
+ * }
+ * ===========================
+ */
+pub class ArgumentParser <struct T> {
+    
+    pub let dmut _content = HashMap!{[c32], Argument}::new ();
+    pub let dmut _helps = HashSet!{[c32]}::new ();
+    pub let dmut _positional = Vec!{[c32]}::new ();
+    pub let dmut _knwon_pos = HashSet!{[c32]}::new ();
+
+    /**
+     * Create a new argument parser, where each field of the structure are used to initialized the parser 
+     * By default, the argument only have a long name and are all named, the methods info, and positional can be used to change that
+     */
+    pub self () {
+        cte for i in 0us .. (__pragma!field_names (T)).len {
+            self._content:.insert ((__pragma!field_names (T))[i], Argument ((__pragma!field_names (T))[i], "", ""));
+        }
+    }
+
+    /**
+     * Set information about a named argument (called with --{long|short}, or -{long|short})
+     * @templates: 
+     *    - long: the name of the field in the structure T (must be in the structure to compile)
+     * @params: 
+     *    - short: the short name of the argument (optional)
+     *    - comments: the comments to display in the help  (optional)
+     *    - isHelp: if true, when set the parser will throw the exception HelpRequired
+     * @returns: the actual parser, but with updated informations
+     * @info: the parser is returned, to be able to set it in a single line fashion
+     * @example: 
+     * ===================
+     * let line = ["./a.out", "-f", "1", "--bar", "2"];
+     * let parser = ArgumentParser!{MyStruct}::new () 
+     *                :.info!"foo" (short-> "f", comments-> "an integer"), 
+     *                :.info!"bar" (comments-> "an integer"),
+     *                :.info!"help" (short-> "h", isHelp-> true);
+     * let args = parser.parse (line);
+     * assert (args.foo == 1 && args.bar == 2);
+     * ===================
+     */
+    pub def info {long : [c32]} (mut self, short : [c32] = "", comments : [c32] = "", isHelp : bool = false) -> dmut &ArgumentParser {
+        cte assert (__pragma!has_field (T, long), "Type " ~ T::typeid ~ " has no field named : '" ~ long ~ "'");
+        cte if (__pragma!has_field (T, long)) {
+            self._content:.insert (long, Argument (long, short, comments));
+            if (short != "")
+                self._content:.insert (short, Argument (long, short, comments));
+            
+            if (isHelp) {
+                self._helps:.insert (long);            
+            }
+        }
+        
+        alias self
+    }
+
+    /**
+     * Set information about a positional argument, set by the argument at the given position
+     * @info: 
+     * ===================
+     * If there is multiple positional argument, the position is the same as this method call
+     * For example, with two positional argument foo and bar, `:.positional!"foo" ():.positional!"bar" ()`.
+     * 'foo' will be the first positional argument, and 'bar' the second
+     * ===================
+     * @known_bug: 
+     * ================
+     * If a positional argument is an array, the argument parser will never pass to the next positional argument, even if the type is incorrect
+     * ================
+     * @templates: 
+     *     - long: the name of the field in the structure T, it must be in the structure to compile, and must be a mandatory field (no default value)
+     * @params: 
+     *    - comments: the comments to display in the help
+     * @returns: the actual parser, but with updated informations
+     * @info: the parser is returned, to be able to set it in a single line fashion
+     * @example: 
+     * ===================
+     * let line = ["./a.out", "1", "2"];
+     * let parser = ArgumentParser!{MyStruct}::new () 
+     *                :.positional!"foo" (comments-> "an integer"), 
+     *                :.positional!"bar" (comments-> "another integer"),
+     *                :.info!"help" (short-> "h", isHelp-> true);
+     * let args = parser.parse (line);
+     * assert (args.foo == 1 && args.bar == 2);
+     * ===================
+     */
+    pub def positional {long : [c32]} (mut self, comments : [c32] = "") -> dmut &ArgumentParser {
+        cte assert (__pragma!has_field (T, long), "Type " ~ T::typeid ~ " has no field named : '" ~ long ~ "'");
+        cte if (__pragma!has_field (T, long)) {
+            cte assert (!__pragma!field_has_value (T, long), "Positional argument '" ~ long ~ "' can't have a default value");
+                
+            self._positional:.push (long);
+            self._content:.insert (long, Argument (long, "", comments));            
+            self._knwon_pos:.insert (long);
+        }
+        
+        alias self
+    }
+
+    /**
+     * Perform the parse of the command line
+     * @params: 
+     *   - line: the command line options (for example, the arguments passed to the main function)
+     * @returns: the structure T, filled by the command line options*
+     * @throws: 
+     *   - ArgumentError: if the parsing failed, the method diagnosis can be used to compute a readable error
+     *   - HelpRequired: a argument set as 'isHelp', has been filled
+     */
+    pub def parse (self, line : [[c8]])-> T
+        throws &ArgumentError, &HelpRequired
+    {
+        import std::conv;
+        let mut c32Line : [c32] = [];
+        for i in line {        
+            c32Line = c32Line ~ " " ~ i.to![c32] ();
+        }
+
+        self.parse (c32Line)   
+    }
+
+    /**
+     * Perform the parse of the command line (encoded in utf32)
+     * @params: 
+     *   - line: the command line options
+     * @returns: the structure T, filled by the command line options*
+     * @throws: 
+     *   - ArgumentError: if the parsing failed, the method diagnosis can be used to compute a readable error
+     *   - HelpRequired: a argument set as 'isHelp', has been filled
+     */     
+    pub def parse (self, content : [c32]) -> T
+        throws &ArgumentError, &HelpRequired
+    {
+        let dmut lex = Lexer::new (content, tokens-> ArgsTokens::members);
+        parseValue!T (alias lex, cuts-> self._content, helps-> self._helps, self._positional)
+    }
+
+    /**
+     * Create a string containing a readable error from a argument parsing error
+     * @params: 
+     *    - err: the error thrown by parse method
+     *    - isSub: internal parameter (do not set it if your are not sure), used to append sub errors 
+     * @example: 
+     * ==================
+     * Missing argument 'N' of type '[int... ]'
+     * ==================
+     */
+    pub def diagnosis (self, err : &ArgumentError, isSub : bool = false) -> [c32] {
+        match err.subError {
+            Ok (sub: &ArgumentError) => {
+                if (isSub) {
+                    return "::'" ~ err.field ~ "'" ~ self.diagnosis (sub, isSub-> true);
+                } 
+                return "In argument parsing '" ~ err.field ~ "'" ~ self.diagnosis (sub, isSub-> true);
+            }
+            Ok (sub: &SyntaxError) => {
+                if (isSub) {
+                    return ", argument type error for '" ~ err.field ~ "' : syntax error (" ~ sub.msg ~ ")";
+                }
+                return "Argument type error for '" ~ err.field ~ "' : syntax error (" ~ sub.msg ~ ")";
+            }
+        }
+
+        match err {            
+            ArgumentUnknownError () => {
+                return "Undefined argument '" ~ err.field ~ "'";
+            }
+            ArgumentCastError (from -> fr : _) => {
+                if (err.field != "")
+                    if (isSub) {
+                        return ", argument type error for '" ~ err.field ~ "' expected " ~ usageValue (err.type) ~ " value not '" ~ fr ~ "'";
+                    } else {
+                        return "Argument type error for '" ~ err.field ~ "' expected " ~ usageValue (err.type) ~ " value not '" ~ fr ~ "'";
+                    }
+                else {
+                    if (isSub) {
+                        return ", argument type error expected " ~ usageValue (err.type) ~ " value not '" ~ fr ~ "'";
+                    }
+                    return "Argument type error expected " ~ usageValue (err.type) ~ " value not '" ~ fr ~ "'";
+                }
+            }
+            _ => {
+                if (isSub) {
+                    return ", missing argument '" ~ err.field ~ "' of type '" ~ usageValue (err.type) ~ "'";
+                } else {
+                    return "Missing argument '" ~ err.field ~ "' of type '" ~ usageValue (err.type) ~ "'";
+                }
+            }
+        }
+
+    }
+
+    /**
+     * Create a string containing the usage of the argument parser
+     * This usage is the complete help of the program, in multiple line
+     * It can be used to print the help, when the exception HelpRequired is thrown
+     * @example: 
+     * =================
+     * usage: [--h] [--sum] [--v] [--o str] --useless int [ int... ](N)
+
+     * positional arguments : 
+     *	      N	list of integers to process
+     *
+     * required arguments : 
+     *	         --useless     a useless but mandatory argument
+     *
+     * optional arguments : 
+     *        -h, --help	print this help and exit
+     *	          --sum	        sum the integers (default find the max)
+     *	      -v, --verbose	prints the intermediate operations
+     *	      -o, --output	does nothing
+     *
+     * =================
+     */
+    pub def usage (self)-> [c32] {
+        let mut ret = self.simpleUsage () ~ "\n\n";
+        let mut haspos = false, mut hasmand = false, mut hasopt = false;
+        
+        let mut pos = "positional arguments : \n";
+        let mut mand = "required arguments : \n", mut opt = "\noptional arguments : \n";
+
+        cte for i in 0us .. (__pragma!field_names (T)).len {
+            let long = (__pragma!field_names (T))[i];
+            let (short, comment) = match self._content [(__pragma!field_names (T))[i]]? {
+                Ok (Argument (short-> s:_, comment-> c:_)) => {
+                    if (s != "") { (s, c) }
+                    else { ("", c) }
+                }
+                _ => {
+                    ("", "")
+                }
+            }
+
+            if (long in self._knwon_pos) {
+                let line = { "\t      " ~ long ~ "\t" ~ comment }  ;
+                
+                pos = pos ~ line ~ "\n";
+                haspos = true;
+            } else {
+                let line =
+                    if (short != "") { "\t-" ~ short ~ ", --" ~ long ~ "\t" ~ comment }
+                else { "\t    --" ~ long ~ "\t" ~ comment }  ;
+                cte if ((__pragma!field_has_value (T)) [i] ||
+                        is!{__pragma!field_type (T, (__pragma!field_names (T))[i])} {U of YesNo}) {
+                    hasopt = true;
+                    opt = opt ~ line ~ "\n";            
+                } else {
+                    mand = mand ~ line ~ "\n";
+                    hasmand = true;
+                }
+            }
+        }    
+
+        if (haspos) ret ~= pos;
+        if (hasmand) ret ~= mand;
+        if (hasopt) ret ~= opt;
+        
+        ret
+    }    
+
+    /**
+     * Create a string containing the usage of the argument parse in a single line
+     * This can be used to display the usage of the argument parser when a argument error occured
+     * @example: 
+     * =====================
+     * usage: [--h] [--sum] [--v] [--o str] --useless int [ int... ](N)
+     * =====================
+     */
+    pub def simpleUsage (self) -> [c32] {
+        let mut ret = "usage: ";
+        let mut mand = "", mut opt = "", mut obj = "", mut pos = "";
+            
+        cte for i in 0us .. (__pragma!field_names (T)).len {
+            if ((__pragma!field_names (T))[i] in self._knwon_pos) {
+                pos = pos ~ usageValue!{__pragma!field_type (T, (__pragma!field_names (T))[i])} () ~ "(" ~ (__pragma!field_names (T))[i] ~ ") ";
+            } else {
+                let x = match self._content [(__pragma!field_names (T))[i]]? {
+                    Ok (Argument (short-> s:_)) => {
+                        if (s != "") { s }
+                        else { (__pragma!field_names (T))[i] }
+                    }
+                    _ => {
+                        (__pragma!field_names (T))[i]
+                    }
+                }
+                cte if ((__pragma!field_has_value (T)) [i] ||
+                        is!{__pragma!field_type (T, (__pragma!field_names (T))[i])} {U of YesNo}) {
+                    cte if (is!{__pragma!field_type (T, (__pragma!field_names (T))[i])} {U of YesNo}) {
+                        opt = opt ~ "[--" ~ x ~ "] ";
+                    } else {
+                        cte if (is!{__pragma!field_type (T, (__pragma!field_names (T))[i])} {class U}) {
+                            obj = obj ~ "[--" ~ x ~ " " ~ usageValue!{__pragma!field_type (T, (__pragma!field_names (T))[i])} () ~ "] ";
+                        } else {
+                            opt = opt ~ "[--" ~ x ~ " " ~ usageValue!{__pragma!field_type (T, (__pragma!field_names (T))[i])} () ~ "] ";
+                        }
+                    }
+                } else {
+                    cte if (is!{__pragma!field_type (T, (__pragma!field_names (T))[i])} {class U}) {                    
+                        obj = obj ~ "--" ~ x ~ " " ~ usageValue!{__pragma!field_type (T, (__pragma!field_names (T))[i])} () ~ " ";
+                    } else {
+                        mand = mand ~ "--" ~ x ~ " " ~ usageValue!{__pragma!field_type (T, (__pragma!field_names (T))[i])} () ~ " ";
+                    }
+                }
+            }
+        }
+        
+        ret ~ opt ~ mand ~ obj ~ pos
+    }
+    
+}
+
+
+/**
+ * Parse the value from a class
+ * The parsing of a class is let to the class
+ * @example: 
+ * ======================
+ * import std::lexer;
+ * 
+ * class X {
+ *   pub self (dmut lex : &Lexer) {
+ *       // Perform the parsing
+ *   }
+ * }
+ * 
+ * struct
+ * | a : &X
+ *  -> MyArgs;
+ * 
+ * let args = ArgumentParser!{MyArgs}::new ();
+ * ======================
+ */
+prv def parseValue <class T> (dmut lex : &Lexer) -> T
+    throws &ArgumentError
+{
+    {
+        __pragma!fake_throw (&ArgumentError, &AssertError);
+        T::new (alias lex)
+    } catch {
+        err : &ArgumentError => throw err;
+        sub : _=> {
+            throw ArgumentError::new (subError-> sub?, type-> T::typeinfo);
+        }
+    }
+}
+
+/**
+ * Parse the values to fill a structure
+ * This is the main function of the parser
+ * @params: 
+ *   - lex: the lexer of the command line option
+ *   - cuts: the list of arguments
+ *   - helps: the list of arguments that throw HelpRequired
+ *   - positional: the list of positional arguments
+ */
+prv def parseValue {struct T} (dmut lex : &Lexer, cuts : &HashMap!{[c32], Argument}, helps: &HashSet![c32], positional : &Vec![c32]) -> T
+    throws &ArgumentError, &HelpRequired
+{
+    let dmut res = [0u8 ; new sizeof (T)];
+    let dmut used = HashSet!{[c32]}::new ();
+    let (_, _, _) = lex:.next ();
+    let mut currentPos = 0u64;
+    loop {
+        let (tok, _, _) = lex:.nextNoConsume ();
+        if (tok == ArgsTokens::SHYPHEN || tok == ArgsTokens::DHYPHEN) {
+            lex:.next ();
+            let (name, _, _) = lex:.next ();
+            match cuts [name]? {
+                Ok (Argument (long-> l : _))=> {
+                    if (l in helps) throw HelpRequired::new ();
+                    
+                    parseField!T (alias lex, l, alias res);
+                    used:.insert (l);
+                }
+                _ => {                    
+                    throw cast!{&ArgumentError} (ArgumentUnknownError::new (name-> name));
+                }
+            }
+        } else if (tok != "") {
+            match positional [currentPos]? {
+                Ok (l : _)=> {
+                    parseField!T (alias lex, l, alias res);
+                    used:.insert (l);
+                    currentPos += 1u64;
+                }
+                _ => {                    
+                    throw cast!{&ArgumentError} (ArgumentUnknownError::new (name-> tok));
+                }
+            }            
+        } else {
+            break {}
+        }
+    }            
+    
+    verifyInit!T (used, alias res);
+    __pragma!trusted ({*(cast!{&T} (cast!{&void} (res.ptr)))})
+}
+
+prv def parseValue {struct T} (dmut lex : &Lexer) -> T
+    throws &ArgumentError
+{
+    let dmut res = [0u8 ; new sizeof (T)];
+    let dmut used = HashSet!{[c32]}::new ();
+    let (_, _, _) = lex:.next ();
+    loop {
+        let (tok, _, _) = lex:.next ();
+        if (tok == ArgsTokens::SHYPHEN || tok == ArgsTokens::DHYPHEN) {
+            let (name, _, _) = lex:.next ();
+            parseField!T (alias lex, name, alias res);
+            used:.insert (name);
+        } else if (tok != "") {                
+            parseField!T (alias lex, tok, alias res);
+            used:.insert (tok);
+        } else {
+            break {}
+        }
+    }            
+
+    verifyInit!T (used, alias res);
+    __pragma!trusted ({*(cast!{&T} (cast!{&void} (res.ptr)))})
+}
+
+prv def parseField {struct T} (dmut lex : &Lexer, name : [c32], dmut init : [u8])
+    throws &ArgumentError
+{        
+    cte for i in 0us .. (__pragma!field_names (T)).len {
+        let offset = (__pragma!field_offsets (T)) [i];
+        let size = sizeof (__pragma!field_type (T, (__pragma!field_names (T))[i]));
+        let dmut data : &(mut void) = __pragma!trusted ({
+            alias (cast!{&void} ((init [offset .. (offset + size)]).ptr))
+        });
+        
+        if ((__pragma!field_names (T))[i] == name) {
+            {
+                __pragma!fake_throw (&ArgumentError);
+                *(cast! (&(__pragma!field_type (T, (__pragma!field_names (T))[i]))) (data)) = parseValue!{__pragma!field_type (T, (__pragma!field_names (T))[i])} (alias lex);                    
+            } catch {                        
+                err : &ArgumentError => {
+                    import std::conv;
+                    throw ArgumentError::new (name-> (__pragma!field_names (T))[i], T::typeinfo, subError-> (err?).to!{&Exception?}());
+                }
+                _ => {
+                    throw ArgumentError::new (name-> (__pragma!field_names (T))[i], T::typeinfo);
+                }
+            }
+            
+            return {}
+        }
+    }
+    
+    throw cast!{&ArgumentError} (ArgumentUnknownError::new (name-> name));
+}
+
+
+/**
+ * Parse an array value in the lexer
+ * @info: the returned array can be empty
+ */
+prv def parseValue {T of [U], U} (dmut lex : &Lexer)-> T
+    throws &ArgumentCastError
+{
+    import std::collection::vec;
+    let dmut res = Vec!{U}::new ();
+    loop {
+        let (txt, _, _) = lex:.nextNoConsume ();
+        match txt {
+            ArgsTokens::SHYPHEN => { break {} }
+            ArgsTokens::DHYPHEN => { break {} }
+            "" => { break {} }
+            _ => {
+                cte if (is!U {Z of [c32]}) {
+                    res:.push (parseValue!U (alias lex))
+                } else {
+                    lex:.next ();
+                    res:.push (parseValue!U (txt));
+                }
+            }
+        }
+    }
+    
+    res:.fit ();
+    res []
+}
+
+/**
+ * Parse a int literal in the lexer
+ * @throws: 
+ *    - &ArgumentError: if the next word in the lexer does not contains a int value
+ */
+prv def parseValue {T of i64} (dmut lex : &Lexer) -> i64
+    throws &ArgumentCastError
+{
+    let (txt, _, _) = lex:.next ();
+    parseValue!T (txt)
+}
+
+/**
+ * Parse a int literal in the lexer
+ * @throws: 
+ *    - &ArgumentError: if the next word in the lexer does not contains a int value
+ */
+prv def parseValue {T of i32} (dmut lex : &Lexer) -> i32
+    throws &ArgumentCastError
+{
+    let (txt, _, _) = lex:.next ();
+    cast!i32 (parseValue!i64 (txt))
+}
+
+/**
+ * Try to transform a string into a int value
+ * @throws: 
+ *    - &ArgumentError: if the string does not contain a int value (nor a hexa decimal value)
+ */
+prv def parseValue {T of i32} (txt: [c32]) -> i32
+    throws &ArgumentCastError
+{
+    cast!i32 (parseValue!i64 (txt))
+}
+
+/**
+ * Try to transform a string into a int value
+ * @throws: 
+ *    - &ArgumentError: if the string does not contain a int value (nor a hexa decimal value)
+ */
+prv def parseValue {T of i64} (txt: [c32]) -> i64
+    throws &ArgumentCastError
+{
+    if (txt == "") {
+        throw ArgumentCastError::new (i64::typeinfo, txt);
+    }
+    
+    import std::conv;    
+    {
+        to!i64 (txt)
+    } catch {
+        _ : &CastFailure => {
+            cast!i64 (to!{u32, "x"} (txt))            
+        } catch {
+            _ => {
+                throw ArgumentCastError::new (i64::typeinfo, txt);
+            }
+        }
+    }    
+}
+
+/**
+ * @returns: YesNo::YES
+ */
+prv def parseValue {T of YesNo} (dmut _ : &Lexer)-> YesNo {
+    YesNo::YES
+}
+
+/**
+ * Parse a bool value in a lexer
+ * @throws: 
+ *    - &ArgumentError: if neither "true" or "false" is found in the next word of the lexer
+ */
+prv def if (!is!T {U of YesNo}) parseValue {T of bool} (dmut lex : &Lexer) -> bool
+    throws &ArgumentCastError
+{
+    let (txt, _, _) = lex:.next ();
+    parseValue!T (txt)
+}
+
+/**
+ * Try to transform a string into a bool value
+ * @throws: 
+ *    - &ArgumentError: if the string is neither equal to "true" or "false" 
+ */
+prv def if (!is!T {U of YesNo}) parseValue {T of bool} (txt: [c32]) -> bool
+    throws &ArgumentCastError
+{
+    match txt {
+        "true" => { return true }
+        "false" => { return false }
+        _ => {
+            throw ArgumentCastError::new (bool::typeinfo, txt);
+        }
+    }
+}
+
+/**
+ * Parse a float value into a lexer
+ * @throws: 
+ *    - &ArgumentError: if the next word in the lexer does not contains a float value
+ */
+prv def parseValue {T of f64} (dmut lex : &Lexer) -> f64
+    throws &ArgumentCastError
+{
+    let (txt, _, _) = lex:.next ();
+    parseValue!T (txt)
+}
+
+/**
+ * Transform a string into a float value
+ * @throws: 
+ *    - &ArgumentError: if string does not contain a float value
+ */
+prv def parseValue {T of f64} (txt: [c32]) -> f64
+    throws &ArgumentCastError
+{
+    if (txt == "") {
+        throw ArgumentCastError::new (i64::typeinfo, txt);
+    }
+    
+    import std::conv;    
+    {
+        to!f64 (txt)
+    } catch {
+        _ => {
+            throw ArgumentCastError::new (i64::typeinfo, txt);
+        }        
+    }    
+}
+
+/**
+ * Parse a string literal in the lexer
+ * @throws : 
+ *    - &ArgumentError: if the reading of the string failed
+ */
+prv def parseValue {T of [U], U of c32} (dmut lex : &Lexer)-> [c32]
+    throws &ArgumentCastError
+{
+    let (txt, _, _) = lex:.nextNoConsume ();
+    if (txt == ArgsTokens::QUOTE) {
+        parseString (alias lex)        
+    } else {
+        let (msg, l, c) = lex:.next ();
+        if (msg == "") {
+            throw SyntaxError::new ("Unterminated string literal", l, c);
+        }
+        txt
+    }
+} catch {
+    x : _ => throw ArgumentCastError::new ([c32]::typeinfo, "", subError-> (x)?);
+}
+
+/**
+ * Parse a string literal in the lexer
+ * This function is used to read a string enclosed by quotes
+ * @throws : 
+ *    - &SyntaxError: if the reading of the string failed
+ */
+prv def parseString (dmut lex : &Lexer)-> [c32]
+    throws &SyntaxError
+{
+    import std::config::toml;
+    
+    let mut res = "";
+
+    let (end, line, col) = lex:.next ();
+    if (end != "'" && end != "\"") {
+        throw SyntaxError::new ("expected '\"' or '\\'' (not '" ~ end ~ "')", line, col);
+    }
+        
+    lex:.doSkip (false);
+    loop {        
+        let (next, l, c) = lex:.next ();
+        if (next == "") {
+            throw SyntaxError::new ("Unterminated string literal", l, c);
+        } else if (next == end) break {}
+        
+        res = res ~ next;                    
+    }
+    
+    lex:.doSkip (true);
+    return res;
+}
+
+/**
+ * Verify that the struct is correctly filled, and that no mandatory arguments are missing
+ */
+prv def verifyInit {struct T} (used : &HashSet![c32], dmut init : [u8])
+    throws &ArgumentError
+{
+    __pragma!fake_throw (&ArgumentError); // if the struct is empty
+    cte for i in 0us .. (__pragma!field_names (T)).len {
+        let offset = (__pragma!field_offsets (T)) [i];
+        let size = sizeof (__pragma!field_type (T, (__pragma!field_names (T))[i]));
+        let dmut data : &(mut void) = __pragma!trusted (alias (cast!{&void} ((init [offset .. (offset + size)]).ptr)));
+        
+        if ((__pragma!field_names (T))[i] !in used) {
+            cte if (!(__pragma!field_has_value (T)) [i]) {
+                cte if (is!{__pragma!field_type (T, (__pragma!field_names (T))[i])} {U of YesNo}) {
+                    __pragma!trusted ({
+                        *(cast! {&(__pragma!field_type (T, (__pragma!field_names (T))[i]))} (data)) = YesNo::NO;
+                    });
+                } else {
+                    data;
+                    throw ArgumentError::new (name-> (__pragma!field_names (T))[i], (__pragma!field_type (T, (__pragma!field_names (T))[i]))::typeinfo);
+                }
+            } else {
+                __pragma!trusted ({
+                    *(cast! (&(__pragma!field_type (T, (__pragma!field_names (T))[i]))) (data)) =
+                        __pragma!field_value (T, (__pragma!field_names (T))[i]);
+                });
+            }
+        } 
+    }
+}
+
+/**
+ * @returns: a string containing the name of the type for usage printing
+ */
+prv def usageValue (t : TypeInfo) -> [c32] {
+    if (equals (t, i64::typeinfo)) { return usageValue!i64 (); }
+    if (equals (t, i32::typeinfo)) { return usageValue!i32 (); }
+    if (equals (t, bool::typeinfo)) { return usageValue!bool (); }
+    if (equals (t, f64::typeinfo)) { return usageValue!f64 (); }
+    if (equals (t, [c32]::typeinfo)) { return usageValue![c32] (); }
+    if (t.inner.len != 0u64)
+        return "[" ~ __pragma!trusted (usageValue (t.inner [0])) ~ "... ]";
+    else
+        return "void";
+}
+
+/**
+ * @returns: a string containing the name of the type for usage printing
+ */
+prv def if (is!T {U of i32} || is!T {U of i64}) usageValue {T} () -> [c32] {
+    "int"
+}
+
+/**
+ * @returns: a string containing the name of the type for usage printing
+ */
+prv def if (! (is!T {U of YesNo})) usageValue {T of bool} () -> [c32] {
+    "bool"
+}
+
+/**
+ * @returns: a string containing the name of the type for usage printing
+ */
+prv def usageValue {T of [U], U of c32} () -> [c32] {
+    "str"
+}
+
+/**
+ * @returns: a string containing the name of the type for usage printing
+ */
+prv def usageValue {T of f64} () -> [c32] {
+    "float"
+}
+
+/**
+ * @returns: a string containing the name of the type for usage printing
+ */
+prv def usageValue {T of [U], U} () -> [c32] {
+    "[ " ~ usageValue!U () ~ "... ]"
+}
+
+
+prv def usageValue {class T} () -> [c32] {
+    "object"
+}
+
+prv def usageValue {U of YesNo} () -> [c32] {
+    ""
+}
+
+
+pub class ArgumentError over core::exception::Exception {
+
+    pub let field : [c32];
+        
+    pub let subError : (&Exception)?;
+
+    pub let type : TypeInfo;
+    
+    /**
+     * @params: 
+     *    - from, the type from which we want a cast
+     *    - to, the type to which we want a cast
+     */
+    pub self (name : [c32] = "", subError : (&Exception)? = ((&Exception)?)::__err__, type : TypeInfo) with type = type, field = name, subError = subError  {}       
+    
+    impl std::io::Printable {
+
+        /**
+         * Just print the error to stdout
+         */
+        pub over print (self) {
+            print (self::typeinfo.name, " (", self.type.name, ')');
+            if (self.field != "")
+                print (" for field : ", self.field);
+            
+            match self.subError {                
+                Ok (x:_) => {
+                    println (" => ");
+                    print ("\t", x);
+                }
+                Err () => {
+                    if (self.hasTrace ()) {
+                        println (":");
+                        self::super.printStackTrace ();
+                    }
+                }
+            }
+        }
+        
+    }   
+}
+
+pub class ArgumentCastError over ArgumentError {
+    pub let from : [c32];
+
+    pub self (name : [c32] = "", subError : (&Exception)? = ((&Exception)?)::__err__, to : TypeInfo, from : [c32]) with super (name-> name, subError-> subError, type-> to), from = from
+    {}
+
+    impl std::io::Printable {
+
+        /**
+         * Just print the error to stdout
+         */
+        pub over print (self) {
+            print (self::typeinfo.name, " (");
+            print (self.from, " -> ", self.type.name);
+            print (')');
+            if (self.field != "")
+                print (" for field : ", self.field);
+        }
+        
+    }   
+}
+
+pub class ArgumentUnknownError over ArgumentError {
+
+    pub self (name : [c32]) with super (name-> name, type-> void::typeinfo) {}
+    
+    impl std::io::Printable {
+
+        /**
+         * Just print the error to stdout
+         */
+        pub over print (self) {
+            print (self::typeinfo.name);
+            if (self.field != "")
+                print (" for field : ", self.field);
+        }
+        
+    }   
+}
+
+pub class HelpRequired over core::exception::Exception {
+
+    pub self () {}
+
+    impl std::io::Printable {
+        pub over print (self) {
+            self::super.print ();
+        }
+    }
+        
+}
