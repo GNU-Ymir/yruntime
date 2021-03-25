@@ -15,7 +15,10 @@ add_library (gyruntime SHARED ${SRC})
 
 install (TARGETS gyruntime DESTINATION /usr/lib/)
 include_directories(${CMAKE_SOURCE_DIR}/include/)
-
+add_custom_command (TARGET gyruntime POST_BUILD
+  COMMAND patchelf --add-needed libbfd.so libgyruntime.so
+  COMMAND echo "[101%] Patched"
+  )
 
 
 
