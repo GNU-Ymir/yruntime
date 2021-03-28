@@ -625,10 +625,11 @@ pub {
      *    - &CastFailure: if the string does not contain a valid u32 literal
      * @example:
      * ===============
-     * let x = ("12").(to!u64);
-     * assert (x == 12);
+     * let x = ("12").to!u64 ();
+     * assert (x == 12u64);
      * ===============
      * @assume: the string is stripped, so the only possible char are [0-9]
+     * @known_bug: does not check the overflow capacity
      */
     def to {T of u64} (str : [c32])-> u64
         throws &CastFailure
@@ -652,15 +653,49 @@ pub {
     }
 
     /**
-     * Transform a string into a i64
+     * Transform a string into a u32
      * @throws: 
      *    - &CastFailure: if the string does not contain a valid u32 literal
      * @example:
      * ===============
-     * let x = ("-12").(to!i64);
-     * assert (x == -12);
+     * let x = ("12").to!u32 ();
+     * assert (x == 12u32);
+     * ===============
+     * @assume: the string is stripped, so the only possible char are [0-9]
+     * @known_bug: does not check the overflow capacity
+     */
+    def to {T of u32} (str : [c32])-> u32
+        throws &CastFailure
+    {
+        let mut j = 1u64;
+        let mut res = 0u64;
+        for i in str.len .. 0u64 {
+            if (str [i - 1u64] >= '0' && str [i - 1u64] <= '9') {                
+                res = res + (j * to!u64 (str [i - 1u64]));
+            } else {
+                throw CastFailure::new ([c32]::typeinfo, u32::typeinfo); 
+            }
+            j *= 10u64;
+        } catch {
+            _ : &OutOfArray => { } // Can't happen
+            x : &CastFailure => {
+                throw x;
+            }
+        }
+        cast!u32 (res)
+    }
+
+    /**
+     * Transform a string into a i64
+     * @throws: 
+     *    - &CastFailure: if the string does not contain a valid i64 literal
+     * @example:
+     * ===============
+     * let x = ("-12").to!i64 ();
+     * assert (x == -12i64);
      * ===============
      * @assume: the string is stripped, so the only possible char are [0-9] and '-'
+     * @known_bug: does not check the overflow capacity
      */
     def to {T of i64} (str : [c32])-> i64
         throws &CastFailure
@@ -673,7 +708,7 @@ pub {
             } else if (i == 1u64 && str [i - 1u64] == '-') {
                 res = -res;
             } else {
-                throw CastFailure::new ([c32]::typeinfo, u64::typeinfo); 
+                throw CastFailure::new ([c32]::typeinfo, i64::typeinfo); 
             }
             j *= 10u64;
         } catch {
@@ -686,13 +721,49 @@ pub {
     }
 
     /**
+     * Transform a string into a i32
+     * @throws:
+     *   - &CastFailure: if the string does not contain a valid i32 literal
+     * @example:
+     * ===============
+     * let x = ("-12").to!i32 ();
+     * assert (x == -12);
+     * ===============
+     * @assume: the string is stripped, so the only possible char are [0-9] and '-'    
+     * @known_bug: does not check the overflow capacity
+     */
+    def to {T of i32} (str : [c32])-> i32
+        throws &CastFailure
+    {
+        let mut j = 1u64;
+        let mut res = 0i32;
+        for i in str.len .. 0u64 {
+            if (str [i - 1u64] >= '0' && str [i - 1u64] <= '9') {                
+                res = res + cast!i32 ((j * to!u64 (str [i - 1u64])));
+            } else if (i == 1u64 && str [i - 1u64] == '-') {
+                res = -res;
+            } else {
+                throw CastFailure::new ([c32]::typeinfo, i32::typeinfo); 
+            }
+            j *= 10u64;
+        } catch {
+            _ : &OutOfArray => { } // Can't happen
+            x : &CastFailure => {
+                throw x;
+            }
+        }
+        res   
+    }
+
+    
+    /**
      * Transform a string into a u64
      * @throws: 
      *    - &CastFailure: if the string does not contain a valid u32 literal
      * @example:
      * ===============
-     * let x = ("12"s8).(to!u64);
-     * assert (x == 12);
+     * let x = ("12"s8).to!u64 ();
+     * assert (x == 12u64);
      * ===============
      * @assume: the string is stripped, so the only possible char are [0-9]
      */
@@ -718,13 +789,46 @@ pub {
     }
 
     /**
+     * Transform a string into a u32
+     * @throws: 
+     *    - &CastFailure: if the string does not contain a valid u32 literal
+     * @example:
+     * ===============
+     * let x = ("12"s8).to!u32 ();
+     * assert (x == 12u32);
+     * ===============
+     * @assume: the string is stripped, so the only possible char are [0-9]
+     */
+    def to {T of u32} (str : [c8])-> u32
+        throws &CastFailure
+    {
+        let mut j = 1u64;
+        let mut res = 0u64;
+        for i in str.len .. 0u64 {
+            if (str [i - 1u64] >= '0'c8 && str [i - 1u64] <= '9'c8) {                
+                res = res + (j * to!u64 (str [i - 1u64]));
+            } else {
+                throw CastFailure::new ([c32]::typeinfo, u32::typeinfo); 
+            }
+            j *= 10u64;
+        } catch {
+            _ : &OutOfArray => { } // Can't happen
+            x : &CastFailure => {
+                throw x;
+            }
+        }
+        cast!u32 (res)
+    }
+
+    
+    /**
      * Transform a string into a i64
      * @throws: 
      *    - &CastFailure: if the string does not contain a valid i64 literal
      * @example:
      * ===============
-     * let x = ("-12").(to!i64);
-     * assert (x == -12);
+     * let x = ("-12").to!i64 ();
+     * assert (x == -12i64);
      * ===============
      * @assume: the string is stripped, so the only possible char are [0-9] and '-'
      */
@@ -739,7 +843,7 @@ pub {
             } else if (i == 1u64 && str [i - 1u64] == '-'c8) {
                 res = -res;
             } else {
-                throw CastFailure::new ([c32]::typeinfo, u64::typeinfo); 
+                throw CastFailure::new ([c32]::typeinfo, i64::typeinfo); 
             }
             j *= 10u64;
         } catch {
@@ -752,6 +856,81 @@ pub {
     }
 
 
+    /**
+     * Transform a string into a i32
+     * @throws: 
+     *    - &CastFailure: if the string does not contain a valid i32 literal
+     * @example:
+     * ===============
+     * let x = ("-12").to!i32 ();
+     * assert (x == -12);
+     * ===============
+     * @assume: the string is stripped, so the only possible char are [0-9] and '-'
+     */
+    def to {T of i32} (str : [c8])-> i32
+        throws &CastFailure
+    {
+        let mut j = 1u64;
+        let mut res = 0i64;
+        for i in str.len .. 0u64 {
+            if (str [i - 1u64] >= '0'c8 && str [i - 1u64] <= '9'c8) {                
+                res = res + cast!i64 ((j * to!u64 (str [i - 1u64])));
+            } else if (i == 1u64 && str [i - 1u64] == '-'c8) {
+                res = -res;
+            } else {
+                throw CastFailure::new ([c32]::typeinfo, i32::typeinfo); 
+            }
+            j *= 10u64;
+        } catch {
+            _ : &OutOfArray => { } // Can't happen
+            x : &CastFailure => {
+                throw x;
+            }
+        }
+        cast!i32 (res)
+    }
+
+    /**
+     * Transform a string in hexadecimal format into a u32
+     * @throws: 
+     *    - &CastFailure: if the string does not contain a valid i32 literal
+     * @example:
+     * ===============
+     * let x = ("0xff").(to!(u32, "x"));
+     * assert (x == 255u32);
+     * ===============
+     * @assume: the string is stripped, so the only possible char are [0-9a-f], '0', 'x'
+     */
+    def to {T of u64, "x"} (str : [c32])-> u64
+        throws &CastFailure
+    {
+        let mut j = 1u64;
+        let mut res = 0u64;
+        {
+            if (str.len < 2u64) throw CastFailure::new ([c32]::typeinfo, i32::typeinfo);
+            if (str [0] != '0' || str [1] != 'x') throw CastFailure::new ([c32]::typeinfo, i32::typeinfo);
+                     
+            for i in str.len .. 2u64 {
+                if (str [i - 1u64] >= '0' && str [i - 1u64] <= '9') {                
+                    res = res + (j * to!u64 (str [i - 1u64]));
+                } else if (str [i - 1u64] >= 'a' && str [i - 1u64] <= 'f') {
+                    res = res + (j * to!u64 (str [i - 1u64]));
+                } else if (str [i - 1u64] >= 'A' && str [i - 1u64] <= 'F') {
+                    res = res + (j * to!u64 (str [i - 1u64]));
+                } else {
+                    throw CastFailure::new ([c32]::typeinfo, u64::typeinfo); 
+                }
+                j *= 16u64;
+            } 
+        } catch {
+            _ : &OutOfArray => { } // Can't happen
+            x : &CastFailure => {
+                throw x;
+            }
+        }
+        res
+    }
+    
     /**
      * Transform a string in hexadecimal format into a u32
      * @throws: 
@@ -780,7 +959,7 @@ pub {
                 } else if (str [i - 1u64] >= 'A' && str [i - 1u64] <= 'F') {
                     res = res + cast!u32 ((j * to!u64 (str [i - 1u64])));
                 } else {
-                    throw CastFailure::new ([c32]::typeinfo, u64::typeinfo); 
+                    throw CastFailure::new ([c32]::typeinfo, u32::typeinfo); 
                 }
                 j *= 16u64;
             } 
