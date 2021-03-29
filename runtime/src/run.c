@@ -20,6 +20,10 @@
 
 int __YRT_DEBUG__ = 0;
 
+void _yrt_exit (int i) {
+    exit (i);
+}
+
 void _yrt_throw_seg_fault ();
 
 void bt_sighandler(int sig, struct sigcontext ctx) {    

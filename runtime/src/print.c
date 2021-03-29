@@ -1,3 +1,4 @@
+#include <stdarg.h>
 #include <stdio.h>
 #include "../include/print.h"
 #include "../include/yarray.h"
@@ -151,6 +152,10 @@ void _yrt_printf64 (double x) {
     printf ("%lf", x);
 }
 
+void _yrt_print_error (char * format) {
+    fprintf (stderr, "%s", format);
+}
+
 _yrt_c8_array_ _yrt_float_to_s8 (float x) {
     int nb = snprintf (NULL, 0, "%f", x);
     char * res = GC_malloc (nb * sizeof (char));
@@ -195,3 +200,5 @@ unsigned int _yrt_getwchar_in_file (FILE * file) {
     size_t nb;
     return _yrt_to_utf32 (c, &nb);
 }
+
+
