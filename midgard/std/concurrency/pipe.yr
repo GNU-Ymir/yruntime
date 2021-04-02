@@ -6,16 +6,29 @@ import std::io;
 import std::any;
 
 import std::concurrency::sync;
+import std::stream;
+import std::collection::vec;
 
-extern (C) def pipe (streams : &(i32));
 
-mod IOPipe {T} {
+mod IOThreadPipe {T} {
     
     pub extern (C) def _yrt_read_pipe (stream : i32, size : usize)-> T;
     
     pub extern (C) def _yrt_write_pipe (stream : i32, data : T, size : usize);
     
 }
+
+// TODO This should be somewhere in a etc::c file
+extern (C) def pipe (streams : &(i32))-> i32;
+extern (C) def read (stream : i32, dmut c : &c8, size : u64)-> isize;
+extern (C) def write (stream : i32, c : &c8, size : u64)-> isize;
+extern (C) def close (stream : i32);
+extern (C) def fcntl (fd : i32, type : i32, flag : i32)-> i32;
+
+aka F_GETFL = 3; 
+aka F_SETFL = 4;
+aka O_NONBLOCK = 2048;
+
 
 /**
  * A pipe is a way to communicate between threads
@@ -35,9 +48,13 @@ mod IOPipe {T} {
  * // Thread 2
  * println (pipe.read!(&Foo) ());
  * =================
- * @warning: Pipes are blocking, meaning that before writing inside the pipe we assure that someone is reading on the other side 
+ * @warning: 
+ * ===============
+ * ThreadPipes are blocking, meaning that before writing inside the pipe we assure that someone is reading on the other side 
+ * If you want to speak between thread without synchronization, use a IOPipe
+ * ===============
  */
-pub class @final Pipe {
+pub class @final ThreadPipe {
         
     /** The read side of the pipe */
     let mut _read : i32 = 0;
@@ -70,7 +87,7 @@ pub class @final Pipe {
         self._mutex.lock ();
         self._sem.post ();
         self._cond.wait (self._mutex);
-        let ret = IOPipe!{T}::_yrt_read_pipe (self._read, sizeof T);
+        let ret = IOThreadPipe!{T}::_yrt_read_pipe (self._read, sizeof T);
         self._mutex.unlock ();
         ret
     }
@@ -82,7 +99,7 @@ pub class @final Pipe {
     pub def write {class T} (self, x : T) {            
         self._sem.wait ();
         self._mutex.lock ();
-        IOPipe!(T)::_yrt_write_pipe (self._write, x, sizeof T);
+        IOThreadPipe!(T)::_yrt_write_pipe (self._write, x, sizeof T);
         self._cond.signal ();
         self._mutex.unlock ();
     }
@@ -103,10 +120,153 @@ pub class @final Pipe {
         self.write (Some!(T)::new (x))
     }    
     
+
+    /**
+     * Close the bidirectional pipe
+     */
+    pub def close (mut self) {
+        if (self._read != 0) {
+            close (self._read);
+            self._read = 0;
+        }
+
+        if (self._write != 0) {
+            close (self._write);
+            self._write = 0;
+        }
+    }
+
+
     impl std::io::Printable {
         pub over print (self) {
             print ("(", self._read, ", ", self._write, ")");
         }
     }
 
+    
+    __dtor (mut self) {
+        self:.close ();
+    }
+    
 }
+
+/**
+ * Single way pipe to write data to a IPipe (or another process)
+ */
+pub class @final OPipe {
+
+    let mut _pipe : i32;
+    
+    pub self (pipe : i32) with _pipe = pipe
+    {}
+
+    pub def close (mut self) {
+        if (self._pipe != 0) {
+            close (self._pipe);
+            self._pipe = 0;
+        }
+    }
+
+    pub def write {F, T...} (mut self, a : F, b : T) {
+        let dmut stream = StringStream::new ();
+        stream:.write (a, expand b);
+        write (self._pipe, stream[].ptr, stream[].len);
+    }
+
+    pub def write {F} (mut self, a : F) {
+        let dmut stream = StringStream::new ();
+        stream:.write (a);
+        write (self._pipe, stream[].ptr, stream[].len);
+    }
+
+    pub def getHandle (self)-> i32 {
+        self._pipe
+    }
+
+    __dtor (mut self) {
+        self:.close ();
+    }
+}
+
+
+/**
+ * Single way pipe to read from a OPipe, or another process
+ */
+pub class @final IPipe {
+
+    let mut _pipe : i32;
+
+    pub self (pipe : i32) with _pipe = pipe
+    {}
+
+    pub def close (mut self) {
+        if (self._pipe != 0) {
+            close (self._pipe);
+            self._pipe = 0;
+        }
+    }
+
+    pub def read (mut self) -> [c8] {
+        let dmut ret = Vec!(c8)::new ();
+        loop {
+            let mut c = '\u{0}'c8;
+            let n = read (self._pipe, alias &c, sizeof c8);
+            if (n != -1 && n != 0) {
+                ret:.push (c);
+            } else break {}
+        }
+        ret:.fit ();
+        return ret [];
+    }
+
+    pub def getHandle (self)-> i32 {
+        self._pipe
+    }
+
+    pub def setNonBlocking (mut self) {
+        let err_flags = fcntl(self._pipe, F_GETFL, 0);
+        fcntl(self._pipe, F_SETFL, err_flags | O_NONBLOCK);
+    }
+    
+    __dtor (mut self) {
+        self:.close ();
+    }
+    
+}
+
+
+pub class @final IOPipe {
+
+    let dmut _read : &IPipe = IPipe::new (0);
+
+    let dmut _write : &OPipe = OPipe::new (0);
+
+
+    pub self () with self (createPipes ()) {}
+
+    pub self (pipes : [i32 ; 2u32])
+        with _read = IPipe::new (pipes [0]), _write = OPipe::new (pipes [1])
+    {}
+
+    pub def opipe (mut self)-> dmut &OPipe {
+        alias self._write
+    }
+
+    pub def ipipe (mut self)-> dmut &IPipe {
+        alias self._read
+    }
+
+    pub def close (mut self) {
+        self._read:.close ();
+        self._write:.close ();
+    }
+        
+}
+
+
+prv def createPipes ()-> [i32; 2u32] {
+    let dmut ret = [0i32; 2u32];
+    pipe (alias (ret).ptr);
+    return ret;
+}
+

@@ -4,32 +4,21 @@ import std::io;
 
 import core::typeinfo;
 import core::exception;
+import std::stream;
+import std::concurrency::pipe;
 
-
-extern (C) def pipe (streams : &(i32))-> i32;
 extern (C) def dup2 (stream : i32, type : u32)-> i32;
-extern (C) def close (stream : i32);
 extern (C) def _yrt_print_error (format : &(c8), ...);
-extern (C) def read (stream : i32, dmut c : &c8, size : usize)-> isize;
-extern (C) def write (stream : i32, c : &c8, size : usize)-> isize;
 extern (C) def fork ()-> u32;
 extern (C) def execvp (cmd : &c8, args : &(&c8))-> i32;
 extern (C) def _yrt_exit (i : i32);
-extern (C) def printf (c : &c8, ...);
-extern (C) def get_current_dir_name ()-> &c8;
-extern (C) def fcntl (fd : i32, type : i32, flag : i32)-> i32;
 extern (C) def waitpid (pid : u32, dmut status : &i32, ig : i32);
-//extern (C) def fflush (stream : i32);
 extern (C) def chdir (path : &c8)-> i32;
 
-aka READ = 0u32;
-aka WRITE = 1u32;
 aka STDIN_FILENO  = 0u32;
 aka STDOUT_FILENO = 1u32;
 aka STDERR_FILENO = 2u32;
-aka F_GETFL = 3;
-aka F_SETFL = 4;
-aka O_NONBLOCK = 2048;
+
 
 pub class @final SubProcess {
 
@@ -39,19 +28,13 @@ pub class @final SubProcess {
 
     let cwd : [c8];
     
-    let dmut in_pipe : [i32 ; 2u32] = [0i32 ; 2u32];
-    
-    let dmut out_pipe : [i32 ; 2u32] = [0i32 ; 2u32];
-    
-    let dmut err_pipe : [i32 ; 2u32] = [0i32 ; 2u32];
+    let mut pid : u32 = 0u32;
 
-    let mut pid : u32 = 0u32;    
+    let dmut _stdin = IOPipe::new ();
+    let dmut _stdout = IOPipe::new ();
+    let dmut _stderr = IOPipe::new ();
     
     pub self run (cmd : [c8], args : [[c8]], cwd : [c8] = "."s8) with cmd = cmd, args = args, cwd = cwd {
-        pipe (alias (self.in_pipe).ptr);
-        pipe (alias (self.out_pipe).ptr);
-        pipe (alias (self.err_pipe).ptr);
-        // println (args);
         self:.run ();
     }
 
@@ -63,29 +46,23 @@ pub class @final SubProcess {
             self:.child ()
         }
 
-        close (self.in_pipe [READ]);
-        close (self.out_pipe [WRITE]);
-        close (self.err_pipe [WRITE]);
+        self._stdin:.ipipe ():.close ();
+        self._stdout:.opipe ():.close ();
+        self._stderr:.opipe ():.close ();
 
-        let out_flags = fcntl(self.out_pipe[READ], F_GETFL, 0);
-        fcntl(self.out_pipe [READ], F_SETFL, out_flags | O_NONBLOCK);
-
-        let err_flags = fcntl(self.err_pipe[READ], F_GETFL, 0);
-        fcntl(self.err_pipe [READ], F_SETFL, err_flags | O_NONBLOCK);
+        self._stdout:.ipipe ().setNonBlocking ();
+        self._stderr:.ipipe ().setNonBlocking ();
     }
 
     prv def child (mut self) {
-        dup2 (self.in_pipe [READ], STDIN_FILENO);
-        dup2 (self.out_pipe [WRITE], STDOUT_FILENO);
-        dup2 (self.err_pipe [WRITE], STDERR_FILENO);
+        dup2 (self._stdin:.ipipe ().getHandle (), STDIN_FILENO);
+        dup2 (self._stdout:.opipe ().getHandle (), STDOUT_FILENO);
+        dup2 (self._stderr:.opipe ().getHandle (), STDERR_FILENO);
 
-        close (self.in_pipe [READ]);
-        close (self.in_pipe [WRITE]);
-        close (self.out_pipe [READ]);
-        close (self.out_pipe [WRITE]);
-        close (self.err_pipe [READ]);
-        close (self.err_pipe [WRITE]);
-
+        self._stdin:.close ();
+        self._stdout:.close ();
+        self._stderr:.close ();
+        
         let dmut args = Vec!(&c8)::new ();
         args:.push (self.cmd.ptr);;
         for i in self.args {
@@ -106,38 +83,16 @@ pub class @final SubProcess {
         _yrt_exit (0);
     }
 
-    pub def stdin (mut self, content : [c8]) {
-        write (self.in_pipe [WRITE], content.ptr, cast!usize (content.len) * (sizeof c8));
-    }
-
-    pub def close (mut self) {
-        close (self.in_pipe [WRITE]);
+    pub def stdin (mut self) -> dmut &OPipe {
+        alias self._stdin:.opipe ()
     }
     
-    pub def stdout (mut self)-> [c8] {
-        let dmut ret = Vec!(c8)::new ();
-        loop {
-            let mut c = '\u{0}'c8;
-            let n = read (self.out_pipe [READ], alias &c, sizeof c8);
-            if (n != -1 && n != 0) {
-                ret:.push (c);
-            } else break {}
-        }
-        ret:.fit ();
-        return ret [];
+    pub def stdout (mut self)-> dmut &IPipe {
+        alias (self._stdout:.ipipe ())
     }
 
-    pub def stderr (mut self)-> [c8] {
-        let dmut ret = Vec!(c8)::new ();
-        loop {
-            let mut c = '\u{0}'c8;
-            let n = read (self.err_pipe [READ], alias &c, sizeof c8);
-            if (n != -1 && n != 0) {
-                ret:.push (c);
-            } else break {}
-        }
-        ret:.fit ();
-        return ret [];
+    pub def stderr (mut self)-> dmut &IPipe  {
+        alias (self._stderr:.ipipe ())
     }
 
     pub def wait (mut self)-> i32 {

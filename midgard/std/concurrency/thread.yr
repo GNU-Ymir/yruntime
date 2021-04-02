@@ -8,7 +8,7 @@ import std::concurrency::pipe;
 
 pub struct
 | mut id : usize
-| pipe : &Pipe
+| pipe : &ThreadPipe
  -> Thread;
 
 
@@ -152,7 +152,7 @@ mod internal {
     pub class @final FnThreadLauncher {
 
         // The id and the pipe to communicate with the spawned thread
-        pub let dmut th_content : Thread = Thread (0us, Pipe::new ());
+        pub let dmut th_content : Thread = Thread (0us, ThreadPipe::new ());
 
         // The function that is launch for the thread
         pub let func : fn (Thread)-> void;
@@ -178,13 +178,13 @@ mod internal {
     pub class @final DgThreadLauncher {
 
         // The id and the pipe to communicate with the spawned thread
-        pub let dmut th_content : Thread = Thread (0us, Pipe::new ());
+        pub let dmut th_content : Thread = Thread (0us, ThreadPipe::new ());
 
         // The function that is launch for the thread
         pub let func : dg (Thread)-> void;
                 
         pub self (func: dg (Thread)-> void, pipes : bool)
-            with th_content = Thread (0us, Pipe::new (pipes)), func = func {}
+            with th_content = Thread (0us, ThreadPipe::new (pipes)), func = func {}
             
     }
 
