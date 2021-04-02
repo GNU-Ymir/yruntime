@@ -158,8 +158,8 @@ void _yrt_print_error (char * format) {
 
 _yrt_c8_array_ _yrt_float_to_s8 (float x) {
     int nb = snprintf (NULL, 0, "%f", x);
-    char * res = GC_malloc (nb * sizeof (char));
-    snprintf (res, nb, "%f", x);
+    char * res = GC_malloc ((nb + 1) * sizeof (char)); // + 1 for the null char
+    snprintf (res, nb+1, "%f", x);
 
     _yrt_c8_array_ arr;
     arr.data = res;
@@ -169,8 +169,8 @@ _yrt_c8_array_ _yrt_float_to_s8 (float x) {
 
 _yrt_c8_array_ _yrt_double_to_s8 (double x) {
     int nb = snprintf (NULL, 0, "%lf", x);
-    char * res = GC_malloc (nb * sizeof (char));
-    snprintf (res, nb, "%lf", x);
+    char * res = GC_malloc ((nb + 1) * sizeof (char)); // + 1 for the null char
+    snprintf (res, nb+1, "%lf", x);
 
     _yrt_c8_array_ arr;
     arr.data = res;
