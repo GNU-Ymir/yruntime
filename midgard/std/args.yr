@@ -481,16 +481,31 @@ prv def parseValue {struct T} (dmut lex : &Lexer, cuts : &HashMap!{[c32], Argume
                 }
             }
         } else if (tok != "") {
-            match positional [currentPos]? {
-                Ok (l : _)=> {
-                    parseField!T (alias lex, l, alias res);
-                    used:.insert (l);
-                    currentPos += 1u64;
+            if (currentPos < positional.len ()) {
+                match positional [currentPos]? {
+                    Ok (l : _)=> {
+                        parseField!T (alias lex, l, alias res);
+                        used:.insert (l);
+                        currentPos += 1u64;
+                    }
+                    _ => {                    
+                        throw cast!{&ArgumentError} (ArgumentUnknownError::new (name-> tok));
+                    }
                 }
-                _ => {                    
-                    throw cast!{&ArgumentError} (ArgumentUnknownError::new (name-> tok));
+            } else {
+                match cuts [tok]? {
+                    Ok (Argument (long-> l : _))=> {
+                        lex:.next (); // ignore tok
+                        if (l in helps) throw HelpRequired::new ();
+                        
+                        parseField!T (alias lex, l, alias res);
+                        used:.insert (l);
+                    }
+                    _ => {                    
+                        throw cast!{&ArgumentError} (ArgumentUnknownError::new (name-> tok));
+                    }
                 }
-            }            
+            }
         } else {
             break {}
         }
