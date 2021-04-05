@@ -451,8 +451,11 @@ pub {
      * @returns : a c8
      */
     def read {T of c8} () -> c8 {
+        import etc::c::stdio;
         let mut x : c8 = '\u{0}'c8;
-        scanf ("%c"s8.ptr, &x);
+        if (etc::c::stdio::read (stdin, alias &x, 1u64) == EOF) {
+            return '\u{0}'c8;
+        }
         x
     }
 
@@ -462,6 +465,56 @@ pub {
      */
     def read {T of c32} () -> c32 {
         _yrt_getwchar ()       
-    }    
+    }
+
+    /**
+     * Read a [c8] from the stdin
+     * @info: 
+     * =============
+     * this function waits for the enter to be pressed (if the stdin is from a terminal)
+     * To avoid this waiting, you should use the std::term::Terminal class, that manage advance io
+     * =============
+     * @returns: a [c8]
+     */
+    def read {T of [U], U of c8} ()-> [c8] {
+        import etc::c::stdio;
+        import std::collection::vec;
+        let dmut v = Vec!(c8)::new ();
+        loop {
+            let mut c = '\u{0}'c8;
+            let size = etc::c::stdio::read (stdin, alias &c, 1u64);
+            if (size != EOF) {
+                if (c == '\n'c8) break {}
+                v:.push (c);
+            } else break {}
+        }
+        
+        v:.fit ();
+        return v[];
+    }
+
+    /**
+     * Read a [c32] from the stdin
+     * @info: 
+     * =============
+     * this function waits for the enter to be pressed (if the stdin is from a terminal)
+     * To avoid this waiting, you should use the std::term::Terminal class, that manage advance io
+     * =============
+     * @returns: a [c32]
+     */
+    def read {T of [U], U of c32} () -> [c32] {
+        import etc::c::stdio;
+        import std::collection::vec;
+        let dmut v = Vec!(c32)::new ();
+        loop {
+            let mut c = _yrt_getwchar ();
+            if (c != '\u{0}' && c != '\n') {
+                v:.push (c);
+            } else break {}
+        }
+        
+        v:.fit ();
+        return v[];
+    }
     
 }
