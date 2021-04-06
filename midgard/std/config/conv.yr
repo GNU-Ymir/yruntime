@@ -96,47 +96,140 @@ pub def to {class T} (cfg : &Config)-> T
     }    
 }
 
-
 /**
- * Transform a structure into a configuration
+ * Transform a configuration into a i64
  * @example: 
- * ===============
- * struct 
- * | x : i32
- * | foo : [c32]
- * | inner : [X]
- *  -> X;
- * 
- * let st = X (1, "foo", [X (2, "bar", [])]);
- * let cfg : &Config = st.to!(&Config} ();
- * ===============
+ * =============
+ * let i = Int::new (12);
+ * assert (i.to!(i64) () == 12i64);
+ * =============
+ * @throws: 
+ *   - &ConfigError: if the cast cannot be made
  */
-pub def to {C of &Config, struct T} (value : T)-> &Config {
-    StructToCfg::to!{&Config, T} (value)
+pub def to {T of i64} (cfg : &Config)-> T
+    throws &ConfigError
+{
+    match cfg {
+        Int (i-> i:_) => { return i; }
+        _ => {
+            throw ConfigError::new (T::typeinfo, cfg::typeinfo);
+        }
+    }
 }
 
 /**
- * Transform a class into a configuration
- * @example:
- * ===================
- * class A {
- *     impl std::config::conv::Serializable {
- *          pub over seralize (self)-> &Config {
- *              let dmut d = Dict::new ();
- *              d:.insert ("foo", Float::new (12.0));
- *              d
- *          }
- *     }
- * }
- * ===================
+ * Transform a configuration into a i64
+ * @example: 
+ * =============
+ * let i = Int::new (12);
+ * assert (i.to!(i32) () == 12);
+ * =============
+ * @throws: 
+ *   - &ConfigError: if the cast cannot be made
  */
-pub def to {C of &Config, T impl Serializable} (value : T)-> &Config {
-    StructToCfg::to!{&Config, T} (value)
+pub def to {T of i32} (cfg : &Config)-> T
+    throws &ConfigError
+{
+    match cfg {
+        Int (i-> i:_) => { return cast!i32 (i); }
+        _ => {
+            throw ConfigError::new (T::typeinfo, cfg::typeinfo);
+        }
+    }
+}    
+
+/**
+ * Transform a configuration into a f64
+ * @example: 
+ * =============
+ * let i = Float::new (12.0);
+ * assert (i.to!(f64) () == 12.0);
+ * =============
+ * @throws: 
+ *   - &ConfigError: if the cast cannot be made
+ */
+pub def to {T of f64} (cfg : &Config)-> T
+    throws &ConfigError
+{
+    match cfg {
+        Float (f-> f:_) => { return f; }
+        _ => {
+            throw ConfigError::new (T::typeinfo, cfg::typeinfo);
+        }
+    }
 }
 
-pub def to {C of &Config, class T} (value : T)-> &Config {
-    cte assert ("Class " ~ T::typeid ~ " does not impl Serializable");
+/**
+ * Transform a configuration into a string
+ * @example: 
+ * =============
+ * let i = Str::new ("foo");
+ * assert (i.to!([c32]) () == "foo");
+ * =============
+ * @throws: 
+ *   - &ConfigError: if the cast cannot be made
+ */
+pub def to {T of [U], U of c32} (cfg : &Config)-> T
+    throws &ConfigError
+{
+    match cfg {
+        Str (str-> str:_) => { return str; }            
+        _ => {
+            throw ConfigError::new (T::typeinfo, cfg::typeinfo);
+        }
+    }
 }
+
+/**
+ * Transform a configuration into a bool
+ * @example: 
+ * =============
+ * let i = Bool::new (false);
+ * assert (i.to!(bool) () == false);
+ * =============
+ * @throws: 
+ *   - &ConfigError: if the cast cannot be made
+ */
+pub def to {T of bool} (cfg : &Config)-> T
+    throws &ConfigError
+{
+    match cfg {
+        Bool (b-> b:_) => { return b; }
+        _ => {
+            throw ConfigError::new (T::typeinfo, cfg::typeinfo);
+        }
+    }
+}
+
+/**
+ * Transform a configuration into an array
+ * @example: 
+ * =============
+ * let i = Array::new (Int::new (1), Int::new (2));
+ * assert (i.to!([i32]) () == [1, 2]);
+ * =============
+ * @throws: 
+ *   - &ConfigError: if the cast cannot be made
+ */
+pub def to {T of [U], U} (cfg : &Config)-> T
+    throws &ConfigError
+{
+    import std::collection::vec;
+    match cfg {
+        x : &Array => { return fromArray!(T) (x); }
+        _ => {
+            cte if (is!(U)(Z of c32)) {
+                match cfg {
+                    Str (str-> str:_) => {            
+                        return str; 
+                    }
+                }
+            }
+            return [cfg.to!(U) ()];                
+        }
+    }
+}
+
 
 mod CfgToConfig {
 
@@ -220,271 +313,141 @@ mod CfgToConfig {
         return res [];
     }
     
-    /**
-     * Transform a configuration into a i64
-     * @example: 
-     * =============
-     * let i = Int::new (12);
-     * assert (i.to!(i64) () == 12i64);
-     * =============
-     * @throws: 
-     *   - &ConfigError: if the cast cannot be made
-     */
-    pub def to {T of i64} (cfg : &Config)-> T
-        throws &ConfigError
-    {
-        match cfg {
-            Int (i-> i:_) => { return i; }
-            _ => {
-                throw ConfigError::new (T::typeinfo, cfg::typeinfo);
-            }
-        }
-    }
-
-    /**
-     * Transform a configuration into a i64
-     * @example: 
-     * =============
-     * let i = Int::new (12);
-     * assert (i.to!(i32) () == 12);
-     * =============
-     * @throws: 
-     *   - &ConfigError: if the cast cannot be made
-     */
-    pub def to {T of i32} (cfg : &Config)-> T
-        throws &ConfigError
-    {
-        match cfg {
-            Int (i-> i:_) => { return cast!i32 (i); }
-            _ => {
-                throw ConfigError::new (T::typeinfo, cfg::typeinfo);
-            }
-        }
-    }    
-
-    /**
-     * Transform a configuration into a f64
-     * @example: 
-     * =============
-     * let i = Float::new (12.0);
-     * assert (i.to!(f64) () == 12.0);
-     * =============
-     * @throws: 
-     *   - &ConfigError: if the cast cannot be made
-     */
-    pub def to {T of f64} (cfg : &Config)-> T
-        throws &ConfigError
-    {
-        match cfg {
-            Float (f-> f:_) => { return f; }
-            _ => {
-                throw ConfigError::new (T::typeinfo, cfg::typeinfo);
-            }
-        }
-    }
-
-    /**
-     * Transform a configuration into a string
-     * @example: 
-     * =============
-     * let i = Str::new ("foo");
-     * assert (i.to!([c32]) () == "foo");
-     * =============
-     * @throws: 
-     *   - &ConfigError: if the cast cannot be made
-     */
-    pub def to {T of [U], U of c32} (cfg : &Config)-> T
-        throws &ConfigError
-    {
-        match cfg {
-            Str (str-> str:_) => { return str; }            
-            _ => {
-                throw ConfigError::new (T::typeinfo, cfg::typeinfo);
-            }
-        }
-    }
-
-    /**
-     * Transform a configuration into a bool
-     * @example: 
-     * =============
-     * let i = Bool::new (false);
-     * assert (i.to!(bool) () == false);
-     * =============
-     * @throws: 
-     *   - &ConfigError: if the cast cannot be made
-     */
-    pub def to {T of bool} (cfg : &Config)-> T
-        throws &ConfigError
-    {
-        match cfg {
-            Bool (b-> b:_) => { return b; }
-            _ => {
-                throw ConfigError::new (T::typeinfo, cfg::typeinfo);
-            }
-        }
-    }
-
-    /**
-     * Transform a configuration into an array
-     * @example: 
-     * =============
-     * let i = Array::new (Int::new (1), Int::new (2));
-     * assert (i.to!([i32]) () == [1, 2]);
-     * =============
-     * @throws: 
-     *   - &ConfigError: if the cast cannot be made
-     */
-    pub def to {T of [U], U} (cfg : &Config)-> T
-        throws &ConfigError
-    {
-        import std::collection::vec;
-        match cfg {
-            x : &Array => { return fromArray!(T) (x); }
-            _ => {
-                cte if (is!(U)(Z of c32)) {
-                    match cfg {
-                        Str (str-> str:_) => {            
-                            return str; 
-                        }
-                    }
-                }
-                return [cfg.to!(U) ()];                
-            }
-        }
-    }
 }
 
-mod StructToCfg {
+/**
+ * Transform a class into a configuration
+ * @example:
+ * ===================
+ * class A {
+ *     impl std::config::conv::Serializable {
+ *          pub over seralize (self)-> &Config {
+ *              let dmut d = Dict::new ();
+ *              d:.insert ("foo", Float::new (12.0));
+ *              d
+ *          }
+ *     }
+ * }
+ * ===================
+ */
+pub def to {C of &Config, T impl Serializable} (value : T)-> &Config {
+    value.serialize ()
+}
 
-    /**
-     * Transform a structure into a configuration
-     * @example: 
-     * ===============
-     * struct 
-     * | x : i32
-     * | foo : [c32]
-     * | inner : [X]
-     *  -> X;
-     * 
-     * let st = X (1, "foo", [X (2, "bar", [])]);
-     * let cfg : &Config = st.to!(&Config) ();
-     * ===============
-     */
-    pub def to {C of &Config, struct T} (value : T)-> &Config {
-        let dmut res = Dict::new ();
-        cte for i in 0u32 .. (typeof (__pragma!tupleof (value))::arity) {
-            let name = (__pragma!field_names (T))[i];
-            cte if (__pragma!compile ({
-                let _ = StructToCfg::to!(&Config) ((__pragma!tupleof (value)).i);
-            })) {
-                let x = StructToCfg::to!(&Config) ((__pragma!tupleof (value)).i);
-                res:.insert (name, x);
+
+pub def to {C of &Config, class T} (value : T)-> &Config {
+    cte assert ("Class " ~ T::typeid ~ " does not impl Serializable");
+}
+
+
+/**
+ * Transform a i64 into a configuration
+ * @example: 
+ * ============
+ * let i = 90i64;
+ * let cfg : &Config = i.to!(&Config) ();
+ * ============
+ */
+pub def to {C of &Config, T of i64} (value : T)-> &Config {
+    Int::new (value)
+}
+
+/**
+ * Transform a i32 into a configuration
+ * @example: 
+ * ============
+ * let i = 90;
+ * let cfg : &Config = i.to!(&Config) ();
+ * ============
+ */
+pub def to {C of &Config, T of i32} (value : T)-> &Config {
+    Int::new (cast!i64 (value))
+}
+
+/**
+ * Transform a bool into a configuration
+ * @example: 
+ * ============
+ * let b = false;
+ * let cfg : &Config = b.to!(&Config) ();
+ * ============
+ */
+pub def to {C of &Config, T of bool} (value : T)-> &Config {
+    Bool::new (value)
+}
+
+/**
+ * Transform a f64 into a configuration
+ * @example: 
+ * ============
+ * let f = 3.14;
+ * let cfg : &Config = f.to!(&Config) ();
+ * ============
+ */
+pub def to {C of &Config, T of f64} (value : T)-> &Config {
+    Float::new (value)
+}
+
+/**
+ * Transform a [c32] into a configuration
+ * @example: 
+ * ============
+ * let str = "test";
+ * let cfg : &Config = str.to!(&Config) ();
+ * ============
+ */
+pub def to {C of &Config, T of [U], U of c32} (value : T)-> &Config {
+    Str::new (value)
+}
+
+/**
+ * Transform a slice into a configuration
+ * @example: 
+ * ============
+ * let slc = [1, 2, 3];
+ * let cfg : &Config = slc.to!(&Config) ();
+ * ============
+ */
+pub def to {C of &Config, T of [U], U} (value : T)-> &Config {
+    let dmut arr = Array::new ();
+    for i in value {
+        arr:.push (to!(&Config) (i));
+    }
+    arr
+}
+
+
+/**
+ * Transform a structure into a configuration
+ * @example: 
+ * ===============
+ * struct 
+ * | x : i32
+ * | foo : [c32]
+ * | inner : [X]
+ *  -> X;
+ * 
+ * let st = X (1, "foo", [X (2, "bar", [])]);
+ * let cfg : &Config = st.to!(&Config} ();
+ * ===============
+ */
+pub def to {C of &Config, struct T} (value : T)-> &Config {
+    let dmut res = Dict::new ();
+    cte for i in 0u32 .. (typeof (__pragma!tupleof (value))::arity) {
+        let name = (__pragma!field_names (T))[i];
+        cte if (__pragma!compile ({
+            let _ = to!(&Config) ((__pragma!tupleof (value)).i);
+        })) {
+            let x = to!(&Config) ((__pragma!tupleof (value)).i);
+            res:.insert (name, x);
+        } else {
+            cte if (is!{typeof ((__pragma!tupleof (value)).i)} {class U}) {
+                cte assert (false, "Field of " ~ T::typeid ~ " of type class " ~ typeof ((__pragma!tupleof (value)).i)::typeid ~ " does not impl " ~ Serializable::typeid);
             } else {
-                cte if (is!{typeof ((__pragma!tupleof (value)).i)} {class U}) {
-                    cte assert (false, "Field of " ~ T::typeid ~ " of type class " ~ typeof ((__pragma!tupleof (value)).i)::typeid ~ " does not impl " ~ Serializable::typeid);
-                } else {
-                    cte assert (false, "Field of " ~ T::typeid ~ " of type '" ~ typeof ((__pragma!tupleof (value)).i)::typeid ~ "' cannot be encoded by a configuration");
-                }
+                cte assert (false, "Field of " ~ T::typeid ~ " of type '" ~ typeof ((__pragma!tupleof (value)).i)::typeid ~ "' cannot be encoded by a configuration");
             }
         }
-        
-        res
-    }
-
-    /**
-     * Transform a class into a configuration
-     * @example:
-     * ===================
-     * class A {
-     *     impl std::config::conv::Serializable {
-     *          pub over seralize (self)-> &Config {
-     *              let dmut d = Dict::new ();
-     *              d:.insert ("foo", Float::new (12.0));
-     *              d
-     *          }
-     *     }
-     * }
-     * ===================
-     */
-    pub def to {C of &Config, T impl Serializable} (value : T)-> &Config {
-        value.serialize ()
     }
     
-    /**
-     * Transform a i64 into a configuration
-     * @example: 
-     * ============
-     * let i = 90i64;
-     * let cfg : &Config = i.to!(&Config) ();
-     * ============
-     */
-    pub def to {C of &Config, T of i64} (value : T)-> &Config {
-        Int::new (value)
-    }
-
-    /**
-     * Transform a i32 into a configuration
-     * @example: 
-     * ============
-     * let i = 90;
-     * let cfg : &Config = i.to!(&Config) ();
-     * ============
-     */
-    pub def to {C of &Config, T of i32} (value : T)-> &Config {
-        Int::new (cast!i64 (value))
-    }
-
-    /**
-     * Transform a bool into a configuration
-     * @example: 
-     * ============
-     * let b = false;
-     * let cfg : &Config = b.to!(&Config) ();
-     * ============
-     */
-    pub def to {C of &Config, T of bool} (value : T)-> &Config {
-        Bool::new (value)
-    }
-
-    /**
-     * Transform a f64 into a configuration
-     * @example: 
-     * ============
-     * let f = 3.14;
-     * let cfg : &Config = f.to!(&Config) ();
-     * ============
-     */
-    pub def to {C of &Config, T of f64} (value : T)-> &Config {
-        Float::new (value)
-    }
-
-    /**
-     * Transform a [c32] into a configuration
-     * @example: 
-     * ============
-     * let str = "test";
-     * let cfg : &Config = str.to!(&Config) ();
-     * ============
-     */
-    pub def to {C of &Config, T of [U], U of c32} (value : T)-> &Config {
-        Str::new (value)
-    }
-
-    /**
-     * Transform a slice into a configuration
-     * @example: 
-     * ============
-     * let slc = [1, 2, 3];
-     * let cfg : &Config = slc.to!(&Config) ();
-     * ============
-     */
-    pub def to {C of &Config, T of [U], U} (value : T)-> &Config {
-        let dmut arr = Array::new ();
-        for i in value {
-            arr:.push (StructToCfg::to!(&Config) (i));
-        }
-        arr
-    }
-
+    res
 }
