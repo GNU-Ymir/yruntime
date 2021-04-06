@@ -327,6 +327,20 @@ pub {
     }
 
     /**
+     * Create a zero terminated string from a [c8]
+     */
+    def toStringZ (a : [c8])-> &c8 {
+        let dmut res = core::duplication::allocArray!(c8)(a.len + 1u64);
+        core::duplication::memCopy (a, alias res);
+        {
+            res [$-1u64] = '\u{0}'c8;
+        } catch {
+            _ : &OutOfArray => {}
+        }
+        res.ptr
+    }
+    
+    /**
      * Transfrom a utf32 encoded char into a utf8 string
      * @params :
      *   - s: a char in utf32
