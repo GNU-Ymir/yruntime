@@ -19,6 +19,8 @@
 
 
 int __YRT_DEBUG__ = 0;
+_yrt_array_ __MAIN_ARGS__;
+
 
 void _yrt_exit (int i) {
     exit (i);
@@ -262,8 +264,13 @@ _yrt_array_ _yrt_create_args_array (int len, char ** argv) {
 	inner.len = strlen (argv [i]);
 	((_yrt_array_*) arr.data)[i] = inner;
     }
-    
+
+    __MAIN_ARGS__ = arr;    
     return arr;
+}
+
+_yrt_array_ _yrt_get_main_args () {
+    return __MAIN_ARGS__;
 }
 
 void _yrt_force_debug () {

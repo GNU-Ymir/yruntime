@@ -11,7 +11,7 @@ import std::io;
 
 pub class @final Path {
 
-    prv let dmut _parts = Vec!([c8])::new ();
+    prv let dmut _parts = Vec!{[c8]}::new ();
 
     /**
      * Create a new path from a utf8 path
@@ -72,7 +72,7 @@ pub class @final Path {
      * assert (path.toStr () == "/foo/bar/test.txt"s8);
      * ===========
      */
-    pub def push (mut self, path : [c8]) {
+    pub def push (mut self, path : [c8]) -> dmut &Path {
         let mut last = 0u64;
         for i in 0u64 .. path.len {
             if (path[i] == '/'c8) {
@@ -82,8 +82,11 @@ pub class @final Path {
         }
         if (last != path.len)
             self._parts:.push (copy (path [last..$]));
+        return alias self;
     } catch {
-        _ : &OutOfArray => {} 
+        _ : &OutOfArray => {
+            return alias self;
+        } 
     }
 
     /**
