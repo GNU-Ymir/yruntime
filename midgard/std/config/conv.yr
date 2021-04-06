@@ -4,6 +4,12 @@ import core::typeinfo, core::array, core::exception, core::object;
 import std::config::_;
 import std::io;
 
+/**
+ * Simple trait to impl in a class to be convertible to a Config
+ */
+trait Serializable {
+    pub def serialize (self)-> &Config;
+}
 
 /**
  * Try to transform the configuration into a structure
@@ -52,6 +58,30 @@ pub def to {struct T} (cfg : &Config)-> T
     }
 }
 
+/**
+ * Transform a configuration into a class
+ * @info: The class must have a constructor taking a configuration as a parameter
+ * @example: 
+ * ===========================
+ * class A {
+ *    let i = 0;
+ *    pub self (c : &Config) {
+ *        match c {
+ *             Int (i-> i:_) => { self.i = i; }
+ *        }
+ *    }
+ * }
+ * 
+ * {
+ *     let c = tomlFile.parse ().to!(&A) ();
+ *     println (c);
+ * } catch {
+ *     err: &ConfigError => { 
+ *          println (err); 
+ *     }
+ * }
+ * ===========================
+ */
 pub def to {class T} (cfg : &Config)-> T
     throws &ConfigError
 {
@@ -82,9 +112,31 @@ pub def to {class T} (cfg : &Config)-> T
  * ===============
  */
 pub def to {C of &Config, struct T} (value : T)-> &Config {
-    StructToCfg::to!(&Config, T} (value)
+    StructToCfg::to!{&Config, T} (value)
 }
 
+/**
+ * Transform a class into a configuration
+ * @example:
+ * ===================
+ * class A {
+ *     impl std::config::conv::Serializable {
+ *          pub over seralize (self)-> &Config {
+ *              let dmut d = Dict::new ();
+ *              d:.insert ("foo", Float::new (12.0));
+ *              d
+ *          }
+ *     }
+ * }
+ * ===================
+ */
+pub def to {C of &Config, T impl Serializable} (value : T)-> &Config {
+    StructToCfg::to!{&Config, T} (value)
+}
+
+pub def to {C of &Config, class T} (value : T)-> &Config {
+    cte assert ("Class " ~ T::typeid ~ " does not impl Serializable");
+}
 
 mod CfgToConfig {
 
@@ -329,13 +381,35 @@ mod StructToCfg {
                 let x = StructToCfg::to!(&Config) ((__pragma!tupleof (value)).i);
                 res:.insert (name, x);
             } else {
-                cte assert (false, "Type '" ~ typeof ((__pragma!tupleof (value)).i)::typeid ~ "' cannot be encoded by a configuration");
+                cte if (is!{typeof ((__pragma!tupleof (value)).i)} {class U}) {
+                    cte assert (false, "Field of " ~ T::typeid ~ " of class " ~ typeof ((__pragma!tupleof (value)).i)::typeid ~ " does not impl Serializable");
+                } else {
+                    cte assert (false, "Field of " ~ T::typeid ~ " of type '" ~ typeof ((__pragma!tupleof (value)).i)::typeid ~ "' cannot be encoded by a configuration");
+                }
             }
         }
         
         res
     }
 
+    /**
+     * Transform a class into a configuration
+     * @example:
+     * ===================
+     * class A {
+     *     impl std::config::conv::Serializable {
+     *          pub over seralize (self)-> &Config {
+     *              let dmut d = Dict::new ();
+     *              d:.insert ("foo", Float::new (12.0));
+     *              d
+     *          }
+     *     }
+     * }
+     * ===================
+     */
+    pub def to {C of &Config, T impl Serializable} (value : T)-> &Config {
+        value.serialize ()
+    }
     
     /**
      * Transform a i64 into a configuration
