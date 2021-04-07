@@ -39,6 +39,11 @@ extern (C) def _yrt_printf32 (f : f32);
 extern (C) def _yrt_printf64 (f : f64);
 
 /**
+ * flush the stdout for immediate printing
+ */
+extern (C) def _yrt_fflush_stdout ();
+
+/**
  * This trait is to be implemented by class
  * When a class implement it, we can call the function print on it
  * @example: 
@@ -437,7 +442,10 @@ pub {
      * Read a i32 from the stdin
      * @returns : a i32
      */
-    def read {T of i32} () -> i32 {
+    def read {T of i32} (ask : [c32] = "") -> i32 {
+        import etc::c::stdio;
+        print (ask);
+        _yrt_fflush_stdout ();
         let mut x : i32 = 0;
         scanf ("%d"s8.ptr, &x);
         x
@@ -447,7 +455,10 @@ pub {
      * Read a u64 from the stdin
      * @returns : a u64
      */
-    def read {T of u64} () -> u64 {
+    def read {T of u64} (ask : [c32] = "") -> u64 {
+        import etc::c::stdio;
+        print (ask);
+        _yrt_fflush_stdout ();
         let mut x : u64 = 0_u64;
         scanf ("%ld"s8.ptr, &x);
         x
@@ -457,8 +468,10 @@ pub {
      * Read a c8 from the stdin
      * @returns : a c8
      */
-    def read {T of c8} () -> c8 {
+    def read {T of c8} (ask : [c32] = "") -> c8 {
         import etc::c::stdio;
+        print (ask);
+        _yrt_fflush_stdout ();
         let mut x : c8 = '\u{0}'c8;
         if (etc::c::stdio::read (stdin, alias &x, 1u64) == EOF) {
             return '\u{0}'c8;
@@ -470,7 +483,10 @@ pub {
      * Read a c8 from the stdin, and return it as a c32
      * @returns : a c32
      */
-    def read {T of c32} () -> c32 {
+    def read {T of c32} (ask : [c32] = "") -> c32 {
+        import etc::c::stdio;
+        print (ask);
+        _yrt_fflush_stdout ();
         _yrt_getwchar ()       
     }
 
@@ -483,9 +499,11 @@ pub {
      * =============
      * @returns: a [c8]
      */
-    def read {T of [U], U of c8} ()-> [c8] {
+    def read {T of [U], U of c8} (ask : [c32] = "")-> [c8] {
         import etc::c::stdio;
         import std::collection::vec;
+        print (ask);
+        _yrt_fflush_stdout ();
         let dmut v = Vec!(c8)::new ();
         loop {
             let mut c = '\u{0}'c8;
@@ -509,9 +527,11 @@ pub {
      * =============
      * @returns: a [c32]
      */
-    def read {T of [U], U of c32} () -> [c32] {
+    def read {T of [U], U of c32} (ask : [c32] = "") -> [c32] {
         import etc::c::stdio;
         import std::collection::vec;
+        print (ask);
+        _yrt_fflush_stdout ();
         let dmut v = Vec!(c32)::new ();
         loop {
             let mut c = _yrt_getwchar ();

@@ -202,3 +202,7 @@ unsigned int _yrt_getwchar_in_file (FILE * file) {
 }
 
 
+
+void _yrt_fflush_stdout () {
+    fflush (stdout);
+}
