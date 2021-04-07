@@ -1,0 +1,213 @@
+mod std::fs::iteration;
+
+import core::dispose;
+import std::fs::errors;
+import std::fs::path;
+import std::io;
+import std::conv;
+import etc::runtime::errno;
+import etc::c::dirent;
+import core::exception;
+
+
+/**
+ * A FsEntry is a entry of a file system element, ancestor of DirEntry and FileEntry
+ * A FsEntry is also used to represent unknwon entries 
+ */
+pub class FsEntry {
+
+    let _path : &Path;
+    
+    pub self (path : &Path) with _path = path {}
+
+    /**
+     * @returns: the path of the entry
+     */
+    pub def getPath (self) -> &Path {
+        self._path
+    }
+    
+    impl Printable;
+}
+
+/**
+ * A directory entry in the file system
+ * A DirEntry can be iterated to get all the entries within the directory
+ * @example: 
+ * ===================
+ * import std::fs;
+ * 
+ * let dir = readDir ("./some/dir");
+ * for entry : &FsEntry in dir {
+ *     println (entry);
+ * }
+ * ===================
+ */
+pub class DirEntry over FsEntry {
+
+    /**
+     * Create a new dir entry from a given path
+     * @warning: 
+     * =================
+     * this construction should be used only in readDir, or by iterating through a directory
+     * There is no verification in the constructor that the path actually leads to a directory
+     * ================
+     */
+    pub self (path : &Path) with super (path) {}
+
+    pub def begin (self)-> dmut &DirIterator {
+        DirIterator::new (opendir (self._path.toStr ().toStringZ ()))
+    }
+
+    pub def end (self)-> &DirIterator {
+        DirIterator::new (null)
+    }
+    
+    impl Printable;
+    
+}
+
+/**
+ * A file entry in the file system
+ * A file entry is not iterable, but can be used to open File (std::fs::file), and read contents
+ * @example: 
+ * =================
+ * let dir = readDir ("./some/dir");
+ * for entry in dir {
+ *     match entry {
+ *         f : &FileEntry => {
+ *             let dmut file = File::open (f.getPath (), read-> true);
+ *             println (file:.readAll ());
+ *             file:.close ();
+ *         }
+ *     }
+ * }
+ * =================
+ */
+pub class @final FileEntry over FsEntry {
+
+    /**
+     * Create a new file entry from a given path
+     * @warning: 
+     * =============
+     * this construction should be used when iterating through a directory
+     * There is no verification in the constructor that the path actually leads to a file
+     * =============
+     */
+    pub self (path : &Path) with super (path) {}
+
+    impl Printable;
+    
+}
+
+/**
+ * A link entry in the file system
+ * @example: 
+ * =================
+ * let dir = readDir ("./some/dir");
+ * for entry in dir {
+ *     match entry {
+ *         l : &LinkEntry => {
+ *             println (l);
+ *             println (l.resolve ());
+ *         }
+ *     }
+ * }
+ * =================
+ */
+pub class @final LinkEntry over FsEntry {
+
+    /**
+     * Create a new link entry from a given path
+     * @warning: 
+     * =============
+     * this construction should be used when iterating through a directory
+     * There is no verification in the constructor that the path actually leads to a link
+     * =============
+     */
+    pub self (path : &Path) with super (path) {}
+
+    /**
+     * Follow the link, and return the path
+     * @returns: the path where the link leads
+     * @throws: 
+     *   - FsError: if the link is invalid
+     */
+    pub def follow (self)-> &Path
+        throws &FsError
+    {
+        let dmut path : [c8] = ['\u{0}'c8 ; 256u32];
+        let size = readlink (self._path.toStr ().toStringZ (), alias path.ptr, cast!i32 (path.len));
+        if (size == -1) {
+            throw FsError::new (errno ().to!(FsErrorCode) (), self._path.toStr ())        
+        }
+        __pragma!trusted ({ Path::new (path [0 .. size]) })
+    }
+    
+    impl Printable;
+    
+}
+
+class @final DirIterator {
+
+    let mut _dir : &(void);
+
+    let mut _curr : &(dirent);
+
+    pub self (dmut dir : &(void)) with _dir = dir, _curr = null {
+        self:.next ();
+    }
+
+    pub def opEquals (self, o : &DirIterator) -> bool {
+        self._dir is o._dir
+    }
+
+    pub def next (mut self)  {
+        if (self._dir !is null) {
+            self._curr = readdir (self._dir);
+            if (self._curr is null) {
+                self:.dispose ();
+            } else {
+                let c = __pragma!trusted ({
+                    *self._curr
+                });
+                match c.d_type {
+                    DirEntryTypes::DT_DIR => { // ignore current and rewind dir
+                        if (c.d_name.fromStringZ () == ".."s8 ||
+                            c.d_name.fromStringZ () == "."s8)
+                            self:.next ();
+                    }
+                }
+            }
+        }
+    }
+
+    pub def get {0} (self)-> &FsEntry {
+        __pragma!trusted ({
+            let c = *self._curr;
+            let path = Path::new (c.d_name.fromStringZ ());
+            match c.d_type {
+                DirEntryTypes::DT_DIR => { DirEntry::new (path) }
+                DirEntryTypes::DT_REG => { FileEntry::new (path) }
+                DirEntryTypes::DT_LNK => { LinkEntry::new (path) }
+                _ => { FsEntry::new (path) }
+            }
+        })
+    }
+
+    impl Disposable {
+
+        pub over dispose (mut self) {
+            if (self._dir !is null) {
+                closedir (self._dir);
+                self._dir = null;
+            }
+        }
+        
+    }
+    
+    __dtor (mut self) {
+        self:.dispose ()
+    }
+       
+}

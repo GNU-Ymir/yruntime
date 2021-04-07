@@ -3,37 +3,11 @@ mod std::fs::file;
 import core::object, core::typeinfo, core::exception;
 import core::duplication, core::array, core::dispose;
 
-import etc::c::files;
-
 import std::conv;
 import std::io;
-
-pub enum
-| NOT_FOUND      = 1u8
-| FILE_CLOSED    = 2u8
-| NOT_READABLE   = 3u8
-| NOT_WRITABLE   = 4u8
-| ALREADY_EXISTS = 5u8
- -> FileErrorCode;
-
-pub class FileError over Exception {
-
-    pub let msg : [c32];
-    pub let code : FileErrorCode;
-    
-    pub self (code : FileErrorCode, msg : [c32]) with msg = msg, code = code {}
-
-    impl std::io::Printable {
-        pub over print (self) {
-            if (self.trace.len != 0u64) {
-                println ("FileError (", self.code, ") : ", self.msg);
-                self::super.printStackTrace ();
-            } else {
-                print ("FileError (", self.code, ") : ", self.msg);
-            }
-        }
-    }   
-}
+import std::fs::path;
+import std::fs::errors;
+import std::fs;
 
 /**
  * This class is a reference to a file in the file system
@@ -43,7 +17,7 @@ pub class FileError over Exception {
  * with dmut file = File::create ("foo.txt", write-> true) {
  *     file:.write ("Hello world !!\n"s8);
  *  } catch {
- *      err : &FileError => {
+ *      err : &FsError => {
  *          println (err);
  *      }
  *  }
@@ -53,7 +27,7 @@ pub class @final File {
 
     prv let dmut _handle : &(void) = null;
     
-    prv let mut _filename : [c32];
+    prv let mut _filename : [c8];
 
     prv let _read : bool;
 
@@ -63,30 +37,30 @@ pub class @final File {
     
     /**
      * Open a file in the file system
-     * @throws: FileError, if the file failed to be created or opened
+     * @throws: FsError, if the file failed to be created or opened
      * @info: if the file already existed, it will be erased
      */
-    pub self create (filename : [c32], read : bool = true, write : bool = false, append : bool = false)
-        with _filename = filename,
+    pub self create (path : &Path, read : bool = true, write : bool = false, append : bool = false)
+        with _filename = path.toStr (),
              _read = read,
              _write = write && !append,
              _append = append
-        throws &FileError
+        throws &FsError
     {
-        FileUtils::createFile (self._filename);
+        std::fs::createFile (path);
         self:.open ();
     }
     
     /**
      * Open a file in the file system
-     * @throws: FileError, if the file does not exists
+     * @throws: FsError, if the file does not exists
      */
-    pub self open (filename : [c32], read : bool = true, write : bool = false, append : bool = false)
-        with _filename = filename,
+    pub self open (path : &Path, read : bool = true, write : bool = false, append : bool = false)
+        with _filename = path.toStr (),
              _read = read,
              _write = write && !append,
              _append = append
-        throws &FileError
+        throws &FsError
     {
         self:.open ();
     }
@@ -95,12 +69,12 @@ pub class @final File {
      * Open the file 
      */
     prv def open (mut self)
-        throws &FileError
+        throws &FsError
     {
         let mode = self.createMode ();
-        self._handle = etc::c::files::fopen ((self._filename.to![c8] ()).ptr, mode.ptr);
+        self._handle = etc::c::files::fopen ((self._filename.toStringZ ()), mode.ptr);
         if (self._handle is null) {
-            throw FileError::new (FileErrorCode::NOT_FOUND, "file not found : " ~ self._filename);   
+            throw FsError::new (errno ().to!(FsErrorCode) (), self._filename);   
         }
     }
 
@@ -116,15 +90,15 @@ pub class @final File {
      * assert (res == "Hello World !"s8);
      * ==============
      * @throws: 
-     *   - FileError: if the file is not opened, or not readable
+     *   - FsError: if the file is not opened, or not readable
      */
     pub def readAll (mut self) -> dmut [c8]
-        throws &FileError
+        throws &FsError
     {
         if (self._handle is null) {
-            throw FileError::new (FileErrorCode::FILE_CLOSED, "file is closed");
+            throw FsError::new (FsErrorCode::FILE_CLOSED, self._filename);
         } else if (!self._read) {
-            throw FileError::new (FileErrorCode::NOT_READABLE, "file is not readable");
+            throw FsError::new (FsErrorCode::NOT_READABLE, self._filename);
         }
         
         if (!etc::c::files::feof (self._handle)) {
@@ -156,15 +130,15 @@ pub class @final File {
      * assert (res == "Hello World"s8);
      * ==============
      * @throws: 
-     *   - FileError: if the file is not opened, or not readable
+     *   - FsError: if the file is not opened, or not readable
      */
     pub def readUntil (mut self, delim : [c8])-> dmut [c8]
-        throws &FileError
+        throws &FsError
     {
         if (self._handle is null) {
-            throw FileError::new (FileErrorCode::FILE_CLOSED, "file is closed");
+            throw FsError::new (FsErrorCode::FILE_CLOSED, self._filename);
         } else if (!self._read) {
-            throw FileError::new (FileErrorCode::NOT_READABLE, "file is not readable");
+            throw FsError::new (FsErrorCode::NOT_READABLE, self._filename);
         }
         
         import std::collection::vec;
@@ -205,15 +179,15 @@ pub class @final File {
      * assert (res == "Hello World"s8);
      * ==============
      * @throws: 
-     *   - FileError: if the file is not opened, or not readable
+     *   - FsError: if the file is not opened, or not readable
      */
     pub def readUntil (mut self, delim : [c32])-> dmut [c8]
-        throws &FileError
+        throws &FsError
     {
         if (self._handle is null) {
-            throw FileError::new (FileErrorCode::FILE_CLOSED, "file is closed");
+            throw FsError::new (FsErrorCode::FILE_CLOSED, self._filename);
         } else if (!self._read) {
-            throw FileError::new (FileErrorCode::NOT_READABLE, "file is not readable");
+            throw FsError::new (FsErrorCode::NOT_READABLE, self._filename);
         }
         
         return self:.readUntil (to![c8] (delim));
@@ -223,15 +197,15 @@ pub class @final File {
     /**
      * Write some text to a file
      * @throws: 
-     *   - FileError: if the file is not opened, or not writable
+     *   - FsError: if the file is not opened, or not writable
      */
     pub def write (mut self, text : [c8]) -> void
-        throws &FileError
+        throws &FsError
     {
         if (self._handle is null) {
-            throw FileError::new (FileErrorCode::FILE_CLOSED, "file is closed");
+            throw FsError::new (FsErrorCode::FILE_CLOSED, self._filename);
         } else if (!self._write && !self._append) {
-            throw FileError::new (FileErrorCode::NOT_WRITABLE, "file is not writable");
+            throw FsError::new (FsErrorCode::NOT_WRITABLE, self._filename);
         }
         
         etc::c::files::fwrite (cast!(&void) (text.ptr), cast!(u32) (sizeof (c8)), cast!(u32) (text.len), alias self._handle);        
@@ -250,15 +224,15 @@ pub class @final File {
      * let res : [u8] = fs:.readBytesAll ();
      * ==============
      * @throws: 
-     *   - FileError: if the file is not opened, or not readable
+     *   - FsError: if the file is not opened, or not readable
      */
     pub def readBytesAll (mut self) -> dmut [u8]
-        throws &FileError
+        throws &FsError
     {
         if (self._handle is null) {
-            throw FileError::new (FileErrorCode::FILE_CLOSED, "file is closed");
+            throw FsError::new (FsErrorCode::FILE_CLOSED, self._filename);
         } else if (!self._read) {
-            throw FileError::new (FileErrorCode::NOT_READABLE, "file is not readable");
+            throw FsError::new (FsErrorCode::NOT_READABLE, self._filename);
         }
         
         if (!etc::c::files::feof (self._handle)) {
@@ -289,15 +263,15 @@ pub class @final File {
      * let res : [u8] = fs:.readBytesUntil ([cast!(u8)('\n'c8)]);
      * ==============
      * @throws: 
-     *   - FileError: if the file is not opened, are not readable
+     *   - FsError: if the file is not opened, are not readable
      */
     pub def readBytesUntil (mut self, delim : [u8])-> dmut [u8]
-        throws &FileError
+        throws &FsError
     {
         if (self._handle is null) {
-            throw FileError::new (FileErrorCode::FILE_CLOSED, "file is closed");
+            throw FsError::new (FsErrorCode::FILE_CLOSED, self._filename);
         } else if (!self._read) {
-            throw FileError::new (FileErrorCode::NOT_READABLE, "file is not readable");
+            throw FsError::new (FsErrorCode::NOT_READABLE, self._filename);
         }
         
         import std::collection::vec;
@@ -327,15 +301,15 @@ pub class @final File {
     /**
      * Write some bytes to a file
      * @throws: 
-     *   - FileError: if the file is not opened, are not writable
+     *   - FsError: if the file is not opened, are not writable
      */
     pub def writeBytes (mut self, text : [u8]) -> void
-        throws &FileError
+        throws &FsError
     {
         if (self._handle is null) {
-            throw FileError::new (FileErrorCode::FILE_CLOSED, "file is closed");
+            throw FsError::new (FsErrorCode::FILE_CLOSED, self._filename);
         } else if (!self._write && !self._append) {
-            throw FileError::new (FileErrorCode::NOT_WRITABLE, "file is not writable");
+            throw FsError::new (FsErrorCode::NOT_WRITABLE, self._filename);
         }
         
         etc::c::files::fwrite (cast!(&void) (text.ptr), cast!(u32) (sizeof (u8)), cast!(u32) (text.len), alias self._handle);        
@@ -346,13 +320,13 @@ pub class @final File {
      * Move the position of the cursor of the file
      * @info: the cursor position is relative to the beginning of the file
      * @throws: 
-     *   - FileError: if the file is not opened
+     *   - FsError: if the file is not opened
      */
     pub def seek (mut self, cursor : u32)-> void
-        throws &FileError
+        throws &FsError
     {
         if (self._handle is null) {
-            throw FileError::new (FileErrorCode::FILE_CLOSED, "file is closed");
+            throw FsError::new (FsErrorCode::FILE_CLOSED, self._filename);
         }
         etc::c::files::fseek (self._handle, cursor, SeekWhence::SEEK_SET);
     }
@@ -360,13 +334,13 @@ pub class @final File {
     /**
      * Tell the position of the cursor in the file relative to the beginning of the file
      * @throws: 
-     *   - FileError: if the file is not opened
+     *   - FsError: if the file is not opened
      */
     pub def tell (self)-> u32
-        throws &FileError
+        throws &FsError
     {
         if (self._handle is null) {
-            throw FileError::new (FileErrorCode::FILE_CLOSED, "file is closed");
+            throw FsError::new (FsErrorCode::FILE_CLOSED, self._filename);
         }
         etc::c::files::ftell (self._handle)
     }
@@ -375,7 +349,7 @@ pub class @final File {
      * @returns: the len of the file (from beginning to end)
      */
     pub def len (self)-> u32
-        throws &FileError
+        throws &FsError
     {
         let cursor = self.tell ();
         fseek (self._handle, 0u32, SeekWhence::SEEK_END);
@@ -416,79 +390,16 @@ pub class @final File {
         
         return "r"s8;
     }
-    
-}
-
-
-
-pub mod FileUtils {
 
     /**
-     * Check the existence of a file
-     * @params: 
-     *  - name: the absolute path of the file (or relative to the execution)
-     * @return: true if the file exists, false otherwise
+     * Close the file if the user forgot
+     * @warning: 
+     * =================
+     * because we don't know when of even if the destructor will be called, 
+     * this must be used as a last resort, it is always better to close the files 
+     * =================
      */
-    pub def exists (name : [c8])-> bool {
-        etc::c::files::access (name.ptr, AccessMode::F_OK) == 0
-    }
-
-    /**
-     * Check if the current user has the permission to write into the file
-     * @params: 
-     *    - name: the absolute path of the file (or relative to the execution)
-     * @return: true if the file is writable for the current user, false otherwise
-     */
-    pub def isWritable (name : [c8])-> bool {
-        etc::c::files::access (name.ptr, AccessMode::W_OK) == 0
-    }
-
-    /**
-     * Check if the current user has the permission to read into the file
-     * @params: 
-     *    - name: the absolute path of the file (or relative to the execution)
-     * @return: true if the file is readable for the current user, false otherwise
-     */
-    pub def isReadable (name : [c8])-> bool {
-        etc::c::files::access (name.ptr, AccessMode::R_OK) == 0
-    }
-
-    /**
-     * Check if the current user has the permission to execute the file
-     * @params: 
-     *    - name: the absolute path of the file (or relative to the execution)
-     * @return: true if the file is executable for the current user, false otherwise
-     */
-    pub def isExecutable (name : [c8])-> bool {
-        etc::c::files::access (name.ptr, AccessMode::X_OK) == 0
-    }
-
-    /**
-     * Create a new file 
-     * @params: 
-     *    - name: the absolute path of the file (or relative to the execution)
-     * @return: true if the creation succeded, false otherwise
-     */
-    pub def createFile (name : [c8])-> bool {
-        let f = etc::c::files::fopen (name.ptr, "w"s8.ptr);
-        let success = f !is null;
-        if (success)
-            etc::c::files::fclose (f);
-        success
-    }
-
-    /**
-     * Create a new file 
-     * @params: 
-     *    - name: the absolute path of the file (or relative to the execution)
-     * @return: true if the creation succeded, false otherwise
-     */
-    pub def createFile (name : [c32])-> bool {
-        let f = etc::c::files::fopen (((name).to![c8]()).ptr, "w"s8.ptr);
-        let success = f !is null;
-        if (success)
-            etc::c::files::fclose (f);
-        success            
-    }
-    
+    __dtor (mut self) {
+        self:.close ();
+    }    
 }

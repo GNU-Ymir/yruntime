@@ -14,6 +14,16 @@ pub class @final Path {
     prv let dmut _parts = Vec!{[c8]}::new ();
 
     /**
+     * Create a new path from a utf32 path (simply converts it into a [c8])
+     * @example: 
+     * =========
+     * let dmut path = Path::new ("foo/bar/baz.txt");
+     * assert (path.parts () == ["foo"s8, "bar"s8, "baz.txt"s8]);
+     * =========
+     */    
+    pub self (path : [c32]) with self (path.to![c8] ()) {}
+    
+    /**
      * Create a new path from a utf8 path
      * @example: 
      * =========
@@ -36,6 +46,12 @@ pub class @final Path {
     }
 
     prv self (dmut path : &Vec!([c8])) with _parts = alias path {}
+
+    prv self (path : [[c8]]) {
+        for i in path {
+            self._parts:.push (copy i);
+        }
+    }
     
     /**
      * Transform the path into a os usable path
@@ -72,23 +88,47 @@ pub class @final Path {
      * assert (path.toStr () == "/foo/bar/test.txt"s8);
      * ===========
      */
-    pub def push (mut self, path : [c8]) -> dmut &Path {
-        let mut last = 0u64;
-        for i in 0u64 .. path.len {
-            if (path[i] == '/'c8) {
-                self._parts:.push (copy (path[last .. i]));
-                last = i + 1u64;
+    pub def push (self, path : [c8]) -> dmut &Path {
+        let dmut aux = Path::new (self._parts[]);
+        {            
+            let mut last = 0u64;
+            for i in 0u64 .. path.len {
+                if (path[i] == '/'c8) {
+                    aux._parts:.push (copy (path[last .. i]));
+                    last = i + 1u64;
+                }
             }
+            if (last != path.len) {
+                aux._parts:.push (copy (path [last..$]));
+            }
+        } catch {
+            _ : &OutOfArray => {
+            } 
         }
-        if (last != path.len)
-            self._parts:.push (copy (path [last..$]));
-        return alias self;
-    } catch {
-        _ : &OutOfArray => {
-            return alias self;
-        } 
+        
+        return alias aux;
     }
 
+
+    /**
+     * Append a path to the current path
+     * @example: 
+     * ===========
+     * let dmut path = Path::new ("/"s8);
+     * path:.push (Path::new ("foo/bar/"s8));
+     * path:.push (Path::new ("test.txt"s8))
+     * assert (path.toStr () == "/foo/bar/test.txt"s8);
+     * ===========
+     */
+    pub def push (self, path : &Path) -> dmut &Path {
+        let dmut aux = Path::new (self._parts[]);
+        for i in path._parts {
+            aux._parts:.push (copy i);
+        }
+        return alias aux;
+    }
+
+    
     /**
      * @returns: the parts composing the path
      * @example: 

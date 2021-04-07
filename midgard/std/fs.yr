@@ -1,0 +1,266 @@
+mod std::fs;
+
+import core::exception;
+import core::typeinfo;
+
+import etc::runtime::errno;
+import etc::runtime::env;
+import std::io;
+import etc::c::dirent;
+import etc::c::files;
+import std::conv;
+
+import std::fs::path;
+import std::fs::errors;
+import std::fs::iteration;
+
+/**
+ * Create the directory at path 
+ * @params: 
+ *   - recursive: if true, create the parent directories if they don't exists
+ * @throws:
+ *   - FsError: if there was an error in the creation of the directory, cf FsErrorCode
+ * @example: 
+ * ========================
+ * import std::fs;
+ * 
+ * createDir (Path::new ("./some/dir"))?
+ * ========================
+ */
+pub def createDir (path : &Path, recursive : bool = false, permission : i32 = 509)
+    throws &FsError
+{
+    let parent = path.parent ();
+    if (isDir (parent)) {
+        let code = etc::c::dirent::mkdir (path.toStr ().toStringZ (), permission);
+        if (code == -1) {
+            throw FsError::new (errno ().to!(FsErrorCode) (), path.toStr ());
+        }
+    } else if (recursive) {
+        {
+            createDir (parent, recursive-> true, permission-> permission);
+        } catch {
+            x : &FsError => {
+                import std::conv;
+                throw FsError::new (x.code, path.toStr ());
+            }
+        }
+        etc::c::dirent::mkdir (path.toStr ().toStringZ (), permission);
+    } else {
+        throw FsError::new (FsErrorCode::PARENT_DONT_EXIST, path.parent ().toStr ());
+    }
+}
+
+
+/**
+ * @returns: true if the directory exists and is accessible, false otherwise
+ * @example: 
+ * ========================
+ * import std::fs;
+ * 
+ * if isDir (Path::new ("./some/dir")) {
+ *    println ("Directory exists");
+ * } else {
+ *    println ("Directory does not exists");
+ * }
+ * ========================
+ */
+pub def isDir (path : &Path)-> bool {
+    let dir = opendir (path.toStr ().toStringZ ());
+    let succ = dir !is null;
+    if (succ) {
+        closedir (dir);
+    }
+    succ
+}
+
+/**
+ * Remove a directory at a given path location
+ * @params: 
+ *   - path: the path of the directory to remove
+ *   - recursive: if true, remove the directory after removing all its content
+ * @Warning: recursive deletion must be used very carefully
+ * @throws: 
+ *    - FsError: 
+ *          + the directory is not empty, the user
+ *          + the user lacks the permission
+ *          + the path does not exists
+ *          + the path is not a directory
+ *          + other reasons
+ * @example: 
+ * ========================
+ * import std::fs;
+ * 
+ * removeDir (Path::new ("./some/dir"))?
+ * ========================
+ */
+pub def removeDir (path : &Path, recursive : bool = false)
+    throws &FsError
+{
+    if (isDir (path)) {
+        if (recursive) {
+            for i in readDir (path) {
+                match i {
+                    f : &FileEntry => { removeFile (path.push (f.getPath ())); }
+                    d : &DirEntry => {
+                        removeDir (path.push (d.getPath ()), recursive-> true);                        
+                    }
+                    fs : &FsEntry => {
+                        removeFsEntry (path.push (fs.getPath ()));
+                    }
+                }
+            }
+        }
+        
+        if (etc::c::dirent::rmdir (path.toStr ().toStringZ ()) == -1) {
+            throw FsError::new (errno ().to!(FsErrorCode) (), path.toStr ());
+        }
+    } else {
+        throw FsError::new (FsErrorCode::PARENT_DONT_EXIST, path.toStr ());
+    }
+}
+
+
+/**
+ * @returns: an iterator over the entries of a directory
+ */
+pub def readDir (path : &Path)-> &DirEntry
+    throws &FsError
+{
+    if (isDir (path)) {
+        return DirEntry::new (path);
+    }
+    
+    throw FsError::new (errno ().to!(FsErrorCode) (), path.toStr ())
+}
+
+
+/**
+ * Create a new file 
+ * @params: 
+ *    - name: the absolute path of the file (or relative to the execution)
+ * @return: true if the creation succeded, false otherwise
+ * @throws: 
+ *   - FsError: 
+ *         + the file already exists
+ *         + permission denied
+ *         + path is invalid
+ * @example: 
+ * =================
+ * import std::fs;
+ * 
+ * createFile (Path::new ("./some/dir/file.txt"));
+ * =================
+ */
+pub def createFile (path : &Path)
+    throws &FsError
+{
+    let f = etc::c::files::fopen (path.toStr ().toStringZ (), "w"s8.ptr);
+    if (f is null) {
+        throw FsError::new (errno ().to!(FsErrorCode) (), path.toStr ()) 
+    }
+    
+    etc::c::files::fclose (f);
+}
+
+/**
+ * @returns: true if the file exists and is a file, false otherwise
+ * @example: 
+ * =================
+ * import std::fs;
+ *
+ * if (isFile (Path::new ("./some/dir/file.txt")) {
+ *     println ("File exists");
+ * } 
+ * =================
+ */
+pub def isFile (path : &Path)-> bool {
+    etc::c::files::access (path.toStr ().toStringZ (), AccessMode::F_OK) == 0
+}
+
+
+/**
+ * @returns: true if the file exists and is writable
+ * @example: 
+ * =================
+ * import std::fs;
+ *
+ * if (isWritable (Path::new ("./some/dir/file.txt")) {
+ *     println ("File is writable");
+ * } 
+ * =================
+ */
+pub def isWritable (path : &Path)-> bool {
+    etc::c::files::access (path.toStr ().toStringZ (), AccessMode::W_OK) == 0
+}
+
+/**
+ * @returns: true if the file exists and is readable
+ * @example: 
+ * =================
+ * import std::fs;
+ *
+ * if (isReadable (Path::new ("./some/dir/file.txt")) {
+ *     println ("File is readable");
+ * } 
+ * =================
+ */
+pub def isReadable (path : &Path)-> bool {
+    etc::c::files::access (path.toStr ().toStringZ (), AccessMode::R_OK) == 0
+}
+
+/**
+ * @returns: true if the file exists and is executable
+ * @example: 
+ * =================
+ * import std::fs;
+ *
+ * if (isExecutable (Path::new ("./some/dir/file.txt")) {
+ *     println ("File is readable");
+ * } 
+ * =================
+ */
+pub def isExecutable (path : &Path)-> bool {
+    etc::c::files::access (path.toStr ().toStringZ (), AccessMode::X_OK) == 0
+}
+
+/**
+ * Remove a file from the file system
+ * @throws: 
+ *   - FsError: 
+ *       + the file does not exists
+ *       + permission denied
+ *       + this is not a file
+ */ 
+pub def removeFile (path : &Path)
+    throws &FsError
+{
+    if (isFile (path)) {
+        if unlink (path.toStr ().toStringZ ()) == -1 {
+            throw FsError::new (errno ().to!(FsErrorCode) (), path.toStr ())    
+        }
+    } else {
+        throw FsError::new (FsErrorCode::PERMISSION_DENIED, path.toStr ())
+    }
+}
+    
+/**
+ * Remove an entry from the file system (this entry can be anything)
+ * @throws: 
+ *   - FsError: 
+ *       + the entry does not exists
+ *       + permission denied
+ *       + this is a file, or a dir
+ */ 
+pub def removeFsEntry (path : &Path)
+    throws &FsError
+{
+    if (!isDir (path) && !isFile (path)) {
+        if unlink (path.toStr ().toStringZ ()) == -1 {
+            throw FsError::new (errno ().to!(FsErrorCode) (), path.toStr ())    
+        }
+    } else {
+        throw FsError::new (FsErrorCode::PERMISSION_DENIED, path.toStr ())
+    }
+}
+    
