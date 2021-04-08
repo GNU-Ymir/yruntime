@@ -64,7 +64,7 @@ void _yrt_close_bfd_file (struct bfd_handle);
  *    - func: the name of the function 
  *    - line: the line of the symbol
  */
-int _yrt_resolve_address (const char * filename, void* addr, _ystring * file, _ystring * func, int* line);
+int _yrt_resolve_address (const char * filename, void* addr, _ystring * file, _ystring * func, int* line, struct bfd_handle handle);
 
 /**
  * Retreive the current stack trace 

@@ -4,6 +4,7 @@
 #include "../include/demangle.h"
 #include <gc/gc_disclaim.h>
 
+#include <limits.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <execinfo.h>
@@ -42,6 +43,43 @@ void installHandler () {
     sigaction(SIGSEGV, &sa, NULL); // On seg fault we throw an exception
 }
 
+char* _yrt_resolve_path (const char * filename, char * resolved, int size) {
+    char * PATH_AUX = getenv ("PATH");
+    char * PATH = malloc (strlen (PATH_AUX));
+    memcpy (PATH, PATH_AUX, strlen (PATH_AUX));
+
+    char * strToken = strtok (PATH, ":");
+    int found = 0;
+    while (strToken != NULL) {
+	if (found == 0) {
+	    int len = strlen (strToken);
+	    len = len > size ? size : len;
+	    int i = 0;
+	    for (i = 0 ; i < len ; i ++) {
+		resolved [i] = strToken [i];
+	    }
+	    resolved [i] = '/';
+	    for (i = 0 ; i < size - len; i++) {
+		resolved [i + len + 1] = filename [i];
+		if (filename [i] == '\0') break;
+	    }
+	
+	    if (access (resolved, F_OK) == 0) {
+		found = 1;
+	    }
+	}
+	strToken = strtok (NULL, ":");	
+    }
+
+    free (PATH);
+    if (found == 0) {
+	for (int i = 0 ; i < size; i ++) {
+	    resolved [i] = filename [i];
+	    if (filename [i] == '\0') break;
+	}
+    }
+    return resolved;
+}
 
 void _yrt_slurp_sym_table (struct bfd_handle * handle) {
     unsigned int size;
@@ -62,10 +100,11 @@ void _yrt_slurp_sym_table (struct bfd_handle * handle) {
 }
 
 struct bfd_handle _yrt_get_bfd_file (const char * filename) {
+    char realPath [PATH_MAX + 1];
     struct bfd_handle handle;
-    handle.filename = filename;
+    handle.filename = _yrt_resolve_path (filename, realPath, PATH_MAX);
     
-    handle.ptr = bfd_openr (filename, NULL);
+    handle.ptr = bfd_openr (handle.filename, NULL);
     if (handle.ptr == NULL)
 	return handle;
 
@@ -115,8 +154,7 @@ void _yrt_find_address_in_section (bfd * abfd, asection* section, void * data) {
 					   &context-> file, &context-> function, &context-> line);    
 }
 
-int _yrt_resolve_address (const char * filename, void* addr, _ystring * file, _ystring * func, int* line) {
-    struct bfd_handle handle = _yrt_get_bfd_file (filename);
+int _yrt_resolve_address (const char * filename, void* addr, _ystring * file, _ystring * func, int* line, struct bfd_handle handle) {
     if (handle.ptr != NULL) {
 
 	struct bfd_context context;
@@ -148,8 +186,7 @@ void _yrt_close_bfd_file (struct bfd_handle handle) {
 
 
 _yrt_array_ _yrt_exc_resolve_stack_trace (_yrt_array_ syms) {
-    if (__YRT_DEBUG__ == 1) {
-	
+    if (__YRT_DEBUG__ == 1) {	
 	char **messages = (char **)NULL;
 	messages = backtrace_symbols(syms.data, (int) syms.len);
 	/* skip first stack frame (points here) */
@@ -170,7 +207,8 @@ _yrt_array_ _yrt_exc_resolve_stack_trace (_yrt_array_ syms) {
 	    _ystring file;
 	    _ystring func;
 	    int line;
-	    if (_yrt_resolve_address (filename, ((void**) syms.data) [i], &file, &func, &line)) {
+	    struct bfd_handle handle = _yrt_get_bfd_file (filename);
+	    if (_yrt_resolve_address (filename, ((void**) syms.data) [i], &file, &func, &line, handle)) {
 		if (file.data != NULL) {
 		    ret = str_concat_c_str (ret, "\n╞═ bt ╕ #");
 		    ret = str_concat (ret, str_from_int (i - 1));
