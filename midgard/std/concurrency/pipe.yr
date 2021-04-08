@@ -1,6 +1,7 @@
 mod std::concurrency::pipe;
 
 import core::typeinfo, core::array;
+import core::dispose;
 import etc::runtime::thread;
 import etc::c::stdio;
 
@@ -115,18 +116,20 @@ pub class @final ThreadPipe {
     }    
     
 
-    /**
-     * Close the bidirectional pipe
-     */
-    pub def close (mut self) {
-        if (self._read != 0) {
-            close (self._read);
-            self._read = 0;
-        }
+    impl Disposable {
+        /**
+         * Close the bidirectional pipe
+         */
+        pub over dispose (mut self) {
+            if (self._read != 0) {
+                close (self._read);
+                self._read = 0;
+            }
 
-        if (self._write != 0) {
-            close (self._write);
-            self._write = 0;
+            if (self._write != 0) {
+                close (self._write);
+                self._write = 0;
+            }
         }
     }
 
@@ -139,7 +142,7 @@ pub class @final ThreadPipe {
 
     
     __dtor (mut self) {
-        self:.close ();
+        self:.dispose ();
     }
     
 }
@@ -154,12 +157,6 @@ pub class @final OPipe {
     pub self (pipe : i32) with _pipe = pipe
     {}
 
-    pub def close (mut self) {
-        if (self._pipe != 0) {
-            close (self._pipe);
-            self._pipe = 0;
-        }
-    }
 
     pub def write {F, T...} (mut self, a : F, b : T) {
         let dmut stream = StringStream::new ();
@@ -177,8 +174,19 @@ pub class @final OPipe {
         self._pipe
     }
 
+    impl Disposable {
+
+        pub over dispose (mut self) {
+            if (self._pipe != 0) {
+                close (self._pipe);
+                self._pipe = 0;
+            }
+        }
+        
+    }
+    
     __dtor (mut self) {
-        self:.close ();
+        self:.dispose ();
     }
 }
 
@@ -192,13 +200,6 @@ pub class @final IPipe {
 
     pub self (pipe : i32) with _pipe = pipe
     {}
-
-    pub def close (mut self) {
-        if (self._pipe != 0) {
-            close (self._pipe);
-            self._pipe = 0;
-        }
-    }
 
     pub def read (mut self) -> [c8] {
         let dmut ret = Vec!(c8)::new ();
@@ -221,9 +222,18 @@ pub class @final IPipe {
         let err_flags = fcntl(self._pipe, F_GETFL, 0);
         fcntl(self._pipe, F_SETFL, err_flags | O_NONBLOCK);
     }
+
+    impl Disposable {
+        pub over dispose (mut self) {
+            if (self._pipe != 0) {
+                close (self._pipe);
+                self._pipe = 0;
+            }   
+        }
+    }
     
     __dtor (mut self) {
-        self:.close ();
+        self:.dispose ();
     }
     
 }
@@ -250,9 +260,11 @@ pub class @final IOPipe {
         alias self._read
     }
 
-    pub def close (mut self) {
-        self._read:.close ();
-        self._write:.close ();
+    impl Disposable {
+        pub over dispose (mut self) {
+            self._read:.dispose ();
+            self._write:.dispose ();
+        }
     }
         
 }

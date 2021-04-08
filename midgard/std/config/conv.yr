@@ -181,6 +181,28 @@ pub def to {T of [U], U of c32} (cfg : &Config)-> T
 }
 
 /**
+ * Transform a configuration into a string
+ * @example: 
+ * =============
+ * let i = Str::new ("foo");
+ * assert (i.to!([c8]) () == "foo"s8);
+ * =============
+ * @throws: 
+ *   - &ConfigError: if the cast cannot be made
+ */
+pub def to {T of [U], U of c8} (cfg : &Config)-> T
+    throws &ConfigError
+{
+    import std::conv;
+    match cfg {
+        Str (str-> str:_) => { return str.to![c8] (); }            
+        _ => {
+            throw ConfigError::new (T::typeinfo, cfg::typeinfo);
+        }
+    }
+}
+
+/**
  * Transform a configuration into a bool
  * @example: 
  * =============
@@ -214,7 +236,7 @@ pub def to {T of bool} (cfg : &Config)-> T
 pub def to {T of [U], U} (cfg : &Config)-> T
     throws &ConfigError
 {
-    import std::collection::vec;
+    import std::collection::vec, std::conv;
     match cfg {
         x : &Array => { return fromArray!(T) (x); }
         _ => {
@@ -224,7 +246,13 @@ pub def to {T of [U], U} (cfg : &Config)-> T
                         return str; 
                     }
                 }
-            }
+            } else cte if (is!(U) (Z of c8)) {
+                match cfg {
+                    Str (str-> str:_) => {            
+                        return str.to![c8] (); 
+                    }
+                }
+            }                
             return [cfg.to!(U) ()];                
         }
     }
@@ -398,6 +426,19 @@ pub def to {C of &Config, T of f64} (value : T)-> &Config {
  */
 pub def to {C of &Config, T of [U], U of c32} (value : T)-> &Config {
     Str::new (value)
+}
+
+/**
+ * Transform a [c8] into a configuration
+ * @example: 
+ * ============
+ * let str = "test"s8;
+ * let cfg : &Config = str.to!(&Config) ();
+ * ============
+ */
+pub def to {C of &Config, T of [U], U of c8} (value : T)-> &Config {
+    import std::conv;
+    Str::new (value.to![c32] ())
 }
 
 /**

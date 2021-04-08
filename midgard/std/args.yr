@@ -224,6 +224,27 @@ pub class ArgumentParser <struct T> {
     }
 
     /**
+     * Perform the parse of the command line
+     * @params: 
+     *   - line: the command line options (for example, the arguments passed to the main function)
+     * @returns: the structure T, filled by the command line options*
+     * @throws: 
+     *   - ArgumentError: if the parsing failed, the method diagnosis can be used to compute a readable error
+     *   - HelpRequired: a argument set as 'isHelp', has been filled
+     */
+    pub def parse (self, line : [[c32]])-> T
+        throws &ArgumentError, &HelpRequired
+    {
+        import std::conv;
+        let mut c32Line : [c32] = [];
+        for i in line {        
+            c32Line = c32Line ~ " " ~ i;
+        }
+
+        self.parse (c32Line)   
+    }
+
+    /**
      * Perform the parse of the command line (encoded in utf32)
      * @params: 
      *   - line: the command line options
@@ -267,7 +288,9 @@ pub class ArgumentParser <struct T> {
 
         match err {            
             ArgumentUnknownError () => {
-                return "Undefined argument '" ~ err.field ~ "'";
+                if (isSub) {
+                    return ", undefined argument '" ~ err.field ~ "'";
+                } else return "Undefined argument '" ~ err.field ~ "'";
             }
             ArgumentCastError (from -> fr : _) => {
                 if (err.field != "")
@@ -316,8 +339,8 @@ pub class ArgumentParser <struct T> {
      *
      * =================
      */
-    pub def usage (self)-> [c32] {
-        let mut ret = self.simpleUsage () ~ "\n\n";
+    pub def usage (self, cmd : [c32] = "usage")-> [c32] {
+        let mut ret = self.simpleUsage (cmd-> cmd) ~ "\n\n";
         let mut haspos = false, mut hasmand = false, mut hasopt = false;
         
         let mut pos = "positional arguments : \n";
@@ -370,8 +393,8 @@ pub class ArgumentParser <struct T> {
      * usage: [--h] [--sum] [--v] [--o str] --useless int [ int... ](N)
      * =====================
      */
-    pub def simpleUsage (self) -> [c32] {
-        let mut ret = "usage: ";
+    pub def simpleUsage (self, cmd : [c32] = "usage") -> [c32] {
+        let mut ret = cmd ~ " ";
         let mut mand = "", mut opt = "", mut obj = "", mut pos = "";
             
         cte for i in 0us .. (__pragma!field_names (T)).len {
@@ -422,7 +445,7 @@ pub class ArgumentParser <struct T> {
  * import std::lexer;
  * 
  * class X {
- *   pub self (dmut lex : &Lexer) {
+ *   pub self (args : [[c32]]) {
  *       // Perform the parsing
  *   }
  * }
@@ -438,8 +461,17 @@ prv def parseValue <class T> (dmut lex : &Lexer) -> T
     throws &ArgumentError
 {
     {
+        import std::collection::vec;
         __pragma!fake_throw (&ArgumentError, &AssertError);
-        T::new (alias lex)
+        let dmut v = Vec!{[c32]}::new ();
+        let dmut auxLexer = Lexer::new (lex:.clear (), comments-> []);
+        loop {
+            let x = auxLexer:.next ();
+            if (x._0 != "") v:.push (x._0);
+            else break {};
+        }
+        v:.fit ();
+        T::new (v[])
     } catch {
         err : &ArgumentError => throw err;
         sub : _=> {
@@ -868,9 +900,36 @@ prv def usageValue {T of [U], U} () -> [c32] {
     "[ " ~ usageValue!U () ~ "... ]"
 }
 
+prv def usageValue {struct T} () -> [c32] {
+    let mut mand = "", mut opt = "", mut obj = "", mut pos = "";
+    
+    cte for i in 0us .. (__pragma!field_names (T)).len {
+        let x = (__pragma!field_names (T))[i];
+        cte if ((__pragma!field_has_value (T)) [i] ||
+                is!{__pragma!field_type (T, (__pragma!field_names (T))[i])} {U of YesNo}) {
+            cte if (is!{__pragma!field_type (T, (__pragma!field_names (T))[i])} {U of YesNo}) {
+                opt = opt ~ "[--" ~ x ~ "] ";
+            } else {
+                cte if (is!{__pragma!field_type (T, (__pragma!field_names (T))[i])} {class U}) {
+                    obj = obj ~ "[--" ~ x ~ " " ~ usageValue!{__pragma!field_type (T, (__pragma!field_names (T))[i])} () ~ "] ";
+                } else {
+                    opt = opt ~ "[--" ~ x ~ " " ~ usageValue!{__pragma!field_type (T, (__pragma!field_names (T))[i])} () ~ "] ";
+                }
+            }
+        } else {
+            cte if (is!{__pragma!field_type (T, (__pragma!field_names (T))[i])} {class U}) {                    
+                obj = obj ~ "--" ~ x ~ " " ~ usageValue!{__pragma!field_type (T, (__pragma!field_names (T))[i])} () ~ " ";
+            } else {
+                mand = mand ~ "--" ~ x ~ " " ~ usageValue!{__pragma!field_type (T, (__pragma!field_names (T))[i])} () ~ " ";
+            }
+        }
+    }
+    
+    opt ~ mand ~ obj ~ pos
+}
 
 prv def usageValue {class T} () -> [c32] {
-    "object"
+    ""
 }
 
 prv def usageValue {U of YesNo} () -> [c32] {

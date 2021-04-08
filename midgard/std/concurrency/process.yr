@@ -2,12 +2,14 @@ mod std::concurrency::process;
 import std::collection::vec;
 import std::io;
 
+import core::dispose;
 import core::typeinfo;
 import core::exception;
 import std::stream;
 import std::concurrency::pipe;
 import etc::c::stdio;
 import std::fs::path;
+import std::conv;
 
 extern (C) def dup2 (stream : i32, type : u32)-> i32;
 extern (C) def _yrt_print_error (format : &(c8), ...);
@@ -35,11 +37,11 @@ pub class @final SubProcess {
      * Run a process in parallel of this process execution
      * 
      */
-    pub self run (cmd : [c8], args : [[c8]], cwd : [c8] = "."s8) with cmd = cmd, args = args, cwd = cwd {
+    pub self run (cmd : [c8], args : [[c8]], cwd : &Path = Path::new (".")) with cmd = cmd, args = args, cwd = cwd.toStr () {
         self:.run ();
     }
 
-    pub self run (path : &Path, args : [[c8]], cwd : [c8] = "."s8) with self (path.toStr (), args, cwd-> cwd) {}
+    pub self run (path : &Path, args : [[c8]], cwd : &Path = Path::new (".")) with self (path.toStr (), args, cwd-> cwd) {}
     
     prv def run (mut self) {
         self.pid = fork (); // if nothing is written in the fork process the pages are not copied
@@ -49,9 +51,9 @@ pub class @final SubProcess {
             self:.child ()
         }
 
-        self._stdin:.ipipe ():.close ();
-        self._stdout:.opipe ():.close ();
-        self._stderr:.opipe ():.close ();
+        self._stdin:.ipipe ():.dispose ();
+        self._stdout:.opipe ():.dispose ();
+        self._stderr:.opipe ():.dispose ();
 
         self._stdout:.ipipe ().setNonBlocking ();
         self._stderr:.ipipe ().setNonBlocking ();
@@ -62,24 +64,20 @@ pub class @final SubProcess {
         dup2 (self._stdout:.opipe ().getHandle (), STDOUT_FILENO);
         dup2 (self._stderr:.opipe ().getHandle (), STDERR_FILENO);
 
-        self._stdin:.close ();
-        self._stdout:.close ();
-        self._stderr:.close ();
+        self._stdin:.dispose ();
+        self._stdout:.dispose ();
+        self._stderr:.dispose ();
         
         let dmut args = Vec!(&c8)::new ();
-        args:.push (self.cmd.ptr);;
+        let cmd = self.cmd.toStringZ ();
+        args:.push (cmd);
         for i in self.args {
-            args:.push (i.ptr);
+            args:.push (i.toStringZ ());
         }
 
-        let dmut path = Vec!(c8)::new ();
-        for i in self.cwd {
-            path:.push (i);
-        }
-        path:.push ('\u{0}'c8);
-        chdir (path[].ptr);
+        chdir (self.cwd.toStringZ ());
         
-        if (execvp (self.cmd.ptr, args[].ptr) == -1) {
+        if (execvp (cmd, args[].ptr) == -1) {
             _yrt_print_error (("execvp () failed"s8).ptr);            
         }
         
@@ -104,4 +102,14 @@ pub class @final SubProcess {
         return status;
     }
 
+    impl Disposable {
+
+        pub over dispose (mut self) {
+            self._stdin:.opipe ():.dispose ();
+            self._stdout:.ipipe ():.dispose ();
+            self._stderr:.ipipe ():.dispose ();
+        }
+        
+    }
+       
 }

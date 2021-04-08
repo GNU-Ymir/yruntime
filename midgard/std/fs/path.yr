@@ -218,12 +218,91 @@ pub class @final Path {
             } catch {
                 _ => { }
             }
-            res:.push (file);
+            res._parts:.push (file);
         }         
         alias res
     }
 
+    /**
+     * @returns: the extension of the file of the path
+     * @example: 
+     * ==============
+     * let path = Path::new ("/foo/bar/baz.txt"s8);
+     * assert (path.extension () == "txt"s8);
+     *
+     * let path2 = Path::new ("/foo/bar/baz.tar.gz"s8);
+     * assert (path2.extension () == "gz"s8);
+     *
+     * let path3 = Path::new ("/foo/bar/baz"s8);
+     * assert (path3.extension () == ""s8);
+     * ==============
+     */
+    pub def extension (self)-> [c8] {
+        if (self._parts.len () > 0u64) {
+            let file = self.file ();
+            for i in file.len - 1u64 ... 0u64 {
+                if (file [i] == '.'c8) {
+                    return file [i+1u64 .. $];
+                }
+            } catch {
+                _ => { }
+            }            
+        }         
+        []
+    }
+
+    /**
+     * @returns: a new path where the extension of the file has been removed
+     * @example: 
+     * ============
+     * let path = Path::new ("/foo/bar/baz"s8).addExtension ("txt"s8);
+     * assert (path.file () == "baz.txt"s8);
+     *
+     * let path2 = Path::new ("/foo/bar/baz.tar"s8).addExtension ("gz"s8);
+     * assert (path2.file () == "baz.tar.gz"s8);
+     * ============
+     */
+    pub def addExtension (self, ext : [c8])-> dmut &Path {
+        let dmut res = self.parent ();
+        if (self._parts.len () > 0u64) {
+            let mut file = self.file ();
+            res._parts:.push (file ~ "."s8 ~ ext);            
+        } else {
+            res._parts:.push ("."s8 ~ ext);
+        }
+        alias res
+    }
+
+    /**
+     * @returns: a new path with the prefix removed
+     * @example: 
+     * =====================
+     * let path = Path::new ("/foo/bar/baz/file.txt"s8).removePrefix (Path::new ("/foo/bar"s8));
+     * assert (path.toStr () == "baz/file.txt"s8);
+     * =====================
+     */
+    pub def removePrefix (self, prefix : &Path)-> dmut &Path {
+        import std::algorithm::comparison;
+        let j = for i in 0u64 .. comparison::min (prefix._parts.len (), self._parts.len ()) {
+            if (prefix._parts [i] != self._parts [i]) {
+                break { i + 1u64 }
+            }
+            i + 1u64
+        }
+        
+        let dmut res = Vec!{[c8]}::new ();
+        for i in j .. self._parts.len () {            
+            res:.push (copy self._parts [i]);
+        }
+        
+        return Path::new (alias res);
+    } catch {
+        _ => {
+            return Path::new (""s8);
+        }
+    }
+
     
-    impl std::io::Printable;
-    
+impl std::io::Printable;
+
 }

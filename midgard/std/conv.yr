@@ -343,7 +343,7 @@ pub {
     /**
      * @returns: a slice of a where the len is correctly set
      */
-    def fromStringZ (a : [c8])-> [c8] {
+    def fromStringZ {U of [c8]} (a : U)-> [c8] {
         let mut len = 0u64;
         for i in a {
             if (i == '\u{0}'c8) break {};
@@ -351,6 +351,29 @@ pub {
         }
         __pragma!trusted ({ a [0u64 .. len] })
     }
+
+    /**
+     * @returns: a slice of a where the len is correctly set
+     */
+    def fromStringZ {U of &c8} (a : U)-> [c8]
+        throws &SegFault
+    {
+        let mut len = 0u64;
+        loop {
+            if (*(a + len) == '\u{0}'c8) break {};
+            else len += 1u64;            
+        }
+        import std::io;
+        let dmut res = core::duplication::allocArray!(c8)(len);
+        __pragma!trusted ({
+            for i in 0u64 .. len {
+                res [i] = *(a + i);
+            }
+        });
+        res
+    }
+
+
     
     /**
      * Transfrom a utf32 encoded char into a utf8 string
