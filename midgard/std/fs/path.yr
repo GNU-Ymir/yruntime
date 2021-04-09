@@ -31,10 +31,10 @@ pub class @final Path {
      * assert (path.parts () == ["foo"s8, "bar"s8, "baz.txt"s8]);
      * =========
      */
-    pub self (path : [c8]) {
+    pub self (path : [c8], sep : c8 = '/'c8) {
         let mut last = 0u64;
         for i in 0u64 .. path.len {
-            if (path[i] == '/'c8) {
+            if (path[i] == sep) {
                 self._parts:.push (copy (path[last .. i]));
                 last = i + 1u64;
             }
@@ -63,12 +63,12 @@ pub class @final Path {
      * assert (path.toStr () == "/foo/test.txt"s8);
      * ============
      */
-    pub def toStr (self)-> dmut [c8] {
+    pub def toStr (self, sep : c8 = '/'c8)-> dmut [c8] {
         let dmut res = Vec!(c8)::new ();
         let mut fst = true;
         for i in self._parts {
             if !fst {
-                res:.push ('/'c8);
+                res:.push (sep);
             }
             fst = false;
             for j in i {
@@ -88,12 +88,12 @@ pub class @final Path {
      * assert (path.toStr () == "/foo/bar/test.txt"s8);
      * ===========
      */
-    pub def push (self, path : [c8]) -> dmut &Path {
+    pub def push (self, path : [c8], sep : c8 = '/'c8) -> dmut &Path {
         let dmut aux = Path::new (self._parts[]);
         {            
             let mut last = 0u64;
             for i in 0u64 .. path.len {
-                if (path[i] == '/'c8) {
+                if (path[i] == sep) {
                     aux._parts:.push (copy (path[last .. i]));
                     last = i + 1u64;
                 }
@@ -240,9 +240,11 @@ pub class @final Path {
     pub def extension (self)-> [c8] {
         if (self._parts.len () > 0u64) {
             let file = self.file ();
-            for i in file.len - 1u64 ... 0u64 {
-                if (file [i] == '.'c8) {
-                    return file [i+1u64 .. $];
+            if (file.len != 0u64) {
+                for i in file.len - 1u64 ... 0u64 {
+                    if (file [i] == '.'c8) {
+                        return file [i+1u64 .. $];
+                    }
                 }
             } catch {
                 _ => { }
