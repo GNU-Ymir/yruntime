@@ -1,0 +1,147 @@
+mod std::time::instant;
+import std::io;
+import etc::c::time;
+import std::time::dur;
+
+/**
+ * Structure representing a nondecreasing clock
+ * This structure can be used to compute durations, between instant
+ */
+pub struct
+| sec : u64
+| usec : u64
+ -> Instant;
+    
+/**
+ * @returns: the current instant of the system clock
+ * @example: 
+ * ===================
+ * let now = instant::now ();
+ * sleep ((2u64).dur::seconds ());
+ * println (instant::now () - now);
+ * ===================
+ */
+pub def now () -> Instant {
+    let mut tv = c::time::timeval (0u64, 0u64);
+    gettimeofday (alias &tv, null);
+    Instant (tv.tv_sec, tv.tv_usec)
+}
+
+/**
+ * @returns: the instant 0
+ * @example: 
+ * ==================
+ * let system_duration = instant::now () - instant::zero ();
+ * println (system_duration);
+ * ==================
+ */
+pub def zero ()-> Instant {
+    Instant (0u64, 0u64)
+}
+
+
+/**
+ * @returns: the duration between the two time instants
+ * @example: 
+ * =================
+ * let start = instant::now ();
+ * sleep ((2u64).dur::seconds ());
+ * println ((instant::now () - start).to![c8] ());
+ * =================
+ */
+pub def opBinary {"-"} (left : Instant, right : Instant, negative : bool = false) -> &Duration {
+    if (left.sec < right.sec) {
+        return right.opBinary!"-" (left, negative-> true);
+    }
+
+    if (left.usec > right.usec) {
+        Duration::new (negative-> negative, left.sec - right.sec, left.usec - right.usec)
+    } else {
+        if (left.sec == right.sec) {
+            right.opBinary!"-" (left, negative-> true)
+        } else {
+            let usec = right.usec - left.usec;
+            if (usec != 0u64) {
+                Duration::new (negative-> negative, left.sec - right.sec - 1u64, (1_000_000u64 - usec))
+            } else {
+                Duration::new (negative-> negative, left.sec - right.sec, 0u64)
+            }
+        }
+    }
+}
+
+/**
+ * Move the instant in the time
+ * @warning: an instant cannot be negative, if the duration is negative and lower than the instant, the function will return the zero instant
+ * @example: 
+ * ====================
+ * import std::time::_;
+ * 
+ * println (instant::now () + (5u64).seconds ());
+ * ====================
+ */
+pub def opBinary {"+"} (left : Instant, right : &Duration)-> Instant {
+    if (right.negative) {
+        opBinary!{"-"} (left, Duration::new (right.sec, right.usec))
+    } else {
+        if (left.usec + right.usec > 1_000_000u64) {
+            let usec = (left.usec + right.usec) % 1_000_000u64;
+            Instant (1u64 + left.sec + right.sec, usec)
+        } else {
+            Instant (left.sec + right.sec, left.usec + right.usec)
+        }
+    }
+}
+
+/**
+ * Move the instant in the time
+ * @warning: an instant cannot be negative, if the duration is higher than the instant, the function will return the zero instant
+ * @example: 
+ * ====================
+ * import std::time::_;
+ * 
+ * println (instant::now () - (5u64).seconds ());
+ * ====================
+ */
+pub def opBinary {"-"} (left : Instant, right : &Duration)-> Instant {
+    if (right.negative) {
+        opBinary!{"+"} (left, Duration::new (right.sec, right.usec))
+    } else {
+        if (left.sec < right.sec) {
+            Instant (0u64, 0u64)
+        } else if (left.usec > right.usec) {
+            Instant (left.sec - right.sec, left.usec - right.usec)
+        } else {
+            if (left.sec == right.sec) {
+                Instant (0u64, 0u64)
+            } else {
+                let usec = right.usec - left.usec;
+                if (usec != 0u64) {
+                    Instant (left.sec - right.sec - 1u64, (1_000_000u64 - usec))
+                } else {
+                    Instant (left.sec - right.sec, 0u64)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Compare two instant
+ * @example: 
+ * ===============
+ * let start = instant::now ();
+ * let end = instant::now ();
+ * assert (start < end);
+ * assert (start == start);
+ * ===============
+ */
+pub def opCmp (left : Instant, right : Instant) -> i32 {
+    if (left.sec < right.sec) { -1 }
+    else if (left.sec == right.sec) {
+        if (left.usec < right.usec) { -1 }
+        else if (left.usec > right.usec) { 1 }
+        else { 0 }
+    }
+    else { 1 }
+}
