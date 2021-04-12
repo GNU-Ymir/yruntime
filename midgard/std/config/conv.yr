@@ -45,7 +45,7 @@ pub trait Serializable {
  * @throws: 
  *   - &ConfigError: if the cast cannot be made
  */
-pub def to {struct T} (cfg : &Config)-> T
+pub def to {struct T} (cfg : &Config)-> mut T
     throws &ConfigError
 {
     match cfg {
@@ -270,7 +270,7 @@ mod CfgToConfig {
      *   - &ConfigError: if the configuration does not contains every field of the struct
      * @info: if the configuration contains more information they are ignored
      */
-    pub def fromDict {struct T} (dict : &Dict)-> T
+    pub def fromDict {struct T} (dict : &Dict)-> mut T
         throws &ConfigError
     {
         __pragma!fake_throw (&ConfigError); // if the struct is empty
@@ -306,7 +306,10 @@ mod CfgToConfig {
             }        
         }    
 
-        __pragma!trusted ({*(cast!(&T) (cast!(&void) (t.ptr)))})
+        alias __pragma!trusted ({
+            let dmut j = alias *(cast!(mut &(mut T)) (cast!(mut &(mut void)) (t.ptr)));
+            alias j
+        })
     } catch {
         err : &ConfigError => {
             throw err;
