@@ -55,6 +55,8 @@ pub class @final Lexer {
     
     let mut _doSkip = true;
 
+    let mut _doComments = true;
+    
     let mut _line = 1u64;
 
     let mut _col = 1u64;
@@ -86,6 +88,20 @@ pub class @final Lexer {
     }
 
     /**
+     * @returns: the current content of the lexer
+     */
+    pub def getContent (self)-> [c32] {
+        self._content
+    }
+
+    /**
+     * Change the current content of the lexer
+     */
+    pub def restoreContent (mut self, content : [c32]) {
+        self._content = content;
+    }
+
+    /**
      * Move the cursor of the lexer forward and return the word that has been read
      * @returns: 
      *    - ._0: the content of the word ("" if no word) 
@@ -105,10 +121,10 @@ pub class @final Lexer {
                     self._line = pos._0;
                     self._col = pos._1;
                     
-                    if ret in self._comments {
+                    if self._doComments && ret in self._comments {
                         self._content = self:.skipComments (self._content);
                         self._line += 1u64;
-                    } else if ret !in self._skips || !self._doSkip {
+                    } else if !self._doSkip || ret !in self._skips {
                         return (ret, line, col);
                     } 
                 } catch {
@@ -118,6 +134,33 @@ pub class @final Lexer {
                 break ("", 0u64, 0u64);
             }
         }
+    }
+
+    /**
+     * Move the cursor of the lexer forward and return the next char 
+     * @info: do not consider tokens, comments and skips
+     * @returns: 
+     *    - ._0: the content of the word ("" if no word) 
+     *    - ._1: the line of the beginning of the word (0 if no word)
+     *    - ._2: the col of the beginning of the word (0 if no word)
+     */
+    pub def nextChar (mut self)-> ([c32], u64, u64) {
+        let wd = 1u64;
+        if (wd != 0u64) {
+            let ret = self._content [0u64..wd];
+            self._content = self._content [wd..$];
+            
+            let (line, col) = (self._line, self._col);                        
+            let pos = self:.countNbLine (ret, self._line, self._col);
+            self._line = pos._0;
+            self._col = pos._1;
+            
+            return (ret, line, col);             
+        } catch {
+            _ : &OutOfArray => { } // Impossible 
+        }
+        
+        ("", 0u64, 0u64)
     }
 
     /**
@@ -142,11 +185,11 @@ pub class @final Lexer {
                     let (line, col) = pos;
                     pos = self:.countNbLine (ret, pos._0, pos._1);
                     
-                    if ret in self._comments {
+                    if self._doComments && ret in self._comments {
                         aux_content = self:.skipComments (aux_content);
                         pos._0 += 1u64;
                         
-                    } else if ret !in self._skips || !self._doSkip {
+                    } else if !self._doSkip || ret !in self._skips {
                         return (ret, line, col);
                     } 
                 } catch {
@@ -166,6 +209,16 @@ pub class @final Lexer {
      */
     pub def doSkip (mut self, d : bool) -> void {
         self._doSkip = d;
+    }
+
+    /**
+     * Tell to the lexer if it must skip the 'comments' or not
+     * @info: 
+     *   - by default the lexer skips them
+     *   - This function is used to disable token skipping when reading string content for example
+     */
+    pub def doComments (mut self, d : bool) -> void {
+        self._doComments = d;
     }
 
     /**

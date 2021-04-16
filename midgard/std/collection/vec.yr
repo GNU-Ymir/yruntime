@@ -66,6 +66,10 @@ pub class @final Vec {T} {
     
     let mut _len : u64 = 0u64;
 
+    prv self (dmut data : [T], len : u64)
+        with _data = alias data, _len = len
+    {}
+    
     /**
      * Create an empty vector
      * The vector does not allocate until push
@@ -427,6 +431,16 @@ pub class @final Vec {T} {
         }                    
     }
             
+
+    impl Copiable {
+
+        pub over deepCopy (self)-> dmut &Vec!{T} {
+            let dmut aux = alias core::duplication::allocArray!T (self._data.len);
+            core::duplication::memCopy!T (self._data, alias aux);
+            alias Vec!{T}::new (alias aux, self._len)
+        }
+        
+    }
     
     
 }

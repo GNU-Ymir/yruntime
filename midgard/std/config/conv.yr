@@ -238,15 +238,15 @@ pub def to {T of [U], U} (cfg : &Config)-> T
 {
     import std::collection::vec, std::conv;
     match cfg {
-        x : &Array => { return fromArray!(T) (x); }
+        x : &Array => { return CfgToConfig::fromArray!(T) (x); }
         _ => {
-            cte if (is!(U)(Z of c32)) {
+            cte if (is!{U}{Z of c32}) {
                 match cfg {
                     Str (str-> str:_) => {            
                         return str; 
                     }
                 }
-            } else cte if (is!(U) (Z of c8)) {
+            } else cte if (is!{U} {Z of c8}) {
                 match cfg {
                     Str (str-> str:_) => {            
                         return str.to![c8] (); 
@@ -281,7 +281,7 @@ mod CfgToConfig {
             let dmut z : &(mut void) = alias (cast!(&void) ((t [offset .. (offset + size)]).ptr));
             
             if ((__pragma!field_names (T))[i] in dict) {
-                cte if (is!(__pragma!field_type (T, (__pragma!field_names (T))[i])) {class C} && !__pragma!compile ({
+                cte if (is!{__pragma!field_type (T, (__pragma!field_names (T))[i])} {class C} && !__pragma!compile ({
                     to!(__pragma!field_type (T, (__pragma!field_names (T))[i])) (dict [(__pragma!field_names (T))[i]]);
                 })) {
                     cte assert (false, "Type : '" ~ (__pragma!field_type (T, (__pragma!field_names (T))[i]))::typeid ~ "' is not decodable from a configuration, it must have a constructor with a '&Config' as parameter");
@@ -299,7 +299,7 @@ mod CfgToConfig {
                 }
             } else {                
                 cte if (!(__pragma!field_has_value (T))[i]) {
-                    throw ConfigError::new (name-> (__pragma!field_names (T))[i], T::typeinfo, dict::typeinfo);
+                    throw ConfigError::new (name-> (__pragma!field_names (T))[i], T::typeinfo, dict::typeinfo, subError-> (cast!(&Exception) (AssertError::new ("no default value")))?);
                 } else {
                     *(cast! (&(__pragma!field_type (T, (__pragma!field_names (T))[i]))) (z)) = __pragma!field_value (T, (__pragma!field_names (T))[i]);
                 }
@@ -333,11 +333,7 @@ mod CfgToConfig {
         import std::collection::vec;
         let dmut res = Vec!{U}::new ();
         for i in cfg {
-            match i {
-                Ok (inner: &Config) =>  {
-                    res:.push (inner.to!U ());
-                }
-            }                    
+            res:.push (i.to!U ());                   
         }
         
         res:.fit ();

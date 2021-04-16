@@ -154,12 +154,8 @@ pub class @final Path {
      * ===========
      */
     pub def parent (self)-> dmut &Path {
-        if (self._parts.len () <= 1u64) {
-            let dmut aux = Vec!([c8])::new ();
-            for i in self._parts {
-                aux:.push (i);
-            }
-            return Path::new (alias aux);
+        if (self._parts.len () == 0u64) {
+            return Path::new ("");
         } else {
             let dmut aux = Vec!([c8])::new ();
             for i in 0u64 .. self._parts.len () - 1u64 {
@@ -268,7 +264,7 @@ pub class @final Path {
         let dmut res = self.parent ();
         if (self._parts.len () > 0u64) {
             let mut file = self.file ();
-            res._parts:.push (file ~ "."s8 ~ ext);            
+            res._parts:.push (file ~ "."s8 ~ ext);
         } else {
             res._parts:.push ("."s8 ~ ext);
         }
@@ -285,11 +281,14 @@ pub class @final Path {
      */
     pub def removePrefix (self, prefix : &Path)-> dmut &Path {
         import std::algorithm::comparison;
-        let j = for i in 0u64 .. comparison::min (prefix._parts.len (), self._parts.len ()) {
+        let mut j = 0u64;
+
+        for i in 0u64 .. comparison::min (prefix._parts.len (), self._parts.len ()) {
             if (prefix._parts [i] != self._parts [i]) {
-                break { i + 1u64 }
+                j = i + 1u64 ;
+                break { }
             }
-            i + 1u64
+            j = i + 1u64;
         }
         
         let dmut res = Vec!{[c8]}::new ();

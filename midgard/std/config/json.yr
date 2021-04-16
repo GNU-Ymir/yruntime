@@ -24,7 +24,7 @@ enum
  * Parse a string containing a json formeted content
  * @example: 
  * ==============
- * let str = "{\"foo\"={\"ba\r"=\"value\", \"baz\"=[1, 2]}}"s8;
+ * let str = "{\"foo\"={\"bar"=\"value\", \"baz\"=[1, 2]}}"s8;
  * let config = parse (str);
  * ==============
  * @throws: 
@@ -42,7 +42,7 @@ pub def parse (content : [c8])-> &Dict
  * Parse a string containing a json formated content
  * @example: 
  * =============
- * let str = "{\"foo\"={\"ba\r"=\"value\", \"baz\"=[1, 2]}}";
+ * let str = "{\"foo\"={\"bar"=\"value\", \"baz\"=[1, 2]}}";
  * let config = parse (str);
  * ==============
  * @throws: 
@@ -80,19 +80,23 @@ mod Parser {
             throw SyntaxError::new ("expected '{' (not '" ~ skip ~ "')", l, c);
         }
 
-        loop {
-            let name = parseIdentifier (alias lex);
-            
-            let (tok, line, col) = lex:.next ();
-            if (tok != JsonTokens::EQUALS) throw SyntaxError::new ("expected '=' (not '" ~ tok ~ "')", line, col);
-            dict:.insert (name, parseValue (alias lex));
-            
-            let next = lex:.next ();
-            if (next._0 != JsonTokens::COMA && next._0 != JsonTokens::RACC) {
-                throw SyntaxError::new ("expected ',' or '}' (not '" ~ next._0 ~ "')", next._1, next._2);                
+        let (t, _, _) = lex:.nextNoConsume ();
+        if (t != "}") {
+            loop {
+                let name = parseIdentifier (alias lex);
+                
+                let (tok, line, col) = lex:.next ();
+                if (tok != JsonTokens::EQUALS) throw SyntaxError::new ("expected '=' (not '" ~ tok ~ "')", line, col);
+                dict:.insert (name, parseValue (alias lex));
+                
+                let next = lex:.next ();
+                if (next._0 != JsonTokens::COMA && next._0 != JsonTokens::RACC) {
+                    println (dict);
+                    throw SyntaxError::new ("expected ',' or '}' (not '" ~ next._0 ~ "')", next._1, next._2);                
+                }
+                if (next._0 == "}") break {}
             }
-            if (next._0 == "}") break {}
-        }
+        } else lex:.next ();
         
         dict 
     }
@@ -103,42 +107,45 @@ mod Parser {
      */
     pub def parseIdentifier (dmut lex : &Lexer)-> [c32]
         throws &SyntaxError 
-    {        
-        let mut res = "";
+    {
+        import std::stream, std::conv;
+        let dmut res = StringStream::new ();
         
         let (end, line, col) = lex:.next ();
         if (end != "'" && end != "\"") throw SyntaxError::new ("expected '\"' or '\\'' (not '" ~ end ~ "')", line, col);
 
         lex:.doSkip (false);
+        lex:.doComments (false);
         loop {
-            let (next, l, c) = lex:.next ();        
+            let (next, l, c) = lex:.next ();
             if (next == "") {
                 throw SyntaxError::new ("Unterminated string literal", l, c);
             } else if (next == end) break {}
             else if (next == JsonTokens::ESCAPE) {
-                let (af, _, _) = lex:.next ();
+                let (af, _, _) = lex:.nextChar ();
                 match af {
-                    "a" => { res = res ~ "\a"; }
-                    "b" => { res = res ~ "\b"; }
-                    "f" => { res = res ~ "\f"; }
-                    "n" => { res = res ~ "\n"; }
-                    "r" => { res = res ~ "\r"; }
-                    "t" => { res = res ~ "\t"; }
-                    "v" => { res = res ~ "\v"; }
-                    "\\" => { res = res ~ "\\"; }
-                    "\'" => { res = res ~ "'"; }
-                    "\"" => { res = res ~ "\""; }
-                    "\?" => { res = res ~ "\?"; }
-                    "u" => { res = res ~ [parseUnicode (alias lex)]; }
+                    "a" => { res:.write ("\a"); }
+                    "b" => { res:.write ("\b"); }
+                    "f" => { res:.write ("\f"); }
+                    "n" => { res:.write ("\n"); }
+                    "r" => { res:.write ("\r"); }
+                    "t" => { res:.write ("\t"); }
+                    "v" => { res:.write ("\v"); }
+                    "\\" => { res:.write ("\\"); }
+                    "\'" => { res:.write ("'"); }
+                    "\"" => { res:.write ("\""); }
+                    "\?" => { res:.write ("\?"); }
+                    "u" => { res:.write (parseUnicode (alias lex)); }
                     _ => throw SyntaxError::new ("Undefined escape sequence : \\" ~ af, l, c);                
                 }
             } else {
-                res = res ~ next;            
+                res:.write (next);            
             }
         }
         
         lex:.doSkip (true);
-        res
+        lex:.doComments (true);
+        res[].to![c32] ()
     }
 
     /**
