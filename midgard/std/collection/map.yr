@@ -13,8 +13,8 @@ import std::conv;
 /**
  * The number or allocated node at initialization
  */
-prv enum : u64
-| DEFAULT_ALLOC_SIZE = 10u64
+prv enum : usize
+| DEFAULT_ALLOC_SIZE = 10us
  -> MapConst;
 
 
@@ -67,13 +67,13 @@ pub class @final HashMap {K, V} {
     
     let dmut _data : [dmut &MapNode!{K, V}] = [];
     
-    let mut _loaded : u64 = 0u64;
+    let mut _loaded : usize = 0us;
 
-    let mut _size : u64 = 0u64;
+    let mut _size : usize = 0us;
 
-    let _load_factor = 75u64;
+    let _load_factor = 75us;
 
-    let _min_load_factor = 50u64; 
+    let _min_load_factor = 50us; 
 
     /// Allocated only once, to optimize memory usage
     let dmut _empty : dmut &MapNode!{K, V} = Empty!{K, V}::new ();
@@ -89,10 +89,10 @@ pub class @final HashMap {K, V} {
      * @params:
      *    - len: the size of the table reserved to avoid growing
      */
-    pub self (len : u64) {
+    pub self (len : usize) {
         let dmut aux = core::duplication::allocArray!{&MapNode!{K, V}} (len);
 
-        for i in 0u64 .. aux.len {
+        for i in 0us .. aux.len {
             aux [i] = alias self._empty;
         }
         
@@ -120,28 +120,28 @@ pub class @final HashMap {K, V} {
      * ==========
      */
     pub def insert (mut self, key : K, val : V) -> void {        
-        if (self._data.len == 0u64) { self:.grow (); }
-        else if ((self._loaded * 100u64) / (self._data.len) > self._load_factor) { self:.grow (); }        
-        let h = hash (key); 
+        if (self._data.len == 0us) { self:.grow (); }
+        else if ((self._loaded * 100us) / (self._data.len) > self._load_factor) { self:.grow (); }        
+        let h = cast!usize (hash (key)); 
         self:.insertFast (h, key, val);
     }
 
-    pub def fit (mut self, len : u64) {
-        if (len != 0u64) {
+    pub def fit (mut self, len : usize) {
+        if (len != 0us) {
             let dmut aux = core::duplication::allocArray!{&MapNode!{K, V}} (len);
             // Filling the data with empty elements, to be usable, allocArray is not safe!?
-            for i in 0u64 .. aux.len {
+            for i in 0us .. aux.len {
                 aux [i] = alias self._empty;
             }
             
             // Clear the map
             let old = self._data;
             self._data = alias aux;
-            self._loaded = 0u64;
-            self._size = 0u64;
+            self._loaded = 0us;
+            self._size = 0us;
 
             // Add all the old values 
-            for i in 0u64 .. old.len {
+            for i in 0us .. old.len {
                 let mut current = old [i];
                 loop {
                     match current {
@@ -162,8 +162,8 @@ pub class @final HashMap {K, V} {
 
     pub def find (self, key : K) -> V?
     {
-        if (self._data.len != 0u64) {
-            let h = hash (key);
+        if (self._data.len != 0us) {
+            let h = cast!usize (hash (key));
             match (self._data [h % self._data.len]) {
                 x : &MapValue!{K, V} => {                  
                     return x.find (h);
@@ -188,8 +188,8 @@ pub class @final HashMap {K, V} {
      * @complexity: O (1 + n/k), with n the number of possible collision and k the number of keys, in average n/k are negligeable
      */
     pub def opContains (self, key: K) -> bool {
-        if (self._data.len != 0u64) {
-            let h = hash (key);        
+        if (self._data.len != 0us) {
+            let h = cast!usize (hash (key));        
             match (self._data [h % self._data.len]) {
                 x : &MapValue!{K, V} => {
                     return x.opContains (h);
@@ -218,8 +218,8 @@ pub class @final HashMap {K, V} {
      * @complexity: O (1 + n/k + z) with n the number of possible collision, and k the number of keys, and z the time taken by resizing if the load is lower than the min load factor, in average n/k and z are negligeable
      */
     pub def remove (mut self, key : K) -> void {
-        if (self._data.len != 0u64) {
-            let h = hash (key);
+        if (self._data.len != 0us) {
+            let h = cast!usize (hash (key));
             match ref (self._data [h % self._data.len]) {
                 dmut x : &MapValue!{K, V} => {
                     let mut removed = false;
@@ -227,17 +227,17 @@ pub class @final HashMap {K, V} {
                     self._data [h % self._data.len] = alias x:.remove (h, ref removed);
                     match ref (self._data [h % self._data.len]) {
                         _ : &Empty!{K, V} => {
-                            self._loaded -= 1u64;
+                            self._loaded -= 1us;
                         }
                     }
                     
                     if (removed) {
-                        self._size -= 1u64;                    
+                        self._size -= 1us;                    
                     }
                 }
             }
             
-            if ((self._loaded * 100u64) / (self._data.len) < self._min_load_factor) { self:.shrink (); }
+            if ((self._loaded * 100us) / (self._data.len) < self._min_load_factor) { self:.shrink (); }
         }
     } catch {
         _ : &OutOfArray => { } // Can't happen
@@ -290,8 +290,8 @@ pub class @final HashMap {K, V} {
      */
     pub def clear (mut self) {
         self._data = [];
-        self._loaded = 0u64;
-        self._size = 0u64;
+        self._loaded = 0us;
+        self._size = 0us;
     }    
 
     /**
@@ -301,10 +301,10 @@ pub class @final HashMap {K, V} {
      * let dmut x = HashMap!([c32], i32)::new ()
      * x:.insert ("foo", 34);
      * x:.insert ("bar", 45);
-     * assert (x.len () == 2u64);
+     * assert (x.len () == 2us);
      * ==========
      */
-    pub def len (self) -> u64 {
+    pub def len (self) -> usize {
         self._size
     }
 
@@ -327,24 +327,24 @@ pub class @final HashMap {K, V} {
      * @return: an iterator on the beginning of the map
      */
     pub def begin (self) -> dmut &MapIterator!{K, V} {
-        if (self._loaded != 0u64) {
-            for i in 0u64 .. self._data.len {
+        if (self._loaded != 0us) {
+            for i in 0us .. self._data.len {
                 match self._data [i] {
                     _ : &MapValue!{K, V} =>
-                        return MapIterator!{K, V}::new (i, 0u64, self._data, self._data [i]);
+                        return MapIterator!{K, V}::new (i, 0us, self._data, self._data [i]);
                 }
             }
         } catch {
             _ : &OutOfArray => {} 
         }
-        MapIterator!{K, V}::new (0u64, 0u64, [], self._empty)
+        MapIterator!{K, V}::new (0us, 0us, [], self._empty)
     } 
 
     /**
      * @returns: the iterator pointing to the end of the map
      */
     pub def end (self) -> &MapIterator!{K, V} {
-        MapIterator!{K, V}::new (0u64, 0u64, [], self._empty)
+        MapIterator!{K, V}::new (0us, 0us, [], self._empty)
     }
     
     
@@ -356,7 +356,7 @@ pub class @final HashMap {K, V} {
      *    - key: the key 
      *    - val: the value
      */
-    prv def insertFast (mut self, h : u64, key : K, val : V) {
+    prv def insertFast (mut self, h : usize, key : K, val : V) {
         let mut inserted = false;
         match ref (self._data [h % self._data.len]) {
             dmut x : &MapValue!{K, V} => {
@@ -364,12 +364,12 @@ pub class @final HashMap {K, V} {
             }
             _  => {
                 self._data [h % self._data.len] = MapValue!{K, V}::new (h, key, val, alias self._empty);
-                self._loaded += 1u64;
+                self._loaded += 1us;
                 inserted = true;
             }
         }
         if (inserted) {
-            self._size += 1u64;
+            self._size += 1us;
         }
     }  catch {
         _ : &OutOfArray => {} // Can't happen
@@ -381,23 +381,23 @@ pub class @final HashMap {K, V} {
      * @complexity: O (n + m), with n the new size, and m the number of element contained in the old table that are reinserted
      */
     prv def shrink (mut self) -> void {
-        if (self._loaded == 0u64) {
+        if (self._loaded == 0us) {
             self._data = []; return {}
         }
         
-        let n_len = self._data.len / 2u64;
+        let n_len = self._data.len / 2us;
         let dmut aux = core::duplication::allocArray!{&MapNode!{K, V}} (n_len);
 
-        for i in 0u64 .. aux.len {
+        for i in 0us .. aux.len {
             aux [i] = alias self._empty;
         }
 
         let old = self._data;
         self._data = alias aux;
-        self._loaded = 0u64;
-        self._size = 0u64;
+        self._loaded = 0us;
+        self._size = 0us;
 
-        for i in 0u64 .. old.len {
+        for i in 0us .. old.len {
             let mut current = old [i];
             loop {
                 match current {
@@ -423,27 +423,27 @@ pub class @final HashMap {K, V} {
      * @complexity: O (n + m), with n the new size, and m the number of element contained in the old table that are reinserted
      */
     prv def grow (mut self) -> void {
-        if (self._data.len == 0u64) {
+        if (self._data.len == 0us) {
             self._data = core::duplication::allocArray!{&MapNode!{K, V}} (MapConst::DEFAULT_ALLOC_SIZE);
-            for i in 0u64 .. self._data.len {
+            for i in 0us .. self._data.len {
                 self._data [i] = alias self._empty;
             }
         } else {
-            let n_len = self._data.len * 2u64;
+            let n_len = self._data.len * 2us;
             let dmut aux = core::duplication::allocArray!{&MapNode!{K, V}} (n_len);
             // Filling the data with empty elements, to be usable, allocArray is not safe!?
-            for i in 0u64 .. aux.len {
+            for i in 0us .. aux.len {
                 aux [i] = alias self._empty;
             }
             
             // Clear the map
             let old = self._data;
             self._data = alias aux;
-            self._loaded = 0u64;
-            self._size = 0u64;
+            self._loaded = 0us;
+            self._size = 0us;
 
             // Add all the old values 
-            for i in 0u64 .. old.len {
+            for i in 0us .. old.len {
                 let mut current = old [i];
                 loop {
                     match current {
@@ -474,13 +474,13 @@ pub class @final HashMap {K, V} {
          */
         pub over print (self) {
             print ('{'c8);
-            let mut i = 0u64;
+            let mut i = 0us;
             for node in self._data {
                 match node {
                     _ : &MapValue!{K, V} => {
-                        if (i != 0u64) { print (','c8); print (' 'c8); }
+                        if (i != 0us) { print (','c8); print (' 'c8); }
                         print (node);
-                        i = 1u64;
+                        i = 1us;
                     }
                 }
             }
@@ -512,7 +512,7 @@ pub class @final HashMap {K, V} {
             let dmut res = HashMap!{K, V}::new (self._data.len);
             
             // Add all the values 
-            for i in 0u64 .. self._data.len {
+            for i in 0us .. self._data.len {
                 let mut current = self._data [i];
                 loop {
                     match current {
@@ -568,7 +568,7 @@ class @final MapValue {K, V} over MapNode!{K, V} {
     pub let dmut next : &MapNode!{K, V};
 
     /// The result of hash (key), used to compare two MapValues (and avoid recomputing the value each time)
-    pub let h : u64;
+    pub let h : usize;
 
     /// The actual key stored in the node
     pub let key : K;
@@ -583,7 +583,7 @@ class @final MapValue {K, V} over MapNode!{K, V} {
      *    - val: the value stored in the node
      *    - next: the reference to the next node in the list (empty or value)
      */
-    pub self (h : u64, key : K, val : V, dmut next : &MapNode!{K, V})
+    pub self (h : usize, key : K, val : V, dmut next : &MapNode!{K, V})
         with next = alias next,
              key = key,
              val = val,
@@ -625,7 +625,7 @@ class @final MapValue {K, V} over MapNode!{K, V} {
      *    - val: the value associated to the key
      * @returns: true if a new node has been allocated, false otherwise
      */
-    pub def insert (mut self, h : u64, key : K, val : V) -> bool {
+    pub def insert (mut self, h : usize, key : K, val : V) -> bool {
         if (self.h == h) {
             self.val = val;
         } else {
@@ -649,7 +649,7 @@ class @final MapValue {K, V} over MapNode!{K, V} {
      * @returns: the value in an option type, or None if there is no node containing a hash equal to h
      * @complexity: O (n), with n the length of the list
      */
-    pub def find (self, h : u64) -> V? {
+    pub def find (self, h : usize) -> V? {
         if (self.h == h) {
             (self.val)?
         } else {
@@ -673,7 +673,7 @@ class @final MapValue {K, V} over MapNode!{K, V} {
      *    - the list, with no node containing the hash h,
      * ===========
      */
-    pub def remove (mut self, h : u64, ref mut rm : bool) -> dmut &MapNode!{K, V} {
+    pub def remove (mut self, h : usize, ref mut rm : bool) -> dmut &MapNode!{K, V} {
         if (self.h == h) {
             rm = true;
             return alias self.next;
@@ -692,7 +692,7 @@ class @final MapValue {K, V} over MapNode!{K, V} {
      * @returns: true, if such a node was found, false otherwise
      * @complexity: O (n), with n the length of the list
      */
-    pub def opContains (self, h : u64) -> bool {
+    pub def opContains (self, h : usize) -> bool {
         if (self.h == h) {
             true
         } else {
@@ -767,10 +767,10 @@ pub class @final MapIterator {K, V} {
     prv let mut _data : [&MapNode!{K, V}];
 
     /// The current index of the iterator, in the table
-    prv let mut _index : u64;
+    prv let mut _index : usize;
 
     /// The current index in the current branch (linked list of MapValues)
-    prv let mut _branch : u64 = 0u64;
+    prv let mut _branch : usize = 0us;
 
     /// The reference on node containing the value we are pointing at
     prv let mut _currentNode : &MapNode!{K, V};
@@ -783,7 +783,7 @@ pub class @final MapIterator {K, V} {
      *    - data: the table of data
      *    - current: the current traversed node in the branch (data [i][branch])
      */
-    pub self (i : u64, branch : u64, data : [&MapNode!{K, V}], current : &MapNode!{K, V})
+    pub self (i : usize, branch : usize, data : [&MapNode!{K, V}], current : &MapNode!{K, V})
         with _data = data,
              _index = i,
              _branch = branch,
@@ -850,7 +850,7 @@ pub class @final MapIterator {K, V} {
             x : &MapValue!{K, V} => {
                 match (x.next) {
                     _ : &MapValue!{K, V} => {
-                        self._branch += 1u64;
+                        self._branch += 1us;
                         self._currentNode = x.next;
                         return {}
                     }
@@ -858,11 +858,11 @@ pub class @final MapIterator {K, V} {
             }
         }            
 
-        if (self._index + 1u64 < self._data.len) {
-            for j in (self._index + 1u64).. self._data.len {
+        if (self._index + 1us < self._data.len) {
+            for j in (self._index + 1us).. self._data.len {
                 match (self._data [j]) {
                     _ : &MapValue!{K, V} => {
-                        self._branch = 0u64;
+                        self._branch = 0us;
                         self._index = j;
                         self._currentNode = self._data [j];
                         return {};
@@ -875,8 +875,8 @@ pub class @final MapIterator {K, V} {
 
         self._data = [];
         self._currentNode = Empty!{K, V}::new ();
-        self._index = 0u64;
-        self._branch = 0u64;
+        self._index = 0us;
+        self._branch = 0us;
     }
     
 }

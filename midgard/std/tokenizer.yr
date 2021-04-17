@@ -62,15 +62,15 @@ pub class @final Tokenizer {
      * ================
      */
     pub def insert (mut self, token : [c32]) {
-        if (token.len != 0u64) {
+        if (token.len != 0us) {
             {
                 let fnd = (self._heads [token[0]])?;
                 match fnd {
                     Ok (x:_) => {
-                        (alias self._heads) [token[0]] = x.insert (token[1u64..$]);                    
+                        (alias self._heads) [token[0]] = x.insert (token[1us..$]);                    
                     }
                     _ => {
-                        (alias self._heads) [token[0]] = internal::Node::new (token[0]).insert (token [1u64..$]);
+                        (alias self._heads) [token[0]] = internal::Node::new (token[0]).insert (token [1us..$]);
                     }
                 }
             } catch {
@@ -86,39 +86,39 @@ pub class @final Tokenizer {
      * let dmut tzer = Tokenizer::new (["+", " "]);
      * let mut str = "fst + scd";
      * let mut len = tzer.next (str);
-     * assert (len == 3u64); // "fst"
+     * assert (len == 3us); // "fst"
      * 
      * str = str [len .. $];     
      * len = tzer.next (str);
-     * assert (len == 1u64); // " "
+     * assert (len == 1us); // " "
      *
      * str = str [len .. $];     
      * len = tzer.next (str);
-     * assert (len == 1u64); // "+"
+     * assert (len == 1us); // "+"
      *
      * str = str [len .. $];     
      * len = tzer.next (str);
-     * assert (len == 1u64); // " "
+     * assert (len == 1us); // " "
      *
      * str = str [len .. $];     
      * len = tzer.next (str);
-     * assert (len == 3u64); // "scd" 
+     * assert (len == 3us); // "scd" 
      *
      * str = str [len .. $];     
      * len = tzer.next (str);
-     * assert (len == 0u64); 
+     * assert (len == 0us); 
      * ============
      */
-    pub def next (self, str : [c32])-> u64 {
-        for i in 0u64 .. str.len {
+    pub def next (self, str : [c32])-> usize {
+        for i in 0us .. str.len {
             let fnd = (self._heads [str [i]])?;
             {
                 match fnd { 
                     Ok (x:_) => { // a possible token at index == i
-                        let len = x.len (str [i + 1u64 .. $]); // get the length of the token
+                        let len = x.len (str [i + 1us .. $]); // get the length of the token
                         // if the len is 0, then it is not really a token, it just start like one
-                        if (len != 0u64) {
-                            if (i == 0u64) { 
+                        if (len != 0us) {
+                            if (i == 0us) { 
                                 return len; // it is totally a token, we return its length
                             } else {
                                 // it is a token, but there is something before it, so we return the len of the thing before it
@@ -151,9 +151,9 @@ pub class @final Tokenizer {
         let dmut res = Vec!([c32])::new ();
         let mut aux = str;
         { 
-            while aux.len > 0u64 {
+            while aux.len > 0us {
                 let len = self.next (aux);
-                res:.push (aux [0u64..len]);
+                res:.push (aux [0us..len]);
                 aux = aux [len .. $];
             }
         } catch {
@@ -207,8 +207,8 @@ mod internal {
          * println (node); // [:false, +:false, ]:true 
          * // In that configuration the only token that will be accepted is "[+]"
          * assert (node.len ("[+]") == 3); // accepted
-         * assert (node.len ("[") == 0u64); // not accepted
-         * assert (node.len ("[+") == 0u64); // not accepted
+         * assert (node.len ("[") == 0us); // not accepted
+         * assert (node.len ("[+") == 0us); // not accepted
          * 
          * // Now we want to accept "[-]"
          * node = node.insert ("-]");
@@ -219,14 +219,14 @@ mod internal {
          *                 //     -: false, ]:true
          * 
          * assert (node.len ("[+]") == 3); // still accepted
-         * assert (node.len ("[") == 1u64); // accepted this time
-         * assert (node.len ("[+") == 1u64); // accept only the '['
+         * assert (node.len ("[") == 1us); // accepted this time
+         * assert (node.len ("[+") == 1us); // accept only the '['
          * assert (node.len ("[-]") == 3); // accepted
-         * assert (node.len ("[-") == 1u64); // accept only the '['
+         * assert (node.len ("[-") == 1us); // accept only the '['
          * ==============
          */
         pub def insert (self, str : [c32]) -> &Node {
-            if (str.len == 0u64) {
+            if (str.len == 0us) {
                 return Node::new (self._key, isToken-> true, heads-> self._heads)
             }
 
@@ -239,10 +239,10 @@ mod internal {
             {
                 match fnd {
                     Ok (x:_) => {
-                        retDict:.insert (str [0], x.insert (str [1u64..$]));
+                        retDict:.insert (str [0], x.insert (str [1us..$]));
                     }
                     _ => {                    
-                        retDict:.insert (str [0], Node::new (str [0]).insert (str [1u64..$]));
+                        retDict:.insert (str [0], Node::new (str [0]).insert (str [1us..$]));
                     }
                 }
             } catch {
@@ -261,31 +261,31 @@ mod internal {
          * let mut node = Node::new ('+', isToken-> true);
          * node = node.insert ("=");
          * // Our grammar accept the tokens, "+" and "+="
-         * assert (node.len ("+") == 1u64); // "+" are accepted
-         * assert (node.len ("+=") == 2u64); // "+=" are accepted
-         * assert (node.len (" +=") == 0u64); // " +=" are not accepted
-         * assert (node.len ("+ and some rest") == 1u64); // " +" are accepted
+         * assert (node.len ("+") == 1us); // "+" are accepted
+         * assert (node.len ("+=") == 2us); // "+=" are accepted
+         * assert (node.len (" +=") == 0us); // " +=" are not accepted
+         * assert (node.len ("+ and some rest") == 1us); // " +" are accepted
          * =================
          */
-        pub def len (self, content : [c32])-> u64 {
-            if (content.len == 0u64) {
-                if (self._isToken) return 1u64;
-                else return 0u64;
+        pub def len (self, content : [c32])-> usize {
+            if (content.len == 0us) {
+                if (self._isToken) return 1us;
+                else return 0us;
             }
 
             let fnd = (self._heads [content [0]])?
             match fnd {
                 Ok (x:_) => {
-                    let sub_len = x.len (content [1u64..$]);
-                    if (sub_len != 0u64 || self._isToken) return 1u64 + sub_len;
-                    else return 0u64;                
+                    let sub_len = x.len (content [1us..$]);
+                    if (sub_len != 0us || self._isToken) return 1us + sub_len;
+                    else return 0us;                
                 } catch {
                     _: &OutOfArray => {} // impossible
                 }
             }
 
-            if (self._isToken) return 1u64;
-            return 0u64;
+            if (self._isToken) return 1us;
+            return 0us;
         }
 
         /**

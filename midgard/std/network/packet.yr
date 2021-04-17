@@ -104,10 +104,10 @@ pub trait Packable {
     {
         cte if (typeof (self::local_tupleof)::arity != 0u32) {
             {                
-                let mut packOffset = 0u64;
+                let mut packOffset = 0us;
                 cte if (__pragma!compile ({self::super;})) {
                     cte if (is!(typeof (self::super)){U impl Packable}) {
-                        packOffset = cast!(u64) (self::super:.__stdnetwork__unpackContent (packet));
+                        packOffset = cast!(usize) (self::super:.__stdnetwork__unpackContent (packet));
                     } else {
                         cte assert (false, "ancestor is not packable");
                     }
@@ -181,7 +181,7 @@ pub def unpack (mut packet : [u8])-> dmut &Object
     {
         let (_, offset) = internal_unpack::unpack!{[c8]} (alias cast!(&u8) (cast!(&void) (&name)), packet);
         let dmut obj = internal_reflect::totallyUnsafeFactoryDontDoThat (name);
-        obj:.callImplMutable!(usize) ("std::network::packet::Packable::__stdnetwork__unpackContent", packet[cast!u64 (offset) .. $]);
+        obj:.callImplMutable!(usize) ("std::network::packet::Packable::__stdnetwork__unpackContent", packet[offset .. $]);
         
         return alias obj;               
     } catch {
@@ -260,17 +260,17 @@ mod internal_unpack {
     pub def unpack {T of [U], U} (dmut c_ptr : &(u8), packet : [u8])-> (usize, usize)
         throws &UnpackError
     {
-        let mut len : u64 = 0u64;
+        let mut len : usize = 0us;
         let dmut p_len : &u8 = alias cast!(&u8) (cast!(&void) (&len));
         
         let (_, _offset) = unpack!u64 (alias p_len, packet);
         let dmut res = alias core::duplication::allocArray!U (len);
-        let mut offset = cast!(u64) (_offset);
+        let mut offset = _offset;
         {
-            for i in 0u64 .. len {
+            for i in 0us .. len {
                 let dmut ptr : &void = alias cast!(&void) (&res [i]);
                 let (_, inner_offset) = unpack!(U) (alias (cast!(&u8) (ptr)), packet [offset .. $]);
-                offset += cast!(u64) (inner_offset);
+                offset += inner_offset;
             }
             
             let mut arr_ptr : &(mut T) = alias cast!(&T) (cast!(&void) (c_ptr));

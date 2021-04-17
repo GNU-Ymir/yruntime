@@ -244,9 +244,9 @@ pub class TcpStream {
      * @templates: 
      * - U: any type
      */
-    pub def rawReceive {U} (mut self, nb : u64) -> dmut [U] {
+    pub def rawReceive {U} (mut self, nb : usize) -> dmut [U] {
         let dmut alloc = core::duplication::allocArray!(U) (nb);
-        etc::c::socket::read (self._sockfd, alias cast!(&void) (alloc.ptr), cast!(usize) (nb * sizeof (U)));
+        etc::c::socket::read (self._sockfd, alias cast!(&void) (alloc.ptr), nb * sizeof (U));
         return alias alloc;
     }
 
@@ -269,7 +269,7 @@ pub class TcpStream {
     pub def receive (mut self)-> dmut &Object
         throws &UnpackError
     {        
-        let mut size = 0u64;
+        let mut size = 0us;
         etc::c::socket::read (self._sockfd, alias cast!(&void) (&size), sizeof (usize));
         let packet : [u8] = self:.rawReceive!{u8} (size);
         return packet.unpack ();

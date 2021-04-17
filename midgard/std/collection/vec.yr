@@ -12,8 +12,8 @@ import std::io;
 /**
  * Some constants for the vec implementation
  */
-prv enum : u64
-| DEFAULT_ALLOC_SIZE = 10u64 // The size that is allocated after the first push
+prv enum : usize
+| DEFAULT_ALLOC_SIZE = 10us // The size that is allocated after the first push
  -> VecConst;
 
 
@@ -34,7 +34,7 @@ pub macro vec {
 
     pub self (fst=__expr rest=("," val=__expr)*) skips (" " | "\n" | "\r" | "\t") {        
         let dmut z = Vec!(typeof (#(fst)))::new ();
-        z:.reserve ((#(rest::len)) + 1u64);
+        z:.reserve ((#(rest::len)) + 1us);
         z:.push (#(fst));
         #(for i in rest) {
             z:.push (#(i::val))
@@ -64,9 +64,9 @@ pub class @final Vec {T} {
 
     let mut _data : [mut T] = [];
     
-    let mut _len : u64 = 0u64;
+    let mut _len : usize = 0us;
 
-    prv self (dmut data : [T], len : u64)
+    prv self (dmut data : [T], len : usize)
         with _data = alias data, _len = len
     {}
     
@@ -101,7 +101,7 @@ pub class @final Vec {T} {
         }
         
         self._data [self._len] = val;
-        self._len += 1u64;
+        self._len += 1us;
     } catch {
         _ : &OutOfArray => {} // there won't be any problem, self._len is always < self._data.len
     }
@@ -128,13 +128,13 @@ pub class @final Vec {T} {
     pub def pop (mut self) -> T
         throws &OutOfArray
     {
-        if (self._len == 0u64) {
+        if (self._len == 0us) {
             throw OutOfArray::new ();
         }
         
-        self._len -= 1u64;
+        self._len -= 1us;
         let ret = self._data [self._len];
-        if (self._len < self._data.len / 2u64)
+        if (self._len < self._data.len / 2us)
             self:.fit ();
         return ret;
     }
@@ -148,7 +148,7 @@ pub class @final Vec {T} {
      *     x:.push (i);
      * println (x.capacity ()); // 10
      * x:.fit ();
-     * assert (x.capacity () == 5u64); 
+     * assert (x.capacity () == 5us); 
      * assert (x == [0, 1, 2, 3, 4]);
      * ==============
      * @complexity: O (n), with n = self._len
@@ -185,7 +185,7 @@ pub class @final Vec {T} {
      * =============
      * @complexity: O (n), with n = self._len
      */
-    pub def reserve (mut self, size : u64) {
+    pub def reserve (mut self, size : usize) {
         if (self._data.len >= size) return {}
         let mut aux : [mut T] = core::duplication::allocArray!T (size);
         core::duplication::memCopy!T (self._data, alias aux);
@@ -207,7 +207,7 @@ pub class @final Vec {T} {
      * =============
      */
     pub def clear (mut self) {
-        self._len = 0u64;
+        self._len = 0us;
         self._data = [];
     }
 
@@ -237,7 +237,7 @@ pub class @final Vec {T} {
          */
         pub def opEquals (self, o : &Vec!(T)) -> bool {
             if (self._len != o._data.len) return false;
-            for i in 0u64 .. self._len {
+            for i in 0us .. self._len {
                 if (self._data [i] != o._data [i]) return false;
             }
             return true;
@@ -261,7 +261,7 @@ pub class @final Vec {T} {
          */
         pub def opEquals (self, o : [T]) -> bool {
             if (self._len != o.len) return false;
-            for i in 0u64 .. self._len {
+            for i in 0us .. self._len {
                 if (self._data [i] != o [i]) return false;                
             }
             return true;            
@@ -283,7 +283,7 @@ pub class @final Vec {T} {
      * ==========
      */
     pub def opIndex (self) -> [T] {
-        self._data [0u64 .. self._len]
+        self._data [0us .. self._len]
     } catch {
         _ : &OutOfArray => {
             []
@@ -311,7 +311,7 @@ pub class @final Vec {T} {
      *
      * ===========
      */
-    pub def opIndexAssign (mut self, i : u64, val : T)
+    pub def opIndexAssign (mut self, i : usize, val : T)
         throws &OutOfArray
     {
         if (i < self._len) {
@@ -322,7 +322,7 @@ pub class @final Vec {T} {
     /**
      * @return: the number of element the vector can store without reallocation
      */
-    pub def capacity (self) -> u64 {
+    pub def capacity (self) -> usize {
         self._data.len
     }
 
@@ -338,7 +338,7 @@ pub class @final Vec {T} {
      * ==========
      */
     pub def begin (self)-> dmut &VecIterator!T {
-        return VecIterator::new (0u64, self._len, self._data);
+        return VecIterator::new (0us, self._len, self._data);
     }
 
     /**
@@ -360,7 +360,7 @@ pub class @final Vec {T} {
         /**
          * @returns: the number of element inside the vector
          */
-        pub over len (self) -> u64 {
+        pub over len (self) -> usize {
             self._len
         }
         
@@ -383,7 +383,7 @@ pub class @final Vec {T} {
          * }
          * ================
          */
-        pub over opIndex (self, i : u64) -> T
+        pub over opIndex (self, i : usize) -> T
             throws &OutOfArray
         {
             if (i < self._len) {
@@ -400,8 +400,8 @@ pub class @final Vec {T} {
             cte if (__pragma!compile ({print (self._data [0]);})) {
                 {
                     print ("vec[");
-                    for i in 0u64 .. self._len {
-                        if (i != 0u64) print (", ");
+                    for i in 0us .. self._len {
+                        if (i != 0us) print (", ");
                         print (self._data [i]);
                     }
                     print ("]");                    
@@ -421,10 +421,10 @@ pub class @final Vec {T} {
      * @complexity: O (n), with n = self._len
      */
     prv def grow (mut self) {
-        if (self._data.len == 0u64) { // empty
+        if (self._data.len == 0us) { // empty
             self._data = alias core::duplication::allocArray!T (VecConst::DEFAULT_ALLOC_SIZE);
         }  else {
-            let n_len = self._data.len * 2u64;
+            let n_len = self._data.len * 2us;
             let mut aux : [mut T] = core::duplication::allocArray!T (n_len);
             core::duplication::memCopy!T (self._data, alias aux);
             self._data = alias aux;
@@ -459,9 +459,9 @@ pub class @final Vec {T} {
  */
 pub class @final VecIterator {T} {
 
-    let mut _index : u64;
+    let mut _index : usize;
 
-    let mut _len : u64;
+    let mut _len : usize;
 
     let _data : [T];
 
@@ -471,7 +471,7 @@ pub class @final VecIterator {T} {
      *    - len: the length of the vector
      *    - data: the data contained in the vector
      */
-    pub self (index : u64, len : u64, data : [T])
+    pub self (index : usize, len : usize, data : [T])
         with _index = index,
              _len = len,
              _data = data
@@ -489,7 +489,7 @@ pub class @final VecIterator {T} {
      * Move the iterator to the next element in the vector
      */
     pub def next (mut self) {
-        self._index += 1u64;
+        self._index += 1us;
     }
 
     /**
@@ -506,7 +506,7 @@ pub class @final VecIterator {T} {
     /**
      * @returns: the index in the vector, to which the iterator is pointing
      */
-    pub def get {1} (self) -> u64 {
+    pub def get {1} (self) -> usize {
         self._index
     }
     

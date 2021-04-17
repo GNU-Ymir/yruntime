@@ -74,7 +74,7 @@ void* _yrt_alloc_class (void* vtable) {
     if ((*__dtor) != NULL) {
 	GC_register_finalizer (cl, _yrt_destruct_class, NULL, NULL, NULL);
     }
-    
+
     return cl;
 }
 

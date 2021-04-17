@@ -104,16 +104,16 @@ pub {
     def to {T of [U], U of c32, F of u64} (a : F) -> [c32] {
         if (a == 0u64) return "0";
         let mut n = a;
-        let mut len = 0u64;
+        let mut len = 0us;
         while n > 0u64 {
-            len += 1u64;
+            len += 1us;
             n /= 10u64;
         }
         
         let dmut res = core::duplication::allocArray!(c32)(len);
         let mut j = 1u64;
-        for i in len .. 0u64 {
-            res [i - 1u64] = to!c32 (a / j % 10u64);
+        for i in len .. 0us {
+            res [i - 1us] = to!c32 (a / j % 10u64);
             j *= 10u64;
         } catch {
             _ : &OutOfArray => { }
@@ -133,28 +133,28 @@ pub {
     def to {T of [U], U of c32, F of i64} (a : F) -> [c32] {
         if (a == 0i64) return "0";
         let (mut n, mut len, sign) = if (a < 0i64) {
-            (- a, 0u64, true)
-        } else { (a, 0u64, false) }
+            (- a, 0us, true)
+        } else { (a, 0us, false) }
                 
         while n > 0i64 {
-            len += 1u64;
+            len += 1us;
             n /= 10i64;
         }
         
         let mut j = 1i64;
         if (!sign) {
             let dmut res = core::duplication::allocArray!(c32)(len);
-            for i in len .. 0u64 {
-                res [i - 1u64] = to!c32 (a / j % 10i64);
+            for i in len .. 0us {
+                res [i - 1us] = to!c32 (a / j % 10i64);
                 j *= 10i64;
             } catch {
                 _ : &OutOfArray => { }
             }
             res
         } else {
-            let dmut res = core::duplication::allocArray!(c32)(len + 1u64);
+            let dmut res = core::duplication::allocArray!(c32)(len + 1us);
             {
-                for i in len .. 0u64 {
+                for i in len .. 0us {
                     res [i] = to!c32 (-a / j % 10i64);
                     j *= 10i64;
                 }
@@ -246,16 +246,16 @@ pub {
     def to {T of [U], U of c8, F of u64} (a : F) -> [c8] {
         if (a == 0u64) return "0"s8;
         let mut n = a;
-        let mut len = 0u64;
-        while n > 0u64 {
-            len += 1u64;
+        let mut len = 0us;
+        while n > 0us {
+            len += 1us;
             n /= 10u64;
         }
         
         let dmut res = core::duplication::allocArray!(c8)(len);
         let mut j = 1u64;
-        for i in len .. 0u64 {
-            res [i - 1u64] = to!c8 (a / j % 10u64);
+        for i in len .. 0us {
+            res [i - 1us] = to!c8 (a / j % 10u64);
             j *= 10u64;
         } catch {
             _ : &OutOfArray => { }
@@ -275,28 +275,28 @@ pub {
     def to {T of [U], U of c8, F of i64} (a : F) -> [c8] {
         if (a == 0i64) return "0"s8;
         let (mut n, mut len, sign) = if (a < 0i64) {
-            (- a, 0u64, true)
-        } else { (a, 0u64, false) }
+            (- a, 0us, true)
+        } else { (a, 0us, false) }
                 
         while n > 0i64 {
-            len += 1u64;
+            len += 1us;
             n /= 10i64;
         }
         
         let mut j = 1i64;
         if (!sign) {
             let dmut res = core::duplication::allocArray!(c8)(len);
-            for i in len .. 0u64 {
-                res [i - 1u64] = to!c8 (a / j % 10i64);
+            for i in len .. 0us {
+                res [i - 1us] = to!c8 (a / j % 10i64);
                 j *= 10i64;
             } catch {
                 _ : &OutOfArray => { }
             }
             res
         } else {
-            let dmut res = core::duplication::allocArray!(c8)(len + 1u64);
+            let dmut res = core::duplication::allocArray!(c8)(len + 1us);
             {
-                for i in len .. 0u64 {
+                for i in len .. 0us {
                     res [i] = to!c8 (-a / j % 10i64);
                     j *= 10i64;
                 }
@@ -330,10 +330,10 @@ pub {
      * Create a zero terminated string from a [c8]
      */
     def toStringZ (a : [c8])-> &c8 {
-        let dmut res = core::duplication::allocArray!(c8)(a.len + 1u64);
+        let dmut res = core::duplication::allocArray!(c8)(a.len + 1us);
         core::duplication::memCopy (a, alias res);
         {
-            res [$-1u64] = '\u{0}'c8;
+            res [$-1us] = '\u{0}'c8;
         } catch {
             _ : &OutOfArray => {}
         }
@@ -344,12 +344,12 @@ pub {
      * @returns: a slice of a where the len is correctly set
      */
     def fromStringZ {U of [c8]} (a : U)-> [c8] {
-        let mut len = 0u64;
+        let mut len = 0us;
         for i in a {
             if (i == '\u{0}'c8) break {};
-            else len += 1u64;
+            else len += 1us;
         }
-        __pragma!trusted ({ a [0u64 .. len] })
+        __pragma!trusted ({ a [0us .. len] })
     }
 
     /**
@@ -358,15 +358,15 @@ pub {
     def fromStringZ {U of &c8} (a : U)-> [c8]
         throws &SegFault
     {
-        let mut len = 0u64;
+        let mut len = 0us;
         loop {
             if (*(a + len) == '\u{0}'c8) break {};
-            else len += 1u64;            
+            else len += 1us;            
         }
         import std::io;
         let dmut res = core::duplication::allocArray!(c8)(len);
         __pragma!trusted ({
-            for i in 0u64 .. len {
+            for i in 0us .. len {
                 res [i] = *(a + i);
             }
         });
@@ -685,9 +685,9 @@ pub {
     {
         let mut j = 1u64;
         let mut res = 0u64;
-        for i in str.len .. 0u64 {
-            if (str [i - 1u64] >= '0' && str [i - 1u64] <= '9') {                
-                res = res + (j * to!u64 (str [i - 1u64]));
+        for i in str.len .. 0us {
+            if (str [i - 1us] >= '0' && str [i - 1us] <= '9') {                
+                res = res + (j * to!u64 (str [i - 1us]));
             } else {
                 throw CastFailure::new ([c32]::typeinfo, u64::typeinfo); 
             }
@@ -791,9 +791,9 @@ pub {
     {
         let mut j = 1u64;
         let mut res = 0u64;
-        for i in str.len .. 0u64 {
-            if (str [i - 1u64] >= '0'c8 && str [i - 1u64] <= '9'c8) {                
-                res = res + (j * to!u64 (str [i - 1u64]));
+        for i in str.len .. 0us {
+            if (str [i - 1us] >= '0'c8 && str [i - 1us] <= '9'c8) {                
+                res = res + (j * to!u64 (str [i - 1us]));
             } else {
                 throw CastFailure::new ([c8]::typeinfo, u64::typeinfo); 
             }
@@ -897,10 +897,10 @@ pub {
     {
         let mut j = 1u64;
         let mut res = 0i64;
-        for i in str.len .. 0u64 {
-            if (str [i - 1u64] >= '0' && str [i - 1u64] <= '9') {                
-                res = res + cast!i64 ((j * to!u64 (str [i - 1u64])));
-            } else if (i == 1u64 && str [i - 1u64] == '-') {
+        for i in str.len .. 0us {
+            if (str [i - 1us] >= '0' && str [i - 1us] <= '9') {                
+                res = res + cast!i64 ((j * to!u64 (str [i - 1us])));
+            } else if (i == 1us && str [i - 1us] == '-') {
                 res = -res;
             } else {
                 throw CastFailure::new ([c32]::typeinfo, i64::typeinfo); 
@@ -1005,10 +1005,10 @@ pub {
     {
         let mut j = 1u64;
         let mut res = 0i64;
-        for i in str.len .. 0u64 {
-            if (str [i - 1u64] >= '0'c8 && str [i - 1u64] <= '9'c8) {                
-                res = res + cast!i64 ((j * to!u64 (str [i - 1u64])));
-            } else if (i == 1u64 && str [i - 1u64] == '-'c8) {
+        for i in str.len .. 0us {
+            if (str [i - 1us] >= '0'c8 && str [i - 1us] <= '9'c8) {                
+                res = res + cast!i64 ((j * to!u64 (str [i - 1us])));
+            } else if (i == 1us && str [i - 1us] == '-'c8) {
                 res = -res;
             } else {
                 throw CastFailure::new ([c32]::typeinfo, i64::typeinfo); 
@@ -1114,16 +1114,16 @@ pub {
         let mut j = 1u64;
         let mut res = 0u64;
         {
-            if (str.len < 2u64) throw CastFailure::new ([c32]::typeinfo, i32::typeinfo);
+            if (str.len < 2us) throw CastFailure::new ([c32]::typeinfo, i32::typeinfo);
             if (str [0] != '0' || str [1] != 'x') throw CastFailure::new ([c32]::typeinfo, i32::typeinfo);
                      
-            for i in str.len .. 2u64 {
-                if (str [i - 1u64] >= '0' && str [i - 1u64] <= '9') {                
-                    res = res + (j * to!u64 (str [i - 1u64]));
-                } else if (str [i - 1u64] >= 'a' && str [i - 1u64] <= 'f') {
-                    res = res + (j * to!u64 (str [i - 1u64]));
-                } else if (str [i - 1u64] >= 'A' && str [i - 1u64] <= 'F') {
-                    res = res + (j * to!u64 (str [i - 1u64]));
+            for i in str.len .. 2us {
+                if (str [i - 1us] >= '0' && str [i - 1us] <= '9') {                
+                    res = res + (j * to!u64 (str [i - 1us]));
+                } else if (str [i - 1us] >= 'a' && str [i - 1us] <= 'f') {
+                    res = res + (j * to!u64 (str [i - 1us]));
+                } else if (str [i - 1us] >= 'A' && str [i - 1us] <= 'F') {
+                    res = res + (j * to!u64 (str [i - 1us]));
                 } else {
                     throw CastFailure::new ([c32]::typeinfo, u64::typeinfo); 
                 }
@@ -1231,18 +1231,18 @@ pub {
         let mut floating = true;
         let mut minus = false;
         
-        for i in str.len .. 0u64 {
-            if (str [i - 1u64] >= '0' && str [i - 1u64] <= '9') {
+        for i in str.len .. 0us {
+            if (str [i - 1us] >= '0' && str [i - 1us] <= '9') {
                 if (floating) {
-                    float = float + cast!i64 ((j * to!u64 (str [i - 1u64])));
+                    float = float + cast!i64 ((j * to!u64 (str [i - 1us])));
                     j *= 10u64;
                 } else {
-                    int = int + cast!i64 ((z * to!u64 (str [i - 1u64])));
+                    int = int + cast!i64 ((z * to!u64 (str [i - 1us])));
                     z *= 10u64;
                 } 
-            } else if (i == 1u64 && str [i - 1u64] == '-') {
+            } else if (i == 1us && str [i - 1us] == '-') {
                 minus = true;
-            } else if (str [i - 1u64] == '.') {
+            } else if (str [i - 1us] == '.') {
                 if !floating { // multiple points
                     throw CastFailure::new ([c32]::typeinfo, f64::typeinfo);
                 }

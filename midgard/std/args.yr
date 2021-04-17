@@ -495,7 +495,7 @@ prv def parseValue {struct T} (dmut lex : &Lexer, cuts : &HashMap!{[c32], Argume
     let dmut res = [0u8 ; new sizeof (T)];
     let dmut used = HashSet!{[c32]}::new ();
     let (_, _, _) = lex:.next ();
-    let mut currentPos = 0u64;
+    let mut currentPos = 0us;
     loop {
         let (tok, _, _) = lex:.nextNoConsume ();
         if (tok == ArgsTokens::SHYPHEN || tok == ArgsTokens::DHYPHEN) {
@@ -518,7 +518,7 @@ prv def parseValue {struct T} (dmut lex : &Lexer, cuts : &HashMap!{[c32], Argume
                     Ok (l : _)=> {
                         parseField!T (alias lex, l, alias res);
                         used:.insert (l);
-                        currentPos += 1u64;
+                        currentPos += 1us;
                     }
                     _ => {                    
                         throw cast!{&ArgumentError} (ArgumentUnknownError::new (name-> tok));
@@ -859,7 +859,7 @@ prv def usageValue (t : TypeInfo) -> [c32] {
     if (equals (t, bool::typeinfo)) { return usageValue!bool (); }
     if (equals (t, f64::typeinfo)) { return usageValue!f64 (); }
     if (equals (t, [c32]::typeinfo)) { return usageValue![c32] (); }
-    if (t.inner.len != 0u64)
+    if (t.inner.len != 0us)
         return "[" ~ __pragma!trusted (usageValue (t.inner [0])) ~ "... ]";
     else
         return "void";

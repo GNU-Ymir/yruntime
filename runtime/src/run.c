@@ -29,7 +29,7 @@ void _yrt_exit (int i) {
 
 void _yrt_throw_seg_fault ();
 
-void bt_sighandler(int sig, struct sigcontext ctx) {    
+void bt_sighandler(int sig, struct sigcontext ctx) {
     _yrt_throw_seg_fault ();    
 }
 
