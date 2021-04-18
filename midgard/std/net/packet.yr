@@ -1,4 +1,4 @@
-mod std::network::packet;
+mod std::net::packet;
 
 import std::conv;
 import std::io;
@@ -26,7 +26,7 @@ import core::duplication, core::array, core::object;
  * }
  * 
  * def foo () -> [u8] {
- *     let x = X::new ();
+ *     let x = X::new ([1, 2, 3]);
  *     x.pack ()   
  * }
  * 
@@ -54,9 +54,7 @@ pub trait Packable {
         
         let name = (typeof (self)::typeid).to![c8] ();
         let dmut array = Vec!(u8)::new ();
-        
         internal_pack::pack (alias array, name);
-        
         cte if (__pragma!compile ({self::super;})) {
             cte if (is!(typeof (self::super)) {U impl Packable}) {
                 self::super.__stdnetwork__packContent (alias array);
@@ -79,7 +77,7 @@ pub trait Packable {
      */
     pub def pack (self, dmut packet : &Vec!u8) {                        
         let name = (typeof (self)::typeid).to![c8] ();        
-        internal_pack::pack (alias packet, name);
+        internal_pack::pack![c8] (alias packet, name);
         
         cte if (__pragma!compile ({self::super;})) {
             cte if (is!(typeof (self::super)){U impl Packable}) {
@@ -102,22 +100,26 @@ pub trait Packable {
     pub def __stdnetwork__unpackContent (mut self, packet : [u8]) -> usize
         throws &UnpackError
     {
-        cte if (typeof (self::local_tupleof)::arity != 0u32) {
+        cte if (typeof (__pragma!local_tupleof (self))::arity != 0u32) {
             {                
                 let mut packOffset = 0us;
                 cte if (__pragma!compile ({self::super;})) {
                     cte if (is!(typeof (self::super)){U impl Packable}) {
                         packOffset = cast!(usize) (self::super:.__stdnetwork__unpackContent (packet));
                     } else {
-                        cte assert (false, "ancestor is not packable");
+                        cte assert (false, "ancestor " ~ typeof (self::super)::typeid ~ " is not packable");
                     }
                 }
-                
-                for i in self::local_fields_address {
-                    let (_, pack_len) = internal_unpack::unpack!(typeof (i)::inner) (alias (Runtime!(typeof(i), &u8)::_yrt_unsafe_cast (i)), packet [packOffset .. $]);
+
+                let dmut t = Runtime!{typeof (self), &u8}::_yrt_unsafe_cast (self);
+                cte for i in 0us .. (__pragma!local_field_offsets (typeof (self))).len {
+                    let offset = (__pragma!local_field_offsets (typeof (self))) [i];
+                    let dmut z : &(mut u8) = alias (t + offset);
+                    let (_, pack_len) = internal_unpack::unpack!(typeof ((__pragma!local_tupleof (self)).i)) (alias z, packet [packOffset .. $]);
                     
                     packOffset += pack_len;
                 }
+                
                 return cast!(usize) (packOffset);
             } catch {
                 err : &UnpackError => {
@@ -131,17 +133,12 @@ pub trait Packable {
             cte if (is!(typeof (self::super)){U impl Packable}) {
                 self::super:.__stdnetwork__unpackContent (packet)
             } else {
-                cte assert (false, "ancestor is not packable");
+                cte assert (false, "ancestor " ~ typeof (self::super)::typeid ~ " is not packable");
             }
         } else {        
-            // some dummy stuff to make the compiler beleive it can throw something            
-            if (packet.len > 0us) {
-                packet[0];
-            } catch {
-                _ => {
-                    throw UnpackError::new ();
-                }
-            }
+            // some dummy stuff to make the compiler beleive it can throw something
+            packet;
+            __pragma!fake_throw (&UnpackError); 
             0us
         }
     }
@@ -153,10 +150,10 @@ pub trait Packable {
      *    - packet: the vector to fill with the content of the object
      */
     prot def __stdnetwork__packContent (self, dmut packet : &Vec!u8)  {
-        cte if (typeof (self::local_tupleof)::arity == 0u32) {
+        cte if (typeof (__pragma!local_tupleof (self))::arity == 0u32) {
             packet;
         } else {
-            for i in self::local_tupleof {
+            for i in __pragma!local_tupleof (self) {
                 internal_pack::pack (alias packet, i);
             }
         }
@@ -181,7 +178,7 @@ pub def unpack (mut packet : [u8])-> dmut &Object
     {
         let (_, offset) = internal_unpack::unpack!{[c8]} (alias cast!(&u8) (cast!(&void) (&name)), packet);
         let dmut obj = internal_reflect::totallyUnsafeFactoryDontDoThat (name);
-        obj:.callImplMutable!(usize) ("std::network::packet::Packable::__stdnetwork__unpackContent", packet[offset .. $]);
+        obj:.callImplMutable!(usize) ("std::net::packet::Packable::__stdnetwork__unpackContent", packet[offset .. $]);
         
         return alias obj;               
     } catch {
@@ -205,7 +202,7 @@ pub class UnpackError over Exception {
 mod internal_pack {
 
     pub def pack {T of [U], U} (dmut packet : &Vec!u8, data : T) {
-        pack!u64 (alias packet, data.len);
+        pack!usize (alias packet, data.len);
         for i in data {
             pack!U (alias packet, i);
         }
@@ -231,14 +228,12 @@ mod internal_pack {
         cte if (is!(T) {class U}) {
             cte assert (false, "Can't pack type " ~ T ~ " that does not implement packable");
         }
-        
+
         let void_ptr = cast!(&void) (&data);
         let u8_ptr = cast!(&u8) (void_ptr);
         for i in 0us .. sizeof (T) {
-            packet:.push (*(u8_ptr + i));
+            __pragma!trusted ({ packet:.push (*(u8_ptr + i)) });
         }
-    } catch {
-        _ => {}  // Can't happen, the pointer is in stack, there is not reason for unref a invalid pointer   
     }
         
 }
@@ -263,7 +258,7 @@ mod internal_unpack {
         let mut len : usize = 0us;
         let dmut p_len : &u8 = alias cast!(&u8) (cast!(&void) (&len));
         
-        let (_, _offset) = unpack!u64 (alias p_len, packet);
+        let (_, _offset) = unpack!usize (alias p_len, packet);
         let dmut res = alias core::duplication::allocArray!U (len);
         let mut offset = _offset;
         {
@@ -292,9 +287,9 @@ mod internal_unpack {
             let (_, mut offset) = internal_unpack::unpack![c8] (alias cast!(&u8) (cast!(&void) (&name)), packet);
             let dmut obj = internal_reflect::totallyUnsafeFactoryDontDoThat (name);
             
-            match obj {
+            match ref obj {
                 dmut x : T => {
-                    offset += x:.__stdnetwork__unpackContent (packet [cast!u64 (offset) .. $]);
+                    offset += x:.__stdnetwork__unpackContent (packet [cast!usize (offset) .. $]);
                     let dmut arr_ptr : &T = alias Runtime!{&u8, &T}::_yrt_unsafe_cast (c_ptr);
                     *arr_ptr = alias x;
                 }
