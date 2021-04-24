@@ -35,16 +35,37 @@ pub {
     trait Copiable {
         pub def deepCopy (self)-> dmut (typeof self);
     }
+
+    def deepCopy {T} (a : T)-> mut T {
+        a
+    }
     
-    def deepCopy {T} (a : T) -> mut T {
-        return a;
+    def deepCopy {struct T} (a : T) -> mut T {
+        let dmut t = alias ([0u8 ; sizeof (T)]);
+        let aPtr = &a;
+        __pragma!trusted ({
+            cte for i in 0us .. (__pragma!field_offsets (T)).len {
+                let offset = (__pragma!field_offsets (T)) [i];
+                let size = sizeof (__pragma!field_type (T, (__pragma!field_names (T))[i]));
+                let dmut to : &(mut void) = alias (cast!(&void) ((t [offset .. (offset + size)]).ptr));
+                let from : &(void) = cast!(&void) (aPtr + offset);
+                *(cast! (mut &(__pragma!field_type (T, (__pragma!field_names (T))[i]))) (to)) = dcopy *(cast! (&(__pragma!field_type (T, (__pragma!field_names (T))[i]))) (from));
+            }
+        });
+        
+        alias __pragma!trusted ({
+            let dmut j = alias *(cast!(mut &(mut T)) (cast!(mut &(mut void)) (t.ptr)));
+            alias j
+        })
     }
 
-    def deepCopy {T of [U], U} (a : T) -> dmut T {
+    def deepCopy {T of [U], U} (a : T) -> dmut [dmut U] {
         let dmut x : dmut [U] = alias allocArray!U (a.len);
-        for i in 0u64 .. a.len {
-            x[i] = dcopy (a [i]);
-        }
-        return alias x;
+        __pragma!trusted ({
+            for i in 0us .. a.len {
+                x[i] = dcopy a [i];
+            }
+        });
+        alias x
     }
 }
