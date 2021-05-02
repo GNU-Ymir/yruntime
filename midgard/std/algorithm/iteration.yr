@@ -30,11 +30,8 @@ pub def each {F : fn (U)-> void, T of [U], U} (a : T) {
  * ===========
  */
 pub def each {F : fn (U)-> void, T impl Seq!U, U} (a : T) {
-    for i in a {
-        match i {
-            Ok (x:_) => 
-                F (x);
-        }
+    for i in a {        
+        F (x);
     }
 }
 
@@ -51,8 +48,10 @@ pub def each {F : fn (U)-> void, T impl Seq!U, U} (a : T) {
  */
 pub def map {F : fn (U)-> J, T of [U], U, J} (a : T) -> mut [mut J] {
     let mut res : [mut J] = core::duplication::allocArray!(J) (a.len);
-    for i in 0u64 .. a.len {
-        (res [i] = F (a[i]))?
+    for i in 0us .. a.len {
+        __pragma!trusted ({
+            res [i] = F (a[i]);
+        });
     }
     return alias res;
 }
@@ -71,8 +70,10 @@ pub def map {F : fn (U)-> J, T of [U], U, J} (a : T) -> mut [mut J] {
  */
 pub def map {F : fn (U)-> J, T impl Seq!U, U, J} (a : T) -> mut [mut J] {
     let mut res : [mut J] = core::duplication::allocArray!(J) (a.len ());
-    for i in 0u64 .. a.len () {
-        (res [i] = F (a[i]))?
+    for i in 0us .. a.len () {
+        __pragma!trusted ({
+            res [i] = F (a[i]);
+        });
     }
     return alias res;
 }
@@ -138,11 +139,7 @@ pub def fold {F : fn (U,U)-> U, T of [U], U} (a : T)-> U {
 pub def fold {F : fn (U,U)-> U, T impl Seq!U, U} (a : T, seed : U)-> U {
     let mut res = seed;
     for i in a {
-        match i {
-            Ok (x:_)=> {
-                res = F (res, x);
-            }
-        }
+        res = F (res, x);                    
     }
     res
 }
@@ -165,11 +162,7 @@ pub def fold {F : fn (U,U)-> U, T impl Seq!U, U} (a : T, seed : U)-> U {
 pub def fold {F : fn (U,U)-> U, T impl Seq!U, U} (a : T)-> U {
     let mut res = cte if (is!U (X of f32)) 0.f else cte if (is!U (X of f64)) 0.0 else U::init;
     for i in a {
-        match i {
-            Ok (x:_)=> {
-                res = F (res, x);
-            }
-        }
+        res = F (res, x);
     }
     res
 }
