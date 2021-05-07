@@ -51,7 +51,7 @@ pub def parse (content : [c8])-> &Dict
 pub def parse (content : [c32])-> &Dict
     throws &SyntaxError
 {
-    let dmut lex = Lexer::new (content, tokens-> JsonTokens::members);
+    let dmut lex = Lexer!{c32}::new (content, tokens-> JsonTokens::members);
     Parser::parseDict (alias lex)
 }
 
@@ -65,13 +65,13 @@ mod Parser {
      * let d = "{\"foo\"=9, \"bar\"="\baz\"}";
      *
      * 
-     * let dmut llex = Lexer::new (d, tokens-> JsonTokens::members);
+     * let dmut llex = Lexer!{c32}::new (d, tokens-> JsonTokens::members);
      * let lDict : &Dict = parseDict (alias llex);
      * =============
      * @throws: 
      *    - &SyntaxError: if the format is not respected 
      */
-    pub def parseDict (dmut lex : &Lexer)-> &Dict
+    pub def parseDict (dmut lex : &Lexer!{c32})-> &Dict
         throws &SyntaxError
     {
         let dmut dict = Dict::new ();
@@ -105,7 +105,7 @@ mod Parser {
      * Parse an identifier
      * @info: identifier and string are the same, but this function does not return a &Str
      */
-    pub def parseIdentifier (dmut lex : &Lexer)-> [c32]
+    pub def parseIdentifier (dmut lex : &Lexer!{c32})-> [c32]
         throws &SyntaxError 
     {
         import std::stream, std::conv;
@@ -156,13 +156,13 @@ mod Parser {
      * @example: 
      * =============
      * let str = "'test'";
-     * let dmut lex = Lexer::new (str, tokens-> JsonTokens);
+     * let dmut lex = Lexer!{c32}::new (str, tokens-> JsonTokens);
      * let i : &Str = parseString (alias lex);
      * =============
      * @throws: 
      *    - &SyntaxError: if the format is not respected
      */
-    pub def parseString (dmut lex : &Lexer)-> &Str
+    pub def parseString (dmut lex : &Lexer!{c32})-> &Str
         throws &SyntaxError
     {
         Str::new (parseIdentifier (alias lex))
@@ -173,12 +173,12 @@ mod Parser {
      * @example: 
      * ============
      * let str = "{0x1F3B5}";
-     * let dmut lex = Lexer::new (str, tokens-> JsonTokens);
+     * let dmut lex = Lexer!{c32}::new (str, tokens-> JsonTokens);
      * let i : c32 = parseUnicode (alias lex);
      * ============
      * @assume: the \u is already read in the lexer
      */
-    pub def parseUnicode (dmut lex : &Lexer)-> c32
+    pub def parseUnicode (dmut lex : &Lexer!{c32})-> c32
         throws &SyntaxError
     {
         let (next, l, c) = lex:.next ();
@@ -208,14 +208,14 @@ mod Parser {
      * @example: 
      * ===============
      * let str = "'test'";
-     * let dmut lex = Lexer::new (str, tokens-> JsonTokens);
+     * let dmut lex = Lexer!{c32}::new (str, tokens-> JsonTokens);
      * let i : &Config = parseValue (alias lex);
      * match i {
      *      Str (str:_)=> assert (str == "test");
      * }
      * ===============
      */
-    pub def parseValue (dmut lex : &Lexer)-> &Config    
+    pub def parseValue (dmut lex : &Lexer!{c32})-> &Config    
         throws &SyntaxError
     {
         let (begin, _, _) = lex:.nextNoConsume ();
@@ -242,13 +242,13 @@ mod Parser {
      * @example: 
      * =============
      * let str = "334";
-     * let dmut lex = Lexer::new (str, tokens-> JsonTokens);
+     * let dmut lex = Lexer!{c32}::new (str, tokens-> JsonTokens);
      * let i : &Int = parseInt (alias lex);
      * =============
      * @throws: 
      *    - &SyntaxError: if the format is not respected
      */
-    pub def parseInt (dmut lex : &Lexer) -> &Config
+    pub def parseInt (dmut lex : &Lexer!{c32}) -> &Config
         throws &SyntaxError
     {
         import std::conv;
@@ -275,13 +275,13 @@ mod Parser {
      * @example: 
      * =============
      * let str = "[1, 2, 3]";
-     * let dmut lex = Lexer::new (str, tokens-> JsonTokens);
+     * let dmut lex = Lexer!{c32}::new (str, tokens-> JsonTokens);
      * let arr : &Array = parseArray (alias lex);
      * =============
      * @throws: 
      *    - &SyntaxError: if the format is not respected
      */
-    pub def parseArray (dmut lex : &Lexer) -> &Array
+    pub def parseArray (dmut lex : &Lexer!{c32}) -> &Array
         throws &SyntaxError
     {
         let dmut arr = Array::new ();

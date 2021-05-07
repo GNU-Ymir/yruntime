@@ -243,7 +243,24 @@ pub class @final HashSet {T} {
     pub def end (self) -> &SetIterator!T {
         SetIterator!{T}::new (0us, 0us, [], self._empty)
     }
-            
+
+
+    /**
+     * @returns: a newly allocated array containing the value of the set
+     */
+    pub def opIndex (self)-> mut [mut T] {
+        let mut res : [mut T] = core::duplication::allocArray!{T} (self._size);
+        let mut j = 0us;
+        for i in self {
+            __pragma!trusted ({
+                res [j] = i;
+            });
+            j += 1us;
+        }
+
+        alias res
+    }
+    
     impl std::io::Printable {
 
         /**

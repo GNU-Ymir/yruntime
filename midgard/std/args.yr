@@ -256,7 +256,7 @@ pub class ArgumentParser {struct T} {
     pub def parse (self, content : [c32]) -> T
         throws &ArgumentError, &HelpRequired
     {
-        let dmut lex = Lexer::new (content, tokens-> ArgsTokens::members);
+        let dmut lex = Lexer!{c32}::new (content, tokens-> ArgsTokens::members);
         parseValue!T (alias lex, cuts-> self._content, helps-> self._helps, self._positional)
     }
 
@@ -457,14 +457,14 @@ pub class ArgumentParser {struct T} {
  * let args = ArgumentParser!{MyArgs}::new ();
  * ======================
  */
-prv def parseValue <class T> (dmut lex : &Lexer) -> T
+prv def parseValue <class T> (dmut lex : &Lexer!{c32}) -> T
     throws &ArgumentError
 {
     {
         import std::collection::vec;
         __pragma!fake_throw (&ArgumentError, &AssertError);
         let dmut v = Vec!{[c32]}::new ();
-        let dmut auxLexer = Lexer::new (lex:.clear (), comments-> []);
+        let dmut auxLexer = Lexer!{c32}::new (lex:.clear (), comments-> []);
         loop {
             let x = auxLexer:.next ();
             if (x._0 != "") v:.push (x._0);
@@ -489,7 +489,7 @@ prv def parseValue <class T> (dmut lex : &Lexer) -> T
  *   - helps: the list of arguments that throw HelpRequired
  *   - positional: the list of positional arguments
  */
-prv def parseValue {struct T} (dmut lex : &Lexer, cuts : &HashMap!{[c32], Argument}, helps: &HashSet![c32], positional : &Vec![c32]) -> T
+prv def parseValue {struct T} (dmut lex : &Lexer!{c32}, cuts : &HashMap!{[c32], Argument}, helps: &HashSet![c32], positional : &Vec![c32]) -> T
     throws &ArgumentError, &HelpRequired
 {
     let dmut res = alias ([0u8 ; sizeof (T)]);
@@ -547,7 +547,7 @@ prv def parseValue {struct T} (dmut lex : &Lexer, cuts : &HashMap!{[c32], Argume
     __pragma!trusted ({*(cast!{&T} (cast!{&void} (res.ptr)))})
 }
 
-prv def parseValue {struct T} (dmut lex : &Lexer) -> T
+prv def parseValue {struct T} (dmut lex : &Lexer!{c32}) -> T
     throws &ArgumentError
 {
     let dmut res = alias ([0u8 ; sizeof (T)]);
@@ -571,7 +571,7 @@ prv def parseValue {struct T} (dmut lex : &Lexer) -> T
     __pragma!trusted ({*(cast!{&T} (cast!{&void} (res.ptr)))})
 }
 
-prv def parseField {struct T} (dmut lex : &Lexer, name : [c32], dmut init : [u8])
+prv def parseField {struct T} (dmut lex : &Lexer!{c32}, name : [c32], dmut init : [u8])
     throws &ArgumentError
 {        
     cte for i in 0us .. (__pragma!field_names (T)).len {
@@ -607,7 +607,7 @@ prv def parseField {struct T} (dmut lex : &Lexer, name : [c32], dmut init : [u8]
  * Parse an array value in the lexer
  * @info: the returned array can be empty
  */
-prv def parseValue {T of [U], U} (dmut lex : &Lexer)-> T
+prv def parseValue {T of [U], U} (dmut lex : &Lexer!{c32})-> T
     throws &ArgumentCastError
 {
     import std::collection::vec;
@@ -638,7 +638,7 @@ prv def parseValue {T of [U], U} (dmut lex : &Lexer)-> T
  * @throws: 
  *    - &ArgumentError: if the next word in the lexer does not contains a int value
  */
-prv def parseValue {T of i64} (dmut lex : &Lexer) -> i64
+prv def parseValue {T of i64} (dmut lex : &Lexer!{c32}) -> i64
     throws &ArgumentCastError
 {
     let (txt, _, _) = lex:.next ();
@@ -650,7 +650,7 @@ prv def parseValue {T of i64} (dmut lex : &Lexer) -> i64
  * @throws: 
  *    - &ArgumentError: if the next word in the lexer does not contains a int value
  */
-prv def parseValue {T of i32} (dmut lex : &Lexer) -> i32
+prv def parseValue {T of i32} (dmut lex : &Lexer!{c32}) -> i32
     throws &ArgumentCastError
 {
     let (txt, _, _) = lex:.next ();
@@ -697,7 +697,7 @@ prv def parseValue {T of i64} (txt: [c32]) -> i64
 /**
  * @returns: YesNo::YES
  */
-prv def parseValue {T of YesNo} (dmut _ : &Lexer)-> YesNo {
+prv def parseValue {T of YesNo} (dmut _ : &Lexer!{c32})-> YesNo {
     YesNo::YES
 }
 
@@ -706,7 +706,7 @@ prv def parseValue {T of YesNo} (dmut _ : &Lexer)-> YesNo {
  * @throws: 
  *    - &ArgumentError: if neither "true" or "false" is found in the next word of the lexer
  */
-prv def if (!is!T {U of YesNo}) parseValue {T of bool} (dmut lex : &Lexer) -> bool
+prv def if (!is!T {U of YesNo}) parseValue {T of bool} (dmut lex : &Lexer!{c32}) -> bool
     throws &ArgumentCastError
 {
     let (txt, _, _) = lex:.next ();
@@ -735,7 +735,7 @@ prv def if (!is!T {U of YesNo}) parseValue {T of bool} (txt: [c32]) -> bool
  * @throws: 
  *    - &ArgumentError: if the next word in the lexer does not contains a float value
  */
-prv def parseValue {T of f64} (dmut lex : &Lexer) -> f64
+prv def parseValue {T of f64} (dmut lex : &Lexer!{c32}) -> f64
     throws &ArgumentCastError
 {
     let (txt, _, _) = lex:.next ();
@@ -769,7 +769,7 @@ prv def parseValue {T of f64} (txt: [c32]) -> f64
  * @throws : 
  *    - &ArgumentError: if the reading of the string failed
  */
-prv def parseValue {T of [U], U of c32} (dmut lex : &Lexer)-> [c32]
+prv def parseValue {T of [U], U of c32} (dmut lex : &Lexer!{c32})-> [c32]
     throws &ArgumentCastError
 {
     let (txt, _, _) = lex:.nextNoConsume ();
@@ -792,7 +792,7 @@ prv def parseValue {T of [U], U of c32} (dmut lex : &Lexer)-> [c32]
  * @throws : 
  *    - &SyntaxError: if the reading of the string failed
  */
-prv def parseString (dmut lex : &Lexer)-> [c32]
+prv def parseString (dmut lex : &Lexer!{c32})-> [c32]
     throws &SyntaxError
 {
     import std::config::toml;

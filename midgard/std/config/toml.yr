@@ -55,7 +55,7 @@ pub def parse (content : [c32])-> &Dict
     throws &SyntaxError
 {
     let dmut result = Dict::new ();
-    let dmut lex = Lexer::new (content, tokens-> TomlTokens::members);
+    let dmut lex = Lexer!{c32}::new (content, tokens-> TomlTokens::members);
     loop {
         let (tok, _, _) = lex:.next ();
         
@@ -105,16 +105,16 @@ mod Parser {
      * let glob = "foo=9\n bar=7";
      * let loc = "{foo=9, bar=7}";
      *
-     * let dmut glex = Lexer::new (glob, tokens-> TomlTokens::members);
+     * let dmut glex = Lexer!{c32}::new (glob, tokens-> TomlTokens::members);
      * let gDict : &Dict = parseDict (alias glex, true);
      * 
-     * let dmut llex = Lexer::new (loc, tokens-> TomlTokens::members);
+     * let dmut llex = Lexer!{c32}::new (loc, tokens-> TomlTokens::members);
      * let lDict : &Dict = parseDict (alias llex, false);
      * =============
      * @throws: 
      *    - &SyntaxError: if the format is not respected 
      */
-    pub def parseDict (dmut lex : &Lexer, glob : bool)-> &Dict
+    pub def parseDict (dmut lex : &Lexer!{c32}, glob : bool)-> &Dict
         throws &SyntaxError
     {
         let dmut dict = Dict::new ();
@@ -155,13 +155,13 @@ mod Parser {
      * @example: 
      * =============
      * let str = "[1, 2, 3]";
-     * let dmut lex = Lexer::new (str, tokens-> TomlTokens);
+     * let dmut lex = Lexer!{c32}::new (str, tokens-> TomlTokens);
      * let arr : &Array = parseArray (alias lex);
      * =============
      * @throws: 
      *    - &SyntaxError: if the format is not respected
      */
-    pub def parseArray (dmut lex : &Lexer) -> &Array
+    pub def parseArray (dmut lex : &Lexer!{c32}) -> &Array
         throws &SyntaxError
     {
         let dmut arr = Array::new ();
@@ -195,13 +195,13 @@ mod Parser {
      * @example: 
      * =============
      * let str = "334";
-     * let dmut lex = Lexer::new (str, tokens-> TomlTokens);
+     * let dmut lex = Lexer!{c32}::new (str, tokens-> TomlTokens);
      * let i : &Int = parseInt (alias lex);
      * =============
      * @throws: 
      *    - &SyntaxError: if the format is not respected
      */
-    pub def parseInt (dmut lex : &Lexer) -> &Config
+    pub def parseInt (dmut lex : &Lexer!{c32}) -> &Config
         throws &SyntaxError
     {
         import std::conv;
@@ -253,13 +253,13 @@ mod Parser {
      * @example: 
      * =============
      * let str = "'test'";
-     * let dmut lex = Lexer::new (str, tokens-> TomlTokens);
+     * let dmut lex = Lexer!{c32}::new (str, tokens-> TomlTokens);
      * let i : &Str = parseString (alias lex);
      * =============
      * @throws: 
      *    - &SyntaxError: if the format is not respected
      */
-    pub def parseString (dmut lex : &Lexer)-> &Str
+    pub def parseString (dmut lex : &Lexer!{c32})-> &Str
         throws &SyntaxError
     {
 
@@ -306,12 +306,12 @@ mod Parser {
      * @example: 
      * ============
      * let str = "{0x1F3B5}";
-     * let dmut lex = Lexer::new (str, tokens-> TomlTokens);
+     * let dmut lex = Lexer!{c32}::new (str, tokens-> TomlTokens);
      * let i : c32 = parseUnicode (alias lex);
      * ============
      * @assume: the \u is already read in the lexer
      */
-    pub def parseUnicode (dmut lex : &Lexer)-> c32
+    pub def parseUnicode (dmut lex : &Lexer!{c32})-> c32
         throws &SyntaxError
     {
         let (next, l, c) = lex:.next ();
@@ -342,14 +342,14 @@ mod Parser {
      * @example: 
      * ===============
      * let str = "'test'";
-     * let dmut lex = Lexer::new (str, tokens-> TomlTokens);
+     * let dmut lex = Lexer!{c32}::new (str, tokens-> TomlTokens);
      * let i : &Config = parseValue (alias lex);
      * match i {
      *      Str (str:_)=> assert (str == "test");
      * }
      * ===============
      */
-    pub def parseValue (dmut lex : &Lexer)-> &Config    
+    pub def parseValue (dmut lex : &Lexer!{c32})-> &Config    
         throws &SyntaxError
     {
         let (begin, _, _) = lex:.nextNoConsume ();

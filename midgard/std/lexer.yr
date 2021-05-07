@@ -43,15 +43,15 @@ pub class @final SyntaxError over Exception {
  * }
  * =============
  */
-pub class @final Lexer {
+pub class if (is!T {U of c8} || is!T {U of c32}) @final Lexer {T} {
 
-    let dmut _tzer : &Tokenizer;
+    let dmut _tzer : &Tokenizer!{T};
 
-    let mut _content : [c32];
+    let mut _content : [T];
 
-    let dmut _comments = HashSet!([c32])::new ();
+    let dmut _comments = HashSet!([T])::new ();
 
-    let dmut _skips = HashSet!([c32])::new ();
+    let dmut _skips = HashSet!([T])::new ();
     
     let mut _doSkip = true;
 
@@ -70,11 +70,15 @@ pub class @final Lexer {
      *    - skips: the list of tokens that will be omitted by the lexer when reading (by default [" ", "\n", "\t", "\r"])
      * @warning: if the skips and comments token are not in tokens, they are added, so they split the content 
      */
-    pub self (content : [c32], tokens: [[c32]] = [" "], comments : [[c32]] = ["#"], skips: [[c32]] = [" ", "\n", "\t", "\r"])
+    pub self (content : [T], tokens: [[T]] = { cte if (is!T {U of c8}) { [" "s8] } else { [" "] } } , comments : [[T]] = { cte if (is!T {U of c8}) { ["#"s8] } else { ["#"] } }, skips: [[T]] = { cte if (is!T {U of c8}) { [" "s8, "\n"s8, "\t"s8, "\r"s8] } else { [" ", "\r", "\n", "\t"] } })
         with _tzer = Tokenizer::new (tokens-> tokens),
     _content = content
     {
-        self._tzer:.insert ("\n"); // We must have a return line for the lexer to work properly
+        cte if (is!T {U of c8}) {
+            self._tzer:.insert ("\n"s8); // We must have a return line for the lexer to work properly
+        } else {
+            self._tzer:.insert ("\n"); // We must have a return line for the lexer to work properly
+        }
         
         for i in skips {
             self._skips:.insert (i);
@@ -90,14 +94,14 @@ pub class @final Lexer {
     /**
      * @returns: the current content of the lexer
      */
-    pub def getContent (self)-> [c32] {
+    pub def getContent (self)-> [T] {
         self._content
     }
 
     /**
      * Change the current content of the lexer
      */
-    pub def restoreContent (mut self, content : [c32]) {
+    pub def restoreContent (mut self, content : [T]) {
         self._content = content;
     }
 
@@ -108,7 +112,7 @@ pub class @final Lexer {
      *    - ._1: the line of the beginning of the word (0 if no word)
      *    - ._2: the col of the beginning of the word (0 if no word)
      */
-    pub def next (mut self) -> ([c32], u64, u64) {
+    pub def next (mut self) -> ([T], u64, u64) {
         loop {
             let wd = self._tzer.next (self._content);
             if (wd != 0u64) {
@@ -131,7 +135,11 @@ pub class @final Lexer {
                     _ : &OutOfArray => { } // Impossible 
                 }
             } else {
-                break ("", 0u64, 0u64);
+                cte if (is!T {U of c8}) {
+                    break (""s8, 0u64, 0u64);
+                } else {
+                    break ("", 0u64, 0u64);
+                }
             }
         }
     }
@@ -144,7 +152,7 @@ pub class @final Lexer {
      *    - ._1: the line of the beginning of the word (0 if no word)
      *    - ._2: the col of the beginning of the word (0 if no word)
      */
-    pub def nextChar (mut self)-> ([c32], u64, u64) {
+    pub def nextChar (mut self)-> ([T], u64, u64) {
         let wd = 1u64;
         if (wd != 0u64) {
             let ret = self._content [0u64..wd];
@@ -159,8 +167,12 @@ pub class @final Lexer {
         } catch {
             _ : &OutOfArray => { } // Impossible 
         }
-        
-        ("", 0u64, 0u64)
+
+        cte if (is!T {U of c8}) {
+            (""s8, 0u64, 0u64)
+        } else {
+            ("", 0u64, 0u64)
+        }
     }
 
     /**
@@ -171,7 +183,7 @@ pub class @final Lexer {
      *    - ._1: the line of the beginning of the word (0 if no word)
      *    - ._2: the col of the beginning of the word (0 if no word)
      */
-    pub def nextNoConsume (mut self) -> ([c32], u64, u64) {
+    pub def nextNoConsume (mut self) -> ([T], u64, u64) {
         let mut aux_content = self._content;
         let mut pos: (mut u64, mut u64) = (self._line, self._col);
         
@@ -196,7 +208,11 @@ pub class @final Lexer {
                     _ : &OutOfArray => { } // Impossible 
                 }
             } else {
-                break ("", 0u64, 0u64);
+                cte if (is!T {U of c8}) {
+                    break (""s8, 0u64, 0u64);
+                } else {
+                    break ("", 0u64, 0u64);
+                }
             }
         }
     }
@@ -227,7 +243,7 @@ pub class @final Lexer {
      *   - buf: the content 
      * @returns: a slice of content, where the first line has been removed
      */
-    prv def skipComments (self, buf : [c32])-> mut [c32] {
+    prv def skipComments (self, buf : [T])-> mut [T] {
         let mut content = buf;
         {
             loop {
@@ -236,7 +252,11 @@ pub class @final Lexer {
                 let ret = content [0us..wd];
                 content = content [wd.. $];                
 
-                if (ret == "\n") break {}                
+                cte if (is!T {U of c8}) {
+                    if (ret == "\n"s8) break {}
+                } else {
+                    if (ret == "\n") break {}
+                }
             }
         } catch {
             _ : &OutOfArray => { } // impossible
@@ -251,11 +271,19 @@ pub class @final Lexer {
      *   - ._0: the new line number
      *   - ._1: the new column number
      */
-    prv def countNbLine (self, word : [c32], line : u64, col : u64) -> (u64, u64) {
-        if (word == "\n") {
-            (line + 1u64, 1u64)
+    prv def countNbLine (self, word : [T], line : u64, col : u64) -> (u64, u64) {
+        cte if (is!T{U of c8}) {
+            if (word == "\n"s8) {
+                (line + 1u64, 1u64)
+            } else {
+                (line, col + word.len)
+            }
         } else {
-            (line, col + word.len)
+            if (word == "\n") {
+                (line + 1u64, 1u64)
+            } else {
+                (line, col + word.len)
+            }
         }
     }
 
@@ -270,7 +298,7 @@ pub class @final Lexer {
      * assert (lex:.next ()._0 == "")
      * ======================
      */
-    pub def clear (mut self)-> [c32] {
+    pub def clear (mut self)-> [T] {
         let ret = self._content;
         self._content = [];
         ret

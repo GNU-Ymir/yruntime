@@ -16,6 +16,7 @@ import std::conv;
 import std::fs::path;
 import std::fs::errors;
 import std::fs::iteration;
+import std::time::instant;
 
 /**
  * Create the directory at path 
@@ -166,6 +167,39 @@ pub def createFile (path : &Path)
     }
     
     etc::c::files::fclose (f);
+}
+
+
+/**
+ * @returns: the instant of last modification of a file
+ * @throws: FsError, if the path does not refer to a file
+ * @example: 
+ * ============
+ * import std::fs;
+ * import std::time::_;
+ *
+ * let path1 = Path::new ("./some/dir/file.txt");
+ * let path2 = Path::new ("./some/dir/file.out");
+ * let date = fileDate (path1);
+ * if (date > fileDate (path2) {
+ *    with dmut f1 = File::open (path1) {
+ *         with dmut f2 = File::create (path2, write-> true) {
+ *              f2:.write (f1:.readAll ());
+ *         }
+ *    }
+ * }
+ * ============
+ */
+pub def fileDate (path : &Path)-> Instant
+    throws &FsError
+{
+    let mut fileStat = etc::c::files::stat_t::init;
+    let f = etc::c::files::stat (path.toStr ().toStringZ (), alias &fileStat);
+    if (f != 0) {
+        throw FsError::new (errno ().to!(FsErrorCode) (), path.toStr ());
+    }
+
+    Instant (fileStat.st_mtime, 0u64)
 }
 
 /**

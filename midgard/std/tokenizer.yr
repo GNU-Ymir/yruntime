@@ -25,9 +25,9 @@ import std::io;
  * assert (lst == ["(", "x", ",", " ", "y", ")", " ", "=>", " ", "x", " ", "=", " ", "y"]); 
  * ============
  */
-pub class @final Tokenizer {
+pub class if (is!T {U of c8} || is!T {U of c32}) @final Tokenizer {T} {
 
-    prv let dmut _heads = HashMap!{c32, &internal::Node}::new ();
+    prv let dmut _heads = HashMap!{T, &internal::Node!{T}}::new ();
 
     /**
      * Create a new tokenizer, with a set of tokens
@@ -41,7 +41,7 @@ pub class @final Tokenizer {
      * assert (lst == ["(", "x", ",", " ", "y", ")", " ", "=>", " ", "x", " ", ">", " ", "y"]); 
      * ============
      */
-    pub self (tokens: [[c32]] = []) {
+    pub self (tokens: [[T]] = []) {
         for i in tokens {
             self:.insert (i);
         }
@@ -61,7 +61,7 @@ pub class @final Tokenizer {
      * assert (lst == ["x", " ", "+=", " ", "y"]);
      * ================
      */
-    pub def insert (mut self, token : [c32]) {
+    pub def insert (mut self, token : [T]) {
         if (token.len != 0us) {
             {
                 let fnd = (self._heads [token[0]])?;
@@ -70,7 +70,7 @@ pub class @final Tokenizer {
                         (alias self._heads) [token[0]] = x.insert (token[1us..$]);                    
                     }
                     _ => {
-                        (alias self._heads) [token[0]] = internal::Node::new (token[0]).insert (token [1us..$]);
+                        (alias self._heads) [token[0]] = internal::Node!{T}::new (token[0]).insert (token [1us..$]);
                     }
                 }
             } catch {
@@ -109,7 +109,7 @@ pub class @final Tokenizer {
      * assert (len == 0us); 
      * ============
      */
-    pub def next (self, str : [c32])-> usize {
+    pub def next (self, str : [T])-> usize {
         for i in 0us .. str.len {
             let fnd = (self._heads [str [i]])?;
             {
@@ -147,8 +147,8 @@ pub class @final Tokenizer {
      * assert (lst == ["x", " ", "+=", " ", "y"]);
      * ===============
      */
-    pub def tokenize (self, str : [c32])-> [[c32]] {
-        let dmut res = Vec!([c32])::new ();
+    pub def tokenize (self, str : [T])-> [[T]] {
+        let dmut res = Vec!([T])::new ();
         let mut aux = str;
         { 
             while aux.len > 0us {
@@ -174,16 +174,16 @@ mod internal {
     /**
      * A node of a tokenizer, that stores information about tokens
      */
-    pub class @final Node {
+    pub class @final Node {T} {
 
         // The current value of the node
-        let _key : c32; 
+        let _key : T; 
 
         // Can terminate a token? or is part of bigger tokens
         let _isToken : bool = false;
 
         // The list of possible continuation of the token
-        let _heads : &HashMap!{c32, &Node};
+        let _heads : &HashMap!{T, &Node!{T}};
 
         /**
          * Construct a new Token node
@@ -192,7 +192,7 @@ mod internal {
          *   - isToken: can terminate a token 
          *   - heads: the list of possible continuation
          */
-        pub self (key : c32, isToken : bool = false, heads : &HashMap!{c32, &Node} = {HashMap!{c32, &Node}::new ()}) with _key = key, _isToken = isToken, _heads = heads
+        pub self (key : T, isToken : bool = false, heads : &HashMap!{T, &Node!{T}} = {HashMap!{T, &Node!{T}}::new ()}) with _key = key, _isToken = isToken, _heads = heads
         {}
         
         /**
@@ -225,12 +225,12 @@ mod internal {
          * assert (node.len ("[-") == 1us); // accept only the '['
          * ==============
          */
-        pub def insert (self, str : [c32]) -> &Node {
+        pub def insert (self, str : [T]) -> &Node!{T} {
             if (str.len == 0us) {
                 return Node::new (self._key, isToken-> true, heads-> self._heads)
             }
 
-            let dmut retDict = HashMap!{c32, &Node}::new ();
+            let dmut retDict = HashMap!{T, &Node!{T}}::new ();
             for i, j in self._heads {
                 retDict:.insert (i, j);                    
             }
@@ -267,7 +267,7 @@ mod internal {
          * assert (node.len ("+ and some rest") == 1us); // " +" are accepted
          * =================
          */
-        pub def len (self, content : [c32])-> usize {
+        pub def len (self, content : [T])-> usize {
             if (content.len == 0us) {
                 if (self._isToken) return 1us;
                 else return 0us;
@@ -291,7 +291,7 @@ mod internal {
         /**
          * @returns: the key of the node
          */
-        def key (self) -> c32 {
+        def key (self) -> T {
             self._key
         }
 
