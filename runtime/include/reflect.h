@@ -12,7 +12,7 @@
  */
 typedef struct {
     size_t string_table_size;
-    Elf64_Shdr** string_table;
+    Elf64_Shdr* string_table;
     size_t elf_size;
     void* elf_data;
     Elf64_Ehdr* elf_header;
@@ -26,6 +26,12 @@ typedef struct {
  * @info: All the allocation are made using the garbage collector
  */
 ELFContent _yrt_read_elf (FILE * elfFile);
+
+/**
+ * Clean the elf file 
+ * if everything was done correctly only one or none ELFContent exists, this will delete it if it exists
+ */
+void _yrt_elf_clean ();
 
 /**
  * Get the vtable address from its name

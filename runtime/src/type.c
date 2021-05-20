@@ -1,6 +1,6 @@
 #include "../include/type.h"
 #include "../include/demangle.h"
-
+#include <stdio.h>
 
 char _yrt_type_equals (_ytype_info a, _ytype_info b) {
     if (a.id == b.id) {

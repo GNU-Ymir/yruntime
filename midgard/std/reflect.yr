@@ -20,7 +20,7 @@ import core::exception;
  *    pub let i = 42;
  * 
  *    pub self () {}
- *    impl std::io::Printable;
+ *    impl Streamable;
  * }
  * 
  * let dmut o = factory ("main::X"); 
@@ -53,7 +53,7 @@ pub def factory (name : [c32]) -> dmut &Object
  *    pub let i = 42;
  * 
  *    pub self () {}
- *    impl std::io::Printable;
+ *    impl Streamable;
  * }
  * 
  * let dmut o = factory ("main::X"); 
@@ -101,7 +101,7 @@ pub def call {T, F...} (name : [c32], params : F) -> T
     let dmut names = Vec!{[c32]}::new ();
     cte if (is!F {U of (J,), J...}) {
         for i in params {
-            names:.push (__pragma!mangle (typeof (i)::typeid));
+            names:.push (__pragma!mangle (typeof (i)));
         }
     } else {
         names:.push (__pragma!mangle (typeof (params)));
@@ -141,7 +141,7 @@ pub def callMethod {T, class S, F...} (s : S, name : [c32], params : F) -> T
     let dmut names = Vec!{[c32]}::new ();
     cte if (is!F {U of (J,), J...}) {
         for i in params {
-            names:.push (__pragma!mangle (typeof (i)::typeid));
+            names:.push (__pragma!mangle (typeof (i)));
         }
     } else {
         names:.push (__pragma!mangle (typeof (params)));
@@ -183,7 +183,7 @@ pub def callMethodMutable {T, class S, F...} (dmut s : S, name : [c32], params :
     let dmut names = Vec!([c32])::new ();
     cte if (is!F {U of (J,), J...}) {
         for i in params {
-            names:.push (__pragma!mangle (typeof (i)::typeid));
+            names:.push (__pragma!mangle (typeof (i)));
         }
     } else {
         names:.push (__pragma!mangle (typeof (params)));
@@ -225,7 +225,7 @@ pub def callMethodMutable {T of void, class S, F...} (dmut s : S, name : [c32], 
     let dmut names = Vec!([c32])::new ();
     cte if (is!F {U of (J,), J...}) {
         for i in params {
-            names:.push (__pragma!mangle (typeof (i)::typeid));
+            names:.push (__pragma!mangle (typeof (i)));
         }
     } else {
         names:.push (__pragma!mangle (typeof (params)));
@@ -243,13 +243,31 @@ pub def callImplMutable {T, class S, F...} (dmut s : S, name : [c32], params : F
         let dmut names = Vec!([c32])::new ();
         cte if (is!F {U of (J,), J...}) {
             for i in params {
-                names:.push (__pragma!mangle (typeof (i)::typeid));
+                names:.push (__pragma!mangle (typeof (i)));
             }
         } else {
             names:.push (__pragma!mangle (typeof (params)));
         }
         
         let s_name = s::typeinfo.name;
+        let ret = Reflect!{fn (dmut S, F)-> T}::_yrt_reflect_get_method_mutable_utf32 (s_name, name, __pragma!mangle (T), names[]);
+        ret (alias s, expand params)
+    } 
+}
+
+pub def callImplMutable {T, class S, F...} (dmut s : S, s_name : [c32], name : [c32], params : F) -> T
+    throws &RuntimeError
+{
+    {
+        let dmut names = Vec!([c32])::new ();
+        cte if (is!F {U of (J,), J...}) {
+            for i in params {
+                names:.push (__pragma!mangle (typeof (i)));
+            }
+        } else {
+            names:.push (__pragma!mangle (typeof (params)));
+        }
+        
         let ret = Reflect!{fn (dmut S, F)-> T}::_yrt_reflect_get_method_mutable_utf32 (s_name, name, __pragma!mangle (T), names[]);
         ret (alias s, expand params)
     } 

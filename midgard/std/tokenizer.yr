@@ -8,7 +8,7 @@ import core::dispose;
 
 import std::collection::map;
 import std::collection::vec;
-import std::io;
+import std::io, std::stream;
 
 /**
  * A tokenizer is an enhanced string splitter, that splits strings using tokens instead of just chars
@@ -164,7 +164,7 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Tokenizer {T} {
         return res [];
     }
 
-    impl std::io::Printable ;
+    impl Streamable ;
    
     
 }
@@ -295,23 +295,23 @@ mod internal {
             self._key
         }
 
-        impl std::io::Printable {
+        impl Streamable {
             /**
              * For debug purposes, tokenizer Nodes are printable
              */
-            pub over print (self) {
-                self.innerPrint (0);
+            pub over toStream (self, dmut stream : &StringStream) {
+                self.innerPrint (0, alias stream);
             }
         }
 
         /**
          * Debug print of the node on stdout
          */
-        prv def innerPrint (self, i : i32) {
-            for _ in 0 .. i print ("\t");            
-            println ('[', self._key, ']', self._isToken);
+        prv def innerPrint (self, i : i32, dmut stream : &StringStream) {
+            for _ in 0 .. i { stream:.write ("\t"s8); }            
+            stream:.write ('['c8):.write (self._key):.write (']'c8):.write (self._isToken);
             for _, j in self._heads {                
-                j.innerPrint (i + 1);                
+                j.innerPrint (i + 1, alias stream);                
             }            
         }
         

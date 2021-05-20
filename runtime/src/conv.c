@@ -1,3 +1,8 @@
+#include "../include/yarray.h"
+#include <stdio.h>
+#include <errno.h>
+#include <stdlib.h>
+ 
 
 double _yrt_ulong_to_double (unsigned long x) {
     return (double) x;
@@ -31,3 +36,16 @@ int _yrt_float_to_int (float x) {
     return (int) x;
 }
 
+float _yrt_s8_to_float (_yrt_c8_array_ arr, char * succ) {
+    char* endf;
+    float res = strtof (arr.data, &endf);
+    *succ = (errno != ERANGE) && endf == (arr.data + arr.len);
+    return res;
+}
+
+double _yrt_s8_to_double (_yrt_c8_array_ arr, char * succ) {
+    char* endf;
+    double res = strtod (arr.data, &endf);
+    *succ = (errno != ERANGE) && endf == (arr.data + arr.len);
+    return res;
+}

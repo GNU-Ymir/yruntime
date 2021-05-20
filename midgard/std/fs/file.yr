@@ -62,6 +62,9 @@ pub class @final File {
              _append = append
         throws &FsError
     {
+        if fs::isDir (path) || !fs::isReadable (path) {
+            throw FsError::new (FsErrorCode::NOT_A_FILE, self._filename);       
+        }
         self:.open ();
     }
 
@@ -74,7 +77,7 @@ pub class @final File {
         let mode = self.createMode ();
         self._handle = etc::c::files::fopen ((self._filename.toStringZ ()), mode.ptr);
         if (self._handle is null) {
-            throw FsError::new (errno ().to!(FsErrorCode) (), self._filename);   
+            throw FsError::new (errno ().to!(FsErrorCode) (), self._filename);               
         }
     }
 

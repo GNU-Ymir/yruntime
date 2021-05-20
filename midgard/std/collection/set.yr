@@ -6,7 +6,7 @@ import core::exception;
 import core::array;
 
 import std::collection::seq;
-import std::io;
+import std::io, std::stream;
 import std::hash;
 import std::conv;
 
@@ -261,29 +261,22 @@ pub class @final HashSet {T} {
         alias res
     }
     
-    impl std::io::Printable {
+    impl Streamable {
 
-        /**
-         * Print the hash set to stdout
-         * @example: 
-         * =========
-         * let x = hset#{"foo", "bar"};
-         * println (x); // {bar, foo}
-         * =========
-         */
-        pub over print (self) {
-            print ('{'c8);
+
+        pub over toStream (self, dmut stream : &StringStream) {
+            stream:.write ('{'c8);
             let mut i = 0us;
             for node in self._data {
                 match node {
                     _ : &SetValue!{T} => {
-                        if (i != 0us) { print (','c8); print (' 'c8); }
-                        print (node);
+                        if (i != 0us) { stream:.write (", "s8); }
+                        stream:.write (node);
                         i = 1us;
                     }
                 }
             }
-            print ('}'c8);
+            stream:.write ('}'c8);
         }
         
     }
@@ -456,7 +449,7 @@ class @abstract SetNode {T} {
 
     pub def opEquals (self, _ : &SetNode!T) -> bool;
 
-    impl std::io::Printable;
+    impl Streamable;
 }
 
 /**
@@ -488,24 +481,17 @@ class @final SetValue {T} over SetNode!T {
     {}
 
 
-    impl std::io::Printable {
+    impl Streamable {
 
-        /**
-         * Print the linked list to stdout
-         * @example: 
-         * ===========
-         * let list = SetValue!(i32)::new (hash (12), 12, SetValue!(i32)::new (hash(42), 42, Empty!(i32)::new ()));
-         * println (list); // 12, 42
-         * ===========
-         */
-        pub over print (self) {
-            cte if (__pragma!compile ({print (self.val);})) {
-                print (self.val);
-            } else { print (T::typeid); }
+
+        pub over toStream (self, dmut stream : &StringStream) {
+            cte if (__pragma!compile ({stream:.write (self.val);})) {
+                stream:.write (self.val);
+            } else { stream:.write (T::typeid); }
             
             match self.next {
                 _ : &Empty!{T} => {}
-                _ => { print (", ", self.next); }
+                _ => { stream:.write (", "s8):.write (self.next); }
             }
         }
     }
@@ -595,12 +581,12 @@ class @final SetValue {T} over SetNode!T {
 class @final Empty {T} over SetNode!{T} {
     pub self () { }
 
-    impl std::io::Printable {
+    impl Streamable {
 
         /**
-         * Do nothing
+         * Does nothing
          */
-        pub over print (self) {}
+        pub over toStream (self, dmut _ : &StringStream) {}
     }
 
     /**

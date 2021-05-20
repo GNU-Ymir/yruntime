@@ -1,0 +1,454 @@
+mod std::concurrency::actor;
+
+import core::typeinfo;
+import core::object;
+import core::exception;
+import core::dispose;
+
+import std::concurrency::mailbox;
+import std::concurrency::task;
+import std::concurrency::pipe;
+import std::concurrency::thread;
+import std::any, std::box;
+import std::net::_;
+import etc::c::socket;
+import std::collection::vec;
+import std::collection::map;
+
+import etc::c::socket;
+import std::io, std::box, std::any;
+import std::stream;
+
+/**
+ * A simple class used for the actor design pattern
+ * A poison pill is the message sent to an actor to kill it
+ */
+pub class @final PoisonPill {
+    pub self () {}
+    impl Packable;
+}
+
+
+/**
+ * Ancestor of all actor class
+ * An actor is running via the TaskPool, and is in a sense a kind of task
+ * Unlike a task, an actor is necessarily infinite (but can be killed)
+ * An actor has a uniq name that allows an acces to the actor via the actor system
+ */
+pub class @abstract Actor {
+
+    let _name : [c8];
+    let dmut _sys : &ActorSystem;
+    
+    prv let dmut __jobs__ = MailBox!{[u8]}::new ();    
+    prv let mut __th__ = Thread (0us, ThreadPipe::new (false));
+    prv let mut __exited__ = true;
+    // prv let mut __sem__ = Semaphore::new ();
+    
+    prot self (dmut sys : &ActorSystem, name : [c8])
+        with _name = name, _sys = alias sys
+    {
+        sys:.register (alias self);
+    }
+
+    /**
+     * Process the message acquired inside the mailbox of the actor
+     * @warning: If multiple actors have sent message, there is no guarantee on the order of reception
+     * @params:
+     *    - actor: the actor who sent the message
+     *    - msg: the content of the message
+     * @info: if the message was not an object originally, it is placed inside a Box
+     * @example:
+     * =============
+     * class MyActor over Actor {
+     *     // ...
+     *     pub over receive (actor : &ActorRef, msg : &Object) {
+     *         match (msg) {
+     *              Box!{i32} (value-> i : i32) => {
+     *                  println ("Received a i32 from : ", actor, " : ", i);
+     *              }
+     *         }
+     *     }
+     * }
+     * =============
+     */
+    pub def receive (mut self, msg : &Object)-> void;
+
+
+    pub def start (mut self, _ : Thread) {
+        self.__exited__ = false;
+        loop {
+            let msg = self.__jobs__:.receive ();
+            match msg {
+                Ok (x : _) => {
+                    let r = {
+                        x.unpack ()
+                    } catch {
+                        _ : &UnpackError => { cast!(&Object) (None::new ()) }
+                    }                                    
+                    self:.receive (r);
+                }
+                Err () => {
+                    atomic self {
+                        self.__exited__ = true;
+                    }
+                    break {}
+                }
+            }            
+        }
+    }
+
+    pub def postMessage (mut self, msg : [u8]) {
+        self.__jobs__:.send (msg);
+        atomic self {
+            if (self.__exited__) {
+                if (self.__th__.id != 0us) {
+                    kill (self.__th__);
+                }
+                
+                kill (self.__th__);
+                self.__th__ = spawn (&self:.start);
+            }
+        }
+                
+    }
+    
+    /**
+     * @returns: the name of the actor
+     */
+    pub def getName (self)-> [c8] {
+        self._name
+    }
+
+    impl Disposable {
+
+        pub over dispose (mut self) {
+            if (self.__th__.id != 0us) {
+                kill (self.__th__);
+                self.__th__.id = 0us;
+            }
+        }
+        
+    }
+    
+}
+
+/**
+ * An actor ref is a reference to an actor, used to communicate with an actor instance
+ * Message can be send to ActorRef, 
+ */
+pub class ActorRef {
+
+    let _name : [c8];
+    let dmut _stream : &TcpStream;
+    
+    pub self (name : [c8], dmut stream : &TcpStream)
+        with _name = name, _stream = alias stream
+    {}
+
+    /**
+     * Send a message to  the actor using its reference
+     * This send will put the message into the mailbox of the actor. 
+     * @warning: if multiple actor send message to an actor, there is no guarantee on the order of reception
+     * @params:
+     *   - msg: the message to send
+     * @example: 
+     * =============
+     * class MyActor over Actor {   
+     *     // ...
+     *     pub over receive (actor : &ActorRef, msg : &Object) {
+     *         match (msg) {
+     *              Box!{i32} (value-> i : i32) => {
+     *                  actor:.send (i + 1);
+     *              }
+     *         }
+     *     }
+     * }
+     * =============
+     * @info: none class message are enpacked inside a Box
+     */
+    pub def send {T} (mut self, msg : T)-> void
+        throws &TcpError
+    {
+        atomic self._stream {
+            self._stream:.rawSend ([self._name.len]);
+            self._stream:.rawSend (self._name);
+            cte if (is!T {U impl Packable}) {
+                self._stream:.send (msg);
+            } else {
+                self._stream:.send (Box::new (msg));
+            }
+        }
+    }
+
+    /**
+     * @returns: the name of the actor ref
+     */
+    pub def @final getName (self)-> [c8] {
+        self._name
+    }
+
+    impl Streamable;
+
+    impl Disposable {
+        pub over dispose (mut self) {
+            self._stream:.dispose ();
+        }        
+    }
+
+    __dtor (mut self) {
+        self:.dispose ();
+    }
+}
+
+
+/**
+ * An actor system, the is used to manage the actors
+ * @warning: An actor system is the only way to manage actors, they should not be instanciated differently
+ * @example: 
+ * =================
+ * class MyActor over Actor {
+ *     let _i : i32;
+ * 
+ *     pub self (name : [c8], i : i32) 
+ *         with super (name), _i = i
+ *     {
+ *         println ("New actor spawned : ", self._name, " with i = ", self._i);
+ *     }
+ *    
+ *     pub over receive (dmut self, _ : &ActorRef, obj : &Object) {
+ *           match (obj) {
+ *               Box!{[c8]} (value-> str : _) => {
+ *                   println ("Received : ", str);
+ *               }
+ *           }
+ *     }
+ * }  
+ * 
+ * let dmut sys = ActorSystem::new (SockAddrV4::new (Ipv4::UNSPECIFIED, 8000u16));
+ * let dmut fstActor = sys:.spawn!{&MyActor} ("actor_1"s8, 42); 
+ * fstActor:.send ("Hello !!"s8);
+ * sys:.join (); 
+ * =================
+ */
+pub class @final ActorSystem {
+
+    let dmut _listener : &TcpListener;
+    let dmut _streams : [&TcpStream] = [];
+    let dmut _pool : &TaskPool;
+    let dmut _actors : [&Actor] = [];
+    let dmut _actorTh : [Thread] = [];
+    
+    let mut _port : u16;
+    
+    /**
+     * Create a new actor system listening to the address
+     * @info: this spawn a thread waiting for connections, 
+     */
+    pub self (addr : &SockAddress)
+        with _listener = TcpListener::listen (addr),
+             _pool = TaskPool::new (1u64),
+             _port = 0u16
+        throws &TcpError
+    {
+        self._port = self._listener.getPort ();
+        self._pool:.submit (&self:.run);
+        self._streams = alias (self._streams ~ [TcpStream::connect (SockAddrV4::new (Ipv4::LOCALHOST, self._port))]);
+    }
+
+
+    /**
+     * Create an actor system with a automatic port
+     */
+    pub self ()
+        with _listener = TcpListener::listen (),
+             _pool = TaskPool::new (1u64),
+             _port = 0u16
+        throws &TcpError
+    {
+        self._port = self._listener.getPort ();
+        self._pool:.submit (&self:.run);
+        self._streams = alias (self._streams ~ [TcpStream::connect (SockAddrV4::new (Ipv4::LOCALHOST, self._port))]);
+    }
+    
+    /**
+     * The port binded by the listener
+     */
+    pub def getPort (self)-> u16 {
+        self._port
+    }
+    
+    
+    /**
+     * Register a new actor in the system
+     * This actor will now be used, and accessible from external code, and actors
+     */
+    pub def register (mut self, dmut ac : &Actor) -> dmut &ActorRef        
+    {
+        atomic self {
+            self._actors = alias (self._actors ~ [alias ac]);
+        }
+        
+        alias {
+            ActorRef::new (ac.getName (), alias self._streams [0us])
+        } catch {
+            _ => {
+                __pragma!panic ();
+            }
+        }
+    }
+    
+    /**
+     * Remove an actor from the system
+     * @info: does nothing if the actor is not found
+     */
+    pub def remove (mut self, dmut actor : &Actor) {
+        for i in 0us .. self._actors.len {
+            if (self._actors [i] is actor) {
+                atomic self {
+                    self._actors [i]:.dispose ();
+                    self._actors = alias (self._actors [0us .. i] ~ self._actors [i + 1us .. $]);
+                }
+                break {}
+            }
+        }
+    } catch {
+        _ => {}
+    }
+
+    /**
+     * @returns: an actor ref to send message to an actor declared in this local system
+     */
+    pub def localActor (self, name : [c8]) -> dmut &ActorRef
+        throws &TcpError
+    {
+        ActorRef::new (name, TcpStream::connect (SockAddrV4::new (Ipv4::LOCALHOST, self._port)))
+    }
+
+    /**
+     * @returns: an actor ref to send message to an actor declared in this local system
+     */
+    pub def remoteActor (self, name : [c8], addr : &SockAddress) -> dmut &ActorRef
+        throws &TcpError
+    {
+        ActorRef::new (name, TcpStream::connect (addr))
+    }
+
+    /**
+     * Close the actor system, and the actors running
+     */
+    pub def terminate (mut self) {
+        self._pool:.cancel ();
+        
+        atomic self {
+            for i in 0us .. self._actors.len {
+                {
+                    self._actors [i]:.dispose ();
+                } catch {
+                    _ => {}
+                }
+            }
+            self._actors = [];
+        }
+    }
+    
+    /**
+     * Wait for the actor system to finish
+     */
+    pub def join (mut self)-> void {
+        self._pool:.join ();
+    }
+     
+    /**
+     * The thread part of the actor system
+     * This function run in background, accept new client connections, and client messages
+     */
+    prv def run (mut self) {
+        let dmut clients : [&TcpStream] = [];
+        let acceptSock = self._listener.getFd ();
+        let dmut polls : [pollfd_t] = [pollfd_t (acceptSock, PollEvent::POLLIN)];
+        loop {            
+            if (poll (polls.ptr, polls.len, 5000u32) > 0) {
+                let mut current_len = polls.len;
+                let mut closing = false;
+                for i in 0us .. current_len {
+                    if (polls [i].revents == PollEvent::POLLIN) {
+                        if (i == 0us) {
+                            {
+                                let dmut str = self._listener:.accept ();
+                                clients = alias (clients ~ [alias str]);
+                                polls = alias (polls ~ [pollfd_t (str.getFd (), PollEvent::POLLIN)]);
+                            } catch {
+                                x : &TcpError => {
+                                    println (x);
+                                }
+                            }
+                        } else if (clients [i - 1us].isAliveRead ()) {
+                            {
+                                let recver = self.receiveName (alias clients [i - 1us]);
+                                let obj = clients [i - 1us]:.receivePacket ();
+                                atomic self {
+                                    for j in 0us .. self._actors.len {
+                                        if (self._actors [j].getName () == recver) {
+                                            self._actors [j]:.postMessage (obj);
+                                        }
+                                    }
+                                }
+                            } catch {
+                                _ => {
+                                    closing = true;                            
+                                    clients [i - 1us]:.dispose ();
+                                    polls [i] = pollfd_t (-1, PollEvent::NONE);
+                                }                                
+                            }
+                        } else {
+                            closing = true;                            
+                            clients [i - 1us]:.dispose ();
+                            polls [i] = pollfd_t (-1, PollEvent::NONE); 
+                        }                    
+                    } 
+                }
+                
+                if (closing) {
+                    let mut i = 0us;
+                    while i < polls.len {
+                        if (polls [i].fd == -1) {
+                            polls = alias (polls [0us .. i] ~ polls [i + 1us .. $]);
+                            if (i != 0us) {
+                                clients = alias (clients [0us .. i - 1us] ~ clients [i .. $]);
+                            }
+                        }
+                        i += 1us;
+                    }
+                }
+
+            }
+        }        
+    } catch {
+        _ => {
+            __pragma!panic ();
+        }
+    }
+
+    prv def receiveName (self, dmut client : &TcpStream) -> [c8]
+        throws &TcpError
+    {
+        let dmut size  = 0us;        
+        client:.rawReceive (alias &size);
+        client:.rawReceive!{c8} (size)
+    }
+
+
+    impl Disposable {
+
+        pub over dispose (mut self) {
+            self:.terminate ();
+            self._listener:.dispose ();
+        }        
+    }
+
+    __dtor (mut self) {
+        self:.dispose ();
+    }
+    
+}

@@ -1,6 +1,6 @@
 mod core::exception;
 import core::typeinfo;
-import std::io;
+import std::stream;
 
 extern (C) def _yrt_exc_rethrow ();
 extern (C) def _yrt_exc_get_stack_trace ()-> [&(void)];
@@ -15,37 +15,32 @@ pub class @abstract Exception {
 
     self () with trace = _yrt_exc_get_stack_trace () {}
 
-    impl std::io::Printable {
+    impl stream::Streamable {
         
-        prot over __stdio__printContent (self) -> bool {
+        prot over __stream__streamContent (self, dmut _ : &StringStream) -> bool {
             false            
         }
 
-        pub over print (self)-> void {
-            print (self::typeinfo.name, ' ', '(');
-            self.__stdio__printContent ();
-            print (')');
-            if (self.trace.len != 0u64) {
-                print (':', '\n');
-                self.printStackTrace ();
+        pub over toStream (self, dmut stream : &StringStream)-> void {
+            stream:.write (self::typeinfo.name):.write(" ("s8);
+            self.__stream__streamContent (alias stream);
+            stream:.write (')'c8);
+            if (self.trace.len != 0us) {
+                stream:.write (":\n"s8);
+                stream:.write (self.getStackTrace ());
             }
         }
         
     }
 
     prot def hasTrace (self)-> bool {
-        self.trace.len != 0u64
+        self.trace.len != 0us
     }
     
     pub def @final getStackTrace (self) -> [c8] {
         _yrt_exc_resolve_stack_trace (self.trace)
     }
 
-    pub def @final printStackTrace (self) {
-        if (self.trace.len != 0u64) {
-            print (_yrt_exc_resolve_stack_trace (self.trace));
-        }        
-    }
 }
 
 pub class AssertError over Exception {
@@ -53,9 +48,9 @@ pub class AssertError over Exception {
 
     pub self (msg : [c32]) with msg = msg {}
 
-    impl std::io::Printable {
-        pub over print (self) {
-            self::super.print ();
+    impl stream::Streamable {
+        pub over toStream (self, dmut stream : &StringStream) {
+            self::super.toStream (alias stream);
         }
     }
 }
@@ -65,9 +60,9 @@ pub class RuntimeError over Exception {
 
     pub self (msg : [c8]) with msg = msg {}
 
-    impl std::io::Printable {
-        pub over print (self) {
-            self::super.print ();
+    impl stream::Streamable {
+        pub over toStream (self, dmut stream : &StringStream) {
+            self::super.toStream (alias stream);
         }
     }
 }
@@ -75,9 +70,9 @@ pub class RuntimeError over Exception {
 pub class SegFault over Exception {
     pub self () {}
 
-    impl std::io::Printable {
-        pub over print (self) {
-            self::super.print ();
+    impl stream::Streamable {
+        pub over toStream (self, dmut stream : &StringStream) {
+            self::super.toStream (alias stream);
         }
     }
 }

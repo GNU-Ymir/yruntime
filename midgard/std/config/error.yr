@@ -1,6 +1,6 @@
 mod std::config::error;
 
-import std::io;
+import std::stream;
 import core::object, core::typeinfo, core::exception;
 import core::array;
 
@@ -24,27 +24,25 @@ pub class @final ConfigError over core::exception::Exception {
      */
     pub self (name : [c32] = "", to : TypeInfo, from : TypeInfo, subError : (&Exception)? = ((&Exception)?)::__err__) with fr = from, to = to, field = name, subError = subError  {}       
     
-    impl std::io::Printable {
+    impl stream::Streamable {
 
         /**
          * Just print the error to stdout
          */
-        pub over print (self) {
-            print (self::typeinfo.name, ' ', '(');
-            print (self.fr.name, "-> ", self.to.name);
-            print (')');
+        pub over toStream (self, dmut stream : &StringStream) {
+            stream:.write (self::typeinfo.name):.write (" ("s8);
+            stream:.write (self.fr.name):.write ("-> "s8):.write (self.to.name);
+            stream:.write (")"s8);
             if (self.field != "")
-                print (" for field : ", self.field);
+                stream:.write (" for field : "s8):.write (self.field);
             
             match self.subError {
                 Ok (x:_) => {
-                    println (" => ");
-                    print ("\t", x);
+                    stream:.write (" => "s8):.write ("\t"s8):.write (x);
                 }
                 Err () => {
                     if (self.hasTrace ()) {
-                        println (":");
-                        self::super.printStackTrace ();
+                        stream:.write (":"s8):.write (self.getStackTrace ());
                     }
                 }
             }

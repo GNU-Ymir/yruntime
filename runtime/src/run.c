@@ -2,6 +2,7 @@
 #include "../include/ymemory.h"
 #include "../include/throw.h"
 #include "../include/demangle.h"
+#include "../include/reflect.h"
 #include <gc/gc_disclaim.h>
 
 #include <limits.h>
@@ -28,8 +29,15 @@ void _yrt_exit (int i) {
 }
 
 void _yrt_throw_seg_fault ();
+void _yrt_exc_panic (char *file, const char *function, unsigned line);
 
 void bt_sighandler(int sig, struct sigcontext ctx) {
+    static int second = 0;
+    if (second == 1) {
+	char * c = NULL;
+	*c = 'i';
+    }
+    second = 1;
     _yrt_throw_seg_fault ();    
 }
 
@@ -278,15 +286,15 @@ _yrt_array_ _yrt_exc_get_stack_trace () {
 }
 
 
-void _yrt_exc_panic (char *file, char *function, unsigned line)
+void _yrt_exc_panic (char *file, const char *function, unsigned line)
 {
         
     fprintf (stderr, "Panic in file \"%s\", at line %u", file, line);
     fprintf (stderr, ", in function \"%s\" !!! \n", function);
     fprintf (stderr, "Please report the error at gnu.ymir@mail.com\n");
     _yrt_array_ trace = _yrt_exc_resolve_stack_trace (_yrt_exc_get_stack_trace ());
-    if (trace.len != 0) 
-	fprintf (stderr, "%s\n", (char*) trace.data);
+    if (trace.len != 0)
+    	fprintf (stderr, "%s\n", (char*) trace.data);
     exit (-1);
 }
 
@@ -325,7 +333,10 @@ int _yrt_run_main_debug (int argc, char ** argv, int(* y_main)()) {
     installHandler ();
     _yrt_exc_init ();
             
-    return y_main (_yrt_create_args_array (argc, argv));    
+    int ret = y_main (_yrt_create_args_array (argc, argv));
+    
+    _yrt_elf_clean ();
+    return ret;
 }
 
 int _yrt_run_main (int argc, char ** argv, int(* y_main)()) {
@@ -337,6 +348,9 @@ int _yrt_run_main (int argc, char ** argv, int(* y_main)()) {
     _yrt_exc_init ();
     
     
-    return y_main (_yrt_create_args_array (argc, argv));    
+    int ret = y_main (_yrt_create_args_array (argc, argv));
+    _yrt_elf_clean (); // not sure it is necessary, we are closing the program anyway
+    
+    return ret;
 }
 

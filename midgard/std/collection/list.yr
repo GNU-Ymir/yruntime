@@ -8,7 +8,7 @@ import core::object;
 import core::dispose;
 
 import std::collection::seq;
-import std::io;
+import std::io, std::stream;
 
 /**
  * Macro that can be used to declare a list easily
@@ -337,13 +337,10 @@ pub class @final List {T} {
         
     }    
     
-    impl std::io::Printable {
+    impl Streamable {
         
-        /**
-         * Print the list to stdout
-         */
-        pub over print (self) {            
-            print ("{", self._head, "}");
+        pub over toStream (self, dmut stream : &StringStream) {            
+            stream:.write ("{"s8):.write (self._head):.write ("}"s8);
         }
     }
 
@@ -397,7 +394,7 @@ pub class @final List {T} {
 class @abstract ListNode {T} {
     prot self () {}
 
-    impl std::io::Printable;
+    impl Streamable;
     
 }
 
@@ -428,20 +425,20 @@ class @final ListValue {T} over ListNode!T {
              value = val
     {}    
 
-    impl std::io::Printable {
+    impl Streamable {
         
         /**
          * Linked list are printable, this method print the value stored in the node, and the next node if it is not empty
          */
-        pub over print (self) {
-            cte if (__pragma!compile ({print (self.value);})) {
-                print (self.value);
+        pub over toStream (self, dmut stream : &StringStream) {
+            cte if (__pragma!compile ({stream:.write (self.value);})) {
+                stream:.write (self.value);
                 match self.next {
                     _ : &Empty!{T} => {}
-                    _ => { print ("::", self.next); }
+                    _ => { stream:.write ("::"s8):.write (self.next); }
                 }
             } else {
-                print (T::typeid);
+                stream:.write (T::typeid);
             } 
         }
         
@@ -454,8 +451,8 @@ class @final ListValue {T} over ListNode!T {
 class @final Empty {T} over ListNode!T {
     pub self () {}
 
-    impl std::io::Printable {
-        pub over print (self) {}
+    impl Streamable {
+        pub over toStream (self, dmut _ : &StringStream) {}
     }
 }
 

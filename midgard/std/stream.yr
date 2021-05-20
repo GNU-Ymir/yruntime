@@ -4,7 +4,7 @@ import core::exception, core::typeinfo, core::array;
 import core::object, core::dispose;
 
 import std::collection::vec;
-import std::io;
+import std::io, std::traits;
 
 
 /**
@@ -60,10 +60,10 @@ pub trait Streamable {
      * Print the content of the class on stdout
      * @returns: true if something has been printed, false otherwise    
      */
-    prot def __utils_stream__streamContent (self, dmut stream : &StringStream) -> bool {
+    prot def __stream__streamContent (self, dmut stream : &StringStream) -> bool {
         stream;
-        cte if (__pragma!compile ({self::super.__utils_stream__streamContent ();})) {
-            let printed = self::super.__utils_stream__streamContent ();
+        cte if (__pragma!compile ({self::super.__stream__streamContent (alias stream);})) {
+            let printed = self::super.__stream__streamContent (alias stream);
             if (typeof (__pragma!local_tupleof (self))::arity != 0u32 && printed)
                 stream:.write (", "s8);
         }
@@ -88,8 +88,8 @@ pub trait Streamable {
      * Print the class name and content into the stream
      */
     pub def toStream (self, dmut stream: &StringStream)-> void {
-        stream:.write (typeof (self)::typeid, '('c8);
-        self.__utils_stream__streamContent (alias stream);
+        stream:.write (typeof (self)::typeid):.write ("("s8);
+        self.__stream__streamContent (alias stream);
         stream:.write (')'c8);
     }
     
@@ -180,7 +180,7 @@ pub class @final StringStream {
     /**
      * Write a string in utf8 into the stream
      */
-    pub def write (mut self, c : [c8]) -> dmut &StringStream {
+    pub def write {T of [U], U of c8} (mut self, c : T) -> dmut &StringStream {
         for i in c {
             if self._willEntab {
                 for j in self._entabing {
@@ -190,8 +190,9 @@ pub class @final StringStream {
                 }
                 self._willEntab = false;
             }
-            
-            self._content:.push (i);
+            if i != '\u{0}'c8 {
+                self._content:.push (i);
+            }
             if (i == '\n'c8) {
                 self._willEntab = true;
             }
@@ -210,6 +211,13 @@ pub class @final StringStream {
     }
 
     /**
+     * Assert error, the class must impl Streamable
+     */
+    pub def write {class T} (mut self, c : T) -> dmut &StringStream {
+        cte assert (false, "class " ~ T::typeid ~ " does not impl Streamable");
+    }
+
+    /**
      * Write an object that implement the trait Streamable in the stream
      */
     pub def write {T impl Streamable} (mut self, c : T) -> dmut &StringStream {
@@ -217,48 +225,25 @@ pub class @final StringStream {
         alias self
     }
 
-    /**
-     * Write a string into the stream
-     */
-    pub def write (mut self, c : [c32]) -> dmut &StringStream {
+    pub def write {T of [U], U of c32} (mut self, c : T) -> dmut &StringStream {
         import std::conv;
-        self:.write (c.to![c8] ());
-        alias self
+        alias self:.write (c.to![c8] ())
     }
     
     /**
      * Write an array of element into the stream
      */
-    pub def write {T of [U], U} (mut self, c : T) -> dmut &StringStream {
-        let mut j = 0u64;
-        match (self._currentColor) {
-            Ok (x : _) => {
-                self:.write (Colors::RESET, '{'c8, x);
-            }
-            _ => {
-                self:.write ('{'c8);
-            }
-        }
+    pub def if !isChar!{U} () write {T of [U], U} (mut self, c : T) -> dmut &StringStream {
+        let mut j = 0us;        
+        self:.write ('['c8);
         for i in c {
-            if (j != 0u64) {
-                match (self._currentColor) {
-                    Ok (x : _) => {
-                        self:.write (Colors::RESET, ", "s8, x);
-                    }
-                    _ => { self:.write (", "s8); }
-                }
+            if (j != 0us) {
+                self:.write (", "s8);                 
             }
-            j += 1u64;
+            j += 1us;
             self:.write (i);            
         }
-        match (self._currentColor) {
-            Ok (x : _) => {
-                self:.write (Colors::RESET, '}'c8, x);
-            }
-            _ => {
-                self:.write ('}'c8);
-            }
-        }
+        self:.write (']'c8);        
         alias self
     }
 
@@ -356,16 +341,6 @@ pub class @final StringStream {
      */
     pub def opIndex (self) -> [c8] {
         self._content []
-    }
-
-    impl std::io::Printable {
-        
-        /**
-         * Print the content of the stream to stdout
-         */
-        pub over print (self) {
-            print (self[]);
-        }
     }
 
     impl std::stream::Streamable {

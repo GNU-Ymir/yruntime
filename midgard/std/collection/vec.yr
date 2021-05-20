@@ -6,7 +6,7 @@ import core::exception;
 import core::array, core::object;
 
 import std::collection::seq;
-import std::io;
+import std::io, std::stream;
 
 
 /**
@@ -394,22 +394,22 @@ pub class @final Vec {T} {
     }
     
     
-    impl std::io::Printable {
+    impl Streamable {
         
-        pub over print (self) {
-            cte if (__pragma!compile ({print (self._data [0]);})) {
+        pub over toStream (self, dmut stream : &StringStream) {
+            cte if (__pragma!compile ({stream:.write (self._data [0]);})) {
                 {
-                    print ("vec[");
+                    stream:.write ("vec["s8);
                     for i in 0us .. self._len {
-                        if (i != 0us) print (", ");
-                        print (self._data [i]);
+                        if (i != 0us) { stream:.write (", "s8); }
+                        stream:.write (self._data [i]);
                     }
-                    print ("]");                    
+                    stream:.write ("]"s8);                    
                 } catch {
-                    _ : &OutOfArray => {} // self._len is always <= self._data.len
+                    _ : &OutOfArray => { __pragma!panic (); } // self._len is always <= self._data.len
                 }
             } else {
-                print ("vec[", T::typeid, " ; ", self._len, "]");
+                stream:.write ("vec["s8):.write (T::typeid):.write (" ; "s8):.write (self._len):.write ("]"s8);
             }
         }
     }

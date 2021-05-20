@@ -6,7 +6,7 @@ import std::collection::set;
 import std::collection::vec;
 import std::config::conv;
 import std::lexer;
-import std::io;
+import std::io, std::stream;
 
 
 extern (C) def printf (c : &c8, ...);
@@ -457,7 +457,7 @@ pub class ArgumentParser {struct T} {
  * let args = ArgumentParser!{MyArgs}::new ();
  * ======================
  */
-prv def parseValue <class T> (dmut lex : &Lexer!{c32}) -> T
+prv def parseValue {class T} (dmut lex : &Lexer!{c32}) -> T
     throws &ArgumentError
 {
     {
@@ -952,25 +952,20 @@ pub class ArgumentError over core::exception::Exception {
      */
     pub self (name : [c32] = "", subError : (&Exception)? = ((&Exception)?)::__err__, type : TypeInfo) with type = type, field = name, subError = subError  {}       
     
-    impl std::io::Printable {
+    impl Streamable {
 
-        /**
-         * Just print the error to stdout
-         */
-        pub over print (self) {
-            print (self::typeinfo.name, " (", self.type.name, ')');
+        pub over toStream (self, dmut stream : &StringStream) {
+            stream:.write (self::typeinfo.name):.write (" ("s8):.write (self.type.name):.write (')'c8);
             if (self.field != "")
-                print (" for field : ", self.field);
+                stream:.write (" for field : "s8):.write (self.field);
             
             match self.subError {                
                 Ok (x:_) => {
-                    println (" => ");
-                    print ("\t", x);
+                    stream:.write (" => "s8):.write ("\t"s8):.write (x);
                 }
                 Err () => {
                     if (self.hasTrace ()) {
-                        println (":");
-                        self::super.printStackTrace ();
+                        stream:.write (": "s8):.write (self.getStackTrace ());
                     }
                 }
             }
@@ -985,17 +980,13 @@ pub class ArgumentCastError over ArgumentError {
     pub self (name : [c32] = "", subError : (&Exception)? = ((&Exception)?)::__err__, to : TypeInfo, from : [c32]) with super (name-> name, subError-> subError, type-> to), from = from
     {}
 
-    impl std::io::Printable {
+    impl Streamable {
 
-        /**
-         * Just print the error to stdout
-         */
-        pub over print (self) {
-            print (self::typeinfo.name, " (");
-            print (self.from, " -> ", self.type.name);
-            print (')');
+        pub over toStream (self, dmut stream : &StringStream) {
+            stream:.write (self::typeinfo.name):.write (" ("s8);
+            stream:.write (self.from):.write (" -> "s8):.write (self.type.name):.write (')'c8);
             if (self.field != "")
-                print (" for field : ", self.field);
+                stream:.write (" for field : "s8):.write (self.field);
         }
         
     }   
@@ -1005,15 +996,12 @@ pub class ArgumentUnknownError over ArgumentError {
 
     pub self (name : [c32]) with super (name-> name, type-> void::typeinfo) {}
     
-    impl std::io::Printable {
+    impl Streamable {
 
-        /**
-         * Just print the error to stdout
-         */
-        pub over print (self) {
-            print (self::typeinfo.name);
+        pub over toStream (self, dmut stream : &StringStream) {
+            stream:.write (self::typeinfo.name);
             if (self.field != "")
-                print (" for field : ", self.field);
+                stream:.write (" for field : "s8):.write (self.field);
         }
         
     }   
@@ -1023,9 +1011,9 @@ pub class HelpRequired over core::exception::Exception {
 
     pub self () {}
 
-    impl std::io::Printable {
-        pub over print (self) {
-            self::super.print ();
+    impl Streamable {
+        pub over toStream (self, dmut stream : &StringStream) {
+            self::super.toStream (alias stream);
         }
     }
         

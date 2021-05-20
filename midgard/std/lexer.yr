@@ -4,7 +4,7 @@ import core::object, core::typeinfo, core::array;
 import core::exception;
 import std::tokenizer;
 import std::collection::set;
-import std::io;
+import std::io, std::stream;
 
 pub class @final SyntaxError over Exception {
 
@@ -16,12 +16,11 @@ pub class @final SyntaxError over Exception {
         with msg = msg, line = line, col = col
     {}
 
-    impl std::io::Printable {
-        pub over print (self) {            
-            print ("SyntaxError (", self.line, ",", self.col, ") : ", self.msg);
+    impl Streamable {
+        pub over toStream (self, dmut stream : &StringStream) {            
+            stream:.write ("SyntaxError ("s8):.write (self.line):.write (","s8):.write (self.col):.write (") : "):.write (self.msg);
             if (self.trace.len != 0u64) {
-                println ("");
-                self::super.printStackTrace ();
+                stream:.write (": "s8):.write (self.getStackTrace ());               
             }
         }
     }        

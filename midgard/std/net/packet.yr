@@ -7,6 +7,7 @@ import std::reflect;
 import etc::runtime::reflect;
 import std::collection::vec;
 
+import std::stream;
 import core::exception, core::typeinfo;
 import core::duplication, core::array, core::object;
 
@@ -21,7 +22,7 @@ import core::duplication, core::array, core::object;
  * 
  *    pub self (i : [i32]) with i = i {}
  * 
- *    impl Printable;
+ *    impl Streamable;
  *    impl Packable;
  * }
  * 
@@ -52,7 +53,7 @@ pub trait Packable {
         cte if (__pragma!compile ({self::super;})) {
         }
         
-        let name = (typeof (self)::typeid).to![c8] ();
+        let name = (__pragma!mangle (typeof (self))).to![c8] ();
         let dmut array = Vec!(u8)::new ();
         internal_pack::pack (alias array, name);
         cte if (__pragma!compile ({self::super;})) {
@@ -76,7 +77,7 @@ pub trait Packable {
      *     - packet
      */
     pub def pack (self, dmut packet : &Vec!u8) {                        
-        let name = (typeof (self)::typeid).to![c8] ();        
+        let name = (__pragma!mangle (typeof (self))).to![c8] ();
         internal_pack::pack![c8] (alias packet, name);
         
         cte if (__pragma!compile ({self::super;})) {
@@ -125,7 +126,8 @@ pub trait Packable {
                 err : &UnpackError => {
                     throw err;
                 }
-                _ => {
+                x : _ => {
+                    println (x);
                     throw UnpackError::new ();
                 }
             }
@@ -154,7 +156,7 @@ pub trait Packable {
             packet;
         } else {
             for i in __pragma!local_tupleof (self) {
-                internal_pack::pack (alias packet, i);
+                internal_pack::pack!{typeof (i)} (alias packet, i);
             }
         }
     }
@@ -177,15 +179,16 @@ pub def unpack (mut packet : [u8])-> dmut &Object
     let dmut name : [c8] = [];
     {
         let (_, offset) = internal_unpack::unpack!{[c8]} (alias cast!(&u8) (cast!(&void) (&name)), packet);
-        let dmut obj = internal_reflect::totallyUnsafeFactoryDontDoThat (name);
-        obj:.callImplMutable!(usize) ("std::net::packet::Packable::__stdnetwork__unpackContent", packet[offset .. $]);
+        let dmut obj = internal_reflect::totallyUnsafeFactoryDontDoThat (name);        
+        obj:.callImplMutable!(usize) (s_name-> name.to![c32] (), "std::net::packet::Packable::__stdnetwork__unpackContent", packet[offset .. $]);
         
         return alias obj;               
     } catch {
         x : &UnpackError => {
             throw x;
         }
-        _ => {
+        x : _ => {
+            println (x);
             throw UnpackError::new ();            
         }
     }   
@@ -195,7 +198,7 @@ pub class UnpackError over Exception {
 
     pub self () {}
 
-    impl Printable;
+    impl Streamable;
     
 }
 
@@ -213,7 +216,7 @@ mod internal_pack {
     }
     
     pub def pack {struct T} (dmut pack : &Vec!u8, data : T) {
-        for i in data::tupleof {
+        for i in __pragma!tupleof (data) {
             internal_pack::pack (alias pack, i);
         }        
     }
@@ -249,7 +252,10 @@ mod internal_unpack {
         
         (sizeof (T), sizeof (T)) 
     } catch {
-        _ => { throw UnpackError::new (); }
+        x : _ => {
+            println (x);
+            throw UnpackError::new ();
+        }
     }
        
     pub def unpack {T of [U], U} (dmut c_ptr : &(u8), packet : [u8])-> (usize, usize)
@@ -273,7 +279,8 @@ mod internal_unpack {
             
             return (16us, cast!(usize) (offset));
         } catch {
-            _ => {
+            x :_ => {
+                println (x);
                 throw UnpackError::new ();
             }
         };        
@@ -308,10 +315,11 @@ mod internal_unpack {
     pub def unpack {struct T} (dmut c_ptr : &u8, packet : [u8]) -> (usize, usize)
         throws &UnpackError
     {
-        let dmut str : &T = alias cast!(&T) (cast!(&void) (c_ptr));
-        let mut packOffset = 0u64;
-        for i in (*str)::fields_address {
-            let (_, pack_len) = internal_unpack::unpack!{typeof (i)::inner} (alias (Runtime!(typeof (i), &u8)::_yrt_unsafe_cast (i)), packet [packOffset .. $]);
+        let mut packOffset = 0us;
+        cte for i in 0us .. (__pragma!field_offsets (T)).len {
+            let offset = (__pragma!field_offsets (T)) [i];
+            let dmut z : &(mut u8) = alias (c_ptr + offset);
+            let (_, pack_len) = internal_unpack::unpack!(__pragma!field_type (T, (__pragma!field_names (T))[i])) (alias z, packet [packOffset .. $]);
             packOffset += pack_len;
         }
 
@@ -328,10 +336,11 @@ mod internal_unpack {
     pub def unpack {T of (U,), U...} (dmut c_ptr : &u8, packet : [u8]) -> (usize, usize)
         throws &UnpackError
     {
-        let mut tl : &(mut T) = alias cast!(&T) (cast!(&void) (c_ptr));
-        let mut packOffset = 0u64;
-        for ref i in (*tl) {
-            let (_, pack_len) = internal_unpack::unpack!(typeof (i)) (alias (Runtime!{typeof (i), &u8}::_yrt_unsafe_cast (ref i)), packet [packOffset .. $]);
+        let mut packOffset = 0us;
+        cte for i in 0us .. (__pragma!field_offsets (T)).len {
+            let offset = (__pragma!field_offsets (T)) [i];
+            let dmut z : &(mut u8) = alias (c_ptr + offset);
+            let (_, pack_len) = internal_unpack::unpack!(__pragma!field_type (T, i)) (alias z, packet [packOffset .. $]);
             packOffset += pack_len;
         }
         

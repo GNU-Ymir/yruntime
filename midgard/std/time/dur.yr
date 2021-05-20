@@ -1,7 +1,8 @@
 mod std::time::dur;
-import std::io;
+import std::stream;
 
 import core::object;
+import std::traits;
 
 /**
  * Class representing a duration of time of weeks or less.
@@ -254,9 +255,9 @@ pub class @final Duration {
         }
     }
     
-    impl Printable {
-        pub over print (self)-> void {
-            print (self.to![c8] ());
+    impl Streamable {
+        pub over toStream (self, dmut stream : &StringStream)-> void {
+            stream:.write (self.to![c8] ());
         }    
     }
     
@@ -386,7 +387,11 @@ pub def to {C of [U], U of c8, T of &Duration} (val : T)-> [c8] {
  * assert (d.to![c32] () == "2s300ms");
  * ================
  */
-pub def to {C of [U], U of c32, T of &Duration} (val : T)-> [c32] {
+pub def if isChar!{U} () to {C of [U], U, T of &Duration} (val : T)-> [c32] {
     import std::conv;
-    val.to![c8] ().to![c32] ()
+    cte if is!{U}{X of c8} {
+        val.to![c8] ()
+    } else {
+        val.to![c8] ().to![c32] ()
+    }
 }

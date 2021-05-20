@@ -1,18 +1,20 @@
 mod std::net::address;
 
 import core::object, core::typeinfo, core::exception;
-import std::io;
+import std::io, std::stream;
 
 pub class @abstract IpAddress {
     prot self () {}
     
-    impl std::io::Printable;
+    impl Streamable;
 }
 
 pub class @abstract SockAddress {
     prot self () {}
 
-    impl std::io::Printable;
+    pub def opEquals (self, ot : &SockAddress)-> bool;
+    
+    impl Streamable;
 }
 
 pub enum
@@ -107,7 +109,7 @@ pub class Ipv4Address over IpAddress {
         }
     }
     
-    impl Printable;
+    impl Streamable;
 }
 
 
@@ -147,6 +149,16 @@ pub class SockAddrV4 over SockAddress {
         self._port
     }
 
-    impl Printable;
+
+    pub over opEquals (self, ot : &SockAddress)-> bool {
+        match (ot) {
+            x : &SockAddrV4 => {
+                return self._addr == x._addr && self._port == x._port
+            }
+        }
+        false
+    }
+    
+    impl Streamable;
     
 }

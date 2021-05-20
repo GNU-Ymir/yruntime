@@ -1,7 +1,7 @@
 mod std::fs::errors;
 
 import etc::runtime::errno;
-import std::io;
+import std::io, std::stream;
 import core::exception;
 import core::object;
 
@@ -17,6 +17,7 @@ pub enum
 | LINK_LOOP         = 9u8
 | PATH_TOO_LONG     = 10u8
 | DIR_NOT_EMPTY     = 11u8
+| NOT_A_FILE        = 12u8
  -> FsErrorCode;
 
 pub class FsError over Exception {
@@ -26,19 +27,19 @@ pub class FsError over Exception {
     
     pub self (code : FsErrorCode, msg : [c8]) with msg = msg, code = code {}
 
-    impl std::io::Printable {
-        pub over print (self) {
+    impl Streamable {
+        pub over toStream (self, dmut stream : &StringStream) {
             if (self.trace.len != 0u64) {
-                println ("FsError (", fs::errors::to![c8] (self.code), ") : ", self.msg);
-                self::super.printStackTrace ();
+                stream:.write ("FsError ("s8):.write (fs::errors::to![c8] (self.code)):.write (") : "s8):.write (self.msg);
+                stream:.write (self.getStackTrace ());
             } else {
-                print ("FsError (", fs::errors::to![c8] (self.code), ") : ", self.msg);
+                stream:.write ("FsError ("s8):.write (fs::errors::to![c8] (self.code)):.write (") : "s8):.write (self.msg);
             }
         }
     }   
 }
 
-pub def to {T of FsErrorCode} (err : ErrnoValue) -> FsErrorCode {
+pub def if is!{T}{X of FsErrorCode} to {T} (err : ErrnoValue) -> FsErrorCode {
     match err {
         ErrnoValue::EACCES => { FsErrorCode::PERMISSION_DENIED }
         ErrnoValue::ENOTDIR => { FsErrorCode::PARENT_DONT_EXIST }
@@ -52,7 +53,7 @@ pub def to {T of FsErrorCode} (err : ErrnoValue) -> FsErrorCode {
     }
 }
 
-pub def to {C of [U], U of c8, T of FsErrorCode} (err : T) -> [c8] {
+pub def if is!{U}{X of c8} to {C of [U], U, T of FsErrorCode} (err : T) -> [c8] {
     match err {
         FsErrorCode::FILE_CLOSED  => { "FILE_CLOSED"s8 }
         FsErrorCode::NOT_READABLE => { "NOT_READABLE"s8 }
@@ -65,6 +66,7 @@ pub def to {C of [U], U of c8, T of FsErrorCode} (err : T) -> [c8] {
         FsErrorCode::LINK_LOOP => { "LINK_LOOP"s8 }
         FsErrorCode::PATH_TOO_LONG => { "PATH_TOO_LONG"s8 }
         FsErrorCode::DIR_NOT_EMPTY => { "DIR_NOT_EMPTY"s8 }
+        FsErrorCode::NOT_A_FILE => { "NOT_A_FILE"s8 }
         _ => { ""s8 }
     }
 }

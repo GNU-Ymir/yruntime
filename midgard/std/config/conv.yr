@@ -2,7 +2,7 @@ mod std::config::conv;
 
 import core::typeinfo, core::array, core::exception, core::object;
 import std::config;
-import std::io;
+import std::io, std::traits;
 
 /**
  * Simple trait to impl in a class to be convertible to a Config
@@ -106,37 +106,17 @@ pub def to {class T} (cfg : &Config)-> T
  * @throws: 
  *   - &ConfigError: if the cast cannot be made
  */
-pub def to {T of i64} (cfg : &Config)-> T
+pub def if isIntegral!{T} () to {T, C of &Config} (cfg : C)-> T
     throws &ConfigError
 {
     match cfg {
-        Int (i-> i:_) => { return i; }
+        Int (i-> i:_) => { return cast!T (i); }
         _ => {
             throw ConfigError::new (T::typeinfo, cfg::typeinfo);
         }
     }
 }
 
-/**
- * Transform a configuration into a i64
- * @example: 
- * =============
- * let i = Int::new (12);
- * assert (i.to!(i32) () == 12);
- * =============
- * @throws: 
- *   - &ConfigError: if the cast cannot be made
- */
-pub def to {T of i32} (cfg : &Config)-> T
-    throws &ConfigError
-{
-    match cfg {
-        Int (i-> i:_) => { return cast!i32 (i); }
-        _ => {
-            throw ConfigError::new (T::typeinfo, cfg::typeinfo);
-        }
-    }
-}    
 
 /**
  * Transform a configuration into a f64
@@ -148,11 +128,11 @@ pub def to {T of i32} (cfg : &Config)-> T
  * @throws: 
  *   - &ConfigError: if the cast cannot be made
  */
-pub def to {T of f64} (cfg : &Config)-> T
+pub def if (isFloating!{T} ()) to {T, C of &Config} (cfg : C)-> T
     throws &ConfigError
 {
     match cfg {
-        Float (f-> f:_) => { return f; }
+        Float (f-> f:_) => { return cast!T (f); }
         _ => {
             throw ConfigError::new (T::typeinfo, cfg::typeinfo);
         }
@@ -169,7 +149,7 @@ pub def to {T of f64} (cfg : &Config)-> T
  * @throws: 
  *   - &ConfigError: if the cast cannot be made
  */
-pub def to {T of [U], U of c32} (cfg : &Config)-> T
+pub def if is!{U}{X of c32} to {T of [U], U, C of &Config} (cfg : C)-> T
     throws &ConfigError
 {
     match cfg {
@@ -190,7 +170,7 @@ pub def to {T of [U], U of c32} (cfg : &Config)-> T
  * @throws: 
  *   - &ConfigError: if the cast cannot be made
  */
-pub def to {T of [U], U of c8} (cfg : &Config)-> T
+pub def if is!{U}{X of c8} to {T of [U], U, C of &Config} (cfg : C)-> T
     throws &ConfigError
 {
     import std::conv;
@@ -212,7 +192,7 @@ pub def to {T of [U], U of c8} (cfg : &Config)-> T
  * @throws: 
  *   - &ConfigError: if the cast cannot be made
  */
-pub def to {T of bool} (cfg : &Config)-> T
+pub def if is!{T}{X of bool} to {T} (cfg : &Config)-> T
     throws &ConfigError
 {
     match cfg {
@@ -357,27 +337,15 @@ mod CfgToConfig {
  * }
  * ===================
  */
-pub def to {C of &Config, T impl Serializable} (value : T)-> &Config {
+pub def if is!{C}{X of &Config} to {class C, T impl Serializable} (value : T)-> &Config {
     value.serialize ()
 }
 
 
-pub def to {C of &Config, class T} (value : T)-> &Config {
+pub def if is!{C}{X of &Config} to {class C, class T} (value : T)-> &Config {
     cte assert ("Class " ~ T::typeid ~ " does not impl Serializable");
 }
 
-
-/**
- * Transform a i64 into a configuration
- * @example: 
- * ============
- * let i = 90i64;
- * let cfg : &Config = i.to!(&Config) ();
- * ============
- */
-pub def to {C of &Config, T of i64} (value : T)-> &Config {
-    Int::new (value)
-}
 
 /**
  * Transform a i32 into a configuration
@@ -387,7 +355,7 @@ pub def to {C of &Config, T of i64} (value : T)-> &Config {
  * let cfg : &Config = i.to!(&Config) ();
  * ============
  */
-pub def to {C of &Config, T of i32} (value : T)-> &Config {
+pub def if is!{C}{X of &Config} && isSigned!{T} () to {class C, T} (value : T)-> &Config {
     Int::new (cast!i64 (value))
 }
 
@@ -399,7 +367,7 @@ pub def to {C of &Config, T of i32} (value : T)-> &Config {
  * let cfg : &Config = b.to!(&Config) ();
  * ============
  */
-pub def to {C of &Config, T of bool} (value : T)-> &Config {
+pub def if is!{C}{X of &Config} && is!{T}{X of bool} to {class C, T} (value : T)-> &Config {
     Bool::new (value)
 }
 
@@ -411,8 +379,8 @@ pub def to {C of &Config, T of bool} (value : T)-> &Config {
  * let cfg : &Config = f.to!(&Config) ();
  * ============
  */
-pub def to {C of &Config, T of f64} (value : T)-> &Config {
-    Float::new (value)
+pub def if is!{C}{X of &Config} && isFloating!{T} () to {class C, T} (value : T)-> &Config {
+    Float::new (cast!f64 (value))
 }
 
 /**
@@ -423,8 +391,13 @@ pub def to {C of &Config, T of f64} (value : T)-> &Config {
  * let cfg : &Config = str.to!(&Config) ();
  * ============
  */
-pub def to {C of &Config, T of [U], U of c32} (value : T)-> &Config {
-    Str::new (value)
+pub def if is!{C}{X of &Config} && isChar!{U} () to {class C, T of [U], U} (value : T)-> &Config {
+    cte if is!{U}{X of c32} {
+        Str::new (value)
+    } else {
+        import std::conv;
+        Str::new (value.to![c32] ())
+    }
 }
 
 /**
@@ -435,7 +408,7 @@ pub def to {C of &Config, T of [U], U of c32} (value : T)-> &Config {
  * let cfg : &Config = str.to!(&Config) ();
  * ============
  */
-pub def to {C of &Config, T of [U], U of c8} (value : T)-> &Config {
+pub def if is!{C}{X of &Config} to {class C, T of [U], U of c8} (value : T)-> &Config {
     import std::conv;
     Str::new (value.to![c32] ())
 }
@@ -448,7 +421,7 @@ pub def to {C of &Config, T of [U], U of c8} (value : T)-> &Config {
  * let cfg : &Config = slc.to!(&Config) ();
  * ============
  */
-pub def to {C of &Config, T of [U], U} (value : T)-> &Config {
+pub def if is!{C}{X of &Config} to {class C, T of [U], U} (value : T)-> &Config {
     let dmut arr = Array::new ();
     for i in value {
         arr:.push (to!(&Config) (i));
@@ -471,7 +444,7 @@ pub def to {C of &Config, T of [U], U} (value : T)-> &Config {
  * let cfg : &Config = st.to!(&Config} ();
  * ===============
  */
-pub def to {C of &Config, struct T} (value : T)-> &Config {
+pub def if is!{C}{X of &Config} to {class C, struct T} (value : T)-> &Config {
     let dmut res = Dict::new ();
     cte for i in 0u32 .. (typeof (__pragma!tupleof (value))::arity) {
         let name = (__pragma!field_names (T))[i];

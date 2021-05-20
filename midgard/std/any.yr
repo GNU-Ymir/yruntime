@@ -1,6 +1,6 @@
 mod std::any;
 import std::conv;
-import std::io;
+import std::io, std::stream;
 
 /** 
  * You will see this importation in many std files 
@@ -40,7 +40,7 @@ pub class @abstract Any {
     /**
      * An any type is printable
      */
-    impl std::io::Printable;
+    impl Streamable;
 
 }
 
@@ -70,16 +70,13 @@ pub class Some {T} over Any {
     }
     
 
-    impl std::io::Printable {
-        /**
-         * Print the value of type T to stdout
-         * If T is not printable, just print its type
-         */
-        pub over print (self) {
-            cte if (__pragma!compile ({ print (self._val); })) {
-                print (self._val);
+    impl Streamable {
+
+        pub over toStream (self, dmut stream : &StringStream) {
+            cte if (__pragma!compile ({ stream:.write (self._val); })) {
+                stream:.write (self._val);
             } else {
-                print (T::typeid);
+                stream:.write (T::typeid);
             }
         }
     }
@@ -97,13 +94,10 @@ pub class None over Any {
      */
     pub self () {}
 
-    impl std::io::Printable {
+    impl Streamable {
 
-        /**
-         * Prints it type name
-         */
-        pub over print (self) {
-            print (typeof (self)::typeid);
+        pub over toStream (self, dmut stream : &StringStream) {
+            stream:.write (typeof (self)::typeid);
         }
         
     }

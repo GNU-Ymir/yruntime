@@ -4,7 +4,7 @@ import core::object, core::typeinfo, core::exception;
 import core::array;
 import core::dispose;
 
-import std::io;
+import std::io, std::stream;
 import std::collection::vec;
 import std::collection::map;
 
@@ -58,7 +58,7 @@ pub class @abstract Config {
         false
     }
     
-    impl std::io::Printable;
+    impl Streamable;
     
 }
 
@@ -225,18 +225,18 @@ pub class @final Array over Config {
         self._content.end ()
     }
 
-    impl std::io::Printable {
+    impl Streamable {
 
         /**
          * Arrays are printable
          */
-        pub over print (self) -> void {
-            print ("Array (");
+        pub over toStream (self, dmut stream : &StringStream) -> void {
+            stream:.write ("Array ("s8);
             for i, j in self._content {
-                if j != 0u64 print (", ");
-                print (i);
+                if j != 0u64 { stream:.write (", "s8); }
+                stream:.write (i);
             }
-            print (")");
+            stream:.write (")");
         }
     }
 }
@@ -369,20 +369,20 @@ pub class @final Dict over Config {
     }
 
     
-    impl std::io::Printable {
+    impl Streamable {
 
         /**
          * Dictionnary are printable 
          */
-        pub over print (self) -> void {
-            print ("Dict (");
+        pub over toStream (self, dmut stream : &StringStream) -> void {
+            stream:.write ("Dict ("s8);
             let mut k = 0us;
             for i, j in self._content {
-                if k != 0us print (", ");
-                print (i, "=> ", j);
+                if k != 0us { stream:.write (", "s8); }
+                stream:.write (i):.write ("=> "s8):.write (j);
                 k += 1us;
             }
-            print (")");
+            stream:.write (")"s8);
         }
     }    
 }
@@ -405,9 +405,9 @@ pub class @final Int over Config {
 
     pub self (i : i32) with i = cast!i64 (i) {}
 
-    impl std::io::Printable {
-        pub over print (self) -> void {
-            print ("Int (", self.i, ")");
+    impl Streamable {
+        pub over toStream (self, dmut stream : &StringStream) -> void {
+            stream:.write ("Int ("s8):.write (self.i):.write (")"s8);
         }
     }
 }
@@ -430,9 +430,9 @@ pub class @final Str over Config {
 
     pub self (str : [c32]) with str = str {}
 
-    impl std::io::Printable {
-        pub over print (self) -> void {
-            print ("Str (", self.str, ")");
+    impl Streamable {
+        pub over toStream (self, dmut stream : &StringStream) -> void {
+            stream:.write ("Str ("s8):.write (self.str):.write (")"s8);
         }
     }
 }
@@ -452,9 +452,9 @@ pub class @final Bool over Config {
 
     pub self (b : bool) with b = b {}
 
-    impl std::io::Printable {
-        pub over print (self)-> void {
-            print ("Bool (", self.b, ")");
+    impl Streamable {
+        pub over toStream (self, dmut stream : &StringStream)-> void {
+            stream:.write ("Bool ("s8):.write (self.b):.write (")"s8);
         }
     }
 }
@@ -475,9 +475,9 @@ pub class @final Float over Config {
 
     pub self (f : f64) with f = f {}
 
-    impl std::io::Printable {
-        pub over print (self)-> void {
-            print ("Float (", self.f, ")");
+    impl Streamable {
+        pub over toStream (self, dmut stream : &StringStream)-> void {
+            stream:.write ("Float ("s8):.write (self.f):.write (")"s8);
         }
     }
 }
@@ -495,9 +495,9 @@ pub class @final Float over Config {
 pub class @final None over Config {
     pub self () {}
 
-    impl std::io::Printable {
-        pub over print (self)-> void {
-            print ("None ()");
+    impl Streamable {
+        pub over toStream (self, dmut stream : &StringStream)-> void {
+            stream:.write ("None ()"s8);
         }
     }
 }

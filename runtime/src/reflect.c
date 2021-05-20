@@ -12,22 +12,39 @@
 #include "gc.h"
 #endif
 
-void _yrt_throw_runtime_abort (_yrt_c8_array_ str);
+ELFContent __ELF_CONTENT__ = { .string_table_size = 0,
+			       .string_table = NULL,
+			       .elf_size = 0,
+			       .elf_data = NULL,
+			       .elf_header = NULL,
+			       .symbol_table = NULL,
+			       .symbol_table_size = 0};
 
-ELFContent _yrt_elf_empty () {
-    ELFContent ret;
-    ret.string_table_size = 0;
-    ret.string_table = NULL;
-    ret.elf_size = 0;
-    ret.elf_data = NULL;
-    ret.elf_header = NULL;
-    ret.symbol_table = NULL;
-    ret.symbol_table_size = 0;
-    return ret;
+void _yrt_throw_runtime_abort (_yrt_c8_array_ str);
+void _yrt_exc_panic (char *file, const char *function, unsigned line);
+
+void _yrt_elf_clean () {
+    if (__ELF_CONTENT__.elf_data != NULL) {
+	munmap (__ELF_CONTENT__.elf_data, __ELF_CONTENT__.elf_size);
+	ELFContent elf = { .string_table_size = 0,
+			    .string_table = NULL,
+			    .elf_size = 0,
+			    .elf_data = NULL,
+			    .elf_header = NULL,
+			    .symbol_table = NULL,
+			    .symbol_table_size = 0};
+	__ELF_CONTENT__ = elf;
+    }
 }
 
 ELFContent _yrt_elf_read (FILE * elfFile) {
-    ELFContent elf = _yrt_elf_empty ();
+    ELFContent elf = { .string_table_size = 0,
+		       .string_table = NULL,
+		       .elf_size = 0,
+		       .elf_data = NULL,
+		       .elf_header = NULL,
+		       .symbol_table = NULL,
+		       .symbol_table_size = 0};
     
     if (fseek (elfFile, 0, SEEK_END)) {
 	_ystring str = str_create_len ("Could not read ELF file", 23);
@@ -35,8 +52,8 @@ ELFContent _yrt_elf_read (FILE * elfFile) {
 	arr.data = str.data;
 	arr.len = str.len;
 	fclose (elfFile);
-	
-	_yrt_throw_runtime_abort (arr); // make the program abort
+
+	_yrt_exc_panic (__FILE__, __FUNCTION__, __LINE__);
     }
 
     // Copy the elf file in program space
@@ -49,8 +66,8 @@ ELFContent _yrt_elf_read (FILE * elfFile) {
 	_yrt_c8_array_ arr;
 	arr.data = str.data;
 	arr.len = str.len;
-	
-	_yrt_throw_runtime_abort (arr); // make the program abort
+
+	_yrt_exc_panic (__FILE__, __FUNCTION__, __LINE__);
     }
 
     // Load and verify elf header
@@ -62,15 +79,21 @@ ELFContent _yrt_elf_read (FILE * elfFile) {
 	arr.data = str.data;
 	arr.len = str.len;
 	
-	_yrt_throw_runtime_abort (arr); // make the program abort
+	_yrt_exc_panic (__FILE__, __FUNCTION__, __LINE__);
     }
 
     int nb_str_tabs = 0;
+    
+    size_t str_offset = elf.elf_header-> e_shoff + (elf.elf_header-> e_shstrndx * (elf.elf_header-> e_shentsize));
+    Elf64_Shdr *sh_strtab = (Elf64_Shdr*) (elf.elf_data + str_offset);
+    const char * sh_strtab_p = elf.elf_data + sh_strtab-> sh_offset;    
     
     // Locate the symbol table
     for (uint16_t i = 0; i < elf.elf_header-> e_shnum; i++) {
 	size_t offset = elf.elf_header-> e_shoff + (i * (elf.elf_header-> e_shentsize));
 	Elf64_Shdr * section_header = (Elf64_Shdr*) (elf.elf_data + offset);
+	const char* name = sh_strtab_p + section_header-> sh_name;
+
 	switch (section_header-> sh_type) {
 	case SHT_SYMTAB :
 	    elf.symbol_table = elf.elf_data + section_header-> sh_offset;
@@ -78,16 +101,10 @@ ELFContent _yrt_elf_read (FILE * elfFile) {
 	    break;
 	
 	case SHT_STRTAB:
-	    if (nb_str_tabs + 1 > elf.string_table_size) {
-		elf.string_table_size += 1;
-		Elf64_Shdr** aux = GC_malloc (elf.string_table_size * sizeof (Elf64_Shdr*));
-		for (int j = 0 ; j < elf.string_table_size - 1; j++)
-		    aux [j] = elf.string_table [j];
-		elf.string_table = aux;
+	    if (strcmp (name, ".strtab") == 0) {
+		elf.string_table = elf.elf_data + section_header-> sh_offset;
+		elf.string_table_size = section_header-> sh_size;
 	    }
-	    
-	    elf.string_table [nb_str_tabs] = section_header;	    
-	    nb_str_tabs += 1;	    
 	    break;
 	
 	default: break;
@@ -100,14 +117,10 @@ ELFContent _yrt_elf_read (FILE * elfFile) {
 _ystring _yrt_elf_name_of_symbol (ELFContent elf, Elf64_Sym* symbol) {
     if (symbol-> st_name != 0) {
 	char * name = NULL;
-	for (int i = 0 ; i < elf.string_table_size; i++) {
-	    void * table_start = elf.elf_data + elf.string_table [i]-> sh_offset;
-	    size_t table_size = elf.string_table [i]-> sh_size;
-	    if (symbol-> st_name  < table_size) {
-		name = (char*) table_start + symbol-> st_name;
-		return str_copy (name);
-	    }
-	}     
+	if (symbol-> st_name  < elf.string_table_size) {
+	    name = (char*) elf.string_table + symbol-> st_name;
+	    return str_copy (name);
+	}         
     }
     return str_empty ();
 }
@@ -115,14 +128,10 @@ _ystring _yrt_elf_name_of_symbol (ELFContent elf, Elf64_Sym* symbol) {
 int _yrt_elf_name_of_symbol_is (ELFContent elf, Elf64_Sym* symbol, const char * name) {
     if (symbol-> st_name != 0) {
 	char * fname = NULL;
-	for (int i = 0 ; i < elf.string_table_size; i++) {
-	    void * table_start = elf.elf_data + elf.string_table [i]-> sh_offset;
-	    size_t table_size = elf.string_table [i]-> sh_size;
-	    if (symbol-> st_name  < table_size) {
-		fname = (char*) table_start + symbol-> st_name;
-		return strcmp (fname, name) == 0;
-	    }
-	}     
+	if (symbol-> st_name  < elf.string_table_size) {
+	    fname = (char*) elf.string_table + symbol-> st_name;
+	    return strcmp (fname, name) == 0;
+	}	     
     }
     return -1;
 }
@@ -132,30 +141,34 @@ void _yrt_elf_print_symbol_table (ELFContent elf) {
     for (uint16_t i = 0 ; i * sizeof (Elf64_Sym) < elf.symbol_table_size; i++) {
 	size_t offset = i * sizeof (Elf64_Sym);
 	Elf64_Sym* symbol = (Elf64_Sym*) (elf.symbol_table + offset);
-	switch (ELF64_ST_TYPE (symbol-> st_info)) {
-	case STT_NOTYPE: printf ("STT_NOTYPE "); break;
-        case STT_OBJECT: printf ("STT_OBJECT "); break;
-        case STT_FUNC: printf ("STT_FUNC "); break;
-        case STT_SECTION: printf ("STT_SECTION "); break;
-        case STT_FILE: printf ("STT_FILE "); break;
-        case STT_COMMON: printf ("STT_COMMON "); break;
-        case STT_TLS: printf ("STT_TLS "); break;
-        case STT_NUM: printf ("STT_NUM "); break;
-        case STT_LOOS: printf ("STT_LOOS "); break;
-        case STT_HIOS: printf ("STT_HIOS "); break;
-        case STT_LOPROC: printf ("STT_LOPROC "); break;
-        case STT_HIPROC: printf ("STT_HIPROC "); break;
-        default:
-            printf ("%d ", ELF64_ST_TYPE(symbol->st_info));
-        }
-    
-	_ystring name = _yrt_elf_name_of_symbol (elf, symbol);
-	if (name.len != 0) {
-	    for (int i = 0 ; i < name.len ; i++) {
-		putchar (name.data [i]);
+	if (ELF64_ST_TYPE (symbol-> st_info) == STT_FUNC) {
+	    switch (ELF64_ST_TYPE (symbol-> st_info)) {
+	    case STT_NOTYPE: printf ("STT_NOTYPE "); break;
+	    case STT_OBJECT: printf ("STT_OBJECT "); break;
+	    case STT_FUNC: printf ("STT_FUNC "); break;
+	    case STT_SECTION: printf ("STT_SECTION "); break;
+	    case STT_FILE: printf ("STT_FILE "); break;
+	    case STT_COMMON: printf ("STT_COMMON "); break;
+	    case STT_TLS: printf ("STT_TLS "); break;
+	    case STT_NUM: printf ("STT_NUM "); break;
+	    case STT_LOOS: printf ("STT_LOOS "); break;
+	    case STT_HIOS: printf ("STT_HIOS "); break;
+	    case STT_LOPROC: printf ("STT_LOPROC "); break;
+	    case STT_HIPROC: printf ("STT_HIPROC "); break;
+	    default:
+		printf ("%d ", ELF64_ST_TYPE(symbol->st_info));
 	    }
+
+	    _ystring name = _yrt_elf_name_of_symbol (elf, symbol);
+	    if (name.len != 0) {
+		for (int i = 0 ; i < name.len ; i++) {
+		    putchar (name.data [i]);
+		}
+	    } else {
+		putchar ('#');
+	    }	
+	    printf ("\n");	
 	}
-	printf (" %d \n", i);	
     }    
 }
 
@@ -248,28 +261,32 @@ void* _yrt_elf_get_constructor_no_param (ELFContent elf, _yrt_c8_array_ mangledC
     }
 }
 
-void* _yrt_create_class_from_name (_yrt_c8_array_ className) {
-    char path [64];
-    FILE * file = fopen (_yrt_get_executable_path (path), "r");
-    ELFContent elf = _yrt_elf_read (file);
+void* _yrt_create_class_from_name (_yrt_c8_array_ mangled) {
+    if (__ELF_CONTENT__.elf_data == NULL) {
+	char path [64];
+	FILE * file = fopen (_yrt_get_executable_path (path), "r");
+	__ELF_CONTENT__ = _yrt_elf_read (file);
+    }
     
-    _yrt_c8_array_ mangled = _yrt_mangle_path (className);
+    //_yrt_c8_array_ mangled = _yrt_mangle_path (className);
 
-    void* vtable = _yrt_elf_get_vtable (elf, mangled, className);
-    void*(*cstr)(void*) = (void*(*)(void*)) _yrt_elf_get_constructor_no_param (elf, mangled, className);
+    void* vtable = _yrt_elf_get_vtable (__ELF_CONTENT__, mangled, mangled);
+    void*(*cstr)(void*) = (void*(*)(void*)) _yrt_elf_get_constructor_no_param (__ELF_CONTENT__, mangled, mangled);
 
     void* classData = _yrt_alloc_class (vtable);
     return cstr (classData);
 }
 
 void* _yrt_create_class_from_name_no_construct (_yrt_c8_array_ className) {
-    char path [64];
-    FILE * file = fopen (_yrt_get_executable_path (path), "r");
-    ELFContent elf = _yrt_elf_read (file);
+    if (__ELF_CONTENT__.elf_data == NULL) {
+	char path [64];
+	FILE * file = fopen (_yrt_get_executable_path (path), "r");
+	__ELF_CONTENT__ = _yrt_elf_read (file);
+    }
     
-    _yrt_c8_array_ mangled = _yrt_mangle_path (className);
+    //_yrt_c8_array_ mangled = _yrt_mangle_path (className);
 
-    void* vtable = _yrt_elf_get_vtable (elf, mangled, className);    
+    void* vtable = _yrt_elf_get_vtable (__ELF_CONTENT__, className, className);    
     void* classData = _yrt_alloc_class (vtable);
     return classData;
 }
@@ -296,11 +313,13 @@ void * _yrt_reflect_get_function (_yrt_c8_array_ funcName, _yrt_c8_array_ retNam
     name = str_concat (name, str_create_len ("Z", 1));
     name = str_concat (name, str_create_len (retName.data, retName.len));
 
-    char path [64];
-    FILE * file = fopen (_yrt_get_executable_path (path), "r");
-    ELFContent elf = _yrt_elf_read (file);
+    if (__ELF_CONTENT__.elf_data == NULL) {
+	char path [64];
+	FILE * file = fopen (_yrt_get_executable_path (path), "r");
+	__ELF_CONTENT__ = _yrt_elf_read (file);
+    }
     
-    Elf64_Sym * sym = _yrt_elf_find_function_in_table (elf, name.data);
+    Elf64_Sym * sym = _yrt_elf_find_function_in_table (__ELF_CONTENT__, name.data);
     if (sym != NULL) {
 	return (void*) sym-> st_value;
     } else {
@@ -326,9 +345,9 @@ void* _yrt_reflect_get_function_utf32 (_yrt_c32_array_ name, _yrt_c32_array_ _re
     return _yrt_reflect_get_function (funcName, retType, params);
 }
 
-void * _yrt_reflect_get_method (_yrt_c8_array_ _className, _yrt_c8_array_ _funcName, _yrt_c8_array_ retName, _yrt_array_ paramNames) {
+void * _yrt_reflect_get_method (_yrt_c8_array_ mangleClassName, _yrt_c8_array_ _funcName, _yrt_c8_array_ retName, _yrt_array_ paramNames) {
     _yrt_c8_array_ mangle = _yrt_mangle_path (_funcName);
-    _yrt_c8_array_ mangleClassName = _yrt_mangle_path (_className);
+    //_yrt_c8_array_ mangleClassName = //_yrt_mangle_path (_className);
     
     _ystring className = str_create_len (mangleClassName.data, mangleClassName.len);
     _ystring funcName = str_create_len (mangle.data, mangle.len);
@@ -343,11 +362,13 @@ void * _yrt_reflect_get_method (_yrt_c8_array_ _className, _yrt_c8_array_ _funcN
     name = str_concat (name, str_create_len ("Z", 1));
     name = str_concat (name, str_create_len (retName.data, retName.len));
 
-    char path [64];
-    FILE * file = fopen (_yrt_get_executable_path (path), "r");
-    ELFContent elf = _yrt_elf_read (file);
+    if (__ELF_CONTENT__.elf_data == NULL) {
+	char path [64];
+	FILE * file = fopen (_yrt_get_executable_path (path), "r");
+	__ELF_CONTENT__ = _yrt_elf_read (file);
+    }
     
-    Elf64_Sym * sym = _yrt_elf_find_function_in_table (elf, name.data);
+    Elf64_Sym * sym = _yrt_elf_find_function_in_table (__ELF_CONTENT__, name.data);
     if (sym != NULL) {
 	return (void*) sym-> st_value;
     } else {
@@ -375,9 +396,9 @@ void* _yrt_reflect_get_method_utf32 (_yrt_c32_array_ _className, _yrt_c32_array_
 }
 
 
-void * _yrt_reflect_get_method_mutable (_yrt_c8_array_ _className, _yrt_c8_array_ _funcName, _yrt_c8_array_ retName, _yrt_array_ paramNames) {
+void * _yrt_reflect_get_method_mutable (_yrt_c8_array_ mangleClassName, _yrt_c8_array_ _funcName, _yrt_c8_array_ retName, _yrt_array_ paramNames) {
     _yrt_c8_array_ mangle = _yrt_mangle_path (_funcName);
-    _yrt_c8_array_ mangleClassName = _yrt_mangle_path (_className);
+    //_yrt_c8_array_ mangleClassName = _yrt_mangle_path (_className);
     
     _ystring className = str_create_len (mangleClassName.data, mangleClassName.len);
     _ystring funcName = str_create_len (mangle.data, mangle.len);
@@ -388,17 +409,20 @@ void * _yrt_reflect_get_method_mutable (_yrt_c8_array_ _className, _yrt_c8_array
     name = str_concat (name, str_create_len ("x", 1));
 
     name = str_concat (name, className);
+
     for (int i = 0 ; i < paramNames.len ; i++) {
-	name = str_concat (name, str_create_len (((_yrt_c8_array_**) paramNames.data) [i]-> data, ((_yrt_c8_array_**) paramNames.data) [i]-> len));
+    	name = str_concat (name, str_create_len (((_yrt_c8_array_**) paramNames.data) [i]-> data, ((_yrt_c8_array_**) paramNames.data) [i]-> len));	
     }
     name = str_concat (name, str_create_len ("Z", 1));
     name = str_concat (name, str_create_len (retName.data, retName.len));
 
-    char path [64];
-    FILE * file = fopen (_yrt_get_executable_path (path), "r");
-    ELFContent elf = _yrt_elf_read (file);
+    if (__ELF_CONTENT__.elf_data == NULL) {
+	char path [64];
+	FILE * file = fopen (_yrt_get_executable_path (path), "r");
+	__ELF_CONTENT__ = _yrt_elf_read (file);
+    }
     
-    Elf64_Sym * sym = _yrt_elf_find_function_in_table (elf, name.data);
+    Elf64_Sym * sym = _yrt_elf_find_function_in_table (__ELF_CONTENT__, name.data);
     if (sym != NULL) {
 	return (void*) sym-> st_value;
     } else {

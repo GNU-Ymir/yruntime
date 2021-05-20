@@ -23,9 +23,11 @@ pub {
     extern (C) def listen (sock : i32, nb : i32)-> i32;
     extern (C) def connect (sock : i32, servaddr : &sockaddr_in, size : u32)-> i32;
     extern (C) def accept (sock : i32, dmut clientaddr : &sockaddr_in, dmut size : &usize)-> i32;
+    extern (C) def getsockname (sock : i32, dmut servaddr : &sockaddr_in, dmut size : &usize)-> i32; 
     
-    extern (C) def write (sock : i32, ptr : &(void), size : usize);
-    extern (C) def read (sock : i32, ptr : &(void), size : usize);
+    extern (C) def write (sock : i32, ptr : &(void), size : usize)-> i32;
+    extern (C) def read (sock : i32, ptr : &(void), size : usize)-> i32;
+    extern (C) def recv (sock : i32, ptr : &(void), size : usize, flag : SocketFlag)-> i32;
     extern (C) def close (sock : i32);
     
     enum : u32
@@ -51,5 +53,36 @@ pub {
     | AF_INET6            = 10u16	
     | AF_MAX              = 12u16
      -> AddressFamily;
+
+    enum
+    | FD_SETSIZE = 1024u32
+     -> FDConsts; 
+
+    enum
+    | O_NONBLOCK = 2048u32 
+    | MSG_PEEK   = 2u32
+     -> SocketFlag;
+    
+    struct
+    | padd : [u8 ; 128u32]
+     -> fd_set;
+
+    enum
+    | NONE = 0u16
+    | POLLIN = 1u16
+    | POLLOUT = 4u16
+     -> PollEvent;
+    
+    struct
+    | fd : i32
+    | event : PollEvent
+    | revents : PollEvent = PollEvent::NONE
+     -> pollfd_t;
+    
+    extern (C) def _yrt_fd_zero (dmut ensemble : &fd_set)-> void;
+    extern (C) def _yrt_fd_isset (sock : i32, ensemble : &fd_set)-> bool;
+    extern (C) def _yrt_fd_set (sock : i32, dmut ensemble : &fd_set);
+    extern (C) def select (size : u32,  dmut ensemble : &fd_set, i : &(void), j : &(void), k : &(void))-> i32;
+    extern (C) def poll (fds : &(pollfd_t), nb : usize, timeout : u32)-> i32;
     
 }

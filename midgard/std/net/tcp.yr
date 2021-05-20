@@ -2,9 +2,11 @@ mod std::net::tcp;
 
 import core::object, core::typeinfo, core::exception;
 import core::duplication;
-import etc::c::socket;
+import core::dispose;
 
-import std::io;
+import etc::c::socket, etc::c::files;
+
+import std::io, std::stream;
 import std::net::address;
 import std::net::packet;
 
@@ -18,6 +20,7 @@ pub enum
 | LISTEN          = 3u8
 | CONNECT         = 4u8
 | ACCEPT          = 5u8
+| SOCKET_CLOSED   = 6u8
  -> TcpErrorCode;
 
 
@@ -34,14 +37,9 @@ pub class TcpError over Exception {
              code = code
     {}
 
-    impl std::io::Printable {
-        pub over print (self) {
-            if (self.trace.len != 0u64) {
-                println ("TcpError (", self.code, ") : ", self.msg);
-                self::super.printStackTrace ();
-            } else {
-                print ("TcpError (", self.code, ") : ", self.msg);
-            }
+    impl Streamable {
+        pub over toStream (self, dmut stream : &StringStream) {
+            self::super.toStream (alias stream);
         }
     }
        
@@ -55,6 +53,7 @@ pub class TcpListener {
     /** The listening socket */
     let mut _sockfd : i32 = 0;
     let mut _addr : &SockAddress;
+    let mut _port : u16 = 0u16;
         
     /**
      * Create a new TcpListener and bind it to the specific address
@@ -74,6 +73,24 @@ pub class TcpListener {
         }
     }
 
+    /**
+     * Create a listener ready for accepting connection
+     * The port and address are unspecified (port is automatically choosed, and can be retreived by self.getPort ())
+     */
+    pub self listen ()
+        with _addr = SockAddrV4::new (Ipv4::LOCALHOST, 0u16)
+        throws &TcpError
+    {
+        match self._addr {
+            v4 : &SockAddrV4 => {
+                self:.bindV4 (v4);
+            }
+            _ => {
+                throw TcpError::new (TcpErrorCode::ADDR_TYPE, "Unknown addr type : " ~ (self._addr)::typeinfo.name);
+            }
+        }
+    }
+    
     /**
      * Accept a new client connection 
      * @example: 
@@ -98,21 +115,34 @@ pub class TcpListener {
         let mut len = sizeof (sockaddr_in);
 
         let sock = etc::c::socket::accept (self._sockfd, alias (&client), alias (&len));
-        if (sock < 0) {
+        if (sock <= 0) {
             throw TcpError::new (TcpErrorCode::ACCEPT, "failed to accept client");
         }        
         
         return TcpStream::new (sock, self.createAddr (client));
     }
 
+    // pub def setNonBlocking (mut self)-> void {
+    //     let flags = fcntl(self._sockfd, FileFlags::F_GETFL);
+    //     fcntl(self._sockfd, FileFlags::F_SETFL, flags | SocketFlag::O_NONBLOCK);
+    // }
+    
+
     /**
-     * Close the listener
+     * @returns: the file descriptor of the socket
+     * @warning: closing this socket will make the listener close, this should be done outside the listener
      */
-    pub def close (mut self) {
-        etc::c::socket::close (self._sockfd);
-        self._sockfd = 0;
+    pub def getFd (self)-> i32 {
+        self._sockfd
     }
     
+    /**
+     * @returns: the listening port
+     */
+    pub def getPort (self)-> u16 {
+        self._port
+    }
+
     /**
      * Bind the tcp listener to an ipv4 address
      */
@@ -133,9 +163,17 @@ pub class TcpListener {
             throw TcpError::new (TcpErrorCode::BIND, "socket bind failed");
         }
 
-        if (listen (self._sockfd, 5) != 0) {
+        if (listen (self._sockfd, 100) != 0) {
             throw TcpError::new (TcpErrorCode::LISTEN, "socket listen failed");
         }
+
+        if (ip.port () == 0us) {
+            let mut len = sizeof (sockaddr_in);
+            let r = etc::c::socket::getsockname (self._sockfd, alias &servaddr, alias &len);
+            if (r == 0) {
+                self._port = ntohs (servaddr.sin_port);
+            }
+        } else self._port = ip.port ();
     }
 
     /**
@@ -164,7 +202,24 @@ pub class TcpListener {
         }
     }
 
-    impl Printable;
+    impl Streamable;
+
+    impl Disposable {
+        /**
+         * Close the listener
+         */
+        pub over dispose (mut self) {
+            if (self._sockfd != 0) {
+                etc::c::socket::close (self._sockfd);
+                self._sockfd = 0;
+            }
+        }
+
+    }
+
+    __dtor (mut self) {
+        self:.dispose ();
+    }
     
 }
 
@@ -222,6 +277,21 @@ pub class TcpStream {
                 throw TcpError::new (TcpErrorCode::ADDR_TYPE, "unknwon addr type : " ~ (self._addr)::typeinfo.name);
             }
         }
+    }    
+
+    /**
+     * @returns: the address to which the stream is connected
+     */
+    pub def getAddr (self)-> &SockAddress {
+        self._addr
+    }
+
+    
+    /**
+     * @returns: the file descriptor of the socket
+     */
+    pub def getFd (self)-> i32 {
+        self._sockfd
     }
     
     /**
@@ -234,8 +304,15 @@ pub class TcpStream {
      *  - T: a slice type
      *  - U: any type
      */
-    pub def rawSend {T of [U], U} (mut self, a : T) -> void {
-        etc::c::socket::write (self._sockfd, cast!{&void} (a.ptr), sizeof (U) * cast!(usize) (a.len));
+    pub def rawSend {T of [U], U} (mut self, a : T) -> void
+        throws &TcpError
+    {
+        if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
+        
+        if (etc::c::socket::write (self._sockfd, cast!{&void} (a.ptr), sizeof (U) * cast!(usize) (a.len)) == -1) {
+            self._sockfd = 0;
+            throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
+        }
     }
 
     /**
@@ -245,19 +322,53 @@ pub class TcpStream {
      * @templates: 
      * - U: any type
      */
-    pub def rawReceive {U} (mut self, nb : usize) -> dmut [U] {
+    pub def rawReceive {U} (mut self, nb : usize) -> dmut [U]
+        throws &TcpError
+    {
+        if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
+
         let dmut alloc = core::duplication::allocArray!(U) (nb);
-        etc::c::socket::read (self._sockfd, alias cast!(&void) (alloc.ptr), nb * sizeof (U));
+        let r = etc::c::socket::read (self._sockfd, alias cast!(&void) (alloc.ptr), nb * sizeof (U));
+        if (r == -1) {
+            self._sockfd = 0;
+            throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
+        }
         return alias alloc;
     }
 
     /**
+     * Receive data in a raw way (without unpacking it)
+     * @params: 
+     *   - nb: the number of element to receive (nb * sizeof(U)) will be read from the stream
+     * @templates: 
+     * - U: any type
+     */
+    pub def rawReceive {U} (mut self, dmut elem : &U) -> void
+        throws &TcpError
+    {
+        if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
+        let r = etc::c::socket::read (self._sockfd, alias cast!(&void) (elem), sizeof (U));
+        if (r == -1) {
+            self._sockfd = 0;
+            throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
+        }
+    }
+    
+
+    /**
      * Send a packable class through the stream
      */
-    pub def send {T impl Packable} (mut self, a : T) -> void {
+    pub def send {T impl std::net::packet::Packable} (mut self, a : T) -> void
+        throws &TcpError
+    {
+        if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
         let packet = a.pack ();
         // We start by sending the size of the packet
-        etc::c::socket::write (self._sockfd, cast!(&void) (&(packet.len)), sizeof (typeof (packet.len)));
+
+        if (etc::c::socket::write (self._sockfd, cast!(&void) (&(packet.len)), sizeof (typeof (packet.len))) == -1) {
+            self._sockfd = 0;
+            throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
+        }
         // And then the packet
         self:.rawSend (packet);
     }
@@ -268,22 +379,49 @@ pub class TcpStream {
      * @cf: std::network::packet
      */
     pub def receive (mut self)-> dmut &Object
-        throws &UnpackError
-    {        
+        throws &UnpackError, &TcpError
+    {
+        if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
+        
         let mut size = 0us;
-        etc::c::socket::read (self._sockfd, alias cast!(&void) (&size), sizeof (usize));
+        if (etc::c::socket::read (self._sockfd, alias cast!(&void) (&size), sizeof (usize)) == -1) {
+            self._sockfd = 0;
+            throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
+        }
+
         let packet : [u8] = self:.rawReceive!{u8} (size);
+        
         return packet.unpack ();
     }
-    
-    /**
-     * Close the connection with the remote
-     */
-    pub def close (mut self) {
-        etc::c::socket::close (self._sockfd);
-        self._sockfd = 0;
-    }
 
+    /**
+     * Receive a packet from the stream, but does not unpack it into an object
+     * @returns: a packet of data
+     * @cf: std::network::packet
+     */
+    pub def receivePacket (mut self)-> [u8]
+        throws &TcpError
+    {
+        if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
+        
+        let mut size = 0us;
+        if (etc::c::socket::read (self._sockfd, alias cast!(&void) (&size), sizeof (usize)) == -1) {
+            throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
+        }
+
+        self:.rawReceive!{u8} (size)
+    }
+    
+
+    /**
+     * @returns: true if the socket can still read, false otherwise
+     * @warning: to work properly something has to be sent from the other side of the socket, this is a blocking function
+     */
+    pub def isAliveRead (self)-> bool {
+        let mut c = '\u{0}'c8;
+        recv (self._sockfd, cast!(&void) (&c), 1us, SocketFlag::MSG_PEEK) == 1
+    }
+    
     prv def connectV4 (mut self, addr : &SockAddrV4)
         throws &TcpError
     {
@@ -304,5 +442,21 @@ pub class TcpStream {
     }
 
 
-    impl std::io::Printable;
+    impl Streamable;
+    
+    impl Disposable {
+        /**
+         * Close the connection with the remote
+         */
+        pub over dispose (mut self) {
+            if (self._sockfd != 0) {
+                etc::c::socket::close (self._sockfd);
+                self._sockfd = 0;
+            }
+        }
+    }
+
+    __dtor (mut self) {
+        self:.dispose ();
+    }    
 }
