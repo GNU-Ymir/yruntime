@@ -25,19 +25,22 @@ mod std::hash;
  * ============
  */
 pub trait Hashable {
+
     /**
      * Transform an object into a u64
      * By default, it transform the class raw data into an array
      * @complexity: O (n), with n = recursive number of field of the class 
      */
     pub def hash (self)-> u64 {
-        let x = self::tupleof;
+        let mut hash_value = cte if (__pragma!compile ({self::super;})) {
+            self::super.hash ()
+        } else { 0u64 }
+        
         let p = 31u64;
         let m = 1_000_000_009u64;
-        let mut hash_value = 0u64;
         let mut p_pow = 1u64;
 
-        for i in x {
+        for i in __pragma!local_tupleof (self) {
             hash_value = (hash_value + (hash (i) + 1u64) * p_pow) % m;
             p_pow = (p_pow * p) % m;
         }
