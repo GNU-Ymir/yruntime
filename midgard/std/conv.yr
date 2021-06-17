@@ -809,6 +809,43 @@ pub {
             }
         }
     }
+
+
+    /**
+     * This function is the standard cast from base class to heir class
+     * It is used instead of cast, that is not safe
+     * @example
+     * ==================
+     * import std::conv;
+    
+     * class Foo {
+     *    pub self () {}
+     * }
+
+     * class Bar over Foo {
+     *     pub self () {}
+     * }
+     *
+     *
+     * let x : &Foo = Bar::new ();
+     *  
+     * let _ : &Bar = { 
+     *      x.to!(&Bar) ()
+     * } catch {
+     *    CastFailure () => { Bar::new () }
+     * }
+     * ==================
+     */
+    def if (is!U{J over T}) to {U, T} (x : T)-> U
+        throws &CastFailure
+    {
+        match x {
+            z : U => return z;
+            _ => {
+                throw CastFailure::new (x::typeinfo, U::typeinfo);
+            }
+        }        
+    }
     
 }
 

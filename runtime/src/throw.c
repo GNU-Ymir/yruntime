@@ -15,6 +15,8 @@
 struct _yrt_thread_stack *_yrt_exc_global = NULL;
 pthread_mutex_t _yrt_exc_mutex;
 
+_yrt_array_ _yrt_exc_resolve_stack_trace (_yrt_array_ syms);
+
 void _yrt_exc_init () {
     _yrt_thread_mutex_init (&_yrt_exc_mutex, NULL);
 }
@@ -188,4 +190,12 @@ void _yrt_exc_print (FILE *stream, struct _yrt_thread_stack * list)
     _yrt_EXC_PRINT (list-> code, stream);
 #endif
     fprintf (stream, "\n");
+
+    _yrt_array_ trace = _yrt_exc_get_stack_trace ();
+    if (trace.len != 0) {
+	trace = _yrt_exc_resolve_stack_trace (trace);
+	if (trace.len != 0) {
+	    fprintf (stream, "%s\n", (char*) trace.data);
+	}
+    }
 }

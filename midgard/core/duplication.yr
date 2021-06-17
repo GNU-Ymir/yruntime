@@ -1,11 +1,39 @@
 mod core::duplication;
 
+import core::exception;
+import core::object;
 
 mod allocMod {T} {
     pub extern (C) def _yrt_new_array (_ : usize, _ : usize)-> dmut [T];
     pub extern (C) def _yrt_new_block (_ : usize, _ : usize)-> dmut &(T);
     pub extern (C) def memcpy (_ : &(T),  _ : &T, _ : usize)-> void;
 }
+
+mod Runtime {F, T} {
+    
+    /**
+     * Runtime unsafe cast of a pointer to another 
+     * This is used to initialized the fields even when they are not mutable 
+     * This is unsafe but we can argue that if a class has successfuly produced a packet 
+     * Then the packet contains a valid class that can be copied as it is
+     */
+    pub extern (C) def _yrt_unsafe_cast (x : F)-> dmut T;
+
+        /**
+     * Runtime unsafe cast of a pointer to another 
+     * This is used to initialized the fields even when they are not mutable 
+     * This is unsafe but we can argue that if a class has successfuly produced a packet 
+     * Then the packet contains a valid class that can be copied as it is
+     */
+    pub extern (C) def _yrt_unsafe_cast (ref x : F)-> dmut T;
+
+    /**
+     * Allocate a class from the vtable
+     */
+    pub extern (C) def _yrt_alloc_class (vtable : &void)-> dmut &u8;
+
+}
+
 
 pub def alloc {T} (a : T) -> mut & (mut T) {
     let mut x = alias allocMod!{T}::_yrt_new_block (sizeof T, 1u64)        
@@ -27,20 +55,55 @@ pub def allocArray {T} (len : usize) -> dmut [T] {
  */
 pub def memCopy {T} (fr : [T], mut to : [mut T]) {
     let len = if (to.len < fr.len) { to.len } else { fr.len }
-    allocMod!{T}::memcpy (to.ptr, fr.ptr, len *:usize sizeof (T));
+    allocMod!{T}::memcpy (to.ptr, fr.ptr, cast!usize (len) * sizeof (T));
 }
 
 pub {
 
     trait Copiable {
-        pub def deepCopy (self)-> dmut (typeof self);
+        
+        prot def @{final} __coreduplication_copyInner (self, dmut packet : &(u8)) {            
+            cte if (__pragma!compile ({self::super;})) {
+                cte if (is!{typeof (self::super)} {U impl Copiable}) {
+                    self::super.__coreduplication_copyInner (alias packet);
+                } else {
+                    cte assert (false, "ancestor " ~ typeof (self::super)::typeid ~ " is not copiable");
+                }
+            } else { packet; }
+            
+            cte for i in 0us .. ((__pragma!local_field_offsets (typeof (self))).len) {
+                let offset = (__pragma!local_field_offsets (typeof (self))) [i];
+                let dmut z : &(mut typeof ((__pragma!local_tupleof (self)).i)) = Runtime!{&u8, &(mut typeof ((__pragma!local_tupleof (self)).i))}::_yrt_unsafe_cast (alias (packet + offset));
+
+                cte if __pragma!compile ({dcopy ((__pragma!local_tupleof (self)).i)}) {
+                    __pragma!trusted ({
+                        *z = dcopy ((__pragma!local_tupleof (self)).i);
+                    })
+                } else {
+                    z;
+                }
+            }            
+        }
+               
+        pub def deepCopy (self)-> dmut &Object {
+            let dmut cp = Runtime!{&void, &void}::_yrt_alloc_class (__pragma!vtable (typeof (self)));
+            cte for i in 0us .. ((__pragma!local_field_offsets (typeof (self))).len) {
+                // This method is not validated if it is replaced by a override in the implementation
+                cte if !(__pragma!compile ({dcopy ((__pragma!local_tupleof (self)).i)})) {
+                    cte assert (false, "cannot create a default copier for type " ~ typeof (self)::typeid ~ ", due to not copiable field '" ~ (__pragma!field_names (typeof (self))) [i] ~ "' of type " ~ typeof ((__pragma!local_tupleof (self)).i)::typeid);
+                }
+            }
+            
+            self.__coreduplication_copyInner (alias cp);
+            alias Runtime!{&u8, &Object}::_yrt_unsafe_cast (cp)
+        }
     }
 
-    def deepCopy {T} (a : T)-> mut T {
+    def deepCopy {T} (a : T)-> dmut T {
         a
     }
     
-    def deepCopy {struct T} (a : T) -> mut T {
+    def deepCopy {struct T} (a : T) -> dmut T {
         let dmut t = alias ([0u8 ; sizeof (T)]);
         let aPtr = &a;
         __pragma!trusted ({
