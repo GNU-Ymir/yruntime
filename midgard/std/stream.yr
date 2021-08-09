@@ -7,6 +7,28 @@ import std::collection::vec;
 import std::io, std::traits;
 
 
+
+mod Runtime {F, T} {
+    
+    /**
+     * Runtime unsafe cast of a pointer to another 
+     * This is used to initialized the fields even when they are not mutable 
+     * This is unsafe but we can argue that if a class has successfuly produced a packet 
+     * Then the packet contains a valid class that can be copied as it is
+     */
+    pub extern (C) def _yrt_unsafe_cast (x : F)-> dmut T;
+
+}
+
+mod DcopyMap {
+    pub extern (C) def _yrt_dcopy_map_is_started ()-> bool;
+    pub extern (C) def _yrt_purge_dcopy_map ();
+    
+    pub extern (C) def _yrt_find_dcopy_map (_ : &void)-> dmut &void;
+    pub extern (C) def _yrt_insert_dcopy_map (_ : &void, _ : &void);
+}
+
+
 /**
  * When a class implement it, we can call the function write with it
  * @example: 
@@ -88,9 +110,22 @@ pub trait Streamable {
      * Print the class name and content into the stream
      */
     pub def toStream (self, dmut stream: &StringStream)-> void {
-        stream:.write (typeof (self)::typeid):.write ("("s8);
-        self.__stream__streamContent (alias stream);
-        stream:.write (')'c8);
+        let started = DcopyMap::_yrt_dcopy_map_is_started ();
+        {
+            let dmut res = DcopyMap::_yrt_find_dcopy_map (Runtime!{typeof self, &void}::_yrt_unsafe_cast (self));
+            stream:.write (typeof (self)::typeid):.write ("("s8);
+            if (res is null) {
+                DcopyMap::_yrt_insert_dcopy_map (Runtime!{typeof self, &void}::_yrt_unsafe_cast (self), Runtime!{typeof self, &void}::_yrt_unsafe_cast (self));
+                self.__stream__streamContent (alias stream);
+            } else {
+                stream:.write ("..."s8);
+            }
+            stream:.write (')'c8);
+        } exit {
+            if (!started) {
+                DcopyMap::_yrt_purge_dcopy_map ();
+            } 
+        }
     }
     
 }
