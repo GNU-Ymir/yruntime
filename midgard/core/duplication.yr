@@ -153,14 +153,23 @@ pub {
        
 }
 
+
+mod Runtime {
+    pub extern (C) def _yrt_unsafe_cast (len : usize, x : &void)-> dmut [c8];
+}
+
 def deepCopySlice {T of [U], U} (a : T) -> dmut [dmut U] {
     let started = DcopyMap::_yrt_dcopy_map_is_started ();
     {
         let dmut x : dmut [U] = alias allocArray!U (a.len);
         let cp = DcopyMap::_yrt_find_dcopy_map (cast!{&void} (a.ptr));
         if (cp !is null) {
-            let dmut res = Runtime!{(usize, &void), T}::_yrt_unsafe_cast ((a.len, cp));
-            return res;
+            struct
+            | dmut arr : dmut [U]
+             -> Arr;
+
+            let mut _ = Runtime!{(usize, &void), T}::_yrt_unsafe_cast ((a.len, cp));
+            return alias x;
         } else {
             DcopyMap::_yrt_insert_dcopy_map (cast!{&void} (a.ptr), cast!{&void} (x.ptr));
         
