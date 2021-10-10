@@ -327,6 +327,33 @@ pub class @final Dict over Config {
         self._content:.insert (k, value);
     }
 
+
+    /**
+     * @return: the value at index k, if it exists, otherwise return value
+     * @params: 
+     * - k: an index key
+     * - value: the value to return if the key is not found, or of the wrong type
+     * @example: 
+     * ================
+     * let dmut dict = Dict::new ();
+     * (alias dict) ["foo"] = Str::new ("foo");    
+     * (alias dict) ["bar"] = Int::new (42);
+     *
+     * assert (dict.getOr ("bar", 56) == 42);
+     * assert (dict.getOr ("baz", 56) == 56);
+     * ================
+     */
+    pub def getOr {T} (self, k : [c32], value : T)-> T {
+        if (k in self._content) {
+            {
+                import std::config::conv;
+                return self._content [k].to!{T} ();                
+            } catch {
+                _ => return value;
+            }
+        } else return value;
+    }
+    
     /**
      * Check if a key can be found in the dictionnary 
      * @params: 
