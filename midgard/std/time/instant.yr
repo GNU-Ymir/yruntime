@@ -49,22 +49,22 @@ pub def zero ()-> Instant {
  * println ((instant::now () - start).to![c8] ());
  * =================
  */
-pub def opBinary {"-"} (left : Instant, right : Instant, negative : bool = false) -> &Duration {
+pub def opBinary {"-"} (left : Instant, right : Instant, negative : bool = false) -> Duration {
     if (left.sec < right.sec) {
         return right.opBinary!"-" (left, negative-> true);
     }
 
     if (left.usec >= right.usec) {
-        Duration::new (negative-> negative, left.sec - right.sec, left.usec - right.usec)
+        Duration (negative-> negative, left.sec - right.sec, left.usec - right.usec)
     } else {
         if (left.sec == right.sec) {
             right.opBinary!"-" (left, negative-> true)
         } else {
             let usec = right.usec - left.usec;
             if (usec != 0u64) {
-                Duration::new (negative-> negative, left.sec - right.sec - 1u64, (1_000_000u64 - usec))
+                Duration (negative-> negative, left.sec - right.sec - 1u64, (1_000_000u64 - usec))
             } else {
-                Duration::new (negative-> negative, left.sec - right.sec, 0u64)
+                Duration (negative-> negative, left.sec - right.sec, 0u64)
             }
         }
     }
@@ -80,9 +80,9 @@ pub def opBinary {"-"} (left : Instant, right : Instant, negative : bool = false
  * println (instant::now () + (5u64).seconds ());
  * ====================
  */
-pub def opBinary {"+"} (left : Instant, right : &Duration)-> Instant {
+pub def opBinary {"+"} (left : Instant, right : Duration)-> Instant {
     if (right.negative) {
-        opBinary!{"-"} (left, Duration::new (right.sec, right.usec))
+        opBinary!{"-"} (left, Duration (right.sec, right.usec))
     } else {
         if (left.usec + right.usec > 1_000_000u64) {
             let usec = (left.usec + right.usec) % 1_000_000u64;
@@ -103,9 +103,9 @@ pub def opBinary {"+"} (left : Instant, right : &Duration)-> Instant {
  * println (instant::now () - (5u64).seconds ());
  * ====================
  */
-pub def opBinary {"-"} (left : Instant, right : &Duration)-> Instant {
+pub def opBinary {"-"} (left : Instant, right : Duration)-> Instant {
     if (right.negative) {
-        opBinary!{"+"} (left, Duration::new (right.sec, right.usec))
+        opBinary!{"+"} (left, Duration (right.sec, right.usec))
     } else {
         if (left.sec < right.sec) {
             Instant (0u64, 0u64)
