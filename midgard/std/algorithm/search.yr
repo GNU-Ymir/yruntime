@@ -1,4 +1,6 @@
 mod std::algorithm::search;
+import core::typeinfo;
+import core::array, core::exception;
 import std::collection::seq;
 
 /**
@@ -100,19 +102,19 @@ pub def any {F : fn (U)-> bool, T impl Seq!U, U} (a : T)-> bool {
  * let a = [1, 2, 3];
  * let i = a.find!{|x,y|=> x == y} (1);
  * let res = match i {
- *     Ok (0u64) => true
+ *     Ok (0us) => true
  *     _ => false
  * }
  * assert (res);
  * ============
  */
-pub def find {F : fn (U, U)-> bool, T of [U], U} (a : T, elem : U) -> (u64)? {
-    for i in 0u64 .. a.len {
+pub def find {F : fn (U, U)-> bool, T of [U], U} (a : T, elem : U) -> (usize)? {
+    for i in 0us .. a.len {
         match F (a [i], elem)? {
             Ok (true) => return (i)?;
         }
     }
-    return (u64?)::err;
+    return (usize?)::err;
 }
 
 /**
@@ -127,19 +129,19 @@ pub def find {F : fn (U, U)-> bool, T of [U], U} (a : T, elem : U) -> (u64)? {
  * let a = [1, 2, 3];
  * let i = a.find (1);
  * let res = match i {
- *     Ok (0u64) => true
+ *     Ok (0us) => true
  *     _ => false
  * }
  * assert (res);
  * ============
  */
-pub def find {T of [U], U} (a : T, elem : U) -> (u64)? {
-    for i in 0u64 .. a.len {
+pub def find {T of [U], U} (a : T, elem : U) -> (usize)? {
+    for i in 0us .. a.len {
         match (a [i] == elem)? {
             Ok (true) => return (i)?
         }
     }
-    return (u64?)::err;
+    return (usize?)::err;
 }
 
 /**
@@ -157,23 +159,23 @@ pub def find {T of [U], U} (a : T, elem : U) -> (u64)? {
  * let a = vec #[1, 2, 3];
  * let i = a.find!{|x,y|=> x == y} (1);
  * let res = match i {
- *     Ok (0u64) => true
+ *     Ok (0us) => true
  *     _ => false
  * }
  * assert (res);
  * ============
  */
-pub def find {F : fn (U, U)-> bool, T impl Seq!U, U} (a : T, elem : U) -> (u64)? {
-    let dmut i = 0u64;
+pub def find {F : fn (U, U)-> bool, T impl Seq!U, U} (a : T, elem : U) -> (usize)? {
+    let dmut i = 0us;
     for z in a { // We do not use opIndex, because it can have very bad complexity compared to collection iteration
         match (z) {
             Ok (x:_) => {
                 if (F (x, elem)) return (i)?;
             }
         }
-        i += 1u64;
+        i += 1us;
     }
-    return (u64?)::err;
+    return (usize?)::err;
 }
 
 /**
@@ -189,23 +191,23 @@ pub def find {F : fn (U, U)-> bool, T impl Seq!U, U} (a : T, elem : U) -> (u64)?
  * let a = vec #[1, 2, 3];
  * let i = a.find (1);
  * let res = match i {
- *     Ok (0u64) => true
+ *     Ok (0us) => true
  *     _ => false
  * }
  * assert (res);
  * ============
  */
-pub def find {T impl Seq!U, U} (a : T, elem : U) -> (u64)? {
-    let dmut i = 0u64;
+pub def find {T impl Seq!U, U} (a : T, elem : U) -> (us)? {
+    let dmut i = 0us;
     for z in a { // We do not use opIndex, because it can have very bad complexity compared to collection iteration
         match (z) {
             Ok (x:_) => {
                 if (x == elem) return (i)?;
             }
         }
-        i += 1u64;
+        i += 1us;
     }
-    return (u64?)::err;
+    return (usize?)::err;
 }
 
 /**
@@ -216,13 +218,13 @@ pub def find {T impl Seq!U, U} (a : T, elem : U) -> (u64)? {
  * @example: 
  * ============
  * let a = [1, 2, 3];
- * assert (a.count!{|x| => x <= 2} () == 2u64);
+ * assert (a.count!{|x| => x <= 2} () == 2us);
  * ============
  */
-pub def count {F : fn (U)-> bool, T of [U], U} (a : T) -> u64 {
-    let dmut nb = 0u64;
+pub def count {F : fn (U)-> bool, T of [U], U} (a : T) -> usize {
+    let dmut nb = 0us;
     for i in a {
-        if (F (i)) { nb += 1u64; }
+        if (F (i)) { nb += 1us; }
     }
     return nb;
 }
@@ -235,15 +237,15 @@ pub def count {F : fn (U)-> bool, T of [U], U} (a : T) -> u64 {
  * @example: 
  * ============
  * let a = vec #[1, 2, 3];
- * assert (a.count!{|x| => x <= 2} () == 2u64);
+ * assert (a.count!{|x| => x <= 2} () == 2us);
  * ============
  */
-pub def count {F : fn (U)-> bool, T impl Seq!U, U} (a : T) -> u64 {
-    let dmut nb = 0u64;
+pub def count {F : fn (U)-> bool, T impl Seq!U, U} (a : T) -> usize {
+    let dmut nb = 0us;
     for i in a {
         match i {
             Ok (x:_) => {
-                if (F (x)) { nb += 1u64; }
+                if (F (x)) { nb += 1us; }
             }
         }
     }
@@ -259,14 +261,14 @@ pub def count {F : fn (U)-> bool, T impl Seq!U, U} (a : T) -> u64 {
  * @example: 
  * ===========
  * let a = [2, 1, 9, 2, 3];
- * assert (a.minElement!{|x,y| => x < y} () == 1u64);
+ * assert (a.minElement!{|x,y| => x < y} () == 1us);
  * ===========
  * @info: if the slice is empty, the function will return 0
  * @complexity: O (n), with n = a.len
  */
-pub def minElement {F : fn (U, U) -> bool, T of [U], U} (a : T) -> u64 {
-    let mut index = 0u64;
-    for i in 0u64 .. a.len {
+pub def minElement {F : fn (U, U) -> bool, T of [U], U} (a : T) -> usize {
+    let mut index = 0us;
+    for i in 0us .. a.len {
         match (F (a [i], a [index]))? {
             Ok (true) => {
                 index = i;
@@ -285,17 +287,17 @@ pub def minElement {F : fn (U, U) -> bool, T of [U], U} (a : T) -> u64 {
  * @example: 
  * ===========
  * let a = [2, 1, 9, 2, 3];
- * assert (a.maxElement!{|x,y| => x < y} () == 1u64); // does the same as minElement
- * assert (a.maxElement!{|x,y| => x > y} () == 2u64);
+ * assert (a.maxElement!{|x,y| => x < y} () == 1us); // does the same as minElement
+ * assert (a.maxElement!{|x,y| => x > y} () == 2us);
  * ===========
  * @info: 
  *   - if the slice is empty, the function will return 0
  *   - this function does exactly the same operation as minElement!{F} (a), it is just weird to have a minElement function that actually find the maximum element
  * @complexity: O (n), with n = a.len
  */
-pub def maxElement {F : fn (U, U) -> bool, T of [U], U} (a : T) -> u64 {
-    let mut index = 0u64;
-    for i in 0u64 .. a.len {
+pub def maxElement {F : fn (U, U) -> bool, T of [U], U} (a : T) -> usize {
+    let mut index = 0us;
+    for i in 0us .. a.len {
         match (F (a [i], a [index]))? {
             Ok (true) => {
                 index = i;
@@ -313,14 +315,14 @@ pub def maxElement {F : fn (U, U) -> bool, T of [U], U} (a : T) -> u64 {
  * @example: 
  * ===========
  * let a = [2, 1, 9, 2, 3];
- * assert (a.minElement () == 1u64);
+ * assert (a.minElement () == 1us);
  * ===========
  * @info: if the slice is empty, the function will return 0
  * @complexity: O (n), with n = a.len
  */
-pub def minElement {T of [U], U} (a : T) -> u64 {
-    let mut index = 0u64;
-    for i in 0u64 .. a.len {
+pub def minElement {T of [U], U} (a : T) -> usize {
+    let mut index = 0us;
+    for i in 0us .. a.len {
         match (a [i] < a [index])? {
             Ok (true) => {
                 index = i;
@@ -337,15 +339,15 @@ pub def minElement {T of [U], U} (a : T) -> u64 {
  * @example: 
  * ===========
  * let a = [2, 1, 9, 2, 3];
- * assert (a.maxElement () == 2u64); // does the same as minElement
+ * assert (a.maxElement () == 2us); // does the same as minElement
  * ===========
  * @info: 
  *   - if the slice is empty, the function will return 0
  * @complexity: O (n), with n = a.len
  */
-pub def maxElement {T of [U], U} (a : T) -> u64 {
-    let mut index = 0u64;
-    for i in 0u64 .. a.len {
+pub def maxElement {T of [U], U} (a : T) -> usize {
+    let mut index = 0us;
+    for i in 0us .. a.len {
         match (a [index] < a [i])? {
             Ok (true) => {
                 index = i;
@@ -365,15 +367,15 @@ pub def maxElement {T of [U], U} (a : T) -> u64 {
  * @example: 
  * ===========
  * let a = vec #[2, 1, 9, 2, 3];
- * assert (a.minElement!{|x,y| => x < y} () == 1u64);
+ * assert (a.minElement!{|x,y| => x < y} () == 1us);
  * ===========
  * @info: if the sequence is empty, the function will return 0
  * @complexity: O (n), with n = a.len()
  */
-pub def minElement {F : fn (U, U) -> bool, T impl Seq!U, U} (a : T) -> u64 {    
-    let mut index = 0u64;
+pub def minElement {F : fn (U, U) -> bool, T impl Seq!U, U} (a : T) -> usize {    
+    let mut index = 0us;
     let mut current = (U?)::err;
-    let mut j = 0u64;
+    let mut j = 0us;
     for i in a {
         match (i) {
             Ok (x: _) => {
@@ -391,7 +393,7 @@ pub def minElement {F : fn (U, U) -> bool, T impl Seq!U, U} (a : T) -> u64 {
                 }
             }
         }
-        j += 1u64;
+        j += 1us;
     }
     return index;
 }
@@ -405,17 +407,17 @@ pub def minElement {F : fn (U, U) -> bool, T impl Seq!U, U} (a : T) -> u64 {
  * @example: 
  * ===========
  * let a = vec #[2, 1, 9, 2, 3];
- * assert (a.minElement!{|x,y| => x < y} () == 1u64);
+ * assert (a.minElement!{|x,y| => x < y} () == 1us);
  * ===========
  * @complexity: O (n), with n = a.len()
  * @info: 
  *   - if the sequence is empty, the function will return 0
  *   - this function does exactly the same operation as minElement!(F) (a), it is just weird to have a minElement function that actually find the maximum element
  */
-pub def maxElement {F : fn (U, U) -> bool, T impl Seq!U, U} (a : T) -> u64 {    
-    let mut index = 0u64;
+pub def maxElement {F : fn (U, U) -> bool, T impl Seq!U, U} (a : T) -> usize {    
+    let mut index = 0us;
     let mut current = (U?)::err;
-    let mut j = 0u64;
+    let mut j = 0us;
     for i in a {
         match (i) {
             Ok (x: _) => {
@@ -433,7 +435,7 @@ pub def maxElement {F : fn (U, U) -> bool, T impl Seq!U, U} (a : T) -> u64 {
                 }
             }
         }
-        j += 1u64;
+        j += 1us;
     }
     return index;
 }
@@ -445,15 +447,15 @@ pub def maxElement {F : fn (U, U) -> bool, T impl Seq!U, U} (a : T) -> u64 {
  * @example: 
  * ===========
  * let a = vec #[2, 1, 9, 2, 3];
- * assert (a.minElement!{|x,y| => x < y} () == 1u64);
+ * assert (a.minElement!{|x,y| => x < y} () == 1us);
  * ===========
  * @info: if the sequence is empty, the function will return 0
  * @complexity: O (n), with n = a.len()
  */
-pub def minElement {T impl Seq!U, U} (a : T) -> u64 {    
-    let mut index = 0u64;
+pub def minElement {T impl Seq!U, U} (a : T) -> usize {    
+    let mut index = 0us;
     let mut current = (U?)::err;
-    let mut j = 0u64;
+    let mut j = 0us;
     for i in a {
         match (i) {
             Ok (x: _) => {
@@ -471,7 +473,7 @@ pub def minElement {T impl Seq!U, U} (a : T) -> u64 {
                 }
             }
         }
-        j += 1u64;
+        j += 1us;
     }
     return index;
 }
@@ -483,16 +485,16 @@ pub def minElement {T impl Seq!U, U} (a : T) -> u64 {
  * @example: 
  * ===========
  * let a = vec #[2, 1, 9, 2, 3];
- * assert (a.minElement!{|x,y| => x < y} () == 1u64);
+ * assert (a.minElement!{|x,y| => x < y} () == 1us);
  * ===========
  * @complexity: O (n), with n = a.len()
  * @info: 
  *   - if the sequence is empty, the function will return 0
  */
-pub def maxElement {T impl Seq!U, U} (a : T) -> u64 {    
-    let mut index = 0u64;
+pub def maxElement {T impl Seq!U, U} (a : T) -> usize {    
+    let mut index = 0us;
     let mut current = (U?)::err;
-    let mut j = 0u64;
+    let mut j = 0us;
     for i in a {
         match (i) {
             Ok (x: _) => {
@@ -510,7 +512,7 @@ pub def maxElement {T impl Seq!U, U} (a : T) -> u64 {
                 }
             }
         }
-        j += 1u64;
+        j += 1us;
     }
     return index;
 }

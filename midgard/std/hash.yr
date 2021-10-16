@@ -34,15 +34,13 @@ pub trait Hashable {
     pub def hash (self)-> u64 {
         let mut hash_value = cte if (__pragma!compile ({self::super;})) {
             self::super.hash ()
-        } else { 0u64 }
+        } else { 0x345678u64 }
         
-        let p = 31u64;
-        let m = 1_000_000_009u64;
-        let mut p_pow = 1u64;
-
+        let mut mult = 31u64;
+        mult;
         for i in __pragma!local_tupleof (self) {
-            hash_value = (hash_value + (hash (i) + 1u64) * p_pow) % m;
-            p_pow = (p_pow * p) % m;
+            hash_value = (hash_value ^ hash (i)) * mult;
+            mult += (82520u64 + cast!u64 (typeof (__pragma!local_tupleof (self))::arity * 2us));
         }
         
         hash_value
@@ -51,6 +49,7 @@ pub trait Hashable {
 
 pub {
 
+    
     /**
      * Transform a string into a u64
      * @complexity: O(n), with n = str.len
@@ -227,9 +226,13 @@ pub {
      * @complexity: O (n)
      */
     def hash {struct T} (a : T)-> u64 {
-        let mut res = 0u64;
-        for i in __pragma!tupleof (a) {
-            res += hash (i);
+        let mut res = 0x345678u64;
+        let mut mult = 31u64;
+        mult;
+        
+        for i in __pragma!tupleof (a) {            
+            res = (res ^ hash (i)) * mult;
+            mult += (82520u64 + cast!u64 (typeof (__pragma!tupleof (a))::arity * 2us));
         }
         res
     }

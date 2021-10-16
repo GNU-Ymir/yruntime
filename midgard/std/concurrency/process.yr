@@ -11,6 +11,7 @@ import etc::c::stdio;
 import std::fs::path;
 import std::conv;
 
+extern (C) def getpgid ()-> i32;
 extern (C) def dup2 (stream : i32, type : u32)-> i32;
 extern (C) def _yrt_print_error (format : &(c8), ...);
 extern (C) def fork ()-> u32;
@@ -18,6 +19,14 @@ extern (C) def execvp (cmd : &c8, args : &(&c8))-> i32;
 extern (C) def _yrt_exit (i : i32);
 extern (C) def waitpid (pid : u32, dmut status : &i32, ig : i32);
 extern (C) def chdir (path : &c8)-> i32;
+extern (C) def printf (c : &c8, ...);
+
+mod allocMod {T} {
+    pub extern (C) def malloc (size : u32)-> dmut T;
+}
+
+extern (C) def memcpy (_ : &c8, _ : &c8, size : usize)-> void;
+extern (C) def free (a : &void);
 
 pub class @final SubProcess {
 
@@ -68,18 +77,31 @@ pub class @final SubProcess {
         self._stdout:.dispose ();
         self._stderr:.dispose ();
         
-        let dmut args = Vec!(&c8)::new ();
-        let cmd = self.cmd.toStringZ ();
-        args:.push (cmd);
-        for i in self.args {
-            args:.push (i.toStringZ ());
-        }
+        __pragma!trusted ({
+            let dmut res = allocMod!{&(&c8)}::malloc (cast!u32 (sizeof (&c8) * (self.args.len + 2us)));
+            *res = allocMod!{&c8}::malloc (cast!u32 (sizeof (c8) * self.cmd.len + 1us));
+            memcpy (*res, self.cmd.ptr, self.cmd.len);
+            *((*res) + self.cmd.len) = '\u{0}'c8;
+            
+            for i in 0us .. self.args.len {
+                *(res + (i + 1us) * sizeof (&c8)) = allocMod!{&c8}::malloc (cast!u32 (sizeof (c8) * self.args [i].len + 1us));
+                memcpy (*(res + (i + 1us) * sizeof (&c8)), self.args [i].ptr, self.args [i].len);
+                *(*(res + (i + 1us) * sizeof (&c8)) + self.args [i].len) = '\u{0}'c8;
+            };
 
-        chdir (self.cwd.toStringZ ());
-        
-        if (execvp (cmd, args[].ptr) == -1) {
-            _yrt_print_error (("execvp () failed"s8).ptr);            
-        }
+            *(res + (self.args.len + 1us) * sizeof (&c8)) = null;
+
+            let dmut cwd = allocMod!{&c8}::malloc (cast!u32 (sizeof (c8) * (self.cwd.len + 1us)));
+            memcpy (cwd, self.cwd.ptr, self.cwd.len + 1us);
+            *(cwd + self.cwd.len) = '\u{0}'c8;
+            
+            chdir (cwd);
+
+            if (execvp (*res, res) == -1) {
+                _yrt_print_error (("execvp () failed"s8).ptr);            
+            }            
+        });        
+
         
         _yrt_exit (0);
     }

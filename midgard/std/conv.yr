@@ -392,6 +392,45 @@ pub {
         else
             "false"
     }
+
+    /**
+     * Transform a class that implement Streamable into a [c8]
+     * @example: 
+     * =============
+     * mod main;
+     * class A {
+     *     pub self () {}
+     *     impl Streamable;
+     * }
+     * 
+     * assert (A::new ().to![c8] () == "main::A()"s8);
+     * =============
+     */
+    def if is!{U}{X of c8} to {T of [U], U, F impl Streamable} (a : F)-> [c8] {
+        let dmut stream = StringStream::new ();
+        a.toStream (alias stream);
+        stream []
+    }
+
+
+    /**
+     * Transform a class that implement Streamable into a [c32]
+     * @example: 
+     * =============
+     * mod main;
+     * class A {
+     *     pub self () {}
+     *     impl Streamable;
+     * }
+     * 
+     * assert (A::new ().to![c32] () == "main::A()");
+     * =============
+     */
+    def if is!{U}{X of c32} to {T of [U], U, F impl Streamable} (a : F)-> [c32] {
+        let dmut stream = StringStream::new ();
+        a.toStream (alias stream);
+        stream [].to![c32] ()
+    }
     
     /**
      * Transform a unsigned integer into a float
@@ -413,8 +452,8 @@ pub {
      * assert (x == 12.0);
      * ==========
      */
-    def if (isFloating!{F} () && isUnsigned!{I} ()) to {F, I} (a : I) -> F {
-        cast!F (Runtime::_yrt_ulong_to_double (cast!isize (a)))
+    def if (isFloating!{F} () && isSigned!{I} ()) to {F, I} (a : I) -> F {
+        cast!F (Runtime::_yrt_long_to_double (cast!isize (a)))
     }
 
     /**
@@ -841,6 +880,42 @@ pub {
     {
         match x {
             z : U => return z;
+            _ => {
+                throw CastFailure::new (x::typeinfo, U::typeinfo);
+            }
+        }        
+    }
+
+    /**
+     * This function is the standard cast from base class to heir class
+     * It is used instead of cast, that is not safe
+     * @example
+     * ==================
+     * import std::conv;
+    
+     * class Foo {
+     *    pub self () {}
+     * }
+
+     * class Bar over Foo {
+     *     pub self () {}
+     * }
+     *
+     *
+     * let dmut x : &Foo = Bar::new ();
+     *  
+     * let _ : &Bar = { 
+     *      x:.to!(&Bar) ()
+     * } catch {
+     *    CastFailure () => { Bar::new () }
+     * }
+     * ==================
+     */
+    def if (is!U{J over T}) to {U, T} (dmut x : T)-> dmut U
+        throws &CastFailure
+    {
+        match ref x {
+            dmut z : U => return alias z;
             _ => {
                 throw CastFailure::new (x::typeinfo, U::typeinfo);
             }
