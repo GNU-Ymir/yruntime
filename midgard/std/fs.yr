@@ -128,6 +128,47 @@ pub def removeDir (path : &Path, recursive : bool = false)
 
 
 /**
+ * Copy the content of a directory into another location
+ * @params: 
+ * - src: the directory to copy
+ * - dst: the destination location
+ * - recursive: copy inner directory recursively
+ * - create: create the destination directory ? (if true, the creation is recursive)
+ * @throws: 
+ *   - FsError: 
+ *      + The src does not exists
+ *      + Permission denied (either reading or writing)
+ *      + others
+ * @example: 
+ * =====================
+ * import std::fs;
+ * 
+ * copyDir (Path::new ("./some/dir"), Path::new ("/tmp/some/other/dir"), recursive-> true, create-> true)
+ * =====================
+ */
+pub def copyDir (src : &Path, dst : &Path, recursive : bool = false, create : bool = false)
+    throws &FsError
+{
+    if isDir (src) {
+        if (create && !isDir (dst)) { createDir (dst, recursive-> true); }
+        for i in readDir (src) {
+            match i {
+                f : &FileEntry => { copyFile (src.push (f.getPath ()), dst.push (f.getPath ())); }
+                d : &DirEntry => {
+                    createDir (dst.push (d.getPath ()));
+                    if (recursive) copyDir (src.push (d.getPath ()), dst.push (d.getPath ()));
+                }
+                fs : &FsEntry => {
+                    copyFsEntry (src.push (fs.getPath ()), dst.push (fs.getPath ()));
+                }
+            }
+        }
+    } else {
+        throw FsError::new (FsErrorCode::PARENT_DONT_EXIST, src.toStr ());
+    }
+}
+
+/**
  * @returns: an iterator over the entries of a directory
  */
 pub def readDir (path : &Path)-> &DirEntry
@@ -282,6 +323,26 @@ pub def removeFile (path : &Path)
         throw FsError::new (FsErrorCode::PERMISSION_DENIED, path.toStr ())
     }
 }
+
+/**
+ * Copy a file to another file location
+* @throws: 
+ *   - FsError: 
+ *      + the src file does not exists
+ *      + the dst file already exists
+ *      + permission denied
+ *      + this is not a file
+ */
+pub def copyFile (src : &Path, dst : &Path)
+    throws &FsError
+{
+    import std::fs::file;
+    with dmut srcF = File::open (src) {
+        with dmut dstF = File::create (dst, write-> true) {
+            dstF:.write (srcF:.readAll ());
+        }
+    }
+}   
     
 /**
  * Remove an entry from the file system (this entry can be anything)
@@ -302,4 +363,29 @@ pub def removeFsEntry (path : &Path)
         throw FsError::new (FsErrorCode::PERMISSION_DENIED, path.toStr ())
     }
 }
-    
+
+/**
+ * Copy a symbolic link 
+ * @throws: 
+ *    - FsError: 
+ *       + the src does not exists
+ *       + the dst already exists
+ *       + permission denied
+ *       + this is not a symbolic link
+ *       + others
+ */
+pub def copyFsEntry (src : &Path, dst : &Path)
+    throws &FsError
+{
+    if isReadable (dst) { throw FsError::new (FsErrorCode::ALREADY_EXISTS, dst.toStr ()); }
+    if !isDir (src) && !isFile (src) {
+        let dmut buf = ['\u{0}'c8 ; 255us];
+        if readlink (src.toStr ().toStringZ (), alias buf [].ptr, 255) == -1 {
+            throw FsError::new (errno ().to!(FsErrorCode) (), src.toStr ());
+        }
+        
+        if symlink (dst.toStr ().toStringZ (), buf [].ptr) == -1 {
+            throw FsError::new (errno ().to!(FsErrorCode) (), src.toStr ());
+        }
+    }
+}
