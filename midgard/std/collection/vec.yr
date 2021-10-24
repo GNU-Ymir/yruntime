@@ -7,7 +7,7 @@ import core::array, core::object;
 
 import std::collection::seq;
 import std::io, std::stream;
-
+import std::hash;
 
 /**
  * Some constants for the vec implementation
@@ -415,6 +415,29 @@ pub class @final Vec {T} {
     }
 
 
+    impl Hashable {
+
+        pub over hash (self)-> u64 {
+            cte if (__pragma!compile ({ hash (self._data [0]); })) {
+                let mut hash_value = 0x345678u64;
+                let mut mult = 31u64;
+                mult;
+                {
+                    for i in 0us .. self._len {
+                        hash_value = (hash_value ^ hash (self._data [i])) * mult;
+                        mult += (82520u64 + cast!u64 (self._len * 2us));
+                    }
+                } catch {
+                    _ => { __pragma!panic (); }
+                }
+                
+                hash_value
+            } else {
+                0x345678u64
+            }
+        }
+    }
+    
 
     /**
      * Change the size of the capacity to write other elements

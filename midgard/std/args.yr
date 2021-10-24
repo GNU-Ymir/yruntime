@@ -214,10 +214,14 @@ pub class ArgumentParser {struct T} {
     pub def parse (self, line : [[c8]])-> T
         throws &ArgumentError, &HelpRequired
     {
-        import std::conv;
+        import std::conv, std::algorithm::search;
         let mut c32Line : [c32] = [];
-        for i in line {        
-            c32Line = c32Line ~ " " ~ to![c32] (i);
+        for i in line {
+            if (i.any!{|x| => x == ' 'c8} ()) {
+                c32Line = c32Line ~ " \"" ~ i.to![c32] () ~ "\"";
+            } else {
+                c32Line = c32Line ~ " " ~ i.to![c32] ();
+            }
         }
 
         self.parse (c32Line)   
@@ -235,10 +239,14 @@ pub class ArgumentParser {struct T} {
     pub def parse (self, line : [[c32]])-> T
         throws &ArgumentError, &HelpRequired
     {
-        import std::conv;
+        import std::conv, std::algorithm::search;
         let mut c32Line : [c32] = [];
-        for i in line {        
-            c32Line = c32Line ~ " " ~ i;
+        for i in line {
+            if (i.any!{|x| => x == ' '} ()) {
+                c32Line = c32Line ~ " \"" ~ i ~ "\"";
+            } else {
+                c32Line = c32Line ~ " " ~ i;
+            }
         }
 
         self.parse (c32Line)   
@@ -494,10 +502,10 @@ prv def parseValue {struct T} (dmut lex : &Lexer!{c32}, cuts : &HashMap!{[c32], 
 {
     let dmut res = alias ([0u8 ; sizeof (T)]);
     let dmut used = HashSet!{[c32]}::new ();
-    let (_, _, _) = lex:.next ();
+    let (_, _, _) = lex:.next ();    
     let mut currentPos = 0us;
     loop {
-        let (tok, _, _) = lex:.nextNoConsume ();
+        let (tok, _, _) = lex.nextNoConsume ();
         if (tok == ArgsTokens::SHYPHEN || tok == ArgsTokens::DHYPHEN) {
             lex:.next ();
             let (name, _, _) = lex:.next ();

@@ -11,6 +11,7 @@ import etc::runtime::env;
 import std::io;
 import etc::c::dirent;
 import etc::c::files;
+import etc::c::memory;
 import std::conv;
 
 import std::fs::path;
@@ -156,7 +157,7 @@ pub def copyDir (src : &Path, dst : &Path, recursive : bool = false, create : bo
                 f : &FileEntry => { copyFile (src.push (f.getPath ()), dst.push (f.getPath ())); }
                 d : &DirEntry => {
                     createDir (dst.push (d.getPath ()));
-                    if (recursive) copyDir (src.push (d.getPath ()), dst.push (d.getPath ()));
+                    if (recursive) copyDir (src.push (d.getPath ()), dst.push (d.getPath ()), recursive-> true, create-> create);
                 }
                 fs : &FsEntry => {
                     copyFsEntry (src.push (fs.getPath ()), dst.push (fs.getPath ()));
@@ -179,6 +180,24 @@ pub def readDir (path : &Path)-> &DirEntry
     }
     
     throw FsError::new (errno ().to!(FsErrorCode) (), path.toStr ())
+}
+
+
+/**
+ * Create a temporary directory, and return its path
+ */
+pub def tempDirectory (root : &Path = Path::new ("/tmp"s8), prefix : [c8] = ""s8)-> &Path
+    throws &FsError
+{    
+    let template = root.push (prefix ~ "XXXXXX"s8).toStr ();
+    let res = mkdtemp(template.toStringZ ());
+    if (res !is null) {
+        {
+            Path::new (res.fromStringZ ())
+        }  catch {
+            _ => throw FsError::new (FsErrorCode::IO_ERROR, root.toStr ());
+        }
+    } else throw FsError::new (errno ().to!(FsErrorCode) (), root.toStr ());
 }
 
 

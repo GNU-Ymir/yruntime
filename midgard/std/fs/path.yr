@@ -7,7 +7,7 @@ import etc::c::files;
 import std::conv;
 import std::collection::vec;
 import std::stream;
-
+import std::hash;
 
 pub class @final Path {
 
@@ -184,7 +184,28 @@ pub class @final Path {
         }
         ""s8
     } catch {
-        _ : &OutOfArray => { ""s8 }
+        _ => __pragma!panic ();
+    }
+
+
+    /**
+     * @returns: the root name of the current path
+     * @example: 
+     * =============
+     * let path = Path::new ("/foo/bar/baz.txt"s8);
+     * assert (path.root () == "/"s8);
+     * let path2 = Path::new ("foo/bar"s8);
+     * assert (path2.root () == "foo"s8);
+     * =============
+     */
+    pub def root (self)-> [c8] {
+        if (self._parts.len () > 0us) {
+            self._parts [0us]
+        } else {
+            ""s8
+        }
+    } catch {
+        _ => __pragma!panic ();
     }
 
     /**
@@ -303,7 +324,33 @@ pub class @final Path {
         }
     }
 
+
+    /**
+     * Remove the root of the path 
+     * @example: 
+     * ====================
+     * assert (Path::new ("/path/to/somewhere"s8).removeRoot ().toStr () == "path/to/somewhere");
+     * assert (Path::new ("path/to/somewhere"s8).removeRoot ().toStr () == "to/somewhere");
+     * ====================
+     */
+    pub def removeRoot (self)-> dmut &Path {
+        if (self._parts.len () != 0us) {
+            let dmut res = Vec!{[c8]}::new ();
+            for i in 1us .. self._parts.len () {
+                res:.push (copy self._parts [i]);
+            }
+
+            return Path::new (alias res);
+        } else {
+            return Path::new (""s8);
+        }
+    } catch {
+        _ => {
+            return Path::new (""s8);
+        }
+    }
+
     
     impl Streamable;
-
+    impl Hashable;
 }

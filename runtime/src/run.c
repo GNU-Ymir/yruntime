@@ -21,6 +21,8 @@
 
 
 int __YRT_DEBUG__ = 0;
+int __YRT_FORCE_DEBUG__ = 0;
+int __YRT_TEST_CODE__ = 0;
 _yrt_array_ __MAIN_ARGS__;
 
 
@@ -262,7 +264,7 @@ _yrt_array_ _yrt_exc_resolve_stack_trace (_yrt_array_ syms) {
 }
 
 _yrt_array_ _yrt_exc_get_stack_trace () {
-    if (__YRT_DEBUG__ == 1) {
+    if (__YRT_DEBUG__ == 1 || __YRT_FORCE_DEBUG__ == 1) {
 	void *trace[16];
 
 	int trace_size = backtrace(trace, 16);	
@@ -283,6 +285,15 @@ _yrt_array_ _yrt_exc_get_stack_trace () {
 	arr.data = NULL;
 	return arr;
     }
+}
+
+void _yrt_force_debug (int act) {
+    if (act == 0) __YRT_DEBUG__ = __YRT_FORCE_DEBUG__;
+    else {
+	__YRT_FORCE_DEBUG__ = __YRT_DEBUG__;
+	__YRT_DEBUG__ = 1;
+    }
+    bfd_init ();
 }
 
 
@@ -319,9 +330,13 @@ _yrt_array_ _yrt_get_main_args () {
     return __MAIN_ARGS__;
 }
 
-void _yrt_force_debug () {
-    __YRT_DEBUG__ = 1;
-    bfd_init ();
+
+int _yrt_get_test_code () {
+    return __YRT_TEST_CODE__;
+}
+
+void _yrt_set_test_code (int i) {
+    __YRT_TEST_CODE__ = i;
 }
 
 int _yrt_run_main_debug (int argc, char ** argv, int(* y_main)()) {

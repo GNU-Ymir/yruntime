@@ -342,7 +342,7 @@ pub {
      * assert (to![c32] (12.8) == "12.8")
      * ===========
      */
-    def if (isChar!{U} () && isFloating!{F} ()) to {T of [U], U, F} (a : F, prec : u32 = 5u32) -> T {
+    def if (isChar!{U} () && isFloating!{F} ()) to {T of [U], U, F} (a : F, prec : u32 = 6u32) -> T {
         cte if is!{U}{X of c32} {
             to![c32] (Runtime::_yrt_double_to_s8 (cast!f64 (a), prec))
         } else {
@@ -357,7 +357,7 @@ pub {
      * assert (to![c32] (12.8) == "12.8")
      * ===========
      */
-    def if (isChar!{U} () && isFloating!{F} ()) to {T of [U], U, "e", F} (a : F, prec : u32 = 5u32) -> T {
+    def if (isChar!{U} () && isFloating!{F} ()) to {T of [U], U, "e", F} (a : F, prec : u32 = 6u32) -> T {
         cte if is!{U}{X of c32} {
             to![c32] (Runtime::_yrt_double_to_s8_exp (cast!f64 (a), prec))
         } else {
@@ -392,7 +392,7 @@ pub {
         else
             "false"
     }
-
+   
     /**
      * Transform a class that implement Streamable into a [c8]
      * @example: 
@@ -431,6 +431,42 @@ pub {
         a.toStream (alias stream);
         stream [].to![c32] ()
     }
+
+
+    /**
+     * Transform a struct into a [c8]
+     * @example: 
+     * =============
+     * mod main;
+     * struct
+     * | x : i32
+     * -> A; 
+     * 
+     * assert (A (12).to![c8] () == "main::A(12)"s8);
+     */
+    def if is!{U}{X of c8} to {T of [U], U, struct S} (a : S)-> [c8] {
+        let dmut stream = StringStream::new ();
+        stream:.write (a);
+        stream []
+    }
+
+    /**
+     * Transform a struct into a [c32]
+     * @example: 
+     * =============
+     * mod main;
+     * struct
+     * | x : i32
+     * -> A; 
+     * 
+     * assert (A (12).to![c32] () == "main::A(12)");
+     */
+    def if is!{U}{X of c32} to {T of [U], U, struct S} (a : S)-> [c32] {
+        let dmut stream = StringStream::new ();
+        stream:.write (a);
+        stream [].to![c32] ()
+    }
+    
     
     /**
      * Transform a unsigned integer into a float

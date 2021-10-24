@@ -116,8 +116,8 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Lexer {T} {
             let wd = self._tzer.next (self._content);
             if (wd != 0u64) {
                 {
-                    let ret = self._content [0us..wd];
-                    self._content = self._content [wd..$];
+                    let ret = self._content [0us .. wd];
+                    self._content = self._content [wd .. $];
                     
                     let (line, col) = (self._line, self._col);                        
                     let pos = self:.countNbLine (ret, self._line, self._col);
@@ -131,7 +131,7 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Lexer {T} {
                         return (ret, line, col);
                     } 
                 } catch {
-                    _ : &OutOfArray => { } // Impossible 
+                    _ : &OutOfArray => { __pragma!panic (); } // Impossible 
                 }
             } else {
                 cte if (is!T {U of c8}) {
@@ -164,7 +164,7 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Lexer {T} {
             
             return (ret, line, col);             
         } catch {
-            _ : &OutOfArray => { } // Impossible 
+            _ : &OutOfArray => { __pragma!panic (); } // Impossible 
         }
 
         cte if (is!T {U of c8}) {
@@ -182,7 +182,7 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Lexer {T} {
      *    - ._1: the line of the beginning of the word (0 if no word)
      *    - ._2: the col of the beginning of the word (0 if no word)
      */
-    pub def nextNoConsume (mut self) -> ([T], u64, u64) {
+    pub def nextNoConsume (self) -> ([T], u64, u64) {
         let mut aux_content = self._content;
         let mut pos: (mut u64, mut u64) = (self._line, self._col);
         
@@ -194,10 +194,10 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Lexer {T} {
                     aux_content = aux_content [wd..$];
                     
                     let (line, col) = pos;
-                    pos = self:.countNbLine (ret, pos._0, pos._1);
+                    pos = self.countNbLine (ret, pos._0, pos._1);
                     
                     if self._doComments && ret in self._comments {
-                        aux_content = self:.skipComments (aux_content);
+                        aux_content = self.skipComments (aux_content);
                         pos._0 += 1u64;
                         
                     } else if !self._doSkip || ret !in self._skips {

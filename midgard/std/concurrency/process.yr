@@ -69,13 +69,16 @@ pub class @final SubProcess {
     }
 
     prv def child (mut self) {
+        self._stderr:.opipe ().setNonBlocking ();
+        self._stdout:.opipe ().setNonBlocking ();
+        
         dup2 (self._stdin:.ipipe ().getHandle (), STDIN_FILENO);
         dup2 (self._stdout:.opipe ().getHandle (), STDOUT_FILENO);
         dup2 (self._stderr:.opipe ().getHandle (), STDERR_FILENO);
 
-        self._stdin:.dispose ();
-        self._stdout:.dispose ();
-        self._stderr:.dispose ();
+        // self._stdin:.dispose ();
+        // self._stdout:.dispose ();
+        // self._stderr:.dispose ();
         
         __pragma!trusted ({
             let dmut res = allocMod!{&(&c8)}::malloc (cast!u32 (sizeof (&c8) * (self.args.len + 2us)));
@@ -96,7 +99,7 @@ pub class @final SubProcess {
             *(cwd + self.cwd.len) = '\u{0}'c8;
             
             chdir (cwd);
-
+            
             if (execvp (*res, res) == -1) {
                 _yrt_print_error (("execvp () failed"s8).ptr);            
             }            
