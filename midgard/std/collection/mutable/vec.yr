@@ -1,4 +1,5 @@
-mod std::collection::vec;
+mod std::collection::mutable::vec;
+
 import core::typeinfo;
 import core::duplication;
 import core::exception;
@@ -8,7 +9,7 @@ import std::collection::seq;
 import std::io, std::stream;
 import std::hash;
 
-pub import std::collection::mutable::vec;
+import std::collection::vec;
 
 /**
  * Some constants for the vec implementation
@@ -17,35 +18,6 @@ prv enum : usize
 | DEFAULT_ALLOC_SIZE = 10us // The size that is allocated after the first push
  -> VecConst;
 
-
-/**
- * Macro that can be used to declare a vector easily
- * @example: 
- * ==========
- * let x = vec#[1, 2, 3];
- * {
- *    assert (x == [1, 2, 3]);
- * } catch {
- *   _: &AssertError => {}
- * }
- * 
- * ==========
- */
-pub macro vec {
-
-    pub self (fst=__expr rest=("," val=__expr)*) skips (" " | "\n" | "\r" | "\t") {        
-        let dmut z = Vec!(typeof (#(fst)))::new ();
-        z:.reserve ((#(rest::len)) + 1us);
-        z:.push (#(fst));
-        #(for i in rest) {
-            z:.push (#(i::val))
-        }
-        alias z
-    }
-    
-}
-
-
 /**
  * Vec is a growable array
  * It stores immutable values, but is itself mutable
@@ -53,17 +25,17 @@ pub macro vec {
  *    - T: the type of the values stored in the vector
  * @example: 
  * ===========================
- * let dmut x = Vec!(i32)::new ();
- * x:.push (1);
- * x:.push (2);
- * x:.push (3);
+ * let dmut x = Vec!{dmut &A}::new ();
+ * x:.push (A::new (1));
+ * x:.push (A::new (2));
+ * x:.push (A::new (3));
  * 
- * assert (x == [1, 2, 3]);
+ * assert (x == [A::new (1), A::new (2), A::new (3)]);
  * ===========================
  */
-pub class @final Vec {T} {
+pub class @final Vec {T of dmut Z, class Z} {
 
-    let mut _data : [mut T] = [];
+    let dmut _data : [T] = [];
     
     let mut _len : usize = 0us;
 
@@ -76,7 +48,7 @@ pub class @final Vec {T} {
      * The vector does not allocate until push
      * @example: 
      * =================
-     * let x = Vec!(i32)::new ();
+     * let x = Vec!{dmut &A}::new ();
      * 
      * assert (x.capacity () == 0);
      * =================
@@ -89,19 +61,19 @@ pub class @final Vec {T} {
      *    - val: the element to append
      * @example: 
      * ===============
-     * let dmut x = Vec!(i32)::new ();
-     * x:.push (1);
-     * x:.push (1);
+     * let dmut x = Vec!{dmut &A}::new ();
+     * x:.push (A::new (1));
+     * x:.push (A::new (1));
      * 
      * ===============
      * @complexity: O (n), with n = self._len
      */
-    pub def push (mut self, val : T) -> void {
+    pub def push (mut self, dmut val : T) -> void {
         if (self._data.len == self._len) {
             self:.grow ();
         }
         
-        self._data [self._len] = val;
+        self._data [self._len] = alias val;
         self._len += 1us;
     } catch {
         _ : &OutOfArray => {} // there won't be any problem, self._len is always < self._data.len
@@ -113,20 +85,16 @@ pub class @final Vec {T} {
      *    - OutOfArray: if the vector is empty
      * @example: 
      * ======================
-     * let dmut x = Vec!(i32)::new ();
+     * __test {
+     *     let dmut x = Vec!{dmut &A}::new ();
      * 
-     * x:.push (1);
-     * {
-     *    assert (x:.pop () == 1);
-     * } catch {
-     *    ex : &OutOfArray => { 
-     *         println ("Vector was empty");
-     *    } 
-     * } 
+     *     x:.push (A::new (1));
+     *     assert (x:.pop () == A::new (1));
+     * }
      * ======================
      * @complexity: O (n), with n = self._len
      */
-    pub def pop (mut self) -> T
+    pub def pop (mut self) -> dmut T
         throws &OutOfArray
     {
         if (self._len == 0us) {
@@ -134,29 +102,29 @@ pub class @final Vec {T} {
         }
         
         self._len -= 1us;
-        let ret = self._data [self._len];
+        let dmut ret = alias self._data [self._len];
         if (self._len < self._data.len / 2us)
             self:.fit ();
-        return ret;
+        return alias ret;
     }
     
     /**
      * Change the capacity of the vector to the number of element it stores
      * @example: 
      * ==============
-     * let dmut x = Vec!(i32)::new ();
+     * let dmut x = Vec!{dmut &A}::new ();
      * for i in 0 ... 4 
-     *     x:.push (i);
+     *     x:.push (A::new (i));
      * println (x.capacity ()); // 10
      * x:.fit ();
      * assert (x.capacity () == 5us); 
-     * assert (x == [0, 1, 2, 3, 4]);
+     * assert (x == [A::new (0), A::new (1), A::new (2), A::new (3), A::new (4)]);
      * ==============
      * @complexity: O (n), with n = self._len
      */
     pub def fit (mut self) {
-        let mut aux : [mut T] = core::duplication::allocArray!T (self._len);
-        core::duplication::memCopy!T (self._data, alias aux);
+        let dmut aux : [T] = alias core::duplication::allocArray!{dmut T} (self._len);
+        core::duplication::memCopy!{dmut T} (self._data, alias aux);
         self._data = alias aux;
     }
 
@@ -188,8 +156,8 @@ pub class @final Vec {T} {
      */
     pub def reserve (mut self, size : usize) {
         if (self._data.len >= size) return {}
-        let mut aux : [mut T] = core::duplication::allocArray!T (size);
-        core::duplication::memCopy!T (self._data, alias aux);
+        let dmut aux : [T] = core::duplication::allocArray!{T} (size);
+        core::duplication::memCopy!{dmut T} (self._data, alias aux);
         self._data = alias aux;
     }
 
@@ -222,21 +190,20 @@ pub class @final Vec {T} {
          * Compare two vectors of same type
          * @example: 
          * ============
-         * let x = Vec!(i32)::new ();
-         * let y = Vec!(i32)::new ();
-         * let z = Vec!(i32)::new ();
-         * x:.push (12);
-         * y:.push (12);
-         * z:.push (42);
-         * {
-         *    assert (x == y);
-         *    assert (x != z);
-         * } catch {
-         *    _: &AssertError => {}
+         * __test {
+         *     let x = Vec!{dmut &A}::new ();
+         *     let y = Vec!{dmut &A}::new ();
+         *     let z = Vec!{dmut &A}::new ();
+         *     x:.push (A::new (12));
+         *     y:.push (A::new (12));
+         *     z:.push (A::new (42));
+         * 
+         *     assert (x == y);
+         *     assert (x != z);
          * }
          * ============
          */
-        pub def opEquals (self, o : &Vec!(T)) -> bool {
+        pub def opEquals (self, o : &Vec!{dmut T}) -> bool {
             if (self._len != o._data.len) return false;
             for i in 0us .. self._len {
                 if (self._data [i] != o._data [i]) return false;
@@ -250,13 +217,12 @@ pub class @final Vec {T} {
          * Compare a vector and an array of same inner type
          * @example: 
          * ============
-         * let x = Vec!(i32)::new ();
-         * for i in 0 .. 3 
-         *     x:.push (i);
-         * {
-         *    assert (x == [1, 2, 3]);
-         * } catch {
-         *    _: &AssertError => {}
+         * __test {
+         *     let x = Vec!{dmut &A}::new ();
+         *     for i in 0 .. 3 
+         *         x:.push (A::new (i));
+         * 
+         *     assert (x == [A::new (1), A::new (2), A::new (3)]);
          * }
          * ============
          */
@@ -276,11 +242,13 @@ pub class @final Vec {T} {
      * Get the slice content of the vec 
      * @example: 
      * ==========
-     * let dmut x = Vec!(i32)::new ();
-     * for i in 0 .. 3 {
-     *     x:.push (i);
+     * __test {
+     *     let dmut x = Vec!{dmut &A}::new ();
+     *     for i in 0 .. 3 {
+     *         x:.push (A::new (i));
+     *     }
+     *     assert (x[] == [A::new (0), A::new (1), A::new (2)]);
      * }
-     * assert (x [] == [0, 1, 2]);
      * ==========
      */
     pub def opIndex (self) -> [T] {
@@ -290,7 +258,26 @@ pub class @final Vec {T} {
             []
         }
     }
-    
+
+    /**
+     * Get the slice content of the vec 
+     * @example: 
+     * ==========
+     * let dmut x = Vec!{dmut &A}::new ();
+     * for i in 0 .. 3 {
+     *     x:.push (A::new (i));
+     * }
+     * let dmut res = alias ((alias x)[]);
+     * assert (res == [A::new (0), A::new (1), A::new (2)]);
+     * ==========
+     */
+    pub def opIndex (mut self) -> dmut [T] {
+        alias self._data [0us .. self._len]
+    } catch {
+        _ : &OutOfArray => {
+            []
+        }
+    }
 
     /**
      * Change the value in the vec at a given index
@@ -300,11 +287,11 @@ pub class @final Vec {T} {
      *   - &OutOfArray: if the index is not inside the vector
      * @example: 
      * ===========
-     * let dmut x = Vec!(i32)::new ();
-     * x:.push (12);
+     * let dmut x = Vec!{dmut &A}::new ();
+     * x:.push (A::new (12));
      * {
-     *    (alias x)[0] = 78;
-     *    assert (x [0] == 78);
+     *    (alias x)[0] = A::new (78);
+     *    assert (x [0] == A::new (78));
      * } catch {
      *   _: &OutOfArray => {}
      *   _: &AssertError => {}
@@ -312,11 +299,11 @@ pub class @final Vec {T} {
      *
      * ===========
      */
-    pub def opIndexAssign (mut self, i : usize, val : T)
+    pub def opIndexAssign (mut self, i : usize, dmut val : T)
         throws &OutOfArray
     {
         if (i < self._len) {
-            self._data [i] = val;
+            self._data [i] = alias val;
         } else throw OutOfArray::new ();
     }
     
@@ -338,7 +325,7 @@ pub class @final Vec {T} {
      * }
      * ==========
      */
-    pub def begin (self)-> dmut &VecIterator!T {
+    pub def begin (self)-> dmut &VecIterator!{T} {
         return VecIterator::new (0us, self._len, self._data);
     }
 
@@ -352,11 +339,41 @@ pub class @final Vec {T} {
      * }
      * ==========
      */
-    pub def end (self) -> &VecIterator!T {
+    pub def end (self) -> &VecIterator!{T} {
         return VecIterator::new (self._len, self._len, self._data);
     }
 
-    impl std::collection::seq::Seq!(T) {
+
+    /**
+     * Access value in the vec by index
+     * @params: 
+     *    - i: the index
+     * @throws: 
+     *   - &OutOfArray: if the index is not in the vector
+     * @complexity: O (1)
+     * @example : 
+     * ================
+     * let dmut x = Vec!(i32)::new ();
+     * x:.push (12);
+     * {
+     *     assert (x [0] == 12);
+     * } catch {
+     *     _: &OutOfArray => {}
+     *     _: &AssertError => {}
+     * }
+     * ================
+     */
+    pub def opIndex (mut self, i : usize) -> dmut T
+        throws &OutOfArray
+    {
+        if (i < self._len) {
+            return alias self._data [i];
+        } else throw OutOfArray::new ();
+    }
+    
+
+    
+    impl std::collection::seq::Seq!{T} {
 
         /**
          * @returns: the number of element inside the vector
@@ -391,7 +408,7 @@ pub class @final Vec {T} {
                 return self._data [i];
             } else throw OutOfArray::new ();
         }
-        
+
     }
     
     
@@ -416,25 +433,27 @@ pub class @final Vec {T} {
     }
 
 
-    impl Hashable {
+    cte if is!{T}{U impl Hashable} {
+        impl Hashable {
 
-        pub over hash (self)-> u64 {
-            cte if (__pragma!compile ({ hash (self._data [0]); })) {
-                let mut hash_value = 0x345678u64;
-                let mut mult = 31u64;
-                mult;
-                {
-                    for i in 0us .. self._len {
-                        hash_value = (hash_value ^ hash (self._data [i])) * mult;
-                        mult += (82520u64 + cast!u64 (self._len * 2us));
+            pub over hash (self)-> u64 {
+                cte if (__pragma!compile ({ hash (self._data [0]); })) {
+                    let mut hash_value = 0x345678u64;
+                    let mut mult = 31u64;
+                    mult;
+                    {
+                        for i in 0us .. self._len {
+                            hash_value = (hash_value ^ hash (self._data [i])) * mult;
+                            mult += (82520u64 + cast!u64 (self._len * 2us));
+                        }
+                    } catch {
+                        _ => { __pragma!panic (); }
                     }
-                } catch {
-                    _ => { __pragma!panic (); }
+                    
+                    hash_value
+                } else {
+                    0x345678u64
                 }
-                
-                hash_value
-            } else {
-                0x345678u64
             }
         }
     }
@@ -446,92 +465,29 @@ pub class @final Vec {T} {
      */
     prv def grow (mut self) {
         if (self._data.len == 0us) { // empty
-            self._data = alias core::duplication::allocArray!T (VecConst::DEFAULT_ALLOC_SIZE);
+            self._data = alias core::duplication::allocArray!{dmut T} (VecConst::DEFAULT_ALLOC_SIZE);
         }  else {
             let n_len = self._data.len * 2us;
-            let mut aux : [mut T] = core::duplication::allocArray!T (n_len);
-            core::duplication::memCopy!T (self._data, alias aux);
+            let dmut aux : [T] = core::duplication::allocArray!{dmut T} (n_len);
+            core::duplication::memCopy!{dmut T} (self._data, alias aux);
             self._data = alias aux;
         }                    
     }
             
 
-    impl Copiable {
-
-        pub over deepCopy (self)-> dmut &Object {
-            let dmut aux = alias core::duplication::allocArray!T (self._data.len);
-            core::duplication::memCopy!T (self._data, alias aux);
-            alias cast!{&Object} (Vec!{T}::new (alias aux, self._len))
+    cte if is!{T}{U impl Copiable} {
+        impl Copiable {
+            
+            pub over deepCopy (self)-> dmut &Object {
+                let dmut aux = alias core::duplication::allocArray!{dmut T} (self._data.len);
+                for i in 0us .. self._len {
+                    aux [i] = dcopy self._data [i];
+                }
+                alias cast!{&Object} (Vec!{dmut T}::new (alias aux, self._len))
+            }
+            
         }
-        
     }
     
-    
-}
-
-/**
- * Class used to iter on a vector
- * @example: 
- * ============
- * let x = vec#[1, 2, 3];
- * for val, index in x {
- *     assert (x [index] == val);
- * } catch {
- *    _ : &OutOfArray => { } // Impossible
- * }
- * ============
- */
-pub class @final VecIterator {T} {
-
-    let mut _index : usize;
-
-    let mut _len : usize;
-
-    let _data : [T];
-
-    /**
-     * @params: 
-     *    - index: the index in the array to point (can be equal to len, to point to nothing)
-     *    - len: the length of the vector
-     *    - data: the data contained in the vector
-     */
-    pub self (index : usize, len : usize, data : [T])
-        with _index = index,
-             _len = len,
-             _data = data
-    {}
-
-    /**
-     * Compare two iterators
-     * Iterators are equals if they points to the same index
-     */
-    pub def opEquals (self, o : &VecIterator!T) -> bool {
-        self._index == o._index 
-    }
-
-    /**
-     * Move the iterator to the next element in the vector
-     */
-    pub def next (mut self) {
-        self._index += 1us;
-    }
-
-    /**
-     * @returns: 
-     * =======
-     * the value pointed by the iterator
-     * None, if the iterator points to nothing
-     * =======
-     */
-    pub def get {0} (self) -> T {
-        __pragma!trusted ({ self._data [self._index] })
-    }
-    
-    /**
-     * @returns: the index in the vector, to which the iterator is pointing
-     */
-    pub def get {1} (self) -> usize {
-        self._index
-    }
     
 }
