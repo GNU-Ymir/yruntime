@@ -4,6 +4,78 @@ import core::typeinfo, core::array, core::exception, core::object;
 import std::config;
 pub import std::lexer;
 
+import std::config::conv;
+import std::conv;
+
+
+/**
+ * Macro to write json like configuration 
+ * @example: 
+ * =====================
+ * let x = json#{"fst" => {"foo" => {"bar" => "baz"}, "scd" => [1, "inner", 2.0f, 3]}};
+ * =====================
+ * 
+ */
+pub macro json {
+
+    pub self (a=(dictEntry) b=("," inner=dictEntry)*) skips (" " | "\n") {
+        let dmut d = Dict::new ();
+        let v = #{a};
+        d:.insert (v._0, v._1);;        
+        #(for x in b) {
+            {
+                let v_ = #{x::inner};
+                d:.insert (v_._0, v_._1);
+            }
+        }
+        d
+    }
+
+    def dict ("{" a=(dictEntry) b=("," inner=dictEntry)* "}") skips (" " | "\n") {
+        {
+            let dmut d_#{__index} = Dict::new ();
+            let v_#{__index} = #{a};
+            d_#{__index}:.insert (v_#{__index}._0, v_#{__index}._1);
+            #(for x in b) {
+                {
+                    let v_#{__index}2 = #{x::inner};
+                    d_#{__index}:.insert (v_#{__index}2._0, v_#{__index}2._1);
+                }
+            }
+            
+            d_#{__index}
+        }
+    }
+
+    def emptyDict ("{" "}") skips (" " | "\n") {
+        Dict::new ()
+    }
+
+    def array ("[" a=(array | dict | value) b=("," inner=(array | dict | value))* "]") skips (" " | "\n") {
+        {
+            let dmut array_#{__index} = Array::new ();
+            array_#{__index}:.push (#{a});
+            #(for i in b) {
+                array_#{__index}:.push (#{i::inner});
+            }
+            array_#{__index}
+        }
+    }
+    
+    def dictEntry (key=__str "=>" value=(array | dict | value)) skips (" " | "\n") {
+        cte if is!{typeof(#{key})}{U of [c32]} {
+            (#{key}, #{value})
+        } else {
+            (#{key}.(std::conv::to)![c32](), #{value})
+        }
+    }
+
+    def value (a=__expr) skips (" " | "\n") {
+        config::conv::to!{&Config} (#{a})
+    }
+}
+
+
 /** 
  * The list of tokens that can be found inside a json file
  * 

@@ -10,6 +10,9 @@ import std::concurrency::pipe;
 import etc::c::stdio;
 import std::fs::path;
 import std::conv;
+import std::concurrency::thread;
+
+import etc::runtime::gc;
 
 extern (C) def getpgid ()-> i32;
 extern (C) def dup2 (stream : i32, type : u32)-> i32;
@@ -25,8 +28,10 @@ mod allocMod {T} {
     pub extern (C) def malloc (size : u32)-> dmut T;
 }
 
+
 extern (C) def memcpy (_ : &c8, _ : &c8, size : usize)-> void;
 extern (C) def free (a : &void);
+extern (C) def GC_is_disabled()-> i32;
 
 pub class @final SubProcess {
 
@@ -53,13 +58,16 @@ pub class @final SubProcess {
     pub self run (path : &Path, args : [[c8]], cwd : &Path = Path::new (".")) with self (path.toStr (), args, cwd-> cwd) {}
     
     prv def run (mut self) {
+        _yrt_disable_GC ();
         self.pid = fork (); // if nothing is written in the fork process the pages are not copied
         // Thus fork is lightweight
-
+        
         if (self.pid == 0u32) {
             self:.child ()
+        } else {
+            _yrt_enable_GC ();
         }
-
+        
         self._stdin:.ipipe ():.dispose ();
         self._stdout:.opipe ():.dispose ();
         self._stderr:.opipe ():.dispose ();
@@ -70,6 +78,9 @@ pub class @final SubProcess {
     }
 
     prv def child (mut self) {
+        // GC_init ();
+        // _yrt_disable_GC ();
+        
         self._stdin:.ipipe ().setNonBlocking ();
         self._stderr:.opipe ().setNonBlocking ();
         self._stdout:.opipe ().setNonBlocking ();
@@ -78,9 +89,9 @@ pub class @final SubProcess {
         dup2 (self._stdout:.opipe ().getHandle (), STDOUT_FILENO);
         dup2 (self._stderr:.opipe ().getHandle (), STDERR_FILENO);
 
-        self._stdin:.dispose ();
-        self._stdout:.dispose ();
-        self._stderr:.dispose ();
+        // self._stdin:.dispose ();
+        // self._stdout:.dispose ();
+        // self._stderr:.dispose ();
         
         __pragma!trusted ({
             let dmut res = allocMod!{&(&c8)}::malloc (cast!u32 (sizeof (&c8) * (self.args.len + 2us)));
@@ -101,10 +112,13 @@ pub class @final SubProcess {
             *(cwd + self.cwd.len) = '\u{0}'c8;
             
             chdir (cwd);
-            
-            if (execvp (*res, res) == -1) {
+
+            printf ("Calling execvp:"s8.ptr);
+            let out = execvp (*res, res);
+            printf ("Res execvp%d\n"s8.ptr, out);
+            if (out == -1) {
                 _yrt_print_error (("execvp () failed"s8).ptr);            
-            }            
+            }
         });        
 
         

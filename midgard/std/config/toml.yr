@@ -83,14 +83,16 @@ pub def parse (content : [c32])-> &Dict
  * Transform a configuration into a toml formatted string
  * 
  */
-pub def dump (cfg : &Config)-> [c32] {
-    match cfg {
-        x : &Dict => {
-            Dumper::dumpSuperDict (x)
+pub def dump (cfg : &Config, withSuper : bool = true)-> [c32] {
+    if (withSuper) {
+        match cfg {
+            x : &Dict => {
+                Dumper::dumpSuperDict (x)
+            }
+            _ =>
+                Dumper::dump (cfg)
         }
-        _ =>
-            Dumper::dump (cfg)
-    }
+    } else Dumper::dump (cfg)
 }
 
 mod Parser {
@@ -268,6 +270,7 @@ mod Parser {
         let (end, line, col) = lex:.next ();
         if (end != "'" && end != "\"") throw SyntaxError::new ("expected '\"' or '\\'' (not '" ~ end ~ "')", line, col);
 
+        lex:.doComments (false);
         lex:.doSkip (false);
         loop {
             let (next, l, c) = lex:.next ();        
@@ -296,6 +299,7 @@ mod Parser {
             }
         }
         
+        lex:.doComments (true);
         lex:.doSkip (true);
         return Str::new (res);
     }

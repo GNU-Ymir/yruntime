@@ -1,7 +1,7 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 2.6)
 PROJECT(Midgard C)
 SET(CMAKE_C_COMPILER "gyc")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -nostdinc -fdoc")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -nostdinc")
 
 FILE (
   GLOB_RECURSE

@@ -1,0 +1,36 @@
+mod std::rand;
+
+import std::traits;
+import std::conv;
+import std::math;
+
+mod Runtime {
+    pub extern (C) def rand ()-> i32;
+    pub extern (C) def _yrt_init_rand ();
+    
+    pub static mut __isInit__ = false;
+
+    pub def init () {
+        __isInit__ = true;
+        _yrt_init_rand ();
+    }
+    
+}
+
+/**
+ * @returns: an random number uniformly selected between low and high
+ */
+pub def if (isFloating!T ()) uniform {T} (low : T, high : T)-> T {    
+    let x = rand!T ();
+    fmod(x * (high - low), high - low) + low
+}
+
+/**
+ * @returns: an random number uniformly selected between 0 and 1
+ */
+pub def if (isFloating!T ()) rand {T} ()-> T {
+    if (!Runtime::__isInit__) {
+        Runtime::init ();
+    }
+    Runtime::rand ().to!T () / (i32::max).to!T ()
+}
