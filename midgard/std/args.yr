@@ -4,9 +4,9 @@ import core::object, core::exception, core::array, core::typeinfo;
 import std::collection::map;
 import std::collection::set;
 import std::collection::vec;
-import std::config::conv;
-import std::lexer;
+import std::lexer, std::conv;
 import std::io, std::stream;
+import std::tokenizer;
 
 
 extern (C) def printf (c : &c8, ...);
@@ -16,10 +16,12 @@ extern (C) def printf (c : &c8, ...);
  * 
  */
 enum
-| DHYPHEN = " --"
-| SHYPHEN = " -"
+| DHYPHEN = "--"
+| SHYPHEN = "-"
 | EQUALS = "="
 | QUOTE = "\""
+| LCRO = "["
+| RCRO = "]"
  -> ArgsTokens;
 
 /**
@@ -214,17 +216,16 @@ pub class ArgumentParser {struct T} {
     pub def parse (self, line : [[c8]])-> T
         throws &ArgumentError, &HelpRequired
     {
-        import std::conv, std::algorithm::search;
-        let mut c32Line : [c32] = [];
+        let dmut tokenizer = Tokenizer::new (tokens-> ["="]);
+        let dmut res = Vec!{[c32]}::new ();
         for i in line {
-            if (i.any!{|x| => x == ' 'c8} ()) {
-                c32Line = c32Line ~ " \"" ~ i.to![c32] () ~ "\"";
-            } else {
-                c32Line = c32Line ~ " " ~ i.to![c32] ();
+            let r = tokenizer.tokenize (i.to![c32] ());
+            for j in r {
+                res:.push (j);
             }
         }
 
-        self.parse (c32Line)   
+        parseValueMain!T (res[], cuts-> self._content, helps-> self._helps, self._positional)
     }
 
     /**
@@ -239,33 +240,16 @@ pub class ArgumentParser {struct T} {
     pub def parse (self, line : [[c32]])-> T
         throws &ArgumentError, &HelpRequired
     {
-        import std::conv, std::algorithm::search;
-        let mut c32Line : [c32] = [];
+        let dmut tokenizer = Tokenizer::new (tokens-> ["="]);
+        let dmut res = Vec!{[c32]}::new ();
         for i in line {
-            if (i.any!{|x| => x == ' '} ()) {
-                c32Line = c32Line ~ " \"" ~ i ~ "\"";
-            } else {
-                c32Line = c32Line ~ " " ~ i;
+            let r = tokenizer.tokenize (i);
+            for j in r {
+                res:.push (j);
             }
         }
-
-        self.parse (c32Line)   
-    }
-
-    /**
-     * Perform the parse of the command line (encoded in utf32)
-     * @params: 
-     *   - line: the command line options
-     * @returns: the structure T, filled by the command line options*
-     * @throws: 
-     *   - ArgumentError: if the parsing failed, the method diagnosis can be used to compute a readable error
-     *   - HelpRequired: a argument set as 'isHelp', has been filled
-     */     
-    pub def parse (self, content : [c32]) -> T
-        throws &ArgumentError, &HelpRequired
-    {
-        let dmut lex = Lexer!{c32}::new (content, tokens-> ArgsTokens::members);
-        parseValue!T (alias lex, cuts-> self._content, helps-> self._helps, self._positional)
+        
+        parseValueMain!T (res [], cuts-> self._content, helps-> self._helps, self._positional)
     }
 
     /**
@@ -465,27 +449,40 @@ pub class ArgumentParser {struct T} {
  * let args = ArgumentParser!{MyArgs}::new ();
  * ======================
  */
-prv def parseValue {class T} (dmut lex : &Lexer!{c32}) -> T
+prv def parseValue {class T} (line : [[c32]], ref mut read : usize) -> T
     throws &ArgumentError
 {
     {
-        import std::collection::vec;
         __pragma!fake_throw (&ArgumentError, &AssertError);
-        let dmut v = Vec!{[c32]}::new ();
-        let dmut auxLexer = Lexer!{c32}::new (lex:.clear (), comments-> []);
-        loop {
-            let x = auxLexer:.next ();
-            if (x._0 != "") v:.push (x._0);
-            else break {};
-        }
-        v:.fit ();
-        T::new (v[])
+        read += line.len;
+        T::new (line)
     } catch {
         err : &ArgumentError => throw err;
         sub : _=> {
             throw ArgumentError::new (subError-> sub?, type-> T::typeinfo);
         }
     }
+}
+
+/**
+ * Remove the hyphen before the option name
+ * @example : 
+ * ==================
+ * assert (optionName ("--test") == ("test", true));
+ * assert (optionName ("test") == ("test", false));
+ * ==================
+ */
+prv def optionName (value : [c32])-> ([c32], bool) {
+    if (value.len > 2us) {
+        if value [0us .. 2us] == ArgsTokens::DHYPHEN { return (value [2us .. $], true); }
+        if value [0us .. 1us] == ArgsTokens::SHYPHEN { return (value [1us .. $], true); }
+        else return (value, false);
+    } else {
+        if value [0us..1us] == ArgsTokens::SHYPHEN { return (value [1us .. $], true); }
+        else return (value, false);
+    }
+} catch {
+    _ : &OutOfArray => return (value, false);    
 }
 
 /**
@@ -497,89 +494,100 @@ prv def parseValue {class T} (dmut lex : &Lexer!{c32}) -> T
  *   - helps: the list of arguments that throw HelpRequired
  *   - positional: the list of positional arguments
  */
-prv def parseValue {struct T} (dmut lex : &Lexer!{c32}, cuts : &HashMap!{[c32], Argument}, helps: &HashSet![c32], positional : &Vec![c32]) -> T
+prv def parseValueMain {struct T} (line : [[c32]], cuts : &HashMap!{[c32], Argument}, helps: &HashSet![c32], positional : &Vec![c32]) -> T
     throws &ArgumentError, &HelpRequired
 {
     let dmut res = alias ([0u8 ; sizeof (T)]);
     let dmut used = HashSet!{[c32]}::new ();
-    let (_, _, _) = lex:.next ();    
-    let mut currentPos = 0us;
-    loop {
-        let (tok, _, _) = lex.nextNoConsume ();
-        if (tok == ArgsTokens::SHYPHEN || tok == ArgsTokens::DHYPHEN) {
-            lex:.next ();
-            let (name, _, _) = lex:.next ();
-            match cuts [name]? {
-                Ok (Argument (long-> l : _))=> {
-                    if (l in helps) throw HelpRequired::new ();
-                    
-                    parseField!T (alias lex, l, alias res);
-                    used:.insert (l);
-                }
-                _ => {                    
-                    throw cast!{&ArgumentError} (ArgumentUnknownError::new (name-> name));
-                }
-            }
-        } else if (tok != "") {
-            if (currentPos < positional.len ()) {
-                match positional [currentPos]? {
-                    Ok (l : _)=> {
-                        parseField!T (alias lex, l, alias res);
+    if (line.len > 0us) {
+        let mut currentPos = 0us;
+        let mut content = line [1us .. $]; // remove the usage
+        
+        while content.len > 0us {
+            let (name, isHyphenned) = optionName (content [0us]);
+            if (isHyphenned) {            
+                match cuts [name]? {
+                    Ok (Argument (long-> l : _))=> {
+                        if (l in helps) throw HelpRequired::new ();
+                        
+                        content = parseField!T (content [1us .. $], l, alias res, l in used);
                         used:.insert (l);
-                        currentPos += 1us;
                     }
                     _ => {                    
-                        throw cast!{&ArgumentError} (ArgumentUnknownError::new (name-> tok));
+                        throw cast!{&ArgumentError} (ArgumentUnknownError::new (name-> name));
+                    }
+                }
+            } else if (name != "") {
+                if (currentPos < positional.len ()) {
+                    match positional [currentPos]? {
+                        Ok (l : _)=> {
+                            content = parseField!T (content, l, alias res, l in used);
+                            used:.insert (l);
+                            currentPos += 1us;
+                        }
+                        _ => {                    
+                            throw cast!{&ArgumentError} (ArgumentUnknownError::new (name-> name));
+                        }
+                    }
+                } else {
+                    match cuts [name]? {
+                        Ok (Argument (long-> l : _))=> {
+                            if (l in helps) throw HelpRequired::new ();
+                            
+                            content = parseField!T (content[1us .. $], l, alias res, l in used);
+                            used:.insert (l);
+                        }
+                        _ => {                    
+                            throw cast!{&ArgumentError} (ArgumentUnknownError::new (name-> name));
+                        }
                     }
                 }
             } else {
-                match cuts [tok]? {
-                    Ok (Argument (long-> l : _))=> {
-                        lex:.next (); // ignore tok
-                        if (l in helps) throw HelpRequired::new ();
-                        
-                        parseField!T (alias lex, l, alias res);
-                        used:.insert (l);
-                    }
-                    _ => {                    
-                        throw cast!{&ArgumentError} (ArgumentUnknownError::new (name-> tok));
-                    }
-                }
+                break {}
             }
-        } else {
-            break {}
         }
-    }            
+    }
     
     verifyInit!T (used, alias res);
     __pragma!trusted ({*(cast!{&T} (cast!{&void} (res.ptr)))})
+} catch {
+    _ : &OutOfArray => __pragma!panic (); 
+    x : &ArgumentError => throw x;
+    x : &HelpRequired => throw x;
 }
 
-prv def parseValue {struct T} (dmut lex : &Lexer!{c32}) -> T
-    throws &ArgumentError
+/**
+ * Parse a sub struct value
+ */
+prv def parseValue {struct T} (line : [[c32]], ref mut read : usize) -> T
+    throws &ArgumentError, &AssertError
 {
-    let dmut res = alias ([0u8 ; sizeof (T)]);
     let dmut used = HashSet!{[c32]}::new ();
-    let (_, _, _) = lex:.next ();
-    loop {
-        let (tok, _, _) = lex:.next ();
-        if (tok == ArgsTokens::SHYPHEN || tok == ArgsTokens::DHYPHEN) {
-            let (name, _, _) = lex:.next ();
-            parseField!T (alias lex, name, alias res);
+    let dmut res = alias ([0u8 ; sizeof (T)]);
+    
+    if (line.len > 0us) {
+        let mut content = line;
+        
+        while content.len > 0us {
+            let (name, _) = optionName (content [0us]);
+            content = parseField!T (content [1us .. $], name, alias res, name in used);
             used:.insert (name);
-        } else if (tok != "") {                
-            parseField!T (alias lex, tok, alias res);
-            used:.insert (tok);
-        } else {
-            break {}
         }
-    }            
+        
+        read = line.len;
+    }
 
     verifyInit!T (used, alias res);
     __pragma!trusted ({*(cast!{&T} (cast!{&void} (res.ptr)))})
+} catch {
+    _ : &OutOfArray => throw AssertError::new ("parsing failed");
+    x : &ArgumentError => throw x;
 }
 
-prv def parseField {struct T} (dmut lex : &Lexer!{c32}, name : [c32], dmut init : [u8])
+/**
+ * Parse the field of a struct
+ */
+prv def parseField {struct T} (line : [[c32]], name : [c32], dmut init : [u8], used : bool)-> [[c32]]
     throws &ArgumentError
 {        
     cte for i in 0us .. (__pragma!field_names (T)).len {
@@ -590,9 +598,25 @@ prv def parseField {struct T} (dmut lex : &Lexer!{c32}, name : [c32], dmut init 
         });
         
         if ((__pragma!field_names (T))[i] == name) {
+            let mut read = 0us;
             {
+                let content = if (line.len > 0us && line [0us] == "=") {
+                    read += 1us;
+                    [line [1us]]
+                } else { line }
+                
                 __pragma!fake_throw (&ArgumentError);
-                *(cast! (&(__pragma!field_type (T, (__pragma!field_names (T))[i]))) (data)) = parseValue!{__pragma!field_type (T, (__pragma!field_names (T))[i])} (alias lex);                    
+                if (used) {
+                    cte if (is!{__pragma!field_type (T, (__pragma!field_names (T))[i])}{T of [U], U}) {
+                        *(cast! (&(__pragma!field_type (T, (__pragma!field_names (T))[i]))) (data)) =
+                            *(cast! (&(__pragma!field_type (T, (__pragma!field_names (T))[i]))) (data)) ~ parseValue!{__pragma!field_type (T, (__pragma!field_names (T))[i])} (content, ref read);
+                    } else {
+                        throw AssertError::new ("already set");
+                    }
+                } else {
+                    *(cast! (&(__pragma!field_type (T, (__pragma!field_names (T))[i]))) (data)) = parseValue!{__pragma!field_type (T, (__pragma!field_names (T))[i])} (content, ref read);
+                }
+                
             } catch {                        
                 err : &ArgumentError => {
                     import std::conv;
@@ -602,8 +626,8 @@ prv def parseField {struct T} (dmut lex : &Lexer!{c32}, name : [c32], dmut init 
                     throw ArgumentError::new (name-> (__pragma!field_names (T))[i], T::typeinfo);
                 }
             }
-            
-            return {}
+
+            return __pragma!trusted ({ line [read .. $] });
         }
     }
     
@@ -615,30 +639,29 @@ prv def parseField {struct T} (dmut lex : &Lexer!{c32}, name : [c32], dmut init 
  * Parse an array value in the lexer
  * @info: the returned array can be empty
  */
-prv def parseValue {T of [U], U} (dmut lex : &Lexer!{c32})-> T
-    throws &ArgumentCastError
+prv def parseValue {T of [U], U} (line : [[c32]], ref mut read : usize)-> T
+    throws &ArgumentCastError, &AssertError
 {
+
+    __pragma!fake_throw (&ArgumentCastError);
     import std::collection::vec;
     let dmut res = Vec!{U}::new ();
-    loop {
-        let (txt, _, _) = lex:.nextNoConsume ();
-        match txt {
-            ArgsTokens::SHYPHEN => { break {} }
-            ArgsTokens::DHYPHEN => { break {} }
-            "" => { break {} }
-            _ => {
-                cte if (is!U {Z of [c32]}) {
-                    res:.push (parseValue!U (alias lex))
-                } else {
-                    lex:.next ();
-                    res:.push (parseValue!U (txt));
-                }
-            }
+    if (line.len > 0us) {
+        let mut content = line;
+        while content.len > 0us {
+            let (name, isHyphenned) = optionName (content [0us]);
+            if (isHyphenned) break {}
+            res:.push (parseValue!U (name));
+            read += 1us;
+            content = content [1us .. $];
         }
     }
     
     res:.fit ();
     res []
+} catch {
+    _ : &OutOfArray => throw AssertError::new ("parsing failed");
+    x : &ArgumentCastError => throw x;
 }
 
 /**
@@ -646,11 +669,16 @@ prv def parseValue {T of [U], U} (dmut lex : &Lexer!{c32})-> T
  * @throws: 
  *    - &ArgumentError: if the next word in the lexer does not contains a int value
  */
-prv def parseValue {T of i64} (dmut lex : &Lexer!{c32}) -> i64
-    throws &ArgumentCastError
+prv def parseValue {T of i64} (line : [[c32]], ref mut read : usize) -> i64
+    throws &ArgumentCastError, &AssertError
 {
-    let (txt, _, _) = lex:.next ();
-    parseValue!T (txt)
+    read += 1us;
+    parseValue!T (line [0us])
+} catch {
+    _ : &OutOfArray => {
+        throw AssertError::new ("empty option");
+    }
+    x : &ArgumentCastError => throw x;
 }
 
 /**
@@ -658,11 +686,16 @@ prv def parseValue {T of i64} (dmut lex : &Lexer!{c32}) -> i64
  * @throws: 
  *    - &ArgumentError: if the next word in the lexer does not contains a int value
  */
-prv def parseValue {T of i32} (dmut lex : &Lexer!{c32}) -> i32
-    throws &ArgumentCastError
+prv def parseValue {T of i32} (line : [[c32]], ref mut read : usize) -> i32
+    throws &ArgumentCastError, &AssertError
 {
-    let (txt, _, _) = lex:.next ();
-    cast!i32 (parseValue!i64 (txt))
+    read += 1us;
+    cast!i32 (parseValue!i64 (line [0us]))
+} catch {
+    _ : &OutOfArray => {
+        throw AssertError::new ("empty option");
+    }
+    x : &ArgumentCastError => throw x;
 }
 
 /**
@@ -674,7 +707,7 @@ prv def parseValue {T of i32} (txt: [c32]) -> i32
     throws &ArgumentCastError
 {
     cast!i32 (parseValue!i64 (txt))
-}
+} 
 
 /**
  * Try to transform a string into a int value
@@ -705,7 +738,8 @@ prv def parseValue {T of i64} (txt: [c32]) -> i64
 /**
  * @returns: YesNo::YES
  */
-prv def parseValue {T of YesNo} (dmut _ : &Lexer!{c32})-> YesNo {
+prv def parseValue {T of YesNo} (_ : [[c32]], ref mut read : usize)-> YesNo {
+    read;
     YesNo::YES
 }
 
@@ -714,11 +748,16 @@ prv def parseValue {T of YesNo} (dmut _ : &Lexer!{c32})-> YesNo {
  * @throws: 
  *    - &ArgumentError: if neither "true" or "false" is found in the next word of the lexer
  */
-prv def if (!is!T {U of YesNo}) parseValue {T of bool} (dmut lex : &Lexer!{c32}) -> bool
-    throws &ArgumentCastError
+prv def if (!is!T {U of YesNo}) parseValue {T of bool} (line : [[c32]], ref mut read : usize) -> bool
+    throws &ArgumentCastError, &AssertError
 {
-    let (txt, _, _) = lex:.next ();
-    parseValue!T (txt)
+    read += 1us;
+    parseValue!T (line [0us])
+} catch {
+    _ : &OutOfArray => {
+        throw AssertError::new ("empty option");
+    }
+    x : &ArgumentCastError => throw x;
 }
 
 /**
@@ -743,11 +782,16 @@ prv def if (!is!T {U of YesNo}) parseValue {T of bool} (txt: [c32]) -> bool
  * @throws: 
  *    - &ArgumentError: if the next word in the lexer does not contains a float value
  */
-prv def parseValue {T of f64} (dmut lex : &Lexer!{c32}) -> f64
-    throws &ArgumentCastError
+prv def parseValue {T of f64} (line : [[c32]], ref mut read : usize) -> f64
+    throws &ArgumentCastError, &AssertError
 {
-    let (txt, _, _) = lex:.next ();
-    parseValue!T (txt)
+    read += 1us;
+    parseValue!T (line [0us])
+} catch {
+    _ : &OutOfArray => {
+        throw AssertError::new ("empty option");
+    }
+    x : &ArgumentCastError => throw x;
 }
 
 /**
@@ -777,54 +821,24 @@ prv def parseValue {T of f64} (txt: [c32]) -> f64
  * @throws : 
  *    - &ArgumentError: if the reading of the string failed
  */
-prv def parseValue {T of [U], U of c32} (dmut lex : &Lexer!{c32})-> [c32]
+prv def parseValue {T of [U], U of c32} (line : [[c32]], ref mut read : usize)-> [c32]
     throws &ArgumentCastError
 {
-    let (txt, _, _) = lex:.nextNoConsume ();
-    if (txt == ArgsTokens::QUOTE) {
-        parseString (alias lex)        
-    } else {
-        let (msg, l, c) = lex:.next ();
-        if (msg == "") {
-            throw SyntaxError::new ("Unterminated string literal", l, c);
-        }
-        txt
-    }
+    read += 1us;
+    line [0us]
 } catch {
     x : _ => throw ArgumentCastError::new ([c32]::typeinfo, "", subError-> (x)?);
 }
 
 /**
  * Parse a string literal in the lexer
- * This function is used to read a string enclosed by quotes
  * @throws : 
- *    - &SyntaxError: if the reading of the string failed
+ *    - &ArgumentError: if the reading of the string failed
  */
-prv def parseString (dmut lex : &Lexer!{c32})-> [c32]
-    throws &SyntaxError
+prv def parseValue {T of [U], U of c32} (line : [c32])-> [c32]
 {
-    import std::config::toml;
-    
-    let mut res = "";
-
-    let (end, line, col) = lex:.next ();
-    if (end != "'" && end != "\"") {
-        throw SyntaxError::new ("expected '\"' or '\\'' (not '" ~ end ~ "')", line, col);
-    }
-        
-    lex:.doSkip (false);
-    loop {        
-        let (next, l, c) = lex:.next ();
-        if (next == "") {
-            throw SyntaxError::new ("Unterminated string literal", l, c);
-        } else if (next == end) break {}
-        
-        res = res ~ next;                    
-    }
-    
-    lex:.doSkip (true);
-    return res;
-}
+    line
+} 
 
 /**
  * Verify that the struct is correctly filled, and that no mandatory arguments are missing

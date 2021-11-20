@@ -30,7 +30,7 @@ struct bfd_context {
     
     const char* file;
     const char* function;
-    int line;
+    unsigned int line;
 };
 
 
