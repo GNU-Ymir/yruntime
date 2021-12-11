@@ -74,8 +74,6 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Tokenizer {T} {
                         (alias self._heads) [token[0]] = internal::Node!{T}::new (token[0]).insert (token [1us..$]);
                     }
                 }
-            } catch {
-                _ : &OutOfArray => { } // impossible
             }
         }
     }
@@ -129,8 +127,6 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Tokenizer {T} {
                         // it was not a token, just started like one, we continue
                     }
                 }
-            } catch {
-                _ : &OutOfArray=>  {} // impossible
             }
         }
         
@@ -157,8 +153,6 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Tokenizer {T} {
                 res:.push (aux [0us..len]);
                 aux = aux [len .. $];
             }
-        } catch {
-            _: &OutOfArray=> {}
         }
         
         res:.fit ();
@@ -235,7 +229,7 @@ mod internal {
                 retDict:.insert (i, j);                    
             }
 
-            let fnd = retDict[str [0]]?
+            let fnd = retDict[str [0]]?;
             {
                 match fnd {
                     Ok (x:_) => {
@@ -245,8 +239,6 @@ mod internal {
                         retDict:.insert (str [0], Node::new (str [0]).insert (str [1us..$]));
                     }
                 }
-            } catch {
-                _: &OutOfArray => {}
             }
             
             return Node::new (self._key, isToken-> self._isToken, heads-> retDict);
@@ -273,14 +265,12 @@ mod internal {
                 else return 0us;
             }
 
-            let fnd = (self._heads [content [0]])?
+            let fnd = (self._heads [content [0]])?;
             match fnd {
                 Ok (x:_) => {
                     let sub_len = x.len (content [1us..$]);
                     if (sub_len != 0us || self._isToken) return 1us + sub_len;
                     else return 0us;                
-                } catch {
-                    _: &OutOfArray => {} // impossible
                 }
             }
 

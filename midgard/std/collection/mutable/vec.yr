@@ -75,8 +75,6 @@ pub class @final Vec {T of dmut Z, class Z} {
         
         self._data [self._len] = alias val;
         self._len += 1us;
-    } catch {
-        _ : &OutOfArray => {} // there won't be any problem, self._len is always < self._data.len
     }
 
     /**
@@ -92,7 +90,7 @@ pub class @final Vec {T of dmut Z, class Z} {
      *     assert (x:.pop () == A::new (1));
      * }
      * ======================
-     * @complexity: O (n), with n = self._len
+     * @complexity: O (n), with n = self._len (in case of shrinking) O(1) otherwise
      */
     pub def pop (mut self) -> dmut T
         throws &OutOfArray
@@ -107,6 +105,34 @@ pub class @final Vec {T of dmut Z, class Z} {
             self:.fit ();
         return alias ret;
     }
+
+
+
+    /**
+     * Remove the last element of the vector, and returns it
+     * @throws: 
+     *    - OutOfArray: if the vector is empty
+     * @example: 
+     * ======================
+     * let dmut x = Vec!(dmut &A)::new ();
+     * 
+     * for i in 0u64 .. 100u64 {
+     *     x:.push (A::new (1));
+     * }
+     * x:.pop (10u64); 
+     * assert (x.len () == 90us);
+     * ======================
+     * @complexity: O (n), with n = self._len (in case of shrinking) 0(1) otherwise
+     */
+    pub def pop (mut self, nb : u64) 
+    {
+        if (self._len > cast!usize (nb)) self._len -= cast!usize (nb);
+        else self._len = 0us;
+        
+        if (self._len < self._data.len / 2us)
+            self:.fit ();
+    }
+
     
     /**
      * Change the capacity of the vector to the number of element it stores
@@ -209,8 +235,6 @@ pub class @final Vec {T of dmut Z, class Z} {
                 if (self._data [i] != o._data [i]) return false;
             }
             return true;
-        } catch { // Cannot happen
-            _ : &OutOfArray => return false;
         }
 
         /**
@@ -232,8 +256,6 @@ pub class @final Vec {T of dmut Z, class Z} {
                 if (self._data [i] != o [i]) return false;                
             }
             return true;            
-        } catch {
-            _ : &OutOfArray => return false;            
         }
         
     }    
@@ -253,11 +275,7 @@ pub class @final Vec {T of dmut Z, class Z} {
      */
     pub def opIndex (self) -> [T] {
         self._data [0us .. self._len]
-    } catch {
-        _ : &OutOfArray => {
-            []
-        }
-    }
+    }     
 
     /**
      * Get the slice content of the vec 
@@ -273,10 +291,6 @@ pub class @final Vec {T of dmut Z, class Z} {
      */
     pub def opIndex (mut self) -> dmut [T] {
         alias self._data [0us .. self._len]
-    } catch {
-        _ : &OutOfArray => {
-            []
-        }
     }
 
     /**
@@ -423,8 +437,6 @@ pub class @final Vec {T of dmut Z, class Z} {
                         stream:.write (self._data [i]);
                     }
                     stream:.write ("]"s8);                    
-                } catch {
-                    _ : &OutOfArray => { __pragma!panic (); } // self._len is always <= self._data.len
                 }
             } else {
                 stream:.write ("vec["s8):.write (T::typeid):.write (" ; "s8):.write (self._len):.write ("]"s8);
@@ -446,9 +458,7 @@ pub class @final Vec {T of dmut Z, class Z} {
                             hash_value = (hash_value ^ hash (self._data [i])) * mult;
                             mult += (82520u64 + cast!u64 (self._len * 2us));
                         }
-                    } catch {
-                        _ => { __pragma!panic (); }
-                    }
+                    } 
                     
                     hash_value
                 } else {

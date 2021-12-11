@@ -32,12 +32,12 @@ prv enum : usize
 pub macro hmap {
 
     pub self (fst=(key=__expr "=>" val=__expr) rest=("," key=__expr "=>" val=__expr)*) skips (" " | "\n" | "\t" | "\r") {
-        let dmut z = HashMap!(typeof (#(fst::key)), typeof (#(fst::val)))::new ();
-        z:.insert (#(fst::key), #(fst::val));
+        let dmut z_#{__index} = HashMap!{typeof (#(fst::key)), typeof (#(fst::val))}::new ();
+        z_#{__index}:.insert (#(fst::key), #(fst::val));
         #(for x in rest) {
-            z:.insert (#(x::key), #(x::val));
+            z_#{__index}:.insert (#(x::key), #(x::val));
         }
-        alias z
+        alias z_#{__index}
     }
     
 }
@@ -99,8 +99,6 @@ pub class @final HashMap {K, V} {
         }
         
         self._data = alias aux;
-    } catch {
-        _ : &OutOfArray => { } // Can't happen
     }
 
     
@@ -158,21 +156,17 @@ pub class @final HashMap {K, V} {
                 }
             }            
         }
-    }  catch {
-        _ : &OutOfArray => {} // Can't happen
-    }      
+    } 
 
     pub def find (self, key : K) -> V?
     {
         if (self._data.len != 0us) {
             let h = cast!usize (hash (key));
-            match (self._data [h % self._data.len]) {
+            match (self._data [h % self._data.len]) {               
                 x : &MapValue!{K, V} => {                  
                     return x.find (h);
                 } 
             }
-        } catch {
-            _ => {} // Impossible
         }
 
         return (V?)::__err__;
@@ -199,9 +193,6 @@ pub class @final HashMap {K, V} {
             }
         }
         false
-    } catch {
-        _ : &OutOfArray => // Can't happen
-            false
     }
     
     /**
@@ -241,8 +232,6 @@ pub class @final HashMap {K, V} {
             
             if ((self._loaded * 100us) / (self._data.len) < self._min_load_factor) { self:.shrink (); }
         }
-    } catch {
-        _ : &OutOfArray => { } // Can't happen
     }
 
     /**
@@ -336,9 +325,8 @@ pub class @final HashMap {K, V} {
                         return MapIterator!{K, V}::new (i, 0us, self._data, self._data [i]);
                 }
             }
-        } catch {
-            _ : &OutOfArray => {} 
         }
+        
         MapIterator!{K, V}::new (0us, 0us, [], self._empty)
     } 
 
@@ -373,8 +361,6 @@ pub class @final HashMap {K, V} {
         if (inserted) {
             self._size += 1us;
         }
-    }  catch {
-        _ : &OutOfArray => {} // Can't happen
     }
 
 
@@ -413,8 +399,6 @@ pub class @final HashMap {K, V} {
                 }
             }
         }
-    } catch {
-        _ : &OutOfArray => { } // Can't happen
     }
 
     /**
@@ -460,8 +444,6 @@ pub class @final HashMap {K, V} {
                 }
             }            
         }
-    } catch {
-        _ : &OutOfArray => {} // Can't happen
     }
 
     impl Streamable {
@@ -519,8 +501,6 @@ pub class @final HashMap {K, V} {
                         }
                     }
                 }
-            } catch {
-                _ : &OutOfArray => { } // Can't happen
             }
             
             alias cast!{&Object} (res)
@@ -855,8 +835,6 @@ pub class @final MapIterator {K, V} {
                     }
                 }
             }
-        } catch {
-            _ : &OutOfArray => { } 
         }
 
         self._data = [];

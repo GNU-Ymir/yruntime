@@ -103,8 +103,6 @@ pub class @final Vec {T} {
         
         self._data [self._len] = val;
         self._len += 1us;
-    } catch {
-        _ : &OutOfArray => {} // there won't be any problem, self._len is always < self._data.len
     }
 
     /**
@@ -138,6 +136,31 @@ pub class @final Vec {T} {
         if (self._len < self._data.len / 2us)
             self:.fit ();
         return ret;
+    }
+
+    /**
+     * Remove the last element of the vector, and returns it
+     * @throws: 
+     *    - OutOfArray: if the vector is empty
+     * @example: 
+     * ======================
+     * let dmut x = Vec!(i32)::new ();
+     * 
+     * for i in 0u64 .. 100u64 {
+     *     x:.push (1);
+     * }
+     * x:.pop (10u64); 
+     * assert (x.len () == 90us);
+     * ======================
+     * @complexity: O (n), with n = self._len
+     */
+    pub def pop (mut self, nb : u64) 
+    {
+        if (self._len > cast!usize (nb)) self._len -= cast!usize (nb);
+        else self._len = 0us;
+        
+        if (self._len < self._data.len / 2us)
+            self:.fit ();
     }
     
     /**
@@ -242,8 +265,6 @@ pub class @final Vec {T} {
                 if (self._data [i] != o._data [i]) return false;
             }
             return true;
-        } catch { // Cannot happen
-            _ : &OutOfArray => return false;
         }
 
         /**
@@ -266,8 +287,6 @@ pub class @final Vec {T} {
                 if (self._data [i] != o [i]) return false;                
             }
             return true;            
-        } catch {
-            _ : &OutOfArray => return false;            
         }
         
     }    
@@ -285,10 +304,6 @@ pub class @final Vec {T} {
      */
     pub def opIndex (self) -> [T] {
         self._data [0us .. self._len]
-    } catch {
-        _ : &OutOfArray => {
-            []
-        }
     }
     
 
@@ -406,8 +421,6 @@ pub class @final Vec {T} {
                         stream:.write (self._data [i]);
                     }
                     stream:.write ("]"s8);                    
-                } catch {
-                    _ : &OutOfArray => { __pragma!panic (); } // self._len is always <= self._data.len
                 }
             } else {
                 stream:.write ("vec["s8):.write (T::typeid):.write (" ; "s8):.write (self._len):.write ("]"s8);
@@ -428,8 +441,6 @@ pub class @final Vec {T} {
                         hash_value = (hash_value ^ hash (self._data [i])) * mult;
                         mult += (82520u64 + cast!u64 (self._len * 2us));
                     }
-                } catch {
-                    _ => { __pragma!panic (); }
                 }
                 
                 hash_value

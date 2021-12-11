@@ -102,9 +102,6 @@ struct
  *        _ : &HelpRequired => {
  *            println (x.usage ()); // Print the help in multiple line
  *        }
- *        err: _ => {
- *            println (err);
- *        }
  *    }
  * }
  * ===========================
@@ -477,12 +474,10 @@ prv def optionName (value : [c32])-> ([c32], bool) {
         if value [0us .. 2us] == ArgsTokens::DHYPHEN { return (value [2us .. $], true); }
         if value [0us .. 1us] == ArgsTokens::SHYPHEN { return (value [1us .. $], true); }
         else return (value, false);
-    } else {
+    } else if (value.len > 1us) {
         if value [0us..1us] == ArgsTokens::SHYPHEN { return (value [1us .. $], true); }
         else return (value, false);
-    }
-} catch {
-    _ : &OutOfArray => return (value, false);    
+    } else return (value, false);
 }
 
 /**
@@ -551,7 +546,6 @@ prv def parseValueMain {struct T} (line : [[c32]], cuts : &HashMap!{[c32], Argum
     verifyInit!T (used, alias res);
     __pragma!trusted ({*(cast!{&T} (cast!{&void} (res.ptr)))})
 } catch {
-    _ : &OutOfArray => __pragma!panic (); 
     x : &ArgumentError => throw x;
     x : &HelpRequired => throw x;
 }
@@ -580,7 +574,6 @@ prv def parseValue {struct T} (line : [[c32]], ref mut read : usize) -> T
     verifyInit!T (used, alias res);
     __pragma!trusted ({*(cast!{&T} (cast!{&void} (res.ptr)))})
 } catch {
-    _ : &OutOfArray => throw AssertError::new ("parsing failed");
     x : &ArgumentError => throw x;
 }
 
@@ -640,7 +633,7 @@ prv def parseField {struct T} (line : [[c32]], name : [c32], dmut init : [u8], u
  * @info: the returned array can be empty
  */
 prv def parseValue {T of [U], U} (line : [[c32]], ref mut read : usize)-> T
-    throws &ArgumentCastError, &AssertError
+    throws &ArgumentCastError
 {
 
     __pragma!fake_throw (&ArgumentCastError);
@@ -659,9 +652,6 @@ prv def parseValue {T of [U], U} (line : [[c32]], ref mut read : usize)-> T
     
     res:.fit ();
     res []
-} catch {
-    _ : &OutOfArray => throw AssertError::new ("parsing failed");
-    x : &ArgumentCastError => throw x;
 }
 
 /**
@@ -673,12 +663,11 @@ prv def parseValue {T of i64} (line : [[c32]], ref mut read : usize) -> i64
     throws &ArgumentCastError, &AssertError
 {
     read += 1us;
-    parseValue!T (line [0us])
-} catch {
-    _ : &OutOfArray => {
+    if (line.len >= 1us) {
+        parseValue!T (line [0us])
+    } else {
         throw AssertError::new ("empty option");
     }
-    x : &ArgumentCastError => throw x;
 }
 
 /**
@@ -690,12 +679,11 @@ prv def parseValue {T of i32} (line : [[c32]], ref mut read : usize) -> i32
     throws &ArgumentCastError, &AssertError
 {
     read += 1us;
-    cast!i32 (parseValue!i64 (line [0us]))
-} catch {
-    _ : &OutOfArray => {
+    if (line.len > 0us) 
+        cast!i32 (parseValue!i64 (line [0us]))
+    else {
         throw AssertError::new ("empty option");
     }
-    x : &ArgumentCastError => throw x;
 }
 
 /**
@@ -752,12 +740,11 @@ prv def if (!is!T {U of YesNo}) parseValue {T of bool} (line : [[c32]], ref mut 
     throws &ArgumentCastError, &AssertError
 {
     read += 1us;
-    parseValue!T (line [0us])
-} catch {
-    _ : &OutOfArray => {
+    if (line.len > 0us) 
+        parseValue!T (line [0us])
+    else {
         throw AssertError::new ("empty option");
     }
-    x : &ArgumentCastError => throw x;
 }
 
 /**
@@ -786,12 +773,11 @@ prv def parseValue {T of f64} (line : [[c32]], ref mut read : usize) -> f64
     throws &ArgumentCastError, &AssertError
 {
     read += 1us;
-    parseValue!T (line [0us])
-} catch {
-    _ : &OutOfArray => {
+    if (line.len > 0us) {
+        parseValue!T (line [0us])
+    } else {
         throw AssertError::new ("empty option");
     }
-    x : &ArgumentCastError => throw x;
 }
 
 /**
@@ -825,9 +811,11 @@ prv def parseValue {T of [U], U of c32} (line : [[c32]], ref mut read : usize)->
     throws &ArgumentCastError
 {
     read += 1us;
-    line [0us]
-} catch {
-    x : _ => throw ArgumentCastError::new ([c32]::typeinfo, "", subError-> (x)?);
+    if (line.len > 0us) {
+        line [0us]
+    } else {
+        throw ArgumentCastError::new ([c32]::typeinfo, "");
+    }
 }
 
 /**

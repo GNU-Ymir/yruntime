@@ -122,15 +122,7 @@ pub trait Packable {
                 }
                 
                 return cast!(usize) (packOffset);
-            } catch {
-                err : &UnpackError => {
-                    throw err;
-                }
-                x : _ => {
-                    println (x);
-                    throw UnpackError::new ();
-                }
-            }
+            } 
         } else cte if (__pragma!compile ({self::super;})) {
             cte if (is!(typeof (self::super)){U impl Packable}) {
                 self::super:.__stdnetwork__unpackContent (packet)
@@ -187,9 +179,8 @@ pub def unpack (mut packet : [u8])-> dmut &Object
         x : &UnpackError => {
             throw x;
         }
-        x : _ => {
-            println (x);
-            throw UnpackError::new ();            
+        _ : &RuntimeError => {
+            throw UnpackError::new ();
         }
     }   
 }
@@ -252,8 +243,7 @@ mod internal_unpack {
         
         (sizeof (T), sizeof (T)) 
     } catch {
-        x : _ => {
-            println (x);
+        _ => {
             throw UnpackError::new ();
         }
     }
@@ -279,8 +269,7 @@ mod internal_unpack {
             
             return (16us, cast!(usize) (offset));
         } catch {
-            x :_ => {
-                println (x);
+            _ => {
                 throw UnpackError::new ();
             }
         };        
@@ -328,9 +317,6 @@ mod internal_unpack {
         ur : &UnpackError => {
             throw ur;
         }
-        _ => {
-            throw UnpackError::new ();
-        }
     }
 
     pub def unpack {T of (U,), U...} (dmut c_ptr : &u8, packet : [u8]) -> (usize, usize)
@@ -348,9 +334,6 @@ mod internal_unpack {
     } catch {
         ur : &UnpackError => {
             throw ur;
-        }
-        _ => {
-            throw UnpackError::new ();
         }
     }
     

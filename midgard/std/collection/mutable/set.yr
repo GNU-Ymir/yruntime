@@ -1,4 +1,4 @@
-mod std::collection::set;
+mod std::collection::mutable::set;
 
 import core::typeinfo;
 import core::duplication;
@@ -6,8 +6,7 @@ import core::exception;
 import core::array, core::object;
 
 import std::collection::seq;
-pub import std::collection::mutable::set;
-
+import std::collection::vec;
 import std::io, std::stream;
 import std::hash;
 import std::conv;
@@ -18,28 +17,6 @@ import std::conv;
 prv enum : usize
 | DEFAULT_ALLOC_SIZE = 10us
  -> SetConst;
-
-
-/**
- * Macro that can be used to declare a set as a literal
- * @example: 
- * ============
- * let x = hset#{1, 2, 3};
- * println (x); // {1, 2, 3};
- * ============
- */
-pub macro hset {
-
-    pub self (fst=__expr rest=("," val = __expr)*) skips (" " | "\n" | "\r" | "\t") {
-        let dmut s_#{__index} = HashSet!(typeof (#(fst)))::new ();
-        s_#{__index}:.insert (#(fst));
-        #(for i in rest) {
-            s_#{__index}:.insert (#(i::val));
-        }
-        alias s_#{__index}
-    }
-    
-}
 
 
 /**
@@ -60,14 +37,14 @@ pub macro hset {
  * assert (x.len () == 2us);
  * =============
  */
-pub class @final HashSet {T} {
+pub class @final HashSet {T of dmut Z, class Z} {
 
     /**
      * Assertion to avoid tones of error printing, if the key is not usable
      */
     cte assert (__pragma!compile ({hash!T;}) || __pragma!compile ({hash (T::init)}), "unusable element type : (" ~ T ~ ") must be hashable");
 
-    let dmut _data : [dmut &SetNode!{T}] = [];
+    let dmut _data : [dmut &SetNode!{dmut T}] = [];
 
     let mut _loaded : usize = 0us;
 
@@ -78,7 +55,7 @@ pub class @final HashSet {T} {
     let _min_load_factor = 50us;
 
     /// Allocated only once to optimize memory usage
-    let dmut _empty : dmut &SetNode!{T} = Empty!{T}::new ();
+    let dmut _empty : dmut &SetNode!{dmut T} = Empty!{dmut T}::new ();
 
     /**
      * Create a new empty set, with a default loaded factor of 0.75, and minimum load factor of 0.5
@@ -92,7 +69,7 @@ pub class @final HashSet {T} {
      *    - len: the size of the table reserved to avoid growing
      */
     pub self (len : usize) {
-        let dmut aux = core::duplication::allocArray!{&SetNode!{T}} (len);
+        let dmut aux = core::duplication::allocArray!{&SetNode!{dmut T}} (len);
 
         for i in 0us .. aux.len {
             aux [i] = alias self._empty;
@@ -116,12 +93,12 @@ pub class @final HashSet {T} {
      * assert (x.len () == 2us);
      * ============
      */
-    pub def insert (mut self, val : T) -> void {
+    pub def insert (mut self, dmut val : T) -> void {
         if (self._data.len == 0us) { self:.grow (); }
         else if ((self._loaded * 100us) / (self._data.len) > self._load_factor) { self:.grow (); }
         
         let h = cast!usize (hash (val));
-        self:.insertFast (h, val);
+        self:.insertFast (h, alias val);
     }
 
     /**
@@ -140,7 +117,7 @@ pub class @final HashSet {T} {
         if (self._data.len != 0us) {
             let h = cast!usize (hash (val));        
             match (self._data [h % self._data.len]) {
-                x : &SetValue!{T} =>
+                x : &SetValue!{dmut T} =>
                     return x.opContains (h);
             }
         }
@@ -167,11 +144,11 @@ pub class @final HashSet {T} {
         if self._data.len != 0us {
             let h = cast!usize (hash (val));
             match ref (self._data [h % self._data.len]) {
-                dmut x : &SetValue!{T} => {
+                dmut x : &SetValue!{dmut T} => {
                     let mut removed = false;
                     self._data [h % self._data.len] = alias x:.remove (h, ref removed);
                     match self._data [h % self._data.len] {
-                        _: &Empty!{T} => {
+                        _: &Empty!{dmut T} => {
                             self._loaded -= 1us;
                         }
                     }
@@ -217,38 +194,54 @@ pub class @final HashSet {T} {
      * @return: an iterator on the beginning of the set
      */
 
-    pub def begin (self) -> dmut &SetIterator!T {
+    pub def begin (self) -> dmut &SetIterator!{dmut T} {
         if (self._loaded != 0us) {
             for i in 0us .. self._data.len {
                 match self._data [i] {
-                    _ : &SetValue!{T} =>
-                        return SetIterator!{T}::new (i, 0us, self._data, self._data [i]);
+                    _ : &SetValue!{dmut T} =>
+                        return SetIterator!{dmut T}::new (i, 0us, self._data, self._data [i]);
                 }
             }
         }
         
-        SetIterator!{T}::new (0us, 0us, [], self._empty)  
+        SetIterator!{dmut T}::new (0us, 0us, [], self._empty)  
     }
 
     /**
      * @returns: the iterator on the end of the set
      */
-    pub def end (self) -> &SetIterator!T {
-        SetIterator!{T}::new (0us, 0us, [], self._empty)
+    pub def end (self) -> &SetIterator!{dmut T} {
+        SetIterator!{dmut T}::new (0us, 0us, [], self._empty)
     }
 
 
     /**
      * @returns: a newly allocated array containing the value of the set
      */
+    pub def opIndex (mut self)-> dmut [T] {
+        let dmut res : [T] = core::duplication::allocArray!{dmut T} (self._size);
+        let mut j = 0us;
+        for i in 0us .. self._data.len {
+            let dmut inner = alias (alias (alias self._data)[i])[];
+            for z in 0us .. inner.len {
+                res [j] = alias inner [z];
+                j += 1us;
+            }
+        }
+
+        alias res
+    }
+
+    /**
+     * @returns: a newly allocated array containing the value of the set
+     */
     pub def opIndex (self)-> mut [mut T] {
-        let mut res : [mut T] = core::duplication::allocArray!{T} (self._size);
+        let mut res : [mut T] = core::duplication::allocArray!{dmut T} (self._size);
         let mut j = 0us;
         for i in self {
             res [j] = i;
             j += 1us;
         }
-
         alias res
     }
     
@@ -260,7 +253,7 @@ pub class @final HashSet {T} {
             let mut i = 0us;
             for node in self._data {
                 match node {
-                    _ : &SetValue!{T} => {
+                    _ : &SetValue!{dmut T} => {
                         if (i != 0us) { stream:.write (", "s8); }
                         stream:.write (node);
                         i = 1us;
@@ -272,43 +265,45 @@ pub class @final HashSet {T} {
         
     }
 
-    impl core::duplication::Copiable {
+    cte if is!T {U impl Copiable} {
+        impl core::duplication::Copiable {
 
-        /**
-         * Hash set are copiable
-         * Because internal values of hash set are immutable, they are not copied
-         * The copy is only applied on the structure of the set
-         * @example: 
-         * =============
-         * let x = hset#{"foo", "bar"};
-         * let dmut y = dcopy x;
-         * y:.insert ("baz");
-         * println (x); // {bar, foo}
-         * println (y); // {baz, bar, foo}
-         * =============
-         */
-        pub over deepCopy (self)-> dmut &Object {
-            let dmut res = HashSet!{T}::new (self._data.len);
-            
-            // Add all the values 
-            for i in 0us .. self._data.len {
-                let mut current = self._data [i];
-                loop {
-                    match current {
-                        x : &SetValue!{T} => {
-                            res:.insertFast (x.h, x.val);
-                            current = x.next;
-                        }
-                        _ => {
-                            break {}
+            /**
+             * Hash set are copiable
+             * Because internal values of hash set are immutable, they are not copied
+             * The copy is only applied on the structure of the set
+             * @example: 
+             * =============
+             * let x = hset#{"foo", "bar"};
+             * let dmut y = dcopy x;
+             * y:.insert ("baz");
+             * println (x); // {bar, foo}
+             * println (y); // {baz, bar, foo}
+             * =============
+             */
+            pub over deepCopy (self)-> dmut &Object {
+                let dmut res = HashSet!{dmut T}::new (self._data.len);
+                
+                // Add all the values 
+                for i in 0us .. self._data.len {
+                    let dmut current = self._data [i];
+                    loop {
+                        match ref current {
+                            dmut x : &SetValue!{dmut T} => {
+                                res:.insertFast (x.h, dcopy x.val);
+                                current = alias x.next;
+                            }
+                            _ => {
+                                break {}
+                            }
                         }
                     }
                 }
+                
+                alias cast!{&Object} (res)
             }
             
-            alias cast!{&Object} (res)
         }
-        
     }
     
 
@@ -319,14 +314,14 @@ pub class @final HashSet {T} {
      *    - h: the hash of the value
      *    - val: the value to insert
      */
-    prv def insertFast (mut self, h : usize, val : T) {
+    prv def insertFast (mut self, h : usize, dmut val : T) {
         let mut inserted = false;
         match ref (self._data [h % self._data.len]) {
-            dmut x : &SetValue!{T} => {
-                inserted = x:.insert (h, val);
+            dmut x : &SetValue!{dmut T} => {
+                inserted = x:.insert (h, alias val);
             }
             _ => {
-                self._data [h % self._data.len] = SetValue!{T}::new (h, val, alias self._empty);
+                self._data [h % self._data.len] = SetValue!{dmut T}::new (h, alias val, alias self._empty);
                 self._loaded += 1us;
                 inserted = true;
             }
@@ -347,24 +342,24 @@ pub class @final HashSet {T} {
         }
 
         let n_len = self._data.len / 2us;
-        let dmut aux = core::duplication::allocArray!{&SetNode!{T}} (n_len);
+        let dmut aux = core::duplication::allocArray!{&SetNode!{dmut T}} (n_len);
 
         for i in 0us .. aux.len {
             aux [i] = alias self._empty;
         }
 
-        let old = self._data;
+        let dmut old = alias self._data;
         self._data = alias aux;
         self._loaded = 0us;
         self._size = 0us;
 
         for i in 0us .. old.len {
-            let mut current = old [i];
+            let dmut current = alias old [i];
             loop {
-                match current {
-                    x : &SetValue!{T} => {
-                        self:.insertFast (x.h, x.val);
-                        current = x.next;
+                match ref current {
+                    dmut x : &SetValue!{dmut T} => {
+                        self:.insertFast (x.h, alias x.val);
+                        current = alias x.next;
                     }
                     _ => {
                         break {}
@@ -383,32 +378,32 @@ pub class @final HashSet {T} {
      */
     prv def grow (mut self) -> void {
         if (self._data.len == 0us) {
-            self._data = core::duplication::allocArray!{&SetNode!{T}} (SetConst::DEFAULT_ALLOC_SIZE);
+            self._data = core::duplication::allocArray!{&SetNode!{dmut T}} (SetConst::DEFAULT_ALLOC_SIZE);
             for i in 0us .. self._data.len {
                 self._data [i] = alias self._empty;
             }
         } else {
             let n_len = self._data.len * 2us;
-            let dmut aux = core::duplication::allocArray!{&SetNode!{T}} (n_len);
+            let dmut aux = core::duplication::allocArray!{&SetNode!{dmut T}} (n_len);
             // Filling the data with empty elements, to be usable, allocArray is not safe!?
             for i in 0us .. aux.len {
                 aux [i] = alias self._empty;
             }
             
             // Clear the set
-            let old = self._data;
+            let dmut old = alias self._data;
             self._data = alias aux;
             self._loaded = 0us;
             self._size = 0us;
 
             // Add all the old values 
             for i in 0us .. old.len {
-                let mut current = old [i];
+                let dmut current = alias old [i];
                 loop {
-                    match current {
-                        x : &SetValue!{T} => {
-                            self:.insertFast (x.h, x.val);
-                            current = x.next;
+                    match ref current {
+                        dmut x : &SetValue!{dmut T} => {
+                            self:.insertFast (x.h, alias x.val);
+                            current = alias x.next;
                         }
                         _ => {
                             break {}
@@ -427,11 +422,15 @@ pub class @final HashSet {T} {
  * Each index of a table of a hash set is a linked list
  * This list is composed of SetNode(s)
  */
-class @abstract SetNode {T} {
+class @abstract SetNode {T of dmut Z, class Z} {
     prot self () {}
 
-    pub def opEquals (self, _ : &SetNode!T) -> bool;
+    pub def opEquals (self, _ : &SetNode!{dmut T}) -> bool;
 
+    pub def opIndex (mut self)-> dmut [T] {
+        return [];
+    }
+    
     impl Streamable;
 }
 
@@ -442,16 +441,16 @@ class @abstract SetNode {T} {
  * let list = SetValue!(i32)::new (hash (12), 12, SetValue!(i32)::new (hash(42), 42, Empty!(i32)::new ()));
  * ===========
  */
-class @final SetValue {T} over SetNode!T {
+class @final SetValue {T of dmut Z, class Z} over SetNode!{dmut T} {
 
     // The reference to the next element of the list
-    pub let dmut next : &SetNode!T;
+    pub let dmut next : &SetNode!{dmut T};
 
     // The hash of the value contained in the list
     pub let h : usize;
 
     // The value contained in the list
-    pub let val : T;
+    pub let dmut val : T;
 
     /**
      * @params: 
@@ -459,10 +458,26 @@ class @final SetValue {T} over SetNode!T {
      *    - val: the value to store
      *    - next: the reference to the next element of the list
      */
-    pub self (h : usize, val : T, dmut next : &SetNode!T)
-        with next = alias next, h = h, val = val
+    pub self (h : usize, dmut val : T, dmut next : &SetNode!{dmut T})
+        with next = alias next, h = h, val = alias val
     {}
 
+    pub over opIndex (mut self)-> dmut [T] {
+        let dmut current : &SetNode!{dmut T} = alias self;
+        let dmut res = Vec!{dmut T}::new ();
+        
+        loop {
+            match ref current {
+                dmut x : &SetValue!{dmut T} => {
+                    res:.push (alias x.val);
+                    current = alias x.next;
+                }
+                _ => { break {} }
+            }
+        }
+        
+        return (alias res)[];
+    }
 
     impl Streamable {
 
@@ -473,7 +488,7 @@ class @final SetValue {T} over SetNode!T {
             } else { stream:.write (T::typeid); }
             
             match self.next {
-                _ : &Empty!{T} => {}
+                _ : &Empty!{dmut T} => {}
                 _ => { stream:.write (", "s8):.write (self.next); }
             }
         }
@@ -487,14 +502,14 @@ class @final SetValue {T} over SetNode!T {
      * @complexity: O (n), with n the length of the list
      * @returns: true if a new node has been allocated, false otherwise
      */
-    pub def insert (mut self, h : usize, val : T) -> bool {
+    pub def insert (mut self, h : usize, dmut val : T) -> bool {
         if (self.h != h) {
             match ref self.next {
-                dmut x : &SetValue!T => {
-                    return x:.insert (h, val);
+                dmut x : &SetValue!{dmut T} => {
+                    return x:.insert (h, alias val);
                 }
                 _ => {
-                    self.next = SetValue::new (h, val, alias self.next);
+                    self.next = SetValue::new (h, alias val, alias self.next);
                     return true;
                 }
             }
@@ -510,13 +525,13 @@ class @final SetValue {T} over SetNode!T {
      *    - rm: true if a node has been removed, false otherwise
      *    - the list, with no node containing the hash h
      */
-    pub def remove (mut self, h : usize, ref mut rm : bool) -> dmut &SetNode!T {
+    pub def remove (mut self, h : usize, ref mut rm : bool) -> dmut &SetNode!{dmut T} {
         if (self.h == h) {
             rm = true;
             return alias self.next;
         } else {
             match ref self.next {
-                dmut x : &SetValue!T => {
+                dmut x : &SetValue!{dmut T} => {
                     self.next = alias x:.remove (h, ref rm);
                 }
             }
@@ -534,7 +549,7 @@ class @final SetValue {T} over SetNode!T {
             true
         } else {
             match (self.next) {
-                x : &SetValue!{T} => {
+                x : &SetValue!{dmut T} => {
                     return x.opContains (h);
                 }
             }
@@ -546,9 +561,9 @@ class @final SetValue {T} over SetNode!T {
      * Compare two nodes
      * @returns: true if o is SetValue and o.h == self.h, false otherwise
      */
-    pub over opEquals (self, o : &SetNode!T) -> bool {
+    pub over opEquals (self, o : &SetNode!{dmut T}) -> bool {
         match o {
-            x : &SetValue!T => {
+            x : &SetValue!{dmut T} => {
                 return x.h == self.h;
             }
         }
@@ -561,7 +576,7 @@ class @final SetValue {T} over SetNode!T {
 /**
  * An empty node that encode the end of a linked list in a set
  */
-class @final Empty {T} over SetNode!{T} {
+class @final Empty {T of dmut Z, class Z} over SetNode!{dmut T} {
     pub self () { }
 
     impl Streamable {
@@ -576,9 +591,9 @@ class @final Empty {T} over SetNode!{T} {
      * Compare two nodes
      * @returns: true if o is Empty!T
      */
-    pub over opEquals (self, o : &SetNode!{T}) -> bool {
+    pub over opEquals (self, o : &SetNode!{dmut T}) -> bool {
         match o {
-            _ : &Empty!{T} =>
+            _ : &Empty!{dmut T} =>
                 return true;
         }
         return false;
@@ -600,9 +615,9 @@ class @final Empty {T} over SetNode!{T} {
  * assert (beg_it == x.end ());
  * ===========
  */
-class @final SetIterator {T} {
+class @final SetIterator {T of dmut Z, class Z} {
 
-    let mut _data : [&SetNode!T];
+    let mut _data : [&SetNode!{dmut T}];
 
         /// The current index of the iterator, in the table
     let mut _index : usize;
@@ -611,7 +626,7 @@ class @final SetIterator {T} {
     let mut _branch : usize = 0us;
 
     /// The reference on node containing the value we are pointing at
-    let mut _currentNode : &SetNode!{T};
+    let mut _currentNode : &SetNode!{dmut T};
 
     /**
      * An iterator is always constructed to point somewhere, or must point to (0, 0, [], empty)
@@ -621,7 +636,7 @@ class @final SetIterator {T} {
      *    - data: the table of data
      *    - current: the current traversed node in the branch (data [i][branch])
      */
-    pub self (i : usize, branch : usize, data : [&SetNode!T], current : &SetNode!T)
+    pub self (i : usize, branch : usize, data : [&SetNode!{dmut T}], current : &SetNode!{dmut T})
         with _data = data,
              _index = i,
              _branch = branch,
@@ -631,7 +646,7 @@ class @final SetIterator {T} {
     /**
      * Two iterators are equals, if the current nodes are equals
      */
-    pub def opEquals (self, o : &SetIterator!T) -> bool {
+    pub def opEquals (self, o : &SetIterator!{dmut T}) -> bool {
         self._currentNode == o._currentNode
     }
 
@@ -644,7 +659,7 @@ class @final SetIterator {T} {
      */
     pub def get {0} (self) -> T {
         match (self._currentNode) {
-            x : &SetValue!{T} =>
+            x : &SetValue!{dmut T} =>
                 return x.val;
         }
         
@@ -669,9 +684,9 @@ class @final SetIterator {T} {
      */
     pub def next (mut self) -> void {
         match (self._currentNode) {
-            x : &SetValue!{T} => {
+            x : &SetValue!{dmut T} => {
                 match (x.next) {
-                    _ : &SetValue!T => {
+                    _ : &SetValue!{dmut T} => {
                         self._branch += 1us;
                         self._currentNode = x.next;
                         return {}
@@ -683,7 +698,7 @@ class @final SetIterator {T} {
         if (self._index + 1us < self._data.len) {
             for j in (self._index + 1us).. self._data.len {
                 match (self._data [j]) {
-                    _ : &SetValue!T => {
+                    _ : &SetValue!{dmut T} => {
                         self._branch = 0us;
                         self._index = j;
                         self._currentNode = self._data [j];
@@ -694,7 +709,7 @@ class @final SetIterator {T} {
         }
 
         self._data = [];
-        self._currentNode = Empty!{T}::new ();
+        self._currentNode = Empty!{dmut T}::new ();
         self._index = 0us;
         self._branch = 0us;
     }

@@ -41,8 +41,6 @@ pub class @final Path {
         }
         if (last != path.len)
             self._parts:.push (copy (path [last..$]));
-    } catch {
-        _ : &OutOfArray => {} 
     }
 
     prv self (dmut path : &Vec!([c8])) with _parts = alias path {}
@@ -63,19 +61,28 @@ pub class @final Path {
      * assert (path.toStr () == "/foo/test.txt"s8);
      * ============
      */
-    pub def toStr (self, sep : c8 = '/'c8)-> dmut [c8] {
-        let dmut res = Vec!(c8)::new ();
+    pub def toStr (self, sep : [c8] = "/"s8)-> [c8] {
+        import std::stream;
+        
+        let dmut stream = StringStream::new ();        
         let mut fst = true;
         for i in self._parts {
             if !fst {
-                res:.push (sep);
+                stream:.write (sep);
             }
             fst = false;
-            for j in i {
-                res:.push (j);
-            }                    
+            stream:.write (i);
         }
-        return copy res[];
+        return stream[];
+    }
+
+    /**
+     * Compare two paths
+     * @params: 
+     *   - o: another path
+     */
+    pub def opEquals (self, o : &Path)-> bool {
+        self._parts[] == o._parts[]
     }
 
     /**
@@ -101,9 +108,6 @@ pub class @final Path {
             if (last != path.len) {
                 aux._parts:.push (copy (path [last..$]));
             }
-        } catch {
-            _ : &OutOfArray => {
-            } 
         }
         
         return alias aux;
@@ -232,9 +236,8 @@ pub class @final Path {
                     file = file[0us..i];
                     break {}
                 }
-            } catch {
-                _ => { }
             }
+            
             res._parts:.push (file);
         }         
         alias res
@@ -263,8 +266,6 @@ pub class @final Path {
                         return file [i+1us .. $];
                     }
                 }
-            } catch {
-                _ => { }
             }            
         }         
         []

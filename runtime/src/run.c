@@ -23,7 +23,9 @@
 int __YRT_DEBUG__ = 0;
 int __YRT_FORCE_DEBUG__ = 0;
 int __YRT_TEST_CODE__ = 0;
+int __YRT_MAXIMUM_TRACE_LEN__ = 128;
 _yrt_array_ __MAIN_ARGS__;
+
 
 
 void _yrt_exit (int i) {
@@ -265,14 +267,16 @@ _yrt_array_ _yrt_exc_resolve_stack_trace (_yrt_array_ syms) {
 
 _yrt_array_ _yrt_exc_get_stack_trace () {
     if (__YRT_DEBUG__ == 1 || __YRT_FORCE_DEBUG__ == 1) {
-	void *trace[16];
+	void **trace = (void**) malloc (__YRT_MAXIMUM_TRACE_LEN__ * sizeof (void*));
 
-	int trace_size = backtrace(trace, 16);	
+	int trace_size = backtrace(trace, __YRT_MAXIMUM_TRACE_LEN__);	
 
 	void** res = GC_malloc (trace_size * sizeof (void*));
 	for (int i = 0 ; i< trace_size ; i++) {
 	    res [i] = trace [i];
 	}
+
+	free (trace);
 	
 	_yrt_array_ arr;
 	arr.len = trace_size;
@@ -302,7 +306,6 @@ void _yrt_exc_panic (char *file, const char *function, unsigned line)
         
     fprintf (stderr, "Panic in file \"%s\", at line %u", file, line);
     fprintf (stderr, ", in function \"%s\" !!! \n", function);
-    fprintf (stderr, "Please report the error at gnu.ymir@mail.com\n");
     _yrt_array_ trace = _yrt_exc_resolve_stack_trace (_yrt_exc_get_stack_trace ());
     if (trace.len != 0)
     	fprintf (stderr, "%s\n", (char*) trace.data);
