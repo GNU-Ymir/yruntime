@@ -35,6 +35,16 @@ void _yrt_thread_detach (_yrt_thread_t p) {
     GC_pthread_detach (p);
 }
 
+#ifdef __linux__
+void _yrt_thread_cancel (_yrt_thread_t p) {
+    GC_pthread_cancel (p);
+}
+
+void _yrt_thread_exit (_yrt_thread_t p) {
+    GC_pthread_exit (p);
+}
+#endif
+
 void _yrt_thread_mutex_init (_yrt_mutex_t* lock, _yrt_mutexattr_t * data) {
     pthread_mutex_init (lock, data);
 }

@@ -20,7 +20,7 @@ static struct ReflectSymbolTable __yrt_reflectSymbolTable__ =
 void _yrt_reflect_register_symbol_table (const char* moduleName, unsigned long long numberOfSymbols, struct ReflectSymbol* symbols) {
     unsigned long nbEntry = __yrt_reflectSymbolTable__.numberOfEntries;
     if (nbEntry == 0) {
-	struct ReflectSymbolTableEntry * entry = (struct ReflectSymbolTableEntry*) GC_malloc (sizeof (struct ReflectSymbolTableEntry));
+	struct ReflectSymbolTableEntry * entry = (struct ReflectSymbolTableEntry*) malloc (sizeof (struct ReflectSymbolTableEntry));
 	entry-> moduleName = moduleName; // The name is assumed to be in the text as it is called by a compiler function
 	entry-> numberOfSymbols = numberOfSymbols;
 	entry-> symbols = symbols;
@@ -28,13 +28,13 @@ void _yrt_reflect_register_symbol_table (const char* moduleName, unsigned long l
 	__yrt_reflectSymbolTable__.data = entry;
 	__yrt_reflectSymbolTable__.numberOfEntries = 1;
     } else {
-	struct ReflectSymbolTableEntry * newTable = (struct ReflectSymbolTableEntry*) GC_malloc (sizeof (struct ReflectSymbolTableEntry) * nbEntry + 1);
-	memcpy (newTable, __yrt_reflectSymbolTable__.data, sizeof (struct ReflectSymbolTableEntry) * nbEntry);
+      struct ReflectSymbolTableEntry * newTable = (struct ReflectSymbolTableEntry*) malloc (sizeof (struct ReflectSymbolTableEntry) * (nbEntry + 1));
+	memcpy (newTable, __yrt_reflectSymbolTable__.data, sizeof (struct ReflectSymbolTableEntry) * nbEntry);	
 	newTable [nbEntry].moduleName = moduleName;
 	newTable [nbEntry].numberOfSymbols = numberOfSymbols;
 	newTable [nbEntry].symbols = symbols;
 
-	GC_free (__yrt_reflectSymbolTable__.data);
+	free (__yrt_reflectSymbolTable__.data);
 	__yrt_reflectSymbolTable__.data = newTable;
 	__yrt_reflectSymbolTable__.numberOfEntries = nbEntry + 1;
     }
@@ -47,11 +47,11 @@ int startsWith( const char * theString, const char * theBase ) {
 
 
 struct ReflectSymbol* _yrt_reflect_find_symbol_in_table (_ystring mangledName) {
-    for (unsigned long i = 0 ; i < __yrt_reflectSymbolTable__.numberOfEntries ; i++) {
-	if (startsWith (mangledName.data + 2, __yrt_reflectSymbolTable__.data [i].moduleName)) {
-	    struct ReflectSymbol * sym = _yrt_reflect_find_symbol_in_module (mangledName, __yrt_reflectSymbolTable__.data [i]);
-	    if (sym != NULL) return sym;
-	}
+  for (unsigned long i = 0 ; i < __yrt_reflectSymbolTable__.numberOfEntries ; i++) {
+    //if (startsWith (mangledName.data + 2, __yrt_reflectSymbolTable__.data [i].moduleName)) {
+    struct ReflectSymbol * sym = _yrt_reflect_find_symbol_in_module (mangledName, __yrt_reflectSymbolTable__.data [i]);
+    if (sym != NULL) return sym;
+    //	}
     }
 
     return NULL;
@@ -70,10 +70,10 @@ struct ReflectSymbol* _yrt_reflect_find_symbol_in_module (_ystring mangledName, 
 
 struct ReflectSymbol* _yrt_reflect_find_symbol_in_table_array (_yrt_c8_array_ mangledName) {
     for (unsigned long i = 0 ; i < __yrt_reflectSymbolTable__.numberOfEntries ; i++) {
-	if (startsWith (mangledName.data + 2, __yrt_reflectSymbolTable__.data [i].moduleName)) {
+      //if (startsWith (mangledName.data + 2, __yrt_reflectSymbolTable__.data [i].moduleName)) {
 	    struct ReflectSymbol * sym = _yrt_reflect_find_symbol_in_module_array (mangledName, __yrt_reflectSymbolTable__.data [i]);
 	    if (sym != NULL) return sym;
-	}
+	    //}
     }
 
     return NULL;
