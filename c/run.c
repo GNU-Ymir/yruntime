@@ -14,7 +14,6 @@
 #include <unistd.h>
 
 
-
 int __YRT_DEBUG__ = 0;
 int __YRT_FORCE_DEBUG__ = 0;
 int __YRT_TEST_CODE__ = 0;
@@ -105,10 +104,6 @@ int _yrt_run_main_debug (int argc, char ** argv, int(* y_main)()) {
     _yrt_exc_init ();
             
     int ret = y_main (_yrt_create_args_array (argc, argv));
-
-#ifdef __linux__
-    _yrt_elf_clean ();
-#endif
     return ret;
 }
 
@@ -121,10 +116,6 @@ int _yrt_run_main (int argc, char ** argv, int(* y_main)()) {
     _yrt_exc_init ();
     
     
-    int ret = y_main (_yrt_create_args_array (argc, argv));
-#ifdef __linux__
-    _yrt_elf_clean (); // not sure it is necessary, we are closing the program anyway
-#endif
-    
+    int ret = y_main (_yrt_create_args_array (argc, argv));    
     return ret;
 }

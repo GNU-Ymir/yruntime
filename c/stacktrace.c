@@ -1,4 +1,5 @@
 #include "stacktrace.h"
+#include "demangle.h"
 
 #include <getopt.h>
 #include <string.h>
@@ -6,12 +7,15 @@
 #include <stdlib.h>
 #include <gc/gc.h>
 
+
 int __YRT_MAXIMUM_TRACE_LEN__ = 128;
 
 #ifdef __linux__
 #include <execinfo.h>
 #include <bfd.h>
+#include <unistd.h>
 
+#define PATH_MAX 255
 
 char* _yrt_resolve_path (const char * filename, char * resolved, int size) {
     char * PATH_AUX = getenv ("PATH");
@@ -156,7 +160,7 @@ void _yrt_close_bfd_file (struct bfd_handle handle) {
 
 
 _yrt_array_ _yrt_exc_resolve_stack_trace (_yrt_array_ syms) {
-    if (__YRT_DEBUG__ == 1 || _YRT_FORCE_DEBUG == 1) {	
+    if (__YRT_DEBUG__ == 1 || __YRT_FORCE_DEBUG__ == 1) {	
 	char **messages = (char **)NULL;
 	messages = backtrace_symbols(syms.data, (int) syms.len);
 	/* skip first stack frame (points here) */
