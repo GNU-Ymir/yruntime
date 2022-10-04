@@ -2,8 +2,8 @@
 #include <stdio.h>
 #include <limits.h>
 #include <string.h>
-#include <yarray.h>
-#include <ymemory.h>
+#include "yarray.h"
+#include "ymemory.h"
 
 _yrt_array_ _yrt_get_current_dir () {
     char cwd [PATH_MAX];

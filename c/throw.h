@@ -1,4 +1,6 @@
-#pragma once
+#ifndef _THROW_H_
+#define _THROW_H_
+
 #include <setjmp.h>
 #include "type.h"
 #include "thread.h"
@@ -14,7 +16,7 @@ struct _yrt_exc_stack
 /** List of all thread (catching exception at some point, or throwing) */
 struct _yrt_thread_stack
 {
-    pthread_t id;
+    _yrt_thread_t id;
     struct _yrt_thread_stack * next;
     struct _yrt_exc_stack * stack;
     
@@ -39,7 +41,7 @@ void _yrt_exc_init ();
  *    - current: the stack of the exc_stack
  * @return: an iterator on the thread or NULL if not found
  */
-struct _yrt_thread_stack* _yrt_get_thread_stack_current (pthread_t id, struct _yrt_thread_stack* current);
+struct _yrt_thread_stack* _yrt_get_thread_stack_current (_yrt_thread_t id, struct _yrt_thread_stack* current);
 
 /**
  * Insert a new exc_stack for the thread
@@ -48,7 +50,7 @@ struct _yrt_thread_stack* _yrt_get_thread_stack_current (pthread_t id, struct _y
  * @return: the new stack 
  * @warning: lock the mutex while inserting
  */
-struct _yrt_thread_stack* _yrt_insert_thread (pthread_t id);
+struct _yrt_thread_stack* _yrt_insert_thread (_yrt_thread_t id);
 
 /**
  * Get the iterator on the thread stack for the thread id
@@ -57,7 +59,7 @@ struct _yrt_thread_stack* _yrt_insert_thread (pthread_t id);
  *    - id: the thread we are looking for
  * @returns: an iterator 
  */
-struct _yrt_thread_stack* _yrt_get_thread_stack (pthread_t id);
+struct _yrt_thread_stack* _yrt_get_thread_stack (_yrt_thread_t id);
 
 /**
  * Get the iterator on the thread stack for the thread id
@@ -65,7 +67,7 @@ struct _yrt_thread_stack* _yrt_get_thread_stack (pthread_t id);
  *    - id: the thread we are looking for
  * @returns: an iterator or NULL if not found
  */
-struct _yrt_thread_stack* _yrt_get_thread_stack_no_add (pthread_t id);
+struct _yrt_thread_stack* _yrt_get_thread_stack_no_add (_yrt_thread_t id);
 
 /**
  * Remove the exc_stack of the thread inside the thread stack 
@@ -74,14 +76,14 @@ struct _yrt_thread_stack* _yrt_get_thread_stack_no_add (pthread_t id);
  *    - current: the current stack
  *    - last: the iterator that leds to current
  */
-void _yrt_remove_thread_current (pthread_t id, struct _yrt_thread_stack* current, struct _yrt_thread_stack** last);
+void _yrt_remove_thread_current (_yrt_thread_t id, struct _yrt_thread_stack* current, struct _yrt_thread_stack** last);
 
 /**
  * Remove the exc_stack of the thread 
  * @params:
  *    - id: the id of the thread
  */
-void _yrt_remove_thread (pthread_t id);
+void _yrt_remove_thread (_yrt_thread_t id);
 
 /**
  * Main routine of the exception system
@@ -137,3 +139,26 @@ void _yrt_exc_rethrow ();
  *    - list: the list of the current stack trace
  */
 void _yrt_exc_print (FILE * stream, struct _yrt_thread_stack * list);
+
+/**
+ * Provoke a program panic (print stack trace and exit)
+ * @params:
+ *    - file: the name of the file panicking
+ *    - function: the name of the function panicking
+ *    - line: the line of the panic in the source code
+ */
+void _yrt_exc_panic (const char *file, const char *function, unsigned line);
+
+/**
+ * Throw a segmentation fault exception
+ * @info: the implementation of this function is in the core files of ymir
+ */
+void _yrt_throw_seg_fault ();
+
+/**
+ * Throw a runtime error
+ * @info: the implementation of this function is in the core files of ymir
+ */
+void _yrt_throw_runtime_abort (_yrt_c8_array_ str);
+
+#endif

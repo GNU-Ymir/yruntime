@@ -1,12 +1,12 @@
-#include "../include/type.h"
-#include "../include/demangle.h"
+#include "type.h"
+#include "demangle.h"
 #include <stdio.h>
 
 char _yrt_type_equals (_ytype_info a, _ytype_info b) {
     if (a.id == b.id) {
-	if (a.id == BOOL ||
-            a.id == CHAR ||
-            a.id == FLOAT ||
+	if (a.id == BOOL_ ||
+            a.id == CHAR_ ||
+            a.id == FLOAT_ ||
             a.id == SIGNED_INT ||
             a.id == UNSIGNED_INT) {
             return a.size == b.size;

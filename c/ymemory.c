@@ -1,6 +1,6 @@
-#include "../include/ymemory.h"
+#include "ymemory.h"
 #include <memory.h>
-#include "../include/type.h"
+#include "type.h"
 #include <stdio.h>
 
 /* #ifndef GC_THREADS */
@@ -9,7 +9,7 @@
 /* #include <gc/gc_disclaim.h> */
 /* #endif */
 #include "gc.h"
-#include "../include/thread.h"
+#include "thread.h"
 
 pthread_mutex_t _yrt_dcopy_map_mutex;
 struct _yrt_dcopy_map_node _yrt_dcopy_head = {.len = 0, .used = 0, .from = NULL, .to = NULL};

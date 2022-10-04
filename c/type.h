@@ -14,10 +14,10 @@ typedef struct {
 
 enum _ytype_ids {
     ARRAY        = 1,
-    BOOL         = 2,
-    CHAR         = 3,
+    BOOL_        = 2,
+    CHAR_        = 3,
     CLOSURE      = 4,
-    FLOAT        = 5,
+    FLOAT_       = 5,
     FUNC_PTR     = 6,
     SIGNED_INT   = 7,
     UNSIGNED_INT = 8,

@@ -1,7 +1,7 @@
 #include <stdarg.h>
 #include <stdio.h>
-#include "../include/print.h"
-#include "../include/yarray.h"
+#include "print.h"
+#include "yarray.h"
 #include "gc.h"
 
 typedef unsigned int uint;

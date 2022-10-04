@@ -1,26 +1,24 @@
 #include <setjmp.h>
 #include <unistd.h>
-#include <execinfo.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <signal.h>
 #include <string.h>
 #include <pthread.h>
 
-#include "../include/throw.h"
-#include "../include/print.h"
+#include "throw.h"
+#include "print.h"
+#include "stacktrace.h"
 
 
 /* This is the global stack of catchers. */
 struct _yrt_thread_stack *_yrt_exc_global = NULL;
 pthread_mutex_t _yrt_exc_mutex;
 
-_yrt_array_ _yrt_exc_resolve_stack_trace (_yrt_array_ syms);
 
 void _yrt_exc_init () {
     _yrt_thread_mutex_init (&_yrt_exc_mutex, NULL);
 }
-
 
 struct _yrt_thread_stack * _yrt_get_thread_stack_current (pthread_t id, struct _yrt_thread_stack * current) {
     if (current != NULL) {
@@ -136,7 +134,6 @@ void* _yrt_exc_check_type (_ytype_info info) {
     return NULL;
 }
 
-void _yrt_exc_panic (char *file, char *function, unsigned line);
 
 void _yrt_exc_throw (char *file, char *function, unsigned line, _ytype_info info, void* data)
 {
@@ -198,4 +195,15 @@ void _yrt_exc_print (FILE *stream, struct _yrt_thread_stack * list)
 	    fprintf (stream, "%s\n", (char*) trace.data);
 	}
     }
+}
+
+void _yrt_exc_panic (const char *file, const char *function, unsigned line)
+{
+    fprintf (stderr, "Panic in file \"%s\", at line %u", file, line);
+    fprintf (stderr, ", in function \"%s\" !!! \n", function);
+    _yrt_array_ trace = _yrt_exc_resolve_stack_trace (_yrt_exc_get_stack_trace ());
+    if (trace.len != 0) {
+	fprintf (stderr, "%s\n", (char*) trace.data);
+    }
+    exit (-1);
 }

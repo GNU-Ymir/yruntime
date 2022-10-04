@@ -1,3 +1,5 @@
+#ifdef __linux__
+
 #include <sys/select.h>
 
 /* According to earlier standards */
@@ -18,3 +20,5 @@ void _yrt_fd_zero (fd_set * set) {
 int _yrt_fd_isset (int fd, fd_set * set) {
     return FD_ISSET(fd, set);
 }
+
+#endif

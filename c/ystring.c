@@ -1,4 +1,4 @@
-#include "../include/ystring.h"
+#include "ystring.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
