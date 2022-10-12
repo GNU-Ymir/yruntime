@@ -4,7 +4,6 @@
 #include <string.h>
 #include "type.h"
 #include "demangle.h"
-#include "throw.h"
 
 #ifndef GC_THREADS
 #define GC_THREADS
