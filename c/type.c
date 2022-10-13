@@ -1,6 +1,7 @@
 #include "type.h"
 #include "demangle.h"
 #include <stdio.h>
+#include <stddef.h>
 
 char _yrt_type_equals (_ytype_info a, _ytype_info b) {
     if (a.id == b.id) {
@@ -19,7 +20,7 @@ char _yrt_type_equals (_ytype_info a, _ytype_info b) {
 	} else if (a.id == OBJECT) {
 	    if (a.name.data != b.name.data) {
 		if (a.inner.len != 0) {
-		    return _yrt_type_equals (((_ytype_info*) a.inner.data) [0], b);
+		    return _yrt_type_equals (*((_ytype_info*) a.inner.data), b);
 		} else return 0;
 	    } else return 1;
 	} else if (a.id == STRUCT) {

@@ -46,13 +46,20 @@ FILE (
   c/*.c
   )
 
+FILE (
+  GLOB_RECURSE
+  SRC_UNITTEST
+  test-rt/*.c
+  )
+
 
 SET_SOURCE_FILES_PROPERTIES(${SRC_CORE} ${SRC_STD} ${SRC_ETC} PROPERTIES LANGUAGE YMIR)
 
 add_library (gymidgard STATIC ${SRC_CORE} ${SRC_STD} ${SRC_ETC} ${SRC_CORE_C} ${SRC_STD_C} ${SRC_RUNTIME})
-target_link_libraries (gymidgard -lpthread -lgc -lgmp -lm)
+add_library (gymidgard-tests STATIC ${SRC_UNITTEST})
 
 install (TARGETS gymidgard DESTINATION /usr/lib/)
+install (TARGETS gymidgard-tests DESTINATION /usr/lib/)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 

@@ -7,7 +7,7 @@
 
 typedef struct {    
     unsigned int id;
-    unsigned long size;
+    unsigned long long size;
     _yrt_array_ inner;
     _yrt_array_ name;
 }  _ytype_info;
@@ -26,7 +26,7 @@ enum _ytype_ids {
     STRUCT       = 11,
     TUPLE        = 12,
     OBJECT       = 13,
-    VOID         = 14,
+    VOID_         = 14,
 };
 
 

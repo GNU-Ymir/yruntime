@@ -49,7 +49,7 @@ void installHandler () {
 
     /* sigaction(SIGSEGV, &sa, NULL); // On seg fault we throw an exception */
 #elif _WIN32
-    signal (SIGSEGV, &bt_sighandler);
+    //signal (SIGSEGV, &bt_sighandler);
 #endif
 }
 

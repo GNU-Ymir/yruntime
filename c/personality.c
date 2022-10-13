@@ -274,9 +274,9 @@ _Unwind_Reason_Code _yrt_exc_scan_lsda (const char* lsda,
     _Unwind_Internal_Ptr TTypeBase = _yrt_exc_base_of_encoded_value (TTypeEncoding, context);
 
     int ip_before_insn;
-    int ip = _Unwind_GetIPInfo (context, &ip_before_insn);
+    _Unwind_Internal_Ptr ip = _Unwind_GetIPInfo (context, &ip_before_insn);
     if (!ip_before_insn) ip -= 1;
-
+    
     unsigned char saw_cleanup = 0;
     unsigned char saw_handler = 0;
     const unsigned char * actionRecord = NULL;
@@ -292,8 +292,8 @@ _Unwind_Reason_Code _yrt_exc_scan_lsda (const char* lsda,
 	} else if (ip < start + CSStart + CSLen) {
 	    if (CSLandingPad) *landingPad = LPStart + CSLandingPad;
 	    if (CSAction) actionRecord = actionTable + CSAction - 1;
-	    break;
-	}	
+	    break;	    
+	}
     }
 
     if (landingPad == 0) {
@@ -374,3 +374,13 @@ _Unwind_Reason_Code __gyc_personality_v0 (int iversion,
 
     return _yrt_exc_personality (actions, excClass, unwindHeader, context);
 }
+
+#ifdef _WIN32
+
+EXCEPTION_DISPOSITION __gyc_personality_seh0 (void* ms_exc, void* this_frame,
+                                                           void* ms_orig_context, void* ms_disp)
+    {
+        return _GCC_specific_handler(ms_exc, this_frame, ms_orig_context,
+                                     ms_disp, &__gyc_personality_v0);
+    }
+#endif

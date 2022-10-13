@@ -9,8 +9,8 @@
  */
 typedef struct {
     char * data;
-    unsigned long len;
-    unsigned long capacity;    
+    unsigned long long len;
+    unsigned long long capacity;    
 } _ystring;
 
 /**

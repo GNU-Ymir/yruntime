@@ -108,12 +108,12 @@ pub def removeDir (path : &Path, recursive : bool = false)
         if (recursive) {
             for i in readDir (path) {
                 match i {
-                    f : &FileEntry => { removeFile (path.push (f.getPath ())); }
+                    f : &FileEntry => { removeFile (f.getPath ()); }
                     d : &DirEntry => {
-                        removeDir (path.push (d.getPath ()), recursive-> true);                        
+                        removeDir (d.getPath (), recursive-> true);                        
                     }
                     fs : &FsEntry => {
-                        removeFsEntry (path.push (fs.getPath ()));
+                        removeFsEntry (fs.getPath ());
                     }
                 }
             }
@@ -154,13 +154,13 @@ pub def copyDir (src : &Path, dst : &Path, recursive : bool = false, create : bo
         if (create && !isDir (dst)) { createDir (dst, recursive-> true); }
         for i in readDir (src) {
             match i {
-                f : &FileEntry => { copyFile (src.push (f.getPath ()), dst.push (f.getPath ())); }
+                f : &FileEntry => { copyFile (f.getPath (), dst.push (f.getPath ().removePrefix (src))); }
                 d : &DirEntry => {
-                    createDir (dst.push (d.getPath ()));
-                    if (recursive) copyDir (src.push (d.getPath ()), dst.push (d.getPath ()), recursive-> true, create-> create);
+                    createDir (dst.push (d.getPath ().removePrefix (src)));
+                    if (recursive) copyDir (d.getPath (), dst.push (d.getPath ().removePrefix (src)), recursive-> true, create-> create);
                 }
                 fs : &FsEntry => {
-                    copyFsEntry (src.push (fs.getPath ()), dst.push (fs.getPath ()));
+                    copyFsEntry (fs.getPath (), dst.push (fs.getPath ().removePrefix (src)));
                 }
             }
         }
@@ -183,21 +183,54 @@ pub def readDir (path : &Path)-> &DirEntry
 }
 
 
-/**
- * Create a temporary directory, and return its path
- */
-pub def tempDirectory (root : &Path = Path::new ("/tmp"s8), prefix : [c8] = ""s8)-> &Path
-    throws &FsError
-{    
-    let template = root.push (prefix ~ "XXXXXX"s8).toStr ();
-    let res = mkdtemp(template.toStringZ ());
-    if (res !is null) {
-        {
-            Path::new (res.fromStringZ ())
-        }  catch {
-            _ => throw FsError::new (FsErrorCode::IO_ERROR, root.toStr ());
+__version LINUX {
+    /**
+     * Create a temporary directory, and return its path
+     */
+    pub def tempDirectory (root : &Path = Path::new ("/tmp"s8), prefix : [c8] = ""s8)-> &Path
+        throws &FsError
+    {    
+        let template = root.push (prefix ~ "XXXXXX"s8).toStr ();
+        let res = mkdtemp(template.toStringZ ());
+        if (res !is null) {
+            {
+                Path::new (res.fromStringZ ())
+            }  catch {
+                _ => throw FsError::new (FsErrorCode::IO_ERROR, root.toStr ());
+            }
+        } else throw FsError::new (errno ().to!(FsErrorCode) (), root.toStr ());
+    }
+}
+
+__version WINDOWS {
+
+    import std::conv;
+    
+    extern (C) def GetTempPathA (len : u32, dmut buf : &c8)-> u32;
+
+    /**
+     * Create a temporary directory, and return its path
+     */
+    pub def tempDirectory ()-> &Path
+        throws &FsError
+    {
+        let dmut rootBuf : [c8] = ['\u{0}'c8 ; 255u32];
+        let size = GetTempPathA (255u32, alias rootBuf.ptr);
+        if (size == 0u32) throw FsError::new (FsErrorCode::IO_ERROR, ""s8);
+        
+        let mut i = 0;
+        let dmut rootPath = Path::new (rootBuf[0u32 .. size], sep-> '\\'c8);
+        loop {
+            let aux = rootPath.push ("ymir_temp_"s8 ~ (i.to![c8] ()));
+            if (!isDir (aux)) {
+                createDir (aux);
+                break aux;
+            }
+            
+            i += 1;
         }
-    } else throw FsError::new (errno ().to!(FsErrorCode) (), root.toStr ());
+    }    
+    
 }
 
 
@@ -383,6 +416,7 @@ pub def removeFsEntry (path : &Path)
     }
 }
 
+
 /**
  * Copy a symbolic link 
  * @throws: 
@@ -397,14 +431,19 @@ pub def copyFsEntry (src : &Path, dst : &Path)
     throws &FsError
 {
     if isReadable (dst) { throw FsError::new (FsErrorCode::ALREADY_EXISTS, dst.toStr ()); }
-    if !isDir (src) && !isFile (src) {
-        let dmut buf = ['\u{0}'c8 ; 255us];
-        if readlink (src.toStr ().toStringZ (), alias buf [].ptr, 255) == -1 {
-            throw FsError::new (errno ().to!(FsErrorCode) (), src.toStr ());
+    __version LINUX {
+        if !isDir (src) && !isFile (src) {
+            let dmut buf = ['\u{0}'c8 ; 255us];
+            if readlink (src.toStr ().toStringZ (), alias buf [].ptr, 255) == -1 {
+                throw FsError::new (errno ().to!(FsErrorCode) (), src.toStr ());
+            }
+            
+            if symlink (dst.toStr ().toStringZ (), buf [].ptr) == -1 {
+                throw FsError::new (errno ().to!(FsErrorCode) (), src.toStr ());
+            }
         }
-        
-        if symlink (dst.toStr ().toStringZ (), buf [].ptr) == -1 {
-            throw FsError::new (errno ().to!(FsErrorCode) (), src.toStr ());
-        }
+    } else {
+        src; dst;
     }
+
 }

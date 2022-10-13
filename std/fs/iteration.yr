@@ -9,6 +9,8 @@ import etc::runtime::errno;
 import etc::c::dirent;
 import core::exception;
 
+extern (C) def printf (c : &c8, ...);
+
 
 /**
  * A FsEntry is a entry of a file system element, ancestor of DirEntry and FileEntry
@@ -56,11 +58,11 @@ pub class DirEntry over FsEntry {
     pub self (path : &Path) with super (path) {}
 
     pub def begin (self)-> dmut &DirIterator {
-        DirIterator::new (opendir (self._path.toStr ().toStringZ ()))
+        DirIterator::new (opendir (self._path.toStr ().toStringZ ()), self._path)
     }
 
     pub def end (self)-> &DirIterator {
-        DirIterator::new (null)
+        DirIterator::new (null, self._path)
     }
     
     impl Streamable;
@@ -100,61 +102,69 @@ pub class @final FileEntry over FsEntry {
     
 }
 
-/**
- * A link entry in the file system
- * @example: 
- * =================
- * let dir = readDir ("./some/dir");
- * for entry in dir {
- *     match entry {
- *         l : &LinkEntry => {
- *             println (l);
- *             println (l.resolve ());
- *         }
- *     }
- * }
- * =================
- */
-pub class @final LinkEntry over FsEntry {
+
+__version LINUX {
 
     /**
-     * Create a new link entry from a given path
-     * @warning: 
-     * =============
-     * this construction should be used when iterating through a directory
-     * There is no verification in the constructor that the path actually leads to a link
-     * =============
+     * A link entry in the file system
+     * @example: 
+     * =================
+     * let dir = readDir ("./some/dir");
+     * for entry in dir {
+     *     match entry {
+     *         l : &LinkEntry => {
+     *             println (l);
+     *             println (l.resolve ());
+     *         }
+     *     }
+     * }
+     * =================
      */
-    pub self (path : &Path) with super (path) {}
+    pub class @final LinkEntry over FsEntry {
 
-    /**
-     * Follow the link, and return the path
-     * @returns: the path where the link leads
-     * @throws: 
-     *   - FsError: if the link is invalid
-     */
-    pub def follow (self)-> &Path
-        throws &FsError
-    {
-        let dmut path : [c8] = ['\u{0}'c8 ; 256u32];
-        let size = readlink (self._path.toStr ().toStringZ (), alias path.ptr, cast!i32 (path.len));
-        if (size == -1) {
-            throw FsError::new (errno ().to!(FsErrorCode) (), self._path.toStr ())        
+        /**
+         * Create a new link entry from a given path
+         * @warning: 
+         * =============
+         * this construction should be used when iterating through a directory
+         * There is no verification in the constructor that the path actually leads to a link
+         * =============
+         */
+        pub self (path : &Path) with super (path) {}
+
+        /**
+         * Follow the link, and return the path
+         * @returns: the path where the link leads
+         * @throws: 
+         *   - FsError: if the link is invalid
+         */
+        pub def follow (self)-> &Path
+            throws &FsError
+        {
+            let dmut path : [c8] = ['\u{0}'c8 ; 256u32];
+            let size = readlink (self._path.toStr ().toStringZ (), alias path.ptr, cast!i32 (path.len));
+            if (size == -1) {
+                throw FsError::new (errno ().to!(FsErrorCode) (), self._path.toStr ())        
+            }
+            __pragma!trusted ({ Path::new (path [0 .. size]) })
         }
-        __pragma!trusted ({ Path::new (path [0 .. size]) })
+        
+        impl Streamable;
+        
     }
-    
-    impl Streamable;
-    
+
 }
+
 
 class @final DirIterator {
 
     let mut _dir : &(void);
 
+    let _root : &Path;
+    
     let mut _curr : &(dirent);
 
-    pub self (dmut dir : &(void)) with _dir = dir, _curr = null {
+    pub self (dmut dir : &(void), root : &Path) with _dir = dir, _curr = null, _root = root {
         self:.next ();
     }
 
@@ -171,11 +181,18 @@ class @final DirIterator {
                 let c = __pragma!trusted ({
                     *self._curr
                 });
-                match c.d_type {
-                    DirEntryTypes::DT_DIR => { // ignore current and rewind dir
-                        if (c.d_name.fromStringZ![c8] () == ".."s8 ||
-                            c.d_name.fromStringZ![c8] () == "."s8)
-                            self:.next ();
+                
+                __version WINDOWS {
+                    if (c.d_name.fromStringZ![c8] () == ".."s8 ||
+                        c.d_name.fromStringZ![c8] () == "."s8)
+                        self:.next ();
+                } else {
+                    match c.d_type {
+                        DirEntryTypes::DT_DIR => { // ignore current and rewind dir
+                            if (c.d_name.fromStringZ![c8] () == ".."s8 ||
+                                c.d_name.fromStringZ![c8] () == "."s8)
+                                self:.next ();
+                        }
                     }
                 }
             }
@@ -184,13 +201,24 @@ class @final DirIterator {
 
     pub def get {0} (self)-> &FsEntry {
         __pragma!trusted ({
-            let c = *self._curr;
-            let path = Path::new (c.d_name.fromStringZ![c8] ());
-            match c.d_type {
-                DirEntryTypes::DT_DIR => { DirEntry::new (path) }
-                DirEntryTypes::DT_REG => { FileEntry::new (path) }
-                DirEntryTypes::DT_LNK => { LinkEntry::new (path) }
-                _ => { FsEntry::new (path) }
+            let c = *self._curr;            
+            let path = self._root.push (c.d_name.fromStringZ![c8] ());
+                        
+            __version WINDOWS {
+                if (isDir (path)) { DirEntry::new (path) }
+                else if (isFile (path)) { FileEntry::new (path) }
+                else { FsEntry::new (path) }
+            } else {
+                match c.d_type {
+                    DirEntryTypes::DT_DIR => { DirEntry::new (path) }
+                    DirEntryTypes::DT_REG => { FileEntry::new (path) }                
+                    DirEntryTypes::DT_LNK => {
+                        __version LINUX {
+                            LinkEntry::new (path)
+                        } else { FsEntry::new (path) }
+                    }
+                    _ => { FsEntry::new (path) }
+                }
             }
         })
     }

@@ -2,17 +2,17 @@
 #define _Y_ARRAY_H_
 
 typedef struct {
-    unsigned long len;
+    unsigned long long len;
     void * data;
 } _yrt_array_;
 
 typedef struct {
-    unsigned long len;
+    unsigned long long len;
     char * data;
 } _yrt_c8_array_;
 
 typedef struct {
-    unsigned long len;
+    unsigned long long len;
     unsigned int * data;
 } _yrt_c32_array_;
 
