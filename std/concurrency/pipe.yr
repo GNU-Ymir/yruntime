@@ -4,6 +4,7 @@ import core::typeinfo, core::array;
 import core::dispose;
 import etc::runtime::thread;
 import etc::c::stdio;
+import etc::c::files;
 
 import std::io;
 import std::any;
@@ -13,16 +14,25 @@ import std::stream;
 import std::collection::vec;
 
 mod IOThreadPipe {T} {
+
+    __version LINUX {
+        pub extern (C) def _yrt_read_pipe (stream : i32, size : usize)-> T;
+        
+        pub extern (C) def _yrt_write_pipe (stream : i32, data : T, size : usize);
+    }
+
+    __version WINDOWS {
+        pub extern (C) def _yrt_read_pipe (stream : &void, size : usize)-> T;
+        
+        pub extern (C) def _yrt_write_pipe (stream : &void, data : T, size : usize);
+    }
+
     
-    pub extern (C) def _yrt_read_pipe (stream : i32, size : usize)-> T;
-    
-    pub extern (C) def _yrt_write_pipe (stream : i32, data : T, size : usize);
     
 }
 
-// TODO This should be somewhere in a etc::c file
-extern (C) def pipe (streams : &(i32))-> i32;
-extern (C) def fcntl (fd : i32, type : i32, flag : i32)-> i32;
+__version WINDOWS {
+}
 
 
 /**
@@ -51,11 +61,21 @@ extern (C) def fcntl (fd : i32, type : i32, flag : i32)-> i32;
  */
 pub class @final ThreadPipe {
         
-    /** The read side of the pipe */
-    let mut _read : i32 = 0;
-    
-    /** The write side of the pipe */
-    let mut _write : i32 = 0;
+    __version LINUX {
+        /** The read side of the pipe */
+        let mut _read : i32 = 0;
+        
+        /** The write side of the pipe */
+        let mut _write : i32 = 0;
+    }
+
+    __version WINDOWS {
+        
+        let mut _read : &void = null;
+
+        let mut _write : &void = null;
+        
+    }
 
     let mut _mutex = Mutex::new ();
     
@@ -67,10 +87,16 @@ pub class @final ThreadPipe {
 
     pub self (create : bool) {
         if (create) {
-            let mut pipes : [mut i32 ; 2u64] = [0 ; 2u64];
-            pipe (alias (pipes).ptr);
-            self._read = pipes [0];
-            self._write = pipes [1];
+            __version WINDOWS {
+                let (read, write) = create_pipes ();
+                self._read = read;
+                self._write = write;
+            } else {
+                let mut pipes : [mut i32 ; 2u64] = [0 ; 2u64];
+                pipe (alias (pipes).ptr);
+                self._read = pipes [0];
+                self._write = pipes [1];
+            }
         }
     }
     
@@ -82,7 +108,7 @@ pub class @final ThreadPipe {
         self._mutex.lock ();
         self._sem.post ();
         self._cond.wait (self._mutex);
-        let ret = IOThreadPipe!{T}::_yrt_read_pipe (self._read, sizeof T);
+        let ret = IOThreadPipe!{T}::_yrt_read_pipe (self._read, sizeof T);                    
         self._mutex.unlock ();
         ret
     }
@@ -93,9 +119,9 @@ pub class @final ThreadPipe {
      */
     pub def write {class T} (self, x : T) {            
         self._sem.wait ();
-        self._mutex.lock ();
+        self._mutex.lock ();        
         IOThreadPipe!(T)::_yrt_write_pipe (self._write, x, sizeof T);
-        self._cond.signal ();
+        self._cond.signal (); 
         self._mutex.unlock ();
     }
 
@@ -121,14 +147,28 @@ pub class @final ThreadPipe {
          * Close the bidirectional pipe
          */
         pub over dispose (mut self) {
-            if (self._read != 0) {
-                close (self._read);
-                self._read = 0;
+            __version LINUX {
+                if (self._read != 0) {
+                    close (self._read);
+                    self._read = 0;
+                }
+                
+                if (self._write != 0) {
+                    close (self._write);
+                    self._write = 0;
+                }
             }
 
-            if (self._write != 0) {
-                close (self._write);
-                self._write = 0;
+            __version WINDOWS {
+                if (self._read !is null) {
+                    CloseHandle (self._read);
+                    self._read = null;
+                }
+                
+                if (self._write !is null) {
+                    CloseHandle (self._write);
+                    self._write = null;
+                }
             }
         }
     }
@@ -152,39 +192,80 @@ pub class @final ThreadPipe {
  */
 pub class @final OPipe {
 
-    let mut _pipe : i32;
-    
-    pub self (pipe : i32) with _pipe = pipe
-    {}
+    __version LINUX {
+        let mut _pipe : i32;
+        
+        pub self (pipe : i32) with _pipe = pipe
+        {}
+    }
+
+    __version WINDOWS {
+        let mut _pipe : &void;
+
+        pub self (pipe : &void) with _pipe = pipe
+        {}
+    }
 
 
     pub def write {F, T...} (mut self, a : F, b : T) {
         let dmut stream = StringStream::new ();
         stream:.write (a, expand b);
-        write (self._pipe, stream[].ptr, stream[].len);
+        __version LINUX {
+            write (self._pipe, stream[].ptr, stream[].len);
+        }
+
+        __version WINDOWS {
+            WriteFile (self._pipe, stream[].ptr, cast!i32 (stream[].len), null, null);
+        }
     }
 
     pub def write {F} (mut self, a : F) {
         let dmut stream = StringStream::new ();
         stream:.write (a);
-        write (self._pipe, stream[].ptr, stream[].len);
+        __version LINUX {
+            write (self._pipe, stream[].ptr, stream[].len);
+        }
+
+        __version WINDOWS {
+            WriteFile (self._pipe, stream[].ptr, cast!i32 (stream[].len), null, null);
+        }
     }
 
-    pub def getHandle (self)-> i32 {
-        self._pipe
+    __version LINUX {
+    
+        pub def getHandle (self)-> i32 {
+            self._pipe
+        }
     }
 
-    pub def setNonBlocking (mut self) {
-        let err_flags = fcntl(self._pipe, F_GETFL, 0);
-        fcntl(self._pipe, F_SETFL, err_flags | O_NONBLOCK);
+    __version WINDOWS {
+        pub def getHandle (self)-> &void {
+            self._pipe
+        }
+    }
+
+    __version LINUX {
+        pub def setNonBlocking (mut self) {
+            let err_flags = fcntl(self._pipe, F_GETFL, 0);
+            fcntl(self._pipe, F_SETFL, err_flags | O_NONBLOCK);
+        }
     }
 
     impl Disposable {
 
         pub over dispose (mut self) {
-            if (self._pipe != 0) {
-                close (self._pipe);
-                self._pipe = 0;
+            __version LINUX {
+                if (self._pipe != 0) {
+                    close (self._pipe);
+                    self._pipe = 0;
+                }
+            }
+
+            __version WINDOWS {
+                if (self._pipe !is null) {
+                    CloseHandle (self._pipe);
+                    self._pipe = null;
+                }
             }
         }
         
@@ -201,61 +282,110 @@ pub class @final OPipe {
  */
 pub class @final IPipe {
 
-    let mut _pipe : i32;
+    __version LINUX {
+        let mut _pipe : i32;
+        
+        pub self (pipe : i32) with _pipe = pipe
+        {}
+    }
 
-    pub self (pipe : i32) with _pipe = pipe
-    {}
+    __version WINDOWS {
+        let mut _pipe : &(void) = null;
+
+        pub self (pipe : &void) with _pipe = pipe
+        {}
+    }
 
     pub def read (mut self) -> [c8] {
         let dmut ret = Vec!(c8)::new ();
         loop {
             let mut c = '\u{0}'c8;
-            let n = read (self._pipe, alias &c, sizeof c8);
-            if (n != -1 && n != 0) {
-                ret:.push (c);
-            } else break {}
+            __version LINUX {
+                let n = read (self._pipe, alias &c, sizeof c8);
+                if (n != -1 && n != 0) {
+                    ret:.push (c);
+                } else break {}
+            }
+
+            __version WINDOWS {
+                let mut n = 0i32;
+                ReadFile (self._pipe, alias &c, cast!i32 (sizeof c8), alias &n, null);
+                if (n != -1 && n != 0) {
+                    ret:.push (c);
+                } else break {}
+            }
         }
         ret:.fit ();
         return ret [];
     }
 
-    pub def getHandle (self)-> i32 {
-        self._pipe
+    __version LINUX {
+        pub def getHandle (self)-> i32 {
+            self._pipe
+        }
+        
+        pub def setNonBlocking (mut self) {
+            let err_flags = fcntl(self._pipe, F_GETFL, 0);
+            fcntl(self._pipe, F_SETFL, err_flags | O_NONBLOCK);
+        }
+    }
+    
+    __version WINDOWS {
+        pub def getHandle (self)-> &void {
+            self._pipe
+        }
     }
 
-    pub def setNonBlocking (mut self) {
-        let err_flags = fcntl(self._pipe, F_GETFL, 0);
-        fcntl(self._pipe, F_SETFL, err_flags | O_NONBLOCK);
-    }
-
+    
     impl Disposable {
         pub over dispose (mut self) {
-            if (self._pipe != 0) {
-                close (self._pipe);
-                self._pipe = 0;
-            }   
+            __version LINUX {
+                if (self._pipe != 0) {
+                    close (self._pipe);
+                    self._pipe = 0;
+                }
+            }
+
+            __version WINDOWS {
+                if (self._pipe !is null) {
+                    CloseHandle (self._pipe);
+                    self._pipe = null;
+                }
+            }
         }
     }
     
     __dtor (mut self) {
         self:.dispose ();
-    }
-    
+    }    
 }
 
-
 pub class @final IOPipe {
+    __version LINUX {
+        let dmut _read : &IPipe = IPipe::new (0);
+        
+        let dmut _write : &OPipe = OPipe::new (0);
+    }
 
-    let dmut _read : &IPipe = IPipe::new (0);
-
-    let dmut _write : &OPipe = OPipe::new (0);
-
+    __version WINDOWS {
+        let dmut _read : &IPipe = IPipe::new (null);
+        
+        let dmut _write : &OPipe = OPipe::new (null);
+    }
 
     pub self () with self (createPipes ()) {}
+    
+    __version LINUX {        
+        pub self (pipes : [i32 ; 2u32])
+            with _read = IPipe::new (pipes [0]), _write = OPipe::new (pipes [1])
+        {}
+    }
 
-    pub self (pipes : [i32 ; 2u32])
-        with _read = IPipe::new (pipes [0]), _write = OPipe::new (pipes [1])
-    {}
+    __version WINDOWS {
+        pub self (pipes : [&void ; 2u32])
+            with _read = IPipe::new (pipes[0]), _write = OPipe::new (pipes [1])
+        {}        
+    }
 
     pub def opipe (mut self)-> dmut &OPipe {
         alias self._write
@@ -274,10 +404,24 @@ pub class @final IOPipe {
         
 }
 
-
-prv def createPipes ()-> [i32; 2u32] {
-    let dmut ret = [0i32; 2u32];
-    pipe (alias (ret).ptr);
-    return ret;
+__version LINUX {
+    prv def createPipes ()-> [i32; 2u32] {
+        let dmut ret = [0i32; 2u32];
+        pipe (alias (ret).ptr);
+        return ret;
+    }
 }
+
+__version WINDOWS {
+    prv def createPipes ()-> [&void ; 2u32] {
+        let mut ret : [mut &void ; 2u32] = [null; 2u32];
+        let (read, write) = create_pipes ();
+
+        ret[0] = read;
+        ret[1] = write;
+
+        return ret;
+    }
+}
+
 

@@ -6,6 +6,10 @@
 #include <string.h> 
 //#include <sys/wait.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #define GC_PTHREADS
 #include <gc/gc.h>
 #include <semaphore.h>
@@ -14,13 +18,23 @@ _yrt_mutex_t __monitor_mutex__ = PTHREAD_MUTEX_INITIALIZER;
 
 void * _yrt_read_pipe (int stream, unsigned long long size) {
     void * z;
-    void ** x = &z; 
+    void ** x = &z;
+#ifdef __linux__
     int r = read (stream, x, size);
+#endif
+#ifdef _WIN32
+    ReadFile (stream, x, size, NULL, NULL);
+#endif
     return *x;
 }
 
-void _yrt_write_pipe (int stream, void * data, unsigned long long size) {    
+void _yrt_write_pipe (int stream, void * data, unsigned long long size) {
+#ifdef __linux__
     int r = write (stream, &data, size);
+#endif
+#ifdef _WIN32
+    WriteFile (stream, &data, size, NULL, NULL);
+#endif
 }
 
 void _yrt_thread_create (_yrt_thread_t * id, _yrt_attr_t* attr, void*(*call)(void*), void* data) {
@@ -114,4 +128,15 @@ void _yrt_atomic_monitor_enter (void* object) {
 void _yrt_atomic_monitor_exit (void* object) {
     _yrt_mutex_t * lock = _yrt_ensure_monitor (object);
     pthread_mutex_unlock (lock);
+}
+
+unsigned int _yrt_get_nprocs () {
+#ifdef __linux__
+    return get_nprocs ();
+#endif
+#ifdef _WIN32 
+    SYSTEM_INFO sysinfo;
+    GetSystemInfo(&sysinfo);
+    return sysinfo.dwNumberOfProcessors;
+#endif
 }

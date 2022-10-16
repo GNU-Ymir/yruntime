@@ -1,157 +1,157 @@
 mod std::concurrency::process;
-import std::collection::vec;
-import std::io;
 
-import core::dispose;
-import core::typeinfo;
-import core::exception;
-import std::stream;
-import std::concurrency::pipe;
-import etc::c::stdio;
-import std::fs::path;
-import std::conv;
-import std::concurrency::thread;
+__version LINUX {
+    import std::collection::vec;
+    import std::io;
 
-import etc::runtime::gc;
+    import core::dispose;
+    import core::typeinfo;
+    import core::exception;
+    import std::stream;
+    import std::concurrency::pipe;
+    import etc::c::stdio;
+    import std::fs::path;
+    import std::conv;
+    import std::concurrency::thread;
 
-extern (C) def getpgid ()-> i32;
-extern (C) def dup2 (stream : i32, type : u32)-> i32;
-extern (C) def _yrt_print_error (format : &(c8), ...);
-extern (C) def fork ()-> u32;
-extern (C) def execvp (cmd : &c8, args : &(&c8))-> i32;
-extern (C) def _yrt_exit (i : i32);
-extern (C) def waitpid (pid : u32, dmut status : &i32, ig : i32);
-extern (C) def chdir (path : &c8)-> i32;
-extern (C) def printf (c : &c8, ...);
+    import etc::runtime::gc;
 
-mod allocMod {T} {
-    pub extern (C) def malloc (size : u32)-> dmut T;
-}
+    extern (C) def getpgid ()-> i32;
+    extern (C) def dup2 (stream : i32, type : u32)-> i32;
+    extern (C) def _yrt_print_error (format : &(c8), ...);
+    extern (C) def fork ()-> u32;
+    extern (C) def execvp (cmd : &c8, args : &(&c8))-> i32;
+    extern (C) def _yrt_exit (i : i32);
+    extern (C) def waitpid (pid : u32, dmut status : &i32, ig : i32);
+    extern (C) def chdir (path : &c8)-> i32;
+    extern (C) def printf (c : &c8, ...);
 
-
-extern (C) def memcpy (_ : &c8, _ : &c8, size : usize)-> void;
-extern (C) def free (a : &void);
-extern (C) def GC_is_disabled()-> i32;
-
-pub class @final SubProcess {
-
-    let cmd : [c8];
-    
-    let args : [[c8]];
-
-    let cwd : [c8];
-    
-    let mut pid : u32 = 0u32;
-
-    let dmut _stdin = IOPipe::new ();
-    let dmut _stdout = IOPipe::new ();
-    let dmut _stderr = IOPipe::new ();
-
-    /**
-     * Run a process in parallel of this process execution
-     * 
-     */
-    pub self run (cmd : [c8], args : [[c8]], cwd : &Path = Path::new (".")) with cmd = cmd, args = args, cwd = cwd.toStr () {
-        self:.run ();
+    mod allocMod {T} {
+        pub extern (C) def malloc (size : u32)-> dmut T;
     }
 
-    pub self run (path : &Path, args : [[c8]], cwd : &Path = Path::new (".")) with self (path.toStr (), args, cwd-> cwd) {}
-    
-    prv def run (mut self) {
-        _yrt_disable_GC ();
-        self.pid = fork (); // if nothing is written in the fork process the pages are not copied
-        // Thus fork is lightweight
+
+    extern (C) def memcpy (_ : &c8, _ : &c8, size : usize)-> void;
+    extern (C) def free (a : &void);
+    extern (C) def GC_is_disabled()-> i32;
+
+    pub class @final SubProcess {
+
+        let cmd : [c8];
         
-        if (self.pid == 0u32) {
-            self:.child ()
-        } else {
-            _yrt_enable_GC ();
+        let args : [[c8]];
+
+        let cwd : [c8];
+        
+        let mut pid : u32 = 0u32;
+
+        let dmut _stdin = IOPipe::new ();
+        let dmut _stdout = IOPipe::new ();
+        let dmut _stderr = IOPipe::new ();
+
+        /**
+         * Run a process in parallel of this process execution
+         * 
+         */
+        pub self run (cmd : [c8], args : [[c8]], cwd : &Path = Path::new (".")) with cmd = cmd, args = args, cwd = cwd.toStr () {
+            self:.run ();
         }
-        
-        self._stdin:.ipipe ():.dispose ();
-        self._stdout:.opipe ():.dispose ();
-        self._stderr:.opipe ():.dispose ();
 
-        self._stdin:.opipe ().setNonBlocking ();
-        self._stdout:.ipipe ().setNonBlocking ();
-        self._stderr:.ipipe ().setNonBlocking ();
-    }
-
-    prv def child (mut self) {
-        // GC_init ();
-        // _yrt_disable_GC ();
+        pub self run (path : &Path, args : [[c8]], cwd : &Path = Path::new (".")) with self (path.toStr (), args, cwd-> cwd) {}
         
-        //self._stdin:.ipipe ().setNonBlocking ();
-        self._stderr:.opipe ().setNonBlocking ();
-        self._stdout:.opipe ().setNonBlocking ();
-        
-        dup2 (self._stdin:.ipipe ().getHandle (), STDIN_FILENO);
-        dup2 (self._stdout:.opipe ().getHandle (), STDOUT_FILENO);
-        dup2 (self._stderr:.opipe ().getHandle (), STDERR_FILENO);
-
-        self._stdin:.dispose ();
-        self._stdout:.dispose ();
-        self._stderr:.dispose ();
-        
-        __pragma!trusted ({
-            let dmut res = allocMod!{&(&c8)}::malloc (cast!u32 (sizeof (&c8) * (self.args.len + 2us)));
-            *res = allocMod!{&c8}::malloc (cast!u32 (sizeof (c8) * self.cmd.len + 1us));
-            memcpy (*res, self.cmd.ptr, self.cmd.len);
-            *((*res) + self.cmd.len) = '\u{0}'c8;
+        prv def run (mut self) {
+            _yrt_disable_GC ();
+            self.pid = fork (); // if nothing is written in the fork process the pages are not copied
+            // Thus fork is lightweight
             
-            for i in 0us .. self.args.len {
-                *(res + (i + 1us) * sizeof (&c8)) = allocMod!{&c8}::malloc (cast!u32 (sizeof (c8) * self.args [i].len + 1us));
-                memcpy (*(res + (i + 1us) * sizeof (&c8)), self.args [i].ptr, self.args [i].len);
-                *(*(res + (i + 1us) * sizeof (&c8)) + self.args [i].len) = '\u{0}'c8;
-            };
-
-            *(res + (self.args.len + 1us) * sizeof (&c8)) = null;
-
-            let dmut cwd = allocMod!{&c8}::malloc (cast!u32 (sizeof (c8) * (self.cwd.len + 1us)));
-            memcpy (cwd, self.cwd.ptr, self.cwd.len + 1us);
-            *(cwd + self.cwd.len) = '\u{0}'c8;
-            
-            chdir (cwd);
-
-            printf ("Calling execvp:"s8.ptr);
-            let out = execvp (*res, res);
-            printf ("Res execvp%d\n"s8.ptr, out);
-            if (out == -1) {
-                _yrt_print_error (("execvp () failed"s8).ptr);            
+            if (self.pid == 0u32) {
+                self:.child ()
+            } else {
+                _yrt_enable_GC ();
             }
-        });        
+            
+            self._stdin:.ipipe ():.dispose ();
+            self._stdout:.opipe ():.dispose ();
+            self._stderr:.opipe ():.dispose ();
 
+            self._stdin:.opipe ().setNonBlocking ();
+            self._stdout:.ipipe ().setNonBlocking ();
+            self._stderr:.ipipe ().setNonBlocking ();
+
+        }
+
+        prv def child (mut self) {
+            self._stderr:.opipe ().setNonBlocking ();
+            self._stdout:.opipe ().setNonBlocking ();    
+            
+            dup2 (self._stdin:.ipipe ().getHandle (), STDIN_FILENO);
+            dup2 (self._stdout:.opipe ().getHandle (), STDOUT_FILENO);
+            dup2 (self._stderr:.opipe ().getHandle (), STDERR_FILENO);
+
+            self._stdin:.dispose ();
+            self._stdout:.dispose ();
+            self._stderr:.dispose ();
+            
+            __pragma!trusted ({
+                let dmut res = allocMod!{&(&c8)}::malloc (cast!u32 (sizeof (&c8) * (self.args.len + 2us)));
+                *res = allocMod!{&c8}::malloc (cast!u32 (sizeof (c8) * self.cmd.len + 1us));
+                memcpy (*res, self.cmd.ptr, self.cmd.len);
+                *((*res) + self.cmd.len) = '\u{0}'c8;
+                
+                for i in 0us .. self.args.len {
+                    *(res + (i + 1us) * sizeof (&c8)) = allocMod!{&c8}::malloc (cast!u32 (sizeof (c8) * self.args [i].len + 1us));
+                    memcpy (*(res + (i + 1us) * sizeof (&c8)), self.args [i].ptr, self.args [i].len);
+                    *(*(res + (i + 1us) * sizeof (&c8)) + self.args [i].len) = '\u{0}'c8;
+                };
+
+                *(res + (self.args.len + 1us) * sizeof (&c8)) = null;
+
+                let dmut cwd = allocMod!{&c8}::malloc (cast!u32 (sizeof (c8) * (self.cwd.len + 1us)));
+                memcpy (cwd, self.cwd.ptr, self.cwd.len + 1us);
+                *(cwd + self.cwd.len) = '\u{0}'c8;
+                
+                chdir (cwd);
+
+                printf ("Calling execvp:"s8.ptr);
+                let out = execvp (*res, res);
+                printf ("Res execvp%d\n"s8.ptr, out);
+                if (out == -1) {
+                    _yrt_print_error (("execvp () failed"s8).ptr);            
+                }
+            });        
+
+            
+            _yrt_exit (0);
+        }
+
+        pub def stdin (mut self) -> dmut &OPipe {
+            alias self._stdin:.opipe ()
+        }
         
-        _yrt_exit (0);
-    }
+        pub def stdout (mut self)-> dmut &IPipe {
+            alias (self._stdout:.ipipe ())
+        }
 
-    pub def stdin (mut self) -> dmut &OPipe {
-        alias self._stdin:.opipe ()
-    }
-    
-    pub def stdout (mut self)-> dmut &IPipe {
-        alias (self._stdout:.ipipe ())
-    }
+        pub def stderr (mut self)-> dmut &IPipe  {
+            alias (self._stderr:.ipipe ())
+        }
 
-    pub def stderr (mut self)-> dmut &IPipe  {
-        alias (self._stderr:.ipipe ())
-    }
+        pub def wait (mut self)-> i32 {
+            let mut status = 0i32;
+            self._stdin:.dispose ();
+            waitpid (self.pid, alias &status, 0);
+            return status;
+        }
 
-    pub def wait (mut self)-> i32 {
-        let mut status = 0i32;
-        self._stdin:.dispose ();
-        waitpid (self.pid, alias &status, 0);
-        return status;
-    }
+        impl Disposable {
 
-    impl Disposable {
-
-        pub over dispose (mut self) {
-            self._stdin:.opipe ():.dispose ();
-            self._stdout:.ipipe ():.dispose ();
-            self._stderr:.ipipe ():.dispose ();
+            pub over dispose (mut self) {
+                self._stdin:.opipe ():.dispose ();
+                self._stdout:.ipipe ():.dispose ();
+                self._stderr:.ipipe ():.dispose ();
+            }
+            
         }
         
     }
-       
 }
