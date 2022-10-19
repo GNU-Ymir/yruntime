@@ -1,19 +1,20 @@
 mod std::concurrency::process;
 
+import std::collection::vec;
+import std::io;
+
+import core::dispose;
+import core::typeinfo;
+import core::exception;
+import std::stream;
+import std::concurrency::pipe;
+import etc::c::stdio;
+import std::fs::path;
+import std::conv;
+import std::concurrency::thread;
+
 __version LINUX {
-    import std::collection::vec;
-    import std::io;
-
-    import core::dispose;
-    import core::typeinfo;
-    import core::exception;
-    import std::stream;
-    import std::concurrency::pipe;
-    import etc::c::stdio;
-    import std::fs::path;
-    import std::conv;
-    import std::concurrency::thread;
-
+    
     import etc::runtime::gc;
 
     extern (C) def getpgid ()-> i32;
@@ -154,4 +155,132 @@ __version LINUX {
         }
         
     }
+}
+
+__version WINDOWS {
+    
+    import etc::c::files;
+
+    extern (C) def CreateProcessA (appName : &c8, cmdLine : &c8, processAttr : &void, threadAttr : &void, inheritHandle : i32, creationFlags : i32, env : &void, currentDir : &c8, startupInfo : &STARTUPINFO, processInfo : &PROCESS_INFORMATION)-> i32;
+
+    extern (C) def SetHandleInformation (handle : &void, flag : i32, value : i32)-> i32;
+    
+    extern (C) def WaitForSingleObject (handle : &void, timeout : i32)-> i32;
+
+    struct
+    | hProcess : &void = null
+    | hThread : &void = null
+    | dwProcessId : u32 = 0u32
+    | dwThreadId : u32 = 0u32
+     -> PROCESS_INFORMATION;
+
+    struct
+    | cb : i32 = cast!i32 (sizeof (STARTUPINFO))
+    | lpReserved : &void = null
+    | lpDesktop : &void = null
+    | lpTitle : &void = null
+    | dwX : i32 = 0
+    | dwY : i32 = 0
+    | dwXSize : i32 = 0
+    | dwYSize : i32 = 0
+    | dwXCountChars : i32 = 0
+    | dwYCountChars : i32 = 0
+    | dwFillAttributes : i32 = 0
+    | mut dwFlags : i32 = 0
+    | wShowWindow : bool = false
+    | cbReserved2 : u8 = 0u8
+    | lpReserved2 : &void = null
+    | mut hStdInput : &void = null
+    | mut hStdOutput : &void = null
+    | mut hStdError : &void = null
+     -> STARTUPINFO;
+    
+    pub class @final SubProcess {
+        
+        let cmd : [c8];
+        
+        let args : [[c8]];
+
+        let cwd : [c8];
+        
+        let mut _processHandle : &void = null;
+        
+        let dmut _stdin = IOPipe::new ();
+        let dmut _stdout = IOPipe::new ();
+        let dmut _stderr = IOPipe::new ();
+
+        /**
+         * Run a process in parallel of this process execution
+         * 
+         */
+        pub self run (cmd : [c8], args : [[c8]], cwd : &Path = Path::new (".")) with cmd = cmd, args = args, cwd = cwd.toStr () {
+            self:.run ();
+        }
+
+        pub self run (path : &Path, args : [[c8]], cwd : &Path = Path::new (".")) with self (path.toStr (), args, cwd-> cwd) {}
+        
+        prv def run (mut self) {
+            self:.createChild ();               
+        }
+
+        prv def createChild (mut self) {
+            let dmut stream = StringStream::new ();
+            stream:.write (self.cmd, " ");
+            for i, a in self.args {
+                if (i != 0us) stream:.write (" ");
+                stream:.write (a);
+            }
+
+            SetHandleInformation (self._stdin:.opipe ():.getHandle (), 1, 0);
+            SetHandleInformation (self._stdout:.ipipe ():.getHandle (), 1, 0);
+            SetHandleInformation (self._stderr:.ipipe ():.getHandle (), 1, 0);
+            
+            let mut startupinfo = STARTUPINFO ();
+            startupinfo.hStdError = self._stderr:.opipe ():.getHandle ();
+            startupinfo.hStdOutput = self._stdout:.opipe ():.getHandle ();
+            startupinfo.hStdInput = self._stdin:.ipipe ():.getHandle ();
+            startupinfo.dwFlags = 256;
+            
+            let mut piProcInfo = PROCESS_INFORMATION ();
+            
+            CreateProcessA (null, stream[].ptr, null, null, 1, 0, null, self.cwd.ptr, &startupinfo, &piProcInfo);
+            self._processHandle = piProcInfo.hProcess;
+            
+            self._stdin:.ipipe ():.dispose ();        
+        }
+
+        pub def stdin (mut self) -> dmut &OPipe {
+            alias self._stdin:.opipe ()
+        }
+        
+        pub def stdout (mut self)-> dmut &IPipe {
+            alias (self._stdout:.ipipe ())
+        }
+
+        pub def stderr (mut self)-> dmut &IPipe  {
+            alias (self._stderr:.ipipe ())
+        }
+
+        pub def wait (mut self)-> i32 {
+            let mut status = 0i32;
+            self._stdin:.dispose ();
+            self._stdout:.opipe ():.dispose ();
+            self._stderr:.opipe ():.dispose ();
+            
+            status = WaitForSingleObject (self._processHandle, -1);        
+            return status;
+        }
+
+        impl Disposable {
+
+            pub over dispose (mut self) {
+                self._stdin:.dispose ();
+                self._stdout:.dispose ();
+                self._stderr:.dispose ();
+            }
+            
+        }
+        
+    }
+    
 }

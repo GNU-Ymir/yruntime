@@ -41,15 +41,15 @@ void bt_sighandler(int sig
 
 void installHandler () {
 #ifdef __linux__
-    /* struct sigaction sa; */
+    struct sigaction sa;
 
-    /* sa.sa_handler = (void (*)(int))bt_sighandler; */
-    /* sigemptyset(&sa.sa_mask); */
-    /* sa.sa_flags = SA_RESTART; */
+    sa.sa_handler = (void (*)(int))bt_sighandler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
 
-    /* sigaction(SIGSEGV, &sa, NULL); // On seg fault we throw an exception */
+    sigaction(SIGSEGV, &sa, NULL); // On seg fault we throw an exception
 #elif _WIN32
-    //signal (SIGSEGV, &bt_sighandler);
+    signal (SIGSEGV, &bt_sighandler);
 #endif
 }
 

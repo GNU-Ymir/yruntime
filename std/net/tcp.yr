@@ -3,6 +3,7 @@ mod std::net::tcp;
 import core::object, core::typeinfo, core::exception;
 import core::duplication;
 import core::dispose;
+import core::atom;
 
 import etc::c::socket, etc::c::files;
 
@@ -22,6 +23,45 @@ pub enum
 | ACCEPT          = 5u8
 | SOCKET_CLOSED   = 6u8
  -> TcpErrorCode;
+
+__version WINDOWS {
+    static mut __init__ = 0u32;
+
+
+    struct
+    | data : [u8 ; 408u32] = [0u8 ; 408u32]
+     -> WSADATA;
+
+    extern (C) def WSAStartup (version : u16, data : &WSADATA);
+    extern (C) def WSACleanup ();
+
+    
+    /**
+     * Windows socket lib need to be initialized
+     */
+    def initSocketDll () {
+        atomic {
+            if (__init__ == 0u32) {
+                let WSAData = WSADATA ();
+                WSAStartup (2u16, &WSAData);
+            }
+
+            __init__ += 1u32;
+        }
+    }
+
+    /**
+     * It also needs to be cleaned up (when the last socket use is disposed)
+     */
+    def cleanSocketDll () {
+        atomic {
+            __init__ -= 1u32;
+            if (__init__ == 0u32) {
+                WSACleanup ();
+            }
+        }
+    }        
+}
 
 
 /**
@@ -65,6 +105,10 @@ pub class TcpListener {
     {
         match addr {
             v4 : &SockAddrV4 => {
+                __version WINDOWS {
+                    initSocketDll ();
+                }
+                
                 self:.bindV4 (v4);
             }
             _ => {
@@ -83,6 +127,10 @@ pub class TcpListener {
     {
         match self._addr {
             v4 : &SockAddrV4 => {
+                __version WINDOWS {
+                    initSocketDll ();
+                }
+                
                 self:.bindV4 (v4);
             }
             _ => {
@@ -212,6 +260,9 @@ pub class TcpListener {
             if (self._sockfd != 0) {
                 etc::c::socket::close (self._sockfd);
                 self._sockfd = 0;
+                __version WINDOWS {
+                    cleanSocketDll ();
+                }
             }
         }
 
@@ -271,6 +322,9 @@ pub class TcpStream {
     {
         match self._addr {
             v4 : &SockAddrV4 => {
+                __version WINDOWS {
+                    initSocketDll ();
+                }
                 self:.connectV4 (v4);
             }
             _ => {
@@ -308,11 +362,11 @@ pub class TcpStream {
         throws &TcpError
     {
         if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
-        
-        if (etc::c::socket::write (self._sockfd, cast!{&void} (a.ptr), sizeof (U) * cast!(usize) (a.len)) == -1) {
+
+        if (etc::c::socket::send (self._sockfd, cast!{&void} (a.ptr), sizeof (U) * cast!(usize) (a.len), 0) == -1) {
             self._sockfd = 0;
             throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
-        }
+        }    
     }
 
     /**
@@ -328,7 +382,7 @@ pub class TcpStream {
         if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
 
         let dmut alloc = core::duplication::allocArray!(U) (nb);
-        let r = etc::c::socket::read (self._sockfd, alias cast!(&void) (alloc.ptr), nb * sizeof (U));
+        let r = etc::c::socket::recv (self._sockfd, alias cast!(&void) (alloc.ptr), nb * sizeof (U), 0);
         if (r == -1) {
             self._sockfd = 0;
             throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
@@ -347,7 +401,7 @@ pub class TcpStream {
         throws &TcpError
     {
         if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
-        let r = etc::c::socket::read (self._sockfd, alias cast!(&void) (elem), sizeof (U));
+        let r = etc::c::socket::recv (self._sockfd, alias cast!(&void) (elem), sizeof (U), 0);
         if (r == -1) {
             self._sockfd = 0;
             throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
@@ -364,8 +418,8 @@ pub class TcpStream {
         if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
         let packet = a.pack ();
         // We start by sending the size of the packet
-
-        if (etc::c::socket::write (self._sockfd, cast!(&void) (&(packet.len)), sizeof (typeof (packet.len))) == -1) {
+        
+        if (etc::c::socket::send (self._sockfd, cast!(&void) (&(packet.len)), sizeof (typeof (packet.len)), 0) == -1) {
             self._sockfd = 0;
             throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
         }
@@ -384,7 +438,7 @@ pub class TcpStream {
         if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
         
         let mut size = 0us;
-        if (etc::c::socket::read (self._sockfd, alias cast!(&void) (&size), sizeof (usize)) == -1) {
+        if (etc::c::socket::recv (self._sockfd, alias cast!(&void) (&size), sizeof (usize), 0) == -1) {
             self._sockfd = 0;
             throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
         }
@@ -405,7 +459,7 @@ pub class TcpStream {
         if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
         
         let mut size = 0us;
-        if (etc::c::socket::read (self._sockfd, alias cast!(&void) (&size), sizeof (usize)) == -1) {
+        if (etc::c::socket::recv (self._sockfd, alias cast!(&void) (&size), sizeof (usize), 0) == -1) {
             throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
         }
 
@@ -419,7 +473,7 @@ pub class TcpStream {
      */
     pub def isAliveRead (self)-> bool {
         let mut c = '\u{0}'c8;
-        recv (self._sockfd, cast!(&void) (&c), 1us, SocketFlag::MSG_PEEK) == 1
+        recv (self._sockfd, cast!(&void) (&c), 1us, cast!i32 (SocketFlag::MSG_PEEK)) == 1
     }
     
     prv def connectV4 (mut self, addr : &SockAddrV4)
@@ -452,6 +506,9 @@ pub class TcpStream {
             if (self._sockfd != 0) {
                 etc::c::socket::close (self._sockfd);
                 self._sockfd = 0;
+                __version WINDOWS {
+                    cleanSocketDll ();
+                }
             }
         }
     }

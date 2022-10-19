@@ -1,0 +1,72 @@
+mod core::reflect;
+
+import std::collection::map;
+import std::conv;
+import std::io;
+
+enum
+| FUNCTION = 0
+| VTABLE   = 1
+| NONE	   = 2
+ -> ReflectSymbolType;
+
+struct
+| type : ReflectSymbolType
+| ptr : usize
+| name : &c8
+| locFile : &c8
+| line : i32
+ -> ReflectSymbol;
+
+struct
+| moduleName : &c8
+| symbols : [ReflectSymbol]
+ -> ReflectSymbolTableEntry;
+
+struct
+| entries : [ReflectSymbolTableEntry]
+ -> ReflectSymbolTable;
+
+static dmut __REFLECT_SYMBOL_TABLE__ = HashMap!{[c8], ReflectSymbol}::new ();
+static dmut __INV_REFLECT_SYMBOL_TABLE__ = HashMap!{usize, ReflectSymbol}::new ();
+
+extern (C) def _yrt_reflect_construct_index_table (symbol_table : ReflectSymbolTable) {
+    for entry in symbol_table.entries {
+        for sym in entry.symbols {
+            let name = sym.name.fromStringZ ()?;
+            match name {
+                Ok (s : _) => 
+                    __REFLECT_SYMBOL_TABLE__:.insert (s, sym);
+            }
+            
+            __INV_REFLECT_SYMBOL_TABLE__:.insert (sym.ptr, sym);
+        }
+    }
+}
+
+extern (C) def _yrt_reflect_find_symbol_in_indexed_table (name : [c8])-> ReflectSymbol {
+    match __REFLECT_SYMBOL_TABLE__.find (name) {
+        Ok (sym : _) => {
+            return sym
+        }
+        _ => {
+            return ReflectSymbol (ReflectSymbolType::NONE, 0us, null, null, 0);
+        }
+    }
+}
+
+
+extern (C) def _yrt_reflect_find_symbol_in_indexed_table_from_addr (addr : usize)-> ReflectSymbol {
+    let mut min = usize::max;
+    let mut symbol = ReflectSymbol (ReflectSymbolType::NONE, 0us, null, null, 0);
+    for _, sym in __REFLECT_SYMBOL_TABLE__ {
+        if (sym.ptr < addr && (addr - sym.ptr) < min) {
+            symbol = sym;
+            min = (addr - sym.ptr);
+        } else if (sym.ptr == addr) {
+            return sym;
+        }
+    }
+
+    return symbol
+}

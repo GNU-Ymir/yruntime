@@ -4,6 +4,7 @@
 #include <string.h>
 #include "type.h"
 #include "demangle.h"
+#include "run.h"
 
 #ifndef GC_THREADS
 #define GC_THREADS
@@ -14,6 +15,8 @@
 static struct ReflectSymbolTable __yrt_reflectSymbolTable__ =
 { .numberOfEntries = 0,
   .data = NULL };
+
+static int __INDEX_TABLE_CONSTRUCTED__ = 0;
 
 
 void _yrt_reflect_register_symbol_table (const char* moduleName, unsigned long long numberOfSymbols, struct ReflectSymbol* symbols) {
@@ -45,47 +48,30 @@ int startsWith( const char * theString, const char * theBase ) {
 }
 
 
-struct ReflectSymbol* _yrt_reflect_find_symbol_in_table (_ystring mangledName) {
-  for (unsigned long i = 0 ; i < __yrt_reflectSymbolTable__.numberOfEntries ; i++) {
-    //if (startsWith (mangledName.data + 2, __yrt_reflectSymbolTable__.data [i].moduleName)) {
-    struct ReflectSymbol * sym = _yrt_reflect_find_symbol_in_module (mangledName, __yrt_reflectSymbolTable__.data [i]);
-    if (sym != NULL) return sym;
-    //	}
-    }
-
-    return NULL;
+struct ReflectSymbol _yrt_reflect_find_symbol_in_table_string (_ystring mangledName) {
+    _yrt_c8_array_ array;
+    array.len = mangledName.len;
+    array.data = mangledName.data;
+    
+    return _yrt_reflect_find_symbol_in_table_array (array);
 }
 
-struct ReflectSymbol* _yrt_reflect_find_symbol_in_module (_ystring mangledName, struct ReflectSymbolTableEntry entry) {
-    for (unsigned long long i = 0 ; i < entry.numberOfSymbols ; i++) {
-	if (strcmp (entry.symbols[i].name, mangledName.data) == 0) {
-	    return &entry.symbols [i];
-	}
+struct ReflectSymbol _yrt_reflect_find_symbol_in_table_array (_yrt_c8_array_ mangledName) {
+    if (!__INDEX_TABLE_CONSTRUCTED__) {
+	_yrt_reflect_construct_index_table (__yrt_reflectSymbolTable__);
+	__INDEX_TABLE_CONSTRUCTED__ = 1;
     }
 
-    return NULL;
+    return _yrt_reflect_find_symbol_in_indexed_table (mangledName);   
 }
 
-
-struct ReflectSymbol* _yrt_reflect_find_symbol_in_table_array (_yrt_c8_array_ mangledName) {
-    for (unsigned long i = 0 ; i < __yrt_reflectSymbolTable__.numberOfEntries ; i++) {
-      //if (startsWith (mangledName.data + 2, __yrt_reflectSymbolTable__.data [i].moduleName)) {
-	    struct ReflectSymbol * sym = _yrt_reflect_find_symbol_in_module_array (mangledName, __yrt_reflectSymbolTable__.data [i]);
-	    if (sym != NULL) return sym;
-	    //}
+struct ReflectSymbol _yrt_reflect_find_symbol_from_addr (void* addr) {
+    if (!__INDEX_TABLE_CONSTRUCTED__) {
+	_yrt_reflect_construct_index_table (__yrt_reflectSymbolTable__);
+	__INDEX_TABLE_CONSTRUCTED__ = 1;
     }
 
-    return NULL;
-}
-
-struct ReflectSymbol* _yrt_reflect_find_symbol_in_module_array (_yrt_c8_array_ mangledName, struct ReflectSymbolTableEntry entry) {
-    for (unsigned long long i = 0 ; i < entry.numberOfSymbols ; i++) {
-	if (strcmp (entry.symbols[i].name, mangledName.data) == 0) {
-	    return &entry.symbols [i];
-	}
-    }
-
-    return NULL;
+    return _yrt_reflect_find_symbol_in_indexed_table_from_addr (addr);   
 }
 
 /**
@@ -99,9 +85,9 @@ struct ReflectSymbol* _yrt_reflect_find_symbol_in_module_array (_yrt_c8_array_ m
 void* _yrt_reflect_get_vtable (_yrt_c8_array_ mangledClassName, _yrt_c8_array_ className) {
     _yrt_c8_array_ name = _yrt_type_vtable_name (mangledClassName);
 
-    struct ReflectSymbol* sym = _yrt_reflect_find_symbol_in_table_array (name);
-    if (sym != NULL) {
-	return sym-> ptr;
+    struct ReflectSymbol sym = _yrt_reflect_find_symbol_in_table_array (name);
+    if (sym.ptr != NULL) {
+	return sym.ptr;
     } else {
 	_ystring name = str_create ("Could not find symbol in reflection table : vtable for ");
 	name = str_fit (str_concat (name, str_create_len (className.data, className.len)));
@@ -118,9 +104,9 @@ void* _yrt_reflect_get_vtable (_yrt_c8_array_ mangledClassName, _yrt_c8_array_ c
 void* _yrt_reflect_get_constructor_no_param (_yrt_c8_array_ mangledClassName, _yrt_c8_array_ className) {
     _yrt_c8_array_ name = _yrt_type_constructor_no_param_name (mangledClassName);
 
-    struct ReflectSymbol* sym = _yrt_reflect_find_symbol_in_table_array (name);
-    if (sym != NULL) {
-	return sym-> ptr;
+    struct ReflectSymbol sym = _yrt_reflect_find_symbol_in_table_array (name);
+    if (sym.ptr != NULL) {
+	return sym.ptr;
     } else {
 	_ystring name = str_create_len ("Class ", 6);
 	name = str_concat (name, str_create_len (className.data, className.len));
@@ -181,9 +167,9 @@ void * _yrt_reflect_get_function (_yrt_c8_array_ funcName, _yrt_c8_array_ retNam
     name = str_concat (name, str_create_len ("Z", 1));
     name = str_concat (name, str_create_len (retName.data, retName.len));
 
-    struct ReflectSymbol * sym = _yrt_reflect_find_symbol_in_table (name);
-    if (sym != NULL) {
-	return sym-> ptr;
+    struct ReflectSymbol sym = _yrt_reflect_find_symbol_in_table_string (name);
+    if (sym.ptr != NULL) {
+	return sym.ptr;
     } else {
 	_ystring name2 = str_create ("Could not find symbol in reflection table : symbol ");
 	name = str_fit (str_concat (name2, str_create_len (name.data, name.len)));
@@ -232,9 +218,9 @@ void * _yrt_reflect_get_method (_yrt_c8_array_ mangleClassName, _yrt_c8_array_ _
     name = str_concat (name, str_create_len ("Z", 1));
     name = str_concat (name, str_create_len (retName.data, retName.len));
     
-    struct ReflectSymbol* sym = _yrt_reflect_find_symbol_in_table (name);
-    if (sym != NULL) {
-	return sym-> ptr;
+    struct ReflectSymbol sym = _yrt_reflect_find_symbol_in_table_string (name);
+    if (sym.ptr != NULL) {
+	return sym.ptr;
     } else {
 	_ystring name2 = str_create ("Could not find symbol in reflection table : symbol ");
 	name2 = str_fit (str_concat (name2, str_create_len (name.data, name.len)));
@@ -279,9 +265,9 @@ void * _yrt_reflect_get_method_mutable (_yrt_c8_array_ mangleClassName, _yrt_c8_
     name = str_concat (name, str_create_len ("Z", 1));
     name = str_concat (name, str_create_len (retName.data, retName.len));
     
-    struct ReflectSymbol* sym = _yrt_reflect_find_symbol_in_table (name);
-    if (sym != NULL) {
-	return sym-> ptr;
+    struct ReflectSymbol sym = _yrt_reflect_find_symbol_in_table_string (name);
+    if (sym.ptr != NULL) {
+	return sym.ptr;
     } else {
 	_ystring name2 = str_create ("Could not find symbol in reflection table : symbol ");
 	name2 = str_fit (str_concat (name2, str_create_len (name.data, name.len)));

@@ -58,8 +58,14 @@ SET_SOURCE_FILES_PROPERTIES(${SRC_CORE} ${SRC_STD} ${SRC_ETC} PROPERTIES LANGUAG
 add_library (gymidgard STATIC ${SRC_CORE} ${SRC_STD} ${SRC_ETC} ${SRC_CORE_C} ${SRC_STD_C} ${SRC_RUNTIME})
 add_library (gymidgard-tests STATIC ${SRC_UNITTEST})
 
-install (TARGETS gymidgard DESTINATION /usr/lib/)
-install (TARGETS gymidgard-tests DESTINATION /usr/lib/)
+IF(UNIX) 
+    install (TARGETS gymidgard DESTINATION /usr/lib/)
+    install (TARGETS gymidgard-tests DESTINATION /usr/lib/)
+ELSE(UNIX)
+    install (TARGETS gymidgard DESTINATION /mingw64/lib/)
+    install (TARGETS gymidgard-tests DESTINATION /mingw64/lib/)
+ENDIF(UNIX)
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 

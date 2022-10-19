@@ -48,4 +48,16 @@ void _y_error (unsigned long len, char * ptr);
  */
 void _yrt_exit (int code);
 
+/**
+ * Throw the abort exception
+ * @params:
+ *   - msg: the message of the abort exception
+ */
+void _yrt_throw_runtime_abort (_yrt_c8_array_ msg);
+
+/**
+ * Throw the seg fault exception
+ */
+void _yrt_throw_seg_fault ();
+
 #endif

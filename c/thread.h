@@ -24,7 +24,11 @@ typedef pthread_mutexattr_t _yrt_mutexattr_t;
  * @return: the data read
  * @warning: this function is blocking until everything is read, or the pipe is closed
  */
+#ifdef _WIN32
+void * _yrt_read_pipe (void * stream, unsigned long long size);
+#else 
 void * _yrt_read_pipe (int stream, unsigned long long size);
+#endif
 
 /**
  * Write data inside a Pipe
@@ -33,7 +37,11 @@ void * _yrt_read_pipe (int stream, unsigned long long size);
  *    - data: the data to write
  *    - size: the size (in bytes)
  */
+#ifdef _WIN32
+void _yrt_write_pipe (void * stream, void * data, unsigned long long size);
+#else
 void _yrt_write_pipe (int stream, void * data, unsigned long long size);
+#endif
 
 /**
  * Create a new thread that will executed a function

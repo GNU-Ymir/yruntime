@@ -1,5 +1,6 @@
 #include "stacktrace.h"
 #include "demangle.h"
+#include "reflect.h"
 
 #include <getopt.h>
 #include <string.h>
@@ -190,10 +191,14 @@ _yrt_array_ _yrt_exc_resolve_stack_trace (_yrt_array_ syms) {
 		    ret = str_concat (ret, str_from_int (i - 1));
 		}
 
+		name.data = NULL;
+		int need_break = 0;
 		if (func.data != NULL) {
+		    _ystring name = _yrt_demangle_symbol (func.data, func.len);
 		    ret = str_concat_c_str (ret, " in function \e[33m");
-		    ret = str_concat (ret, _yrt_demangle_symbol (func.data, func.len));
+		    ret = str_concat (ret, name);
 		    ret = str_concat_c_str (ret, "\e[0m");
+		    need_break = (strcmp (name.data, "main (...)") == 0); 
 		}
 		
 		if (file.data != NULL) {		    
@@ -202,6 +207,7 @@ _yrt_array_ _yrt_exc_resolve_stack_trace (_yrt_array_ syms) {
 		    ret = str_concat_c_str (ret, "\e[0m:");
 		    ret = str_concat (ret, str_from_int (line));
 		}
+		if (need_break) break;
 	    } else {
 		ret = str_concat_c_str (ret, "\n╞═ bt ╕ #");
 		ret = str_concat (ret, str_from_int (i - 1));
@@ -251,7 +257,29 @@ _yrt_array_ _yrt_exc_get_stack_trace () {
 
 #elif _WIN32
 
+#include <Windows.h>
+#include "dbghelp.h"
 #include <windows.h>
+
+
+void* getCallerAddr (int i) {
+    switch (i) {
+    case 0 :
+	return __builtin_frame_address (2);
+    case 1 :
+	return __builtin_frame_address (3);
+    case 2 :
+	return __builtin_frame_address (4);
+    default:
+	return NULL;
+    }
+}
+
+void** captureBackTrace (int i, int max, void** buffer) {
+    if (i == max) return buffer;
+    buffer[i] = getCallerAddr (i);
+    return captureBackTrace (i + 1, max, buffer);
+}
 
 _yrt_array_ _yrt_exc_resolve_stack_trace (_yrt_array_ syms) {
     if (__YRT_DEBUG__ == 1 || __YRT_FORCE_DEBUG__ == 1) {
@@ -261,9 +289,26 @@ _yrt_array_ _yrt_exc_resolve_stack_trace (_yrt_array_ syms) {
 	for (int i = 2 ; i < syms.len ; i++) {
 	    ret = str_concat_c_str (ret, "\n|= bt =| #");
 	    ret = str_concat (ret, str_from_int (i - 1));
-	    ret = str_concat_c_str (ret, "\n|     |=> \e[32m");
-	    //ret = str_concat_c_str (ret, filename);
-	    ret = str_concat_c_str (ret, "\e[0m:??");
+	    
+	    void* ptr = ((void**) syms.data)[i];
+	    struct ReflectSymbol sym = _yrt_reflect_find_symbol_from_addr (ptr);
+	    
+	    if (sym.ptr != NULL) {
+		_ystring name = _yrt_demangle_symbol (sym.name, strlen (sym.name));
+		ret = str_concat_c_str (ret, " in function \e[33m");
+		ret = str_concat (ret, name);
+		ret = str_concat_c_str (ret, "\e[0m");
+		if (sym.locFile != NULL) {
+		    ret = str_concat_c_str (ret, "\n|     |=> \e[32m");
+		    ret = str_concat_c_str (ret, sym.locFile);
+		    ret = str_concat_c_str (ret, "\e[0m:");
+		    ret = str_concat (ret, str_from_int (sym.locLine));
+		}
+		
+		if (strcmp (name.data, "main (...)") == 0) break;
+	    } else {
+		ret = str_concat_c_str (ret, " in function \e[33m:??\e[0m");
+	    }
 	}
 
 	ret = str_concat_c_str (ret, "\n[\0");
@@ -286,7 +331,7 @@ _yrt_array_ _yrt_exc_get_stack_trace () {
     if (__YRT_DEBUG__ == 1 || __YRT_FORCE_DEBUG__ == 1) {
 	void** trace = (void**) malloc (__YRT_MAXIMUM_TRACE_LEN__ * sizeof (void*));
 	int trace_size = (int) CaptureStackBackTrace (0, __YRT_MAXIMUM_TRACE_LEN__, trace, NULL);
-
+	
 	void** res = GC_malloc (trace_size * sizeof (void*));
 	memcpy (res, trace, sizeof(void*) * trace_size);
 	free (trace);

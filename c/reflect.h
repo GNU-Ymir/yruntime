@@ -51,7 +51,7 @@ struct ReflectSymbolTableEntry {
  */
 struct ReflectSymbolTable {
     // The number of sub symbol tables
-    unsigned long numberOfEntries;
+    unsigned long long numberOfEntries;
 
     // The data to the sub symbol tables
     struct ReflectSymbolTableEntry * data;
@@ -68,30 +68,45 @@ struct ReflectSymbolTable {
 void _yrt_reflect_register_symbol_table (const char* moduleName, unsigned long long nbSymbols, struct ReflectSymbol* symbolTable);
 
 /**
- * Find a symbol in the reflect module symbol table whose name is exactly mangledName
- * @returns: the symbol or NULL if not found
+ * Construct the symbol table index
+ * @params:
+ *    - symbolTable: the symbol table on which index will be constructed
  */
-struct ReflectSymbol* _yrt_reflect_find_symbol_in_module (_ystring mangledName, struct ReflectSymbolTableEntry entry);
+void _yrt_reflect_construct_index_table (struct ReflectSymbolTable symbolTable);
+
+/**
+ * Find a symbol table in the index
+ * @params:
+ *    - addr: the addr of the symbol to find
+ */
+struct ReflectSymbol _yrt_reflect_find_symbol_from_addr (void* addr);
+
+/**
+ * Find a symbol table in the index, assuming indexed table was constructed
+ * @params:
+ *    - addr: the addr of the symbol to find
+ */
+struct ReflectSymbol _yrt_reflect_find_symbol_in_indexed_table_from_addr (void* addr);
+
+/**
+ * Find a symbol table in the index, assuming indexed table was constructed
+ * @params:
+ *    - mangledName: the mangled name of the symbol to find
+ */
+struct ReflectSymbol _yrt_reflect_find_symbol_in_indexed_table (_yrt_c8_array_ mangledName);
 
 /**
  * Find a symbol in the reflect symbol table whose name is exactly mangledName
  * @returns: the symbol or NULL if not found
  */
-struct ReflectSymbol* _yrt_reflect_find_symbol_in_table (_ystring mangledName);
+struct ReflectSymbol _yrt_reflect_find_symbol_in_table_string (_ystring mangledName);
 
 
 /**
  * Find a symbol in the reflect symbol table whose name is exactly mangledName
  * @returns: the symbol or NULL if not found
  */
-struct ReflectSymbol* _yrt_reflect_find_symbol_in_table_array (_yrt_c8_array_ mangledName);
-
-
-/**
- * Find a symbol in the reflect module symbol table whose name is exactly mangledName
- * @returns: the symbol or NULL if not found
- */
-struct ReflectSymbol* _yrt_reflect_find_symbol_in_module_array (_yrt_c8_array_ mangledName, struct ReflectSymbolTableEntry entry);
+struct ReflectSymbol _yrt_reflect_find_symbol_in_table_array (_yrt_c8_array_ mangledName);
 
 
 /**
@@ -226,6 +241,7 @@ void* _yrt_reflect_get_method_mutable (_yrt_c8_array_ mangleClassName, _yrt_c8_a
  * @throws: _yrt_throw_runtime_abort
  */
 void* _yrt_reflect_get_method_mutable_utf32 (_yrt_c32_array_ mangleClassName, _yrt_c32_array_ _funcName, _yrt_c32_array_ retName, _yrt_array_ paramNames);
+
 
 
 #endif
