@@ -10,6 +10,10 @@
 #include <windows.h>
 #endif
 
+#ifdef __linux__
+#include <sys/sysinfo.h>
+#endif
+
 #define GC_PTHREADS
 #include <gc/gc.h>
 #include <semaphore.h>
@@ -40,11 +44,11 @@ void _yrt_write_pipe (int stream, void * data, unsigned long long size) {
 }
 #endif
 
-#ifdef _WIN32
+
 void GC_pthread_create (_yrt_thread_t * id, _yrt_attr_t* attr, void*(*call)(void*), void* data);
 void GC_pthread_join (_yrt_thread_t p, void** retval);
 void GC_pthread_detach (_yrt_thread_t p);
-#endif
+
 
 void _yrt_thread_create (_yrt_thread_t * id, _yrt_attr_t* attr, void*(*call)(void*), void* data) {
     GC_pthread_create (id, attr, call, data);
@@ -59,6 +63,10 @@ void _yrt_thread_detach (_yrt_thread_t p) {
 }
 
 #ifdef __linux__
+
+void GC_pthread_cancel (_yrt_thread_t p);
+void GC_pthread_exit (_yrt_thread_t p);
+
 void _yrt_thread_cancel (_yrt_thread_t p) {
     GC_pthread_cancel (p);
 }

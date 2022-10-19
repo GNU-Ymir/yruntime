@@ -191,7 +191,6 @@ _yrt_array_ _yrt_exc_resolve_stack_trace (_yrt_array_ syms) {
 		    ret = str_concat (ret, str_from_int (i - 1));
 		}
 
-		name.data = NULL;
 		int need_break = 0;
 		if (func.data != NULL) {
 		    _ystring name = _yrt_demangle_symbol (func.data, func.len);
