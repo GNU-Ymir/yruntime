@@ -24,6 +24,7 @@ __version LINUX {
     extern (C) def execvp (cmd : &c8, args : &(&c8))-> i32;
     extern (C) def _yrt_exit (i : i32);
     extern (C) def waitpid (pid : u32, dmut status : &i32, ig : i32);
+    extern (C) def kill (pid : u32, sig : i32)-> i32;
     extern (C) def chdir (path : &c8)-> i32;
     extern (C) def printf (c : &c8, ...);
 
@@ -137,6 +138,12 @@ __version LINUX {
             alias (self._stderr:.ipipe ())
         }
 
+        pub def isFinished (self)-> bool {
+            if (kill (self.pid, 0) == -1) return true;
+
+            return false;                
+        }
+        
         pub def wait (mut self)-> i32 {
             let mut status = 0i32;
             self._stdin:.dispose ();
@@ -166,6 +173,9 @@ __version WINDOWS {
     extern (C) def SetHandleInformation (handle : &void, flag : i32, value : i32)-> i32;
     
     extern (C) def WaitForSingleObject (handle : &void, timeout : i32)-> i32;
+
+    extern (C) def GetExitCodeProcess (handle : &void, status : &i32)-> i32;
+
 
     struct
     | hProcess : &void = null
@@ -246,7 +256,9 @@ __version WINDOWS {
             CreateProcessA (null, stream[].ptr, null, null, 1, 0, null, self.cwd.ptr, &startupinfo, &piProcInfo);
             self._processHandle = piProcInfo.hProcess;
             
-            self._stdin:.ipipe ():.dispose ();        
+            self._stdin:.ipipe ():.dispose ();
+            self._stdout:.opipe ():.dispose ();
+            self._stderr:.opipe ():.dispose ();
         }
 
         pub def stdin (mut self) -> dmut &OPipe {
@@ -261,13 +273,25 @@ __version WINDOWS {
             alias (self._stderr:.ipipe ())
         }
 
+        pub def isFinished (self)-> bool {
+            let mut status = 0i32;
+
+            
+            GetExitCodeProcess (self._processHandle, &status);
+            if (status == 259) return false;
+
+            return true;            
+        }
+        
         pub def wait (mut self)-> i32 {
             let mut status = 0i32;
             self._stdin:.dispose ();
-            self._stdout:.opipe ():.dispose ();
-            self._stderr:.opipe ():.dispose ();
             
-            status = WaitForSingleObject (self._processHandle, -1);        
+            WaitForSingleObject (self._processHandle, -1);
+            GetExitCodeProcess (self._processHandle, &status);
+            CloseHandle (self._processHandle);
+            self._processHandle = null;
+            
             return status;
         }
 
