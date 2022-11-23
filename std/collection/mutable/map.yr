@@ -260,7 +260,7 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
             let h = cast!usize (hash (key));        
             match (self._data [h % self._data.len]) {
                 x : &MapValue!{K, dmut V} => {
-                    return x.opContains (h);
+                    return x.opContains (h, key);
                 }
             }
         }
@@ -289,7 +289,7 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
                 dmut x : &MapValue!{K, dmut V} => {
                     let mut removed = false;
                     
-                    self._data [h % self._data.len] = alias x:.remove (h, ref removed);
+                    self._data [h % self._data.len] = alias x:.remove (h, key, ref removed);
                     match ref (self._data [h % self._data.len]) {
                         _ : &Empty!{K, dmut V} => {
                             self._loaded -= 1us;
@@ -718,7 +718,9 @@ class @final MapValue {K, V of dmut Z, class Z} over MapNode!{K, dmut V} {
      * @returns: true if a new node has been allocated, false otherwise
      */
     pub def insert (mut self, h : usize, key : K, dmut val : V) -> bool {
-        if (self.h == h) {
+        cte assert (__pragma!compile ({self.key == key;}), "unusable key type : (" ~ K ~ ") must be be comparable to itself (opEquals or opCmp)");
+        
+        if (self.key == key) {
             self.val = alias val;
         } else {
             match ref self.next {
@@ -742,6 +744,8 @@ class @final MapValue {K, V of dmut Z, class Z} over MapNode!{K, dmut V} {
      * @complexity: O (n), with n the length of the list
      */
     pub def find (self, h : usize, key : K) -> const V? {
+        cte assert (__pragma!compile ({self.key == key;}), "unusable key type : (" ~ K ~ ") must be be comparable to itself (opEquals or opCmp)");
+        
         if (self.key == key) {
             (self.val)?
         } else {
@@ -764,6 +768,8 @@ class @final MapValue {K, V of dmut Z, class Z} over MapNode!{K, dmut V} {
      * @complexity: O (n), with n the length of the list
      */
     pub def find (mut self, h : usize, key : K) -> dmut V? {
+        cte assert (__pragma!compile ({self.key == key;}), "unusable key type : (" ~ K ~ ") must be be comparable to itself (opEquals or opCmp)");
+        
         if (self.key == key) {
             return alias (self.val)?;
         } else {
@@ -787,14 +793,16 @@ class @final MapValue {K, V of dmut Z, class Z} over MapNode!{K, dmut V} {
      *    - the list, with no node containing the hash h,
      * ===========
      */
-    pub def remove (mut self, h : usize, ref mut rm : bool) -> dmut &MapNode!{K, dmut V} {
-        if (self.h == h) {
+    pub def remove (mut self, h : usize, key : K, ref mut rm : bool) -> dmut &MapNode!{K, dmut V} {
+        cte assert (__pragma!compile ({self.key == key;}), "unusable key type : (" ~ K ~ ") must be be comparable to itself (opEquals or opCmp)");
+        
+        if (self.key == key) {
             rm = true;
             return alias self.next;
         } else {
             match ref self.next {
                 dmut x : &MapValue!{K, dmut V} => {
-                    self.next = alias x:.remove (h, ref rm);
+                    self.next = alias x:.remove (h, key, ref rm);
                 }
             }
             return alias self;
@@ -806,13 +814,15 @@ class @final MapValue {K, V of dmut Z, class Z} over MapNode!{K, dmut V} {
      * @returns: true, if such a node was found, false otherwise
      * @complexity: O (n), with n the length of the list
      */
-    pub def opContains (self, h : usize) -> bool {
-        if (self.h == h) {
+    pub def opContains (self, h : usize, key : K) -> bool {
+        cte assert (__pragma!compile ({self.key == key;}), "unusable key type : (" ~ K ~ ") must be be comparable to itself (opEquals or opCmp)");
+        
+        if (self.key == key) {
             true
         } else {
             match self.next {
                 x : &MapValue!{K, dmut V} => {
-                    return x.opContains (h);
+                    return x.opContains (h, key);
                 }
             }
             false
