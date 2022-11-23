@@ -1,3 +1,38 @@
+/**
+ * This module implements the version of the `HashMap` that can store mutable values.
+ * This module is publically inserted from `std::collection::map`.
+ *
+ * @Authors: Emile Cadorel
+ * @Licence: GPLv3
+ * <br>
+ * <br>
+ * @example:
+ * ===
+ * import std::io; // for println
+ * import std::collection::mutable::map;
+ *
+ * class A {
+ *    pub let mut i : i32;
+ *    pub self (i : i32) with i = i {}
+ *    impl Streamable;
+ * }
+ *
+ * let dmut x = A::new (42);
+ * let dmut m = HashMap!{i32, dmut &A}::new ();
+ * 
+ * m:.insert (12, A::new (10)); 
+ * m:.insert (24, alias x); // the insertion must use a mutable version of the value
+ *
+ * let dmut r = m:.find (12); // retreive mutable the associated value 
+ * match ref r {
+ *     Ok (dmut z : _) => { z.i = 98; } // if found we can modify it
+ *     Err () => { } // no value found
+ * }
+ * 
+ * println (m); // {12=>main::A(98), 24=>main::A(42)}
+ * ===
+ */
+
 mod std::collection::mutable::map;
 
 import core::object;
@@ -22,11 +57,6 @@ prv enum : usize
  * A hash map implementation that associated a key to a value
  * The data in the map are unordered
  * This version stores mutable class values
- * @drawbacks: 
- * ==============
- * The keys in the hash map are considered equivalent if their hash is equivalent
- * Depending on the hash function, there may be collisions
- * ==============
  *
  * @example: 
  * ==========
@@ -59,22 +89,26 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
     /**
      * Create a new empty hash map, with a default loaded factor of 0.75 , and a minimum load factor or 0.5
      * Does not allocate memory until first insertion
-     */
-    pub self () {}
-
-    /**
-     * Create a new empty hash map, with a default allocated table of size len
+     * <br> 
+     * @info: 
+     * load factors are used to detemine the size of the allocation: 
+     *    - default load factor, increase the size of the allocation when more than 75% of the allocation is used
+     *    - minimum load factor, decrease the size of the allocation when less than 50% of the allocation is used
+     * When loads are too low, the linked list at every index will increase in size and find and insert time will increase
+     * When loads are too high, the allocation will be too big and memory wasted
      * @params:
-     *    - len: the size of the table reserved to avoid growing
+     *    - len: the size of the table reserved to avoid reallocation when inserting
      */
-    pub self (len : usize) {
-        let dmut aux = core::duplication::allocArray!{&MapNode!{K, dmut V}} (len);
+    pub self (len : usize = 0us) {
+        if (len != 0us) {
+            let dmut aux = core::duplication::allocArray!{&MapNode!{K, dmut V}} (len);
 
-        for i in 0us .. aux.len {
-            aux [i] = alias self._empty;
+            for i in 0us .. aux.len {
+                aux [i] = alias self._empty;
+            }
+            
+            self._data = alias aux;
         }
-        
-        self._data = alias aux;
     }
 
     
@@ -87,12 +121,11 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
      * @complexity: O (1 + n/k + z) with n the number of possible collision, and k the number of keys, and z the time taken by resizing if the load is higher than the load factor, in average n/k and z are negligeable
      * @example: 
      * ==========
-     * let dmut x = HashMap!([c32], i32)::new ();
-     * x:.insert ("foo", 12);
-     * x:.insert ("bar", 32);
-     * assert (x ["foo"] == 12 && x ["bar"] == 32);
-     * x:.insert ("test", 24);
-     * assert (x ["test"] == 24);
+     * let dmut x = HashMap!{[c32], dmut &A}::new ();
+     * x:.insert ("foo", A::new (12));
+     * x:.insert ("bar", A::new (32));
+     *
+     * println (x); // {bar=>main::A(32), foo=>main::A(12)}
      * ==========
      */
     pub def insert (mut self, key : K, dmut val : V) -> void {        
@@ -103,7 +136,10 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
     }
 
     /**
-     * Resize the map 
+     * Change the size of the allocation
+     * @params:
+     *    - len: the size of the allocated array (number of allocated linked list)
+     * @complexity: O (n) where n is the number of element in the HashMap
      */
     pub def fit (mut self, len : usize) {
         if (len != 0us) {
@@ -137,13 +173,34 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
         }
     } 
 
+    /**
+     * Find the element whose key is `key`
+     * @params: 
+     *    - key: the key to find
+     * @returns: The value in an option, or an empty option if there is no element with key `key` in the map
+     * @example:
+     * ===
+     * let dmut x = A::new (42);
+     * let dmut m = HashMap!{i32, dmut &A}::new ();
+     *
+     * m:.insert (12, A::new (10)); 
+     * m:.insert (24, alias x); // the insertion must use a mutable version of the value
+     *
+     * let r = m.find (12); // retreive mutable the associated value 
+     * match r {
+     *     Ok (z : _) => { println (z.i); } 
+     *     Err () => { } 
+     * }
+     * ===
+     * @complexity: O (1 + n/k), with n the number of possible collision and k the number of keys, in average n/k are negligeable
+     */
     pub def find (self, key : K) -> const V?
     {
         if (self._data.len != 0us) {
             let h = cast!usize (hash (key));
             match (self._data [h % self._data.len]) {
                 x : &MapValue!{K, dmut V} => {                  
-                    return x.find (h);
+                    return x.find (h, key);
                 } 
             }
         } 
@@ -151,14 +208,34 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
         return (V?)::__err__;
     }
 
-
+    /**
+     * Find the element whose key is `key`
+     * @params: 
+     *    - key: the key to find
+     * @returns: The value in a dmut option, or an empty option if there is no element with key `key` in the map
+     * @example:
+     * ===
+     * let dmut x = A::new (42);
+     * let dmut m = HashMap!{i32, dmut &A}::new ();
+     *
+     * m:.insert (12, A::new (10)); 
+     * m:.insert (24, alias x); // the insertion must use a mutable version of the value
+     *
+     * let dmut r = m:.find (12); // retreive mutable the associated value 
+     * match ref r {
+     *     Ok (dmut z : _) => { z.i = 98; } // if found we can modify it
+     *     Err () => { } // no value found
+     * }
+     * ===
+     * @complexity: O (1 + n/k), with n the number of possible collision and k the number of keys, in average n/k are negligeable
+     */
     pub def find (mut self, key : K) -> dmut V?
     {
         if (self._data.len != 0us) {
             let h = cast!usize (hash (key));
             match ref (self._data [h % self._data.len]) {
                 dmut x : &MapValue!{K, dmut V} => {                  
-                    return alias x:.find (h);
+                    return alias x:.find (h, key);
                 } 
             }
         }
@@ -172,8 +249,8 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
      * @returns: true if found, false otherwise
      * @example: 
      * =============
-     * let dmut x = HashMap!([c32], i32)::new ();
-     * x:.insert ("foo", 32);
+     * let dmut x = HashMap!{[c32], dmut &A}::new ();
+     * x:.insert ("foo", A::new (123));
      * assert ("foo" in x);
      * =============
      * @complexity: O (1 + n/k), with n the number of possible collision and k the number of keys, in average n/k are negligeable
@@ -197,10 +274,10 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
      *    - key: the key to remove
      * @example: 
      * ===========
-     * let dmut x = HashMap!([c32], i32)::new ();
+     * let dmut x = HashMap!{[c32], i32}::new ();
      * x:.insert ("foo", 12);
      * x:.remove ("foo");
-     * assert (x ["foo"] == None!(i32)::new ());
+     * 
      * x:.remove ("bar"); // does nothing
      * ===========
      * @complexity: O (1 + n/k + z) with n the number of possible collision, and k the number of keys, and z the time taken by resizing if the load is lower than the min load factor, in average n/k and z are negligeable
@@ -233,11 +310,20 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
      * Simply do a find, this is just for syntax enhancing
      * @example: 
      * =============
-     * let dmut x = HashMap!([c32], i32)::new ();
-     * x:.insert ("foo", 12);
-     * assert (x ["foo"] == 12);
-     * assert (x ["bar"] == None!(i32)::new ());
+     * class A {
+     *    pub let mut i : i32;
+     *    pub self (i : i32) with i = i {}
+     *    impl Streamable;
+     * }
+     *
+     * let dmut x = HashMap!{[c32], dmut &A}::new ();
+     *
+     * x:.insert ("foo", A::new (123));
+     * let z = x["foo"];
+     *
+     * assert (z.i == 123);
      * =============
+     * @complexity: O (1 + n/k + z) with n the number of possible collision, and k the number of keys, and z the time taken by resizing if the load is higher than the load factor, in average n/k and z are negligeable
      */
     pub def opIndex (self, k : K) -> const V
         throws &OutOfArray
@@ -248,15 +334,24 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
         }
     }
 
-        /**
+    /**
      * Simply do a find, this is just for syntax enhancing
      * @example: 
      * =============
-     * let dmut x = HashMap!([c32], i32)::new ();
-     * x:.insert ("foo", 12);
-     * assert (x ["foo"] == 12);
-     * assert (x ["bar"] == None!(i32)::new ());
+     * class A {
+     *    pub let mut i : i32;
+     *    pub self (i : i32) with i = i {}
+     *    impl Streamable;
+     * }
+     *
+     * let dmut x = HashMap!{[c32], dmut &A}::new ();
+     *
+     * x:.insert ("foo", A::new (123));
+     * let dmut z = (alias x)["foo"];
+     *
+     * assert (z.i == 123);
      * =============
+     * @complexity: O (1 + n/k + z) with n the number of possible collision, and k the number of keys, and z the time taken by resizing if the load is higher than the load factor, in average n/k and z are negligeable
      */
     pub def opIndex (mut self, k : K) -> dmut V
         throws &OutOfArray
@@ -269,14 +364,26 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
     }
     
     /**
-     * Simply do an insert, this is just for syntax enhancing
+     * Insert or update the value associated to the key `k`
+     * @params: 
+     *    - k: the key to insert
+     *    - v: the value to associate to the key k
+     * 
      * @example: 
      * =============
-     * let dmut x = HashMap!([c32], i32)::new ();
-     * (alias x)["foo"] = 12;
-     * (alias x)["foo"] = 24;
-     * assert (x ["foo"] == 24);
+     * class A {
+     *    pub let mut i : i32;
+     *    pub self (i : i32) with i = i {}
+     *    impl Streamable;
+     * }
+     *
+     * let mut z = A::new (345);
+     * 
+     * let dmut x = HashMap!{[c32], dmut &A}::new ();
+     * (alias x)["foo"] = A::new (123);
+     * (alias x)["foo"] = alias z;
      * =============
+     * @complexity: O (1 + n/k + z) with n the number of possible collision, and k the number of keys, and z the time taken by resizing if the load is higher than the load factor, in average n/k and z are negligeable
      */
     pub def opIndexAssign (mut self, k : K, dmut v : V) {
         self:.insert (k, alias v);
@@ -286,10 +393,12 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
      * Remove all the entries contained in the map
      * @example: 
      * =============
-     * let dmut x = HashMap!([c32], i32)::new ();
+     * let dmut x = HashMap!{[c32], dmut &A}::new ();
+     *
      * x:.insert ("foo", 34);
      * x:.insert ("bar", 45);
      * x:.clear ();
+     *
      * assert (x.isEmpty ());
      * =============
      * @complexity: O (1)
@@ -460,7 +569,7 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
         }
     }
 
-    impl Streamable {
+    impl std::stream::Streamable {
 
         pub over toStream (self, dmut stream : &StringStream) {
             stream:.write ('{'c8);
@@ -501,7 +610,7 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
              * @complexity: O(n), with n the number of elements in the map
              */
             pub over deepCopy (self) -> dmut &(Object) {
-                let dmut res = HashMap!{K, dmut V}::new (self._data.len);
+                let dmut res = HashMap!{K, dmut V}::new (len-> self._data.len);
                 
                 // Add all the values 
                 for i in 0us .. self._data.len {
@@ -632,13 +741,13 @@ class @final MapValue {K, V of dmut Z, class Z} over MapNode!{K, dmut V} {
      * @returns: the value in an option type, or None if there is no node containing a hash equal to h
      * @complexity: O (n), with n the length of the list
      */
-    pub def find (self, h : usize) -> const V? {
-        if (self.h == h) {
+    pub def find (self, h : usize, key : K) -> const V? {
+        if (self.key == key) {
             (self.val)?
         } else {
             match (self.next) {
                 x : &MapValue!{K, dmut V} => {
-                    return x.find (h);
+                    return x.find (h, key);
                 }
             }
             
@@ -654,13 +763,13 @@ class @final MapValue {K, V of dmut Z, class Z} over MapNode!{K, dmut V} {
      * @returns: the value in an option type, or None if there is no node containing a hash equal to h
      * @complexity: O (n), with n the length of the list
      */
-    pub def find (mut self, h : usize) -> dmut V? {
-        if (self.h == h) {
+    pub def find (mut self, h : usize, key : K) -> dmut V? {
+        if (self.key == key) {
             return alias (self.val)?;
         } else {
             match ref (self.next) {
                 dmut x : &MapValue!{K, dmut V} => {
-                    return alias x:.find (h);
+                    return alias x:.find (h, key);
                 }
             }
             
@@ -766,7 +875,7 @@ class @final Empty {K, V of dmut Z, class Z} over MapNode!{K, dmut V} {
  * assert (beg_it == x.end ()); 
  * =============
  */
-pub class @final MapIterator {K, V of dmut Z, class Z} {
+class @final MapIterator {K, V of dmut Z, class Z} {
 
     /// A reference on the table contained in the map we are traversing
     prv let mut _data : [&MapNode!{K, dmut V}];

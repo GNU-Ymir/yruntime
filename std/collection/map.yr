@@ -1,3 +1,30 @@
+/**
+ * This module implements a hash map container.
+ * Map container uses the `hash` function of the `std::hash` module to find and insert elements. 
+ * <br>
+ * This module publically insert the mutable version of the `HashMap` from `std::collection::mutable::map`.
+ *
+ * @Authors: Emile Cadorel
+ * @Licence: GPLv3
+ * <br>
+ * <br>
+ * @example: 
+ * ===
+ * import std::io; // for println
+ * import std::collection::map;
+ * 
+ * // Create a hash map using the constructor of the class
+ * let dmut x = HashMap!{[c32], i32}::new ();
+ * x:.insert ("foo", 12);
+ * x:.insert ("bar", 32);
+ * assert (x ["foo"] == 12 && x ["bar"] == 32);
+ *
+ * // Or by using the map macro
+ * let dmut m = hmap#{"foo" => 78.0f, "bar" => 125.0f};
+ * println (m); // {bar=>125.000000, foo=>78.000000}
+ * ===
+ */
+
 mod std::collection::map;
 
 import core::object;
@@ -25,7 +52,7 @@ prv enum : usize
  * @example: 
  * ============
  * let dmut x = hmap#{"foo" => 12, "bar" => 45, "baz" => 89};
- * cte assert (is!(typeof (x)) (T of &HashMap!([c32], i32)));
+ * cte assert (is!{typeof (x)}{T of &HashMap!{[c32], i32}});
  * assert (x["foo"] == 12);
  * ============
  */
@@ -46,15 +73,10 @@ pub macro hmap {
 /**
  * A hash map implementation that associated a key to a value
  * The data in the map are unordered
- * @drawbacks: 
- * ==============
- * The keys in the hash map are considered equivalent if their hash is equivalent
- * Depending on the hash function, there may be collisions
- * ==============
  *
  * @example: 
  * ==========
- * let dmut x = HashMap!([c32], i32)::new ();
+ * let dmut x = HashMap!{[c32], i32}::new ();
  * x:.insert ("foo", 12);
  * x:.insert ("bar", 32);
  * assert (x ["foo"] == 12 && x ["bar"] == 32);
@@ -83,24 +105,27 @@ pub class @final HashMap {K, V} {
     /**
      * Create a new empty hash map, with a default loaded factor of 0.75 , and a minimum load factor or 0.5
      * Does not allocate memory until first insertion
-     */
-    pub self () {}
-
-    /**
-     * Create a new empty hash map, with a default allocated table of size len
+     * <br> 
+     * @info: 
+     * load factors are used to detemine the size of the allocation: 
+     *    - default load factor, increase the size of the allocation when more than 75% of the allocation is used
+     *    - minimum load factor, decrease the size of the allocation when less than 50% of the allocation is used
+     * When loads are too low, the linked list at every index will increase in size and find and insert time will increase
+     * When loads are too high, the allocation will be too big and memory wasted
      * @params:
-     *    - len: the size of the table reserved to avoid growing
+     *    - len: the size of the table reserved to avoid reallocation when inserting
      */
-    pub self (len : usize) {
-        let dmut aux = core::duplication::allocArray!{&MapNode!{K, V}} (len);
+    pub self (len : usize = 0us) {
+        if (len != 0us) {
+            let dmut aux = core::duplication::allocArray!{&MapNode!{K, V}} (len);
 
-        for i in 0us .. aux.len {
-            aux [i] = alias self._empty;
+            for i in 0us .. aux.len {
+                aux [i] = alias self._empty;
+            }
+            
+            self._data = alias aux;
         }
-        
-        self._data = alias aux;
     }
-
     
     /**
      * Insert a new element inside the map
@@ -108,16 +133,16 @@ pub class @final HashMap {K, V} {
      * @params: 
      *    - key: the key 
      *    - val: the value
-     * @complexity: O (1 + n/k + z) with n the number of possible collision, and k the number of keys, and z the time taken by resizing if the load is higher than the load factor, in average n/k and z are negligeable
      * @example: 
      * ==========
-     * let dmut x = HashMap!([c32], i32)::new ();
+     * let dmut x = HashMap!{[c32], i32}::new ();
      * x:.insert ("foo", 12);
      * x:.insert ("bar", 32);
      * assert (x ["foo"] == 12 && x ["bar"] == 32);
      * x:.insert ("test", 24);
      * assert (x ["test"] == 24);
      * ==========
+     * @complexity: O (1 + n/k + z) with n the number of possible collision, and k the number of keys, and z the time taken by resizing if the load is higher than the load factor, in average n/k and z are negligeable
      */
     pub def insert (mut self, key : K, val : V) -> void {        
         if (self._data.len == 0us) { self:.grow (); }
@@ -126,6 +151,12 @@ pub class @final HashMap {K, V} {
         self:.insertFast (h, key, val);
     }
 
+    /**
+     * Change the size of the allocation
+     * @params:
+     *    - len: the size of the allocated array (number of allocated linked list)
+     * @complexity: O (n) where n is the number of element in the HashMap
+     */
     pub def fit (mut self, len : usize) {
         if (len != 0us) {
             let dmut aux = core::duplication::allocArray!{&MapNode!{K, V}} (len);
@@ -158,13 +189,20 @@ pub class @final HashMap {K, V} {
         }
     } 
 
+    /**
+     * Find the element whose key is `key`
+     * @params: 
+     *    - key: the key to find
+     * @returns: The value in an option, or an empty option if there is no element with key `key` in the map
+     * @complexity: O (1 + n/k), with n the number of possible collision and k the number of keys, in average n/k are negligeable
+     */
     pub def find (self, key : K) -> V?
     {
         if (self._data.len != 0us) {
             let h = cast!usize (hash (key));
             match (self._data [h % self._data.len]) {               
                 x : &MapValue!{K, V} => {                  
-                    return x.find (h);
+                    return x.find (h, key);
                 } 
             }
         }
@@ -177,13 +215,13 @@ pub class @final HashMap {K, V} {
      * @returns: true if found, false otherwise
      * @example: 
      * =============
-     * let dmut x = HashMap!([c32], i32)::new ();
+     * let dmut x = HashMap!{[c32], i32}::new ();
      * x:.insert ("foo", 32);
      * assert ("foo" in x);
      * =============
      * @complexity: O (1 + n/k), with n the number of possible collision and k the number of keys, in average n/k are negligeable
      */
-    pub def opContains (self, key: K) -> bool {
+    pub def opContains (self, key : K) -> bool {
         if (self._data.len != 0us) {
             let h = cast!usize (hash (key));        
             match (self._data [h % self._data.len]) {
@@ -202,10 +240,13 @@ pub class @final HashMap {K, V} {
      *    - key: the key to remove
      * @example: 
      * ===========
-     * let dmut x = HashMap!([c32], i32)::new ();
+     * let dmut x = HashMap!{[c32], i32}::new ();
      * x:.insert ("foo", 12);
      * x:.remove ("foo");
-     * assert (x ["foo"] == None!(i32)::new ());
+     * 
+     * match x["foo"]? {
+     *      Ok () => assert (false); // 
+     * }
      * x:.remove ("bar"); // does nothing
      * ===========
      * @complexity: O (1 + n/k + z) with n the number of possible collision, and k the number of keys, and z the time taken by resizing if the load is lower than the min load factor, in average n/k and z are negligeable
@@ -235,14 +276,22 @@ pub class @final HashMap {K, V} {
     }
 
     /**
-     * Simply do a find, this is just for syntax enhancing
+     * Find an element using key `k` as key. 
+     * @params: 
+     *    - k: the key to find
+     * @throws:
+     *   - &OutOfArray: if the key was not found
+     * @returns: the value associated to the key `k`
      * @example: 
      * =============
-     * let dmut x = HashMap!([c32], i32)::new ();
+     * let dmut x = HashMap!{[c32], i32}::new ();
      * x:.insert ("foo", 12);
      * assert (x ["foo"] == 12);
-     * assert (x ["bar"] == None!(i32)::new ());
+     * match x["bar"] ? {
+     *      Ok () => assert (false);
+     * }
      * =============
+     * @complexity: O (1 + n/k), with n the number of possible collision and k the number of keys, in average n/k are negligeable
      */
     pub def opIndex (self, k : K) -> V
         throws &OutOfArray
@@ -254,14 +303,19 @@ pub class @final HashMap {K, V} {
     }
     
     /**
-     * Simply do an insert, this is just for syntax enhancing
+     * Insert or update the value associated to the key `k`
+     * @params: 
+     *    - k: the key to insert
+     *    - v: the value to associate to the key k
+     * 
      * @example: 
      * =============
-     * let dmut x = HashMap!([c32], i32)::new ();
+     * let dmut x = HashMap!{[c32], i32}::new ();
      * (alias x)["foo"] = 12;
      * (alias x)["foo"] = 24;
      * assert (x ["foo"] == 24);
      * =============
+     * @complexity: O (1 + n/k + z) with n the number of possible collision, and k the number of keys, and z the time taken by resizing if the load is higher than the load factor, in average n/k and z are negligeable
      */
     pub def opIndexAssign (mut self, k : K, v : V) {
         self:.insert (k, v);
@@ -271,7 +325,7 @@ pub class @final HashMap {K, V} {
      * Remove all the entries contained in the map
      * @example: 
      * =============
-     * let dmut x = HashMap!([c32], i32)::new ();
+     * let dmut x = HashMap!{[c32], i32}::new ();
      * x:.insert ("foo", 34);
      * x:.insert ("bar", 45);
      * x:.clear ();
@@ -289,11 +343,12 @@ pub class @final HashMap {K, V} {
      * The number of element contained in the map
      * @example: 
      * ==========
-     * let dmut x = HashMap!([c32], i32)::new ()
+     * let dmut x = HashMap!{[c32], i32}::new ()
      * x:.insert ("foo", 34);
      * x:.insert ("bar", 45);
      * assert (x.len () == 2us);
      * ==========
+     * @complexity: O (1)
      */
     pub def len (self) -> usize {
         self._size
@@ -304,7 +359,7 @@ pub class @final HashMap {K, V} {
      * This iterators implement the ymir interface for iteration with one or two variable (next, get!0, get!1)
      * @example: 
      * ============
-     * let dmut x = HashMap!([c32], i32)::new ();
+     * let dmut x = HashMap!{[c32], i32}::new ();
      * x:.insert ("foo", 12);
      * x:.insert ("bar", 12);
      * for k, v in x {
@@ -315,7 +370,8 @@ pub class @final HashMap {K, V} {
      *     println (k);
      * }
      * ============
-     * @return: an iterator on the beginning of the map
+     * @returns: an iterator on the beginning of the map
+     * @complexity: O (1)
      */
     pub def begin (self) -> dmut &MapIterator!{K, V} {
         if (self._loaded != 0us) {
@@ -332,6 +388,7 @@ pub class @final HashMap {K, V} {
 
     /**
      * @returns: the iterator pointing to the end of the map
+     * @complexity: O (1)
      */
     pub def end (self) -> &MapIterator!{K, V} {
         MapIterator!{K, V}::new (0us, 0us, [], self._empty)
@@ -446,7 +503,7 @@ pub class @final HashMap {K, V} {
         }
     }
 
-    impl Streamable {
+    impl std::stream::Streamable {
 
         pub over toStream (self, dmut stream : &StringStream) {
             stream:.write ('{'c8);
@@ -485,7 +542,7 @@ pub class @final HashMap {K, V} {
          * @complexity: O(n), with n the number of elements in the map
          */
         pub over deepCopy (self) -> dmut &(Object) {
-            let dmut res = HashMap!{K, V}::new (self._data.len);
+            let dmut res = HashMap!{K, V}::new (len-> self._data.len);
             
             // Add all the values 
             for i in 0us .. self._data.len {
@@ -520,7 +577,7 @@ class @abstract MapNode {K, V} {
     
     pub def opEquals (self, _ : &MapNode!{K, V})-> bool;
     
-    impl Streamable;
+    impl std::stream::Streamable;
 }
 
 /**
@@ -528,9 +585,9 @@ class @abstract MapNode {K, V} {
  * It has a successor, and thus cannot be the final node of a linked list
  * @example: 
  * ==========
- * let list = MapValue!(i32, i32)::new (hash (12), 12, 42, 
- *                                      MapValue!(i32, i32)::new (hash (23), 23, 89, 
- *                                                                Empty!(i32, i32)::new ()
+ * let list = MapValue!{i32, i32}::new (hash (12), 12, 42, 
+ *                                      MapValue!{i32, i32}::new (hash (23), 23, 89, 
+ *                                                                Empty!{i32, i32}::new ()
  *                                      )
  *            );
  * 
@@ -564,7 +621,7 @@ class @final MapValue {K, V} over MapNode!{K, V} {
              h = h
     {}
 
-    impl Streamable {
+    impl std::stream::Streamable {
         
 
         pub over toStream (self, dmut stream : &StringStream) {
@@ -615,13 +672,13 @@ class @final MapValue {K, V} over MapNode!{K, V} {
      * @returns: the value in an option type, or None if there is no node containing a hash equal to h
      * @complexity: O (n), with n the length of the list
      */
-    pub def find (self, h : usize) -> V? {
-        if (self.h == h) {
+    pub def find (self, h : usize, key : K) -> V? {
+        if (self.key == key) {
             (self.val)?
         } else {
             match (self.next) {
                 x : &MapValue!{K, V} => {
-                    return x.find (h);
+                    return x.find (h, key);
                 }
             }
             
@@ -692,7 +749,7 @@ class @final MapValue {K, V} over MapNode!{K, V} {
 class @final Empty {K, V} over MapNode!{K, V} {
     pub self () {}
 
-    impl Streamable {
+    impl std::stream::Streamable {
         /**
          * Does nothing
          */
@@ -717,7 +774,7 @@ class @final Empty {K, V} over MapNode!{K, V} {
  * It can be acquired in a hash map with the methods begin (), and end ()
  * @example: 
  * =============
- * let dmut x = HashMap!([c32], i32)::new ();
+ * let dmut x = HashMap!{[c32], i32}::new ();
  * x:.insert ("foo", 12);
  * let dmut beg_it = alias x.begin (); 
  * assert (beg_it.get!0 == "foo");
@@ -727,7 +784,7 @@ class @final Empty {K, V} over MapNode!{K, V} {
  * assert (beg_it == x.end ()); 
  * =============
  */
-pub class @final MapIterator {K, V} {
+class @final MapIterator {K, V} {
 
     /// A reference on the table contained in the map we are traversing
     prv let mut _data : [&MapNode!{K, V}];
@@ -800,7 +857,7 @@ pub class @final MapIterator {K, V} {
      * If there is no more value, the returned iterator is equals to map.end ()
      * @example: 
      * ===========
-     * let dmut x = HashMap!([c32], i32)::new ();
+     * let dmut x = HashMap!{[c32], i32}::new ();
      * x:.insert ("foo", 12);
      * x:.insert ("bar", 12);
      * let dmut it = alias x.begin ();

@@ -1,3 +1,31 @@
+/**
+ * This module implements a double linked list container.
+ * List can only contain const elements.
+ * <br>
+ * @Authors: Emile Cadorel
+ * @Licence: GPLv3
+ * <br>
+ * <br>
+ * @example: 
+ * ===
+ * import std::io; // for println
+ * import std::collection::list;
+ * 
+ * // Creates a list by using the class constructor
+ * let dmut l = List!{i32}::new ();
+ * l:.push (1);
+ * l:.push (2);
+ * l:.pushFront (8);
+ *
+ * for i in l {
+ *     println (i); // 8 1 2 
+ * }
+ * 
+ * // Or by using the macro 
+ * let dmut m = list#['a', 'b', 'c'];
+ * println (m); // {a::b::c}
+ * ===
+ */
 mod std::collection::list;
 
 import core::typeinfo;
@@ -109,8 +137,10 @@ pub class @final List {T} {
      * {
      *    assert (x:.pop () == 1);
      * } catch (
-     *    _: &OutOfArray => 
+     *    _ : &OutOfArray => 
      *        println ("List was empty");
+     *    _ : &AssertError => 
+     *        println ("Last value of list was not 1");
      * } 
      * =============
      * @complexity: O (1)
@@ -148,7 +178,7 @@ pub class @final List {T} {
      * ==============
      * let dmut x = List!(i32)::new ();
      * x:.pushFront (1);
-     * assert (x.len () == 1);
+     * assert (x.len () == 1us);
      * ==============
      * @complexity: O (1)
      */    
@@ -177,7 +207,7 @@ pub class @final List {T} {
      * x:.push (12);
      * assert (x:.popFront () == 12);
      * ============
-     * @complexity: O(1)
+     * @complexity: O (1)
      */
     pub def popFront (mut self) -> T
         throws &OutOfArray
@@ -228,7 +258,7 @@ pub class @final List {T} {
 
     /**
      * @returns: the value of the first element contained in the list, None if the list is empty
-     * @complexity: O(1)
+     * @complexity: O (1)
      */
     pub def front (self) -> (T)? {
         match self._head {
@@ -239,7 +269,7 @@ pub class @final List {T} {
 
     /**
      * @returns: the value of the last element contained in the list, None if the list is empty
-     * @complexity: O(1)
+     * @complexity: O (1)
      */
     pub def back (self) -> (T)? {
         match self._tail {
@@ -261,6 +291,7 @@ pub class @final List {T} {
      *     println (v);
      * }
      * ==========
+     * @complexity: O (1)
      */
     pub def begin (self) -> dmut &ListIterator!{T} {
         return ListIterator!{T}::new (0us, self._head);
@@ -277,6 +308,7 @@ pub class @final List {T} {
      *      beg_it:.next ();
      * }
      * ============
+     * @complexity: O (1)
      */
     pub def end (self) -> &ListIterator!{T} {
         match self._tail {
@@ -337,7 +369,7 @@ pub class @final List {T} {
         
     }    
     
-    impl Streamable {
+    impl std::stream::Streamable {
         
         pub over toStream (self, dmut stream : &StringStream) {            
             stream:.write ("{"s8):.write (self._head):.write ("}"s8);
@@ -395,7 +427,7 @@ pub class @final List {T} {
 class @abstract ListNode {T} {
     prot self () {}
 
-    impl Streamable;
+    impl std::stream::Streamable;
     
 }
 
@@ -426,7 +458,7 @@ class @final ListValue {T} over ListNode!T {
              value = val
     {}    
 
-    impl Streamable {
+    impl std::stream::Streamable {
         
         /**
          * Linked list are printable, this method print the value stored in the node, and the next node if it is not empty
@@ -452,7 +484,7 @@ class @final ListValue {T} over ListNode!T {
 class @final Empty {T} over ListNode!T {
     pub self () {}
 
-    impl Streamable {
+    impl std::stream::Streamable {
         pub over toStream (self, dmut _ : &StringStream) {}
     }
 }

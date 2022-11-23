@@ -66,7 +66,7 @@ pub class @final HashSet {T} {
      * Assertion to avoid tones of error printing, if the key is not usable
      */
     cte assert (__pragma!compile ({hash!T;}) || __pragma!compile ({hash (T::init)}), "unusable element type : (" ~ T ~ ") must be hashable");
-
+    
     let dmut _data : [dmut &SetNode!{T}] = [];
 
     let mut _loaded : usize = 0us;
@@ -141,7 +141,7 @@ pub class @final HashSet {T} {
             let h = cast!usize (hash (val));        
             match (self._data [h % self._data.len]) {
                 x : &SetValue!{T} =>
-                    return x.opContains (h);
+                    return x.opContains (h, val);
             }
         }
         false                   
@@ -169,7 +169,7 @@ pub class @final HashSet {T} {
             match ref (self._data [h % self._data.len]) {
                 dmut x : &SetValue!{T} => {
                     let mut removed = false;
-                    self._data [h % self._data.len] = alias x:.remove (h, ref removed);
+                    self._data [h % self._data.len] = alias x:.remove (h, val, ref removed);
                     match self._data [h % self._data.len] {
                         _: &Empty!{T} => {
                             self._loaded -= 1us;
@@ -495,7 +495,9 @@ class @final SetValue {T} over SetNode!T {
      * @returns: true if a new node has been allocated, false otherwise
      */
     pub def insert (mut self, h : usize, val : T) -> bool {
-        if (self.h != h) {
+        cte assert (__pragma!compile ({self.val == val;}), "unusable element type : (" ~ T ~ ") must be be comparable to itself (opEquals or opCmp)");
+        
+        if (self.val != val) {
             match ref self.next {
                 dmut x : &SetValue!T => {
                     return x:.insert (h, val);
@@ -517,14 +519,16 @@ class @final SetValue {T} over SetNode!T {
      *    - rm: true if a node has been removed, false otherwise
      *    - the list, with no node containing the hash h
      */
-    pub def remove (mut self, h : usize, ref mut rm : bool) -> dmut &SetNode!T {
-        if (self.h == h) {
+    pub def remove (mut self, h : usize, val : T, ref mut rm : bool) -> dmut &SetNode!T {
+        cte assert (__pragma!compile ({self.val == val;}), "unusable element type : (" ~ T ~ ") must be be comparable to itself (opEquals or opCmp)");
+        
+        if (self.val == val) {
             rm = true;
             return alias self.next;
         } else {
             match ref self.next {
                 dmut x : &SetValue!T => {
-                    self.next = alias x:.remove (h, ref rm);
+                    self.next = alias x:.remove (h, val, ref rm);
                 }
             }
             return alias self;
@@ -536,13 +540,15 @@ class @final SetValue {T} over SetNode!T {
      * @returns: true if such node exists, false otherwise
      * @complexity: O (n), with n the length of the list
      */
-    pub def opContains (self, h : usize) -> bool {
-        if (self.h == h) {
+    pub def opContains (self, h : usize, val : T) -> bool {
+        cte assert (__pragma!compile ({self.val == val;}), "unusable element type : (" ~ T ~ ") must be be comparable to itself (opEquals or opCmp)");
+        
+        if (self.val == val) {
             true
         } else {
             match (self.next) {
                 x : &SetValue!{T} => {
-                    return x.opContains (h);
+                    return x.opContains (h, val);
                 }
             }
             false

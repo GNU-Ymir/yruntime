@@ -1,4 +1,11 @@
-mod std::algorithm::search;
+/**
+ * Module containing generic searching algorithms.
+ * @authors: Emile Cadorel
+ * @licence: GPLv3
+ */
+
+mod std::algorithm::searching;
+
 import core::typeinfo;
 import core::array, core::exception;
 import std::collection::seq;
@@ -14,6 +21,7 @@ import std::collection::seq;
  * let a = [1, 2, 3];
  * assert (a.all!{|x| => x <= 3}());
  * ===========
+ * @complexity: O(a.len)
  */
 pub def all {F : fn (U)-> bool, T of [U], U} (a : T) -> bool {
     for i in a {
@@ -34,6 +42,7 @@ pub def all {F : fn (U)-> bool, T of [U], U} (a : T) -> bool {
  * let a = vec #[1, 2, 3];
  * assert (a.all!{|x| => x <= 3}());
  * ===========
+ * @complexity: O(a.len)
  */
 pub def all {F : fn (U)-> bool, T impl Seq!U, U} (a : T) -> bool {
     for i in a {
@@ -56,6 +65,7 @@ pub def all {F : fn (U)-> bool, T impl Seq!U, U} (a : T) -> bool {
  * assert (a.any!{|x| => x == 1} ());
  * assert (!a.any!{|x| => x == 4} ());
  * ============
+ * @complexity: O (a.len)
  */
 pub def any {F : fn (U)-> bool, T of [U], U} (a : T)-> bool {
     for i in a {
@@ -71,13 +81,13 @@ pub def any {F : fn (U)-> bool, T of [U], U} (a : T)-> bool {
  * @assume: the iteration give an option type
  * @templates: 
  *    - F: a predicate to verify
- * @complexity: O (n), with n = a.len
  * @example: 
  * ============
  * let a = vec #[1, 2, 3];
  * assert (a.any!{|x| => x == 1} ());
  * assert (!a.any!{|x| => x == 4} ());
  * ============
+ * @complexity: O (a.len)
  */
 pub def any {F : fn (U)-> bool, T impl Seq!U, U} (a : T)-> bool {
     for i in a {
@@ -96,7 +106,6 @@ pub def any {F : fn (U)-> bool, T impl Seq!U, U} (a : T)-> bool {
  * @params: 
  *   - a: the slice to traverse
  *   - elem: the element to find
- * @complexity: O (n), with n = a.len
  * @example: 
  * ============
  * let a = [1, 2, 3];
@@ -107,6 +116,7 @@ pub def any {F : fn (U)-> bool, T impl Seq!U, U} (a : T)-> bool {
  * }
  * assert (res);
  * ============
+ * @complexity: O (a.len)
  */
 pub def find {F : fn (U, U)-> bool, T of [U], U} (a : T, elem : U) -> (usize)? {
     for i in 0us .. a.len {
@@ -123,7 +133,6 @@ pub def find {F : fn (U, U)-> bool, T of [U], U} (a : T, elem : U) -> (usize)? {
  * @params: 
  *    - a: a slice to traverse
  *    - elem: the element to search
- * @complexity: O (n), with n = a.len
  * @example: 
  * ============
  * let a = [1, 2, 3];
@@ -134,6 +143,7 @@ pub def find {F : fn (U, U)-> bool, T of [U], U} (a : T, elem : U) -> (usize)? {
  * }
  * assert (res);
  * ============
+ * @complexity: O (a.len)
  */
 pub def find {T of [U], U} (a : T, elem : U) -> (usize)? {
     for i in 0us .. a.len {
@@ -152,7 +162,6 @@ pub def find {T of [U], U} (a : T, elem : U) -> (usize)? {
  * @params: 
  *   - a: the Seq to traverse
  *   - elem: the element to find
- * @complexity: O (n), with n = a.len
  * @assume: the iteration over the sequence is the in the same order as opIndex
  * @example: 
  * ============
@@ -164,6 +173,7 @@ pub def find {T of [U], U} (a : T, elem : U) -> (usize)? {
  * }
  * assert (res);
  * ============
+ * @complexity: O (a.len)
  */
 pub def find {F : fn (U, U)-> bool, T impl Seq!U, U} (a : T, elem : U) -> (usize)? {
     let dmut i = 0us;
@@ -184,7 +194,6 @@ pub def find {F : fn (U, U)-> bool, T impl Seq!U, U} (a : T, elem : U) -> (usize
  * @params: 
  *    - a: a slice to traverse
  *    - elem: the element to search
- * @complexity: O (n), with n = a.len
  * @assume: the iteration over the sequence is the in the same order as opIndex
  * @example: 
  * ============
@@ -196,6 +205,7 @@ pub def find {F : fn (U, U)-> bool, T impl Seq!U, U} (a : T, elem : U) -> (usize
  * }
  * assert (res);
  * ============
+ * @complexity: O (a.len)
  */
 pub def find {T impl Seq!U, U} (a : T, elem : U) -> (us)? {
     let dmut i = 0us;
@@ -214,12 +224,12 @@ pub def find {T impl Seq!U, U} (a : T, elem : U) -> (us)? {
  * Count the number of element in a slice that verifies the predicates
  * @params: 
  *    - a: the slice to traverse
- * @complexity: O (n), with n = a.len
  * @example: 
  * ============
  * let a = [1, 2, 3];
  * assert (a.count!{|x| => x <= 2} () == 2us);
  * ============
+ * @complexity: O (a.len)
  */
 pub def count {F : fn (U)-> bool, T of [U], U} (a : T) -> usize {
     let dmut nb = 0us;
@@ -233,12 +243,12 @@ pub def count {F : fn (U)-> bool, T of [U], U} (a : T) -> usize {
  * Count the number of element in a sequence that verifies the predicates
  * @params: 
  *    - a: the sequence to traverse
- * @complexity: O (n), with n = a.len
  * @example: 
  * ============
  * let a = vec #[1, 2, 3];
  * assert (a.count!{|x| => x <= 2} () == 2us);
  * ============
+ * @complexity: O (a.len)
  */
 pub def count {F : fn (U)-> bool, T impl Seq!U, U} (a : T) -> usize {
     let dmut nb = 0us;
@@ -264,7 +274,7 @@ pub def count {F : fn (U)-> bool, T impl Seq!U, U} (a : T) -> usize {
  * assert (a.minElement!{|x,y| => x < y} () == 1us);
  * ===========
  * @info: if the slice is empty, the function will return 0
- * @complexity: O (n), with n = a.len
+ * @complexity: O (a.len)
  */
 pub def minElement {F : fn (U, U) -> bool, T of [U], U} (a : T) -> usize {
     let mut index = 0us;
@@ -293,7 +303,7 @@ pub def minElement {F : fn (U, U) -> bool, T of [U], U} (a : T) -> usize {
  * @info: 
  *   - if the slice is empty, the function will return 0
  *   - this function does exactly the same operation as minElement!{F} (a), it is just weird to have a minElement function that actually find the maximum element
- * @complexity: O (n), with n = a.len
+ * @complexity: O (a.len)
  */
 pub def maxElement {F : fn (U, U) -> bool, T of [U], U} (a : T) -> usize {
     let mut index = 0us;
@@ -318,7 +328,7 @@ pub def maxElement {F : fn (U, U) -> bool, T of [U], U} (a : T) -> usize {
  * assert (a.minElement () == 1us);
  * ===========
  * @info: if the slice is empty, the function will return 0
- * @complexity: O (n), with n = a.len
+ * @complexity: O (a.len)
  */
 pub def minElement {T of [U], U} (a : T) -> usize {
     let mut index = 0us;
@@ -343,7 +353,7 @@ pub def minElement {T of [U], U} (a : T) -> usize {
  * ===========
  * @info: 
  *   - if the slice is empty, the function will return 0
- * @complexity: O (n), with n = a.len
+ * @complexity: O (a.len)
  */
 pub def maxElement {T of [U], U} (a : T) -> usize {
     let mut index = 0us;
@@ -370,7 +380,7 @@ pub def maxElement {T of [U], U} (a : T) -> usize {
  * assert (a.minElement!{|x,y| => x < y} () == 1us);
  * ===========
  * @info: if the sequence is empty, the function will return 0
- * @complexity: O (n), with n = a.len()
+ * @complexity: O (a.len ())
  */
 pub def minElement {F : fn (U, U) -> bool, T impl Seq!U, U} (a : T) -> usize {    
     let mut index = 0us;
@@ -409,10 +419,10 @@ pub def minElement {F : fn (U, U) -> bool, T impl Seq!U, U} (a : T) -> usize {
  * let a = vec #[2, 1, 9, 2, 3];
  * assert (a.minElement!{|x,y| => x < y} () == 1us);
  * ===========
- * @complexity: O (n), with n = a.len()
  * @info: 
  *   - if the sequence is empty, the function will return 0
  *   - this function does exactly the same operation as minElement!(F) (a), it is just weird to have a minElement function that actually find the maximum element
+ * @complexity: O (a.len ())
  */
 pub def maxElement {F : fn (U, U) -> bool, T impl Seq!U, U} (a : T) -> usize {    
     let mut index = 0us;
@@ -450,7 +460,7 @@ pub def maxElement {F : fn (U, U) -> bool, T impl Seq!U, U} (a : T) -> usize {
  * assert (a.minElement!{|x,y| => x < y} () == 1us);
  * ===========
  * @info: if the sequence is empty, the function will return 0
- * @complexity: O (n), with n = a.len()
+ * @complexity: O (a.len ())
  */
 pub def minElement {T impl Seq!U, U} (a : T) -> usize {    
     let mut index = 0us;
@@ -487,9 +497,9 @@ pub def minElement {T impl Seq!U, U} (a : T) -> usize {
  * let a = vec #[2, 1, 9, 2, 3];
  * assert (a.minElement!{|x,y| => x < y} () == 1us);
  * ===========
- * @complexity: O (n), with n = a.len()
  * @info: 
  *   - if the sequence is empty, the function will return 0
+ * @complexity: O (a.len ())
  */
 pub def maxElement {T impl Seq!U, U} (a : T) -> usize {    
     let mut index = 0us;
@@ -529,7 +539,7 @@ pub def maxElement {T impl Seq!U, U} (a : T) -> usize {
  * @params: 
  *    - a: a slice
  *    - b: another slice
- * @complexity: O (n), with n = b.len
+ * @complexity: O (b.len)
  */
 pub def startWith {T of [U], U} (a : T, b : T)-> bool {
     if (a.len < b.len) return false;
@@ -551,7 +561,7 @@ pub def startWith {T of [U], U} (a : T, b : T)-> bool {
  * @params: 
  *    - a: a slice
  *    - b: another slice
- * @complexity: O (n), with n = b.len
+ * @complexity: O (b.len)
  */
 pub def endWith {T of [U], U} (a : T, b : T)-> bool {
     if (a.len < b.len) return false;
