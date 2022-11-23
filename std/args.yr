@@ -1,3 +1,112 @@
+/**
+ * Processing of command line options
+ * <br>
+ * The std::args module implements the class `ArgumentParser` that implement command line option parsing, and sub command line option.
+ * <br>
+ * Command line option are transformed into ymir types (such as structures or classes), so they are easily usable after the command line parsing.
+ * <br>
+ * @example: 
+ * ===========================
+ * import std::args;
+ * import std::io;
+ *
+ * struct
+ * | help : YesNo // Can be set or not
+ * | sum : YesNo  // Can be set or not  
+ * | N : [i32] // A list of integer, mandatory 
+ * | verbose : YesNo // Can be set or not  
+ * | output : [c32] = "" // A string, optional          
+ *  -> Foo;
+ *
+ * def main (args : [[c8]]) {
+ *    let x = ArgumentParser!(Foo)::new ()
+ *        :.info!"help" (short-> "h", comments-> "print this help and exit", isHelp-> true)
+ *        :.info!"sum" (comments-> "sum the integers (default find the max)")
+ *        :.info!"output" (short-> "o", comments-> "does nothing")
+ *        :.info!"verbose" (short-> "v", comments-> "prints the intermediate operations")
+ *        :.positional!"N" (comments-> "list of integers to process");    
+ *
+ *    {
+ *        let f = x.parse (args);
+ *        if (f.sum) { // if the option --sum was set
+ *            let mut res = f.N [0];
+ *            for i in f.N[1us .. $] {
+ *                if (f.verbose) println (res, " + ", i, " = ", res + i); 
+ *                res += i;
+ *            }
+ *            println (res);
+ *        } else { 
+ *            let mut res = f.N [0];
+ *            for i in f.N [1us .. $] {
+ *                if (f.verbose) println (res, " < ", i, " = ", if (res < i) i else res);
+ *                if (i > res) res = i;
+ *            }
+ *            println (res);
+ *        }
+ *    } catch {
+ *        err : &ArgumentError => { // command line parsing failed
+ *            println (x.simpleUsage ()); // Print the usage in a single line
+ *            println (x.diagnosis (err)); // Print the error in a readable way for the user
+ *        }
+ *        _ : &HelpRequired => { // command line parsing succedeed but the option "help" was found
+ *            println (x.usage ()); // Print the help in multiple line
+ *        }
+ *    }
+ * }
+ * ===========================
+ * <br>
+ * 
+ * The previous program can be used with the following arguments : 
+ * ===
+ * $ ./a.out 
+ * usage [--h] [--sum] [--v] [--o str] [ int... ](N) 
+ * Missing argument 'N' of type '[int... ]'
+ * 
+ * $ a.out -h 
+ * usage [--h] [--sum] [--v] [--o str] [ int... ](N) 
+ *
+ * positional arguments : 
+ * 	      N	list of integers to process
+
+ * optional arguments : 
+ *	-h, --help	print this help and exit
+ *	    --sum	sum the integers (default find the max)
+ *	-v, --verbose	prints the intermediate operations
+ *	-o, --output	does nothing
+ *
+ *
+ * ===
+ * <br>
+ * @SubCommands
+ * Sub command parsing can be made by using classes instead of structs. 
+* <br>
+ * In the next example, a sub command is created, where an instance of the class `MySubOption` is created when the argument `--subcmd` is passed to the program.
+ * <br>
+ * ===
+ * struct 
+ * | suboption : [c32]
+ *  -> SubCmdArgs;
+ *
+ * class MySubOption {
+ *        
+ *    pub self (args : [[c32]]) {
+ *        let subParser = ArgumentParser!{SubCmdArgs}::new ();
+ *        // ... 
+ *    }
+ * }
+ *
+ * struct 
+ * | subcmd : &MySubOption
+ *  -> MainCmdArgs;
+ *
+ * let mainParser = ArgumentParser!{MainCmdArgs}::new ();
+ * // ...
+ * ===
+
+ * @Authors: Emile Cadorel
+ * @Licence: GPLv3
+ */
+
 mod std::args;
 
 import core::object, core::exception, core::array, core::typeinfo;
@@ -56,55 +165,7 @@ struct
 /**
  * An argument parser used to parse the argument of the command line
  * This class takes a structure as template parameter, this structure defines the list of arguments
- * @example: 
- * ===========================
- * import std::args;
- * import std::io;
- *
- * struct
- * | help : YesNo // Can be set or not
- * | sum : YesNo  // Can be set or not  
- * | N : [i32] // A list of integer, mandatory 
- * | verbose : YesNo // Can be set or not  
- * | output : [c32] = "" // A string, optional          
- *  -> Foo;
- *
- * def main (args : [[c8]]) {
- *    let x = ArgumentParser!(Foo)::new ()
- *        :.info!"help" (short-> "h", comments-> "print this help and exit", isHelp-> true)
- *        :.info!"sum" (comments-> "sum the integers (default find the max)")
- *        :.info!"output" (short-> "o", comments-> "does nothing")
- *        :.info!"verbose" (short-> "v", comments-> "prints the intermediate operations")
- *        :.positional!"N" (comments-> "list of integers to process");    
- *
- *    {
- *        let f = x.parse (args);
- *        if (f.sum) {
- *            let mut res = f.N [0];
- *            for i in f.N[1u64..$] {
- *                if (f.verbose) println (res, " + ", i, " = ", res + i);
- *                res += i
- *            }
- *            println (res);
- *        } else {
- *            let mut res = f.N [0];
- *            for i in f.N [1u64..$] {
- *                if (f.verbose) println (res, " < ", i, " = ", if (res < i) i else res);
- *                if (i > res) res = i;
- *            }
- *            println (res);
- *        }
- *    } catch {
- *        err : &ArgumentError => {
- *            println (x.simpleUsage ()); // Print the usage in a single line
- *            println (x.diagnosis (err)); // Print the error in a readable way for the user
- *        }
- *        _ : &HelpRequired => {
- *            println (x.usage ()); // Print the help in multiple line
- *        }
- *    }
- * }
- * ===========================
+
  */
 pub class ArgumentParser {struct T} {
     
