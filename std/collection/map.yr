@@ -2,11 +2,11 @@
  * This module implements a hash map container.
  * Map container uses the `hash` function of the `std::hash` module to find and insert elements. 
  * <br>
- * This module publically insert the mutable version of the `HashMap` from `std::collection::mutable::map`.
+ * This module publically import the mutable version of the `HashMap` from `std::collection::mutable::map`, that can contain mutable values. Keys are always constant.
  *
  * @Authors: Emile Cadorel
  * @Licence: GPLv3
- * <br>
+ * <hr>
  * <br>
  * @example: 
  * ===
@@ -226,7 +226,7 @@ pub class @final HashMap {K, V} {
             let h = cast!usize (hash (key));        
             match (self._data [h % self._data.len]) {
                 x : &MapValue!{K, V} => {
-                    return x.opContains (h);
+                    return x.opContains (h, key);
                 }
             }
         }
@@ -321,6 +321,27 @@ pub class @final HashMap {K, V} {
         self:.insert (k, v);
     }
 
+    /**
+     * Transform the map into a slice, where each element is a tuple of (key, value)
+     * @example:
+     * ===
+     * let x = hmap#{"foo"=> 12, "bar"=> 134, "baz"=> 89};
+     *
+     * println (x[]); // ("baz",89), ("bar",134), ("foo",12)
+     * ===
+     * @complexity: O(n)
+     */
+    pub def opIndex (self)-> mut [mut (K, V)] {
+        let mut res : [mut (K, V)] = core::duplication::allocArray!{(K, V)} (self._size);
+        let mut index = 0us;
+        for i, j in self {
+            res[index] = (i, j);
+            index += 1us;
+        }
+
+        alias res
+    }
+    
     /**
      * Remove all the entries contained in the map
      * @example: 
@@ -700,7 +721,7 @@ class @final MapValue {K, V} over MapNode!{K, V} {
      *    - the list, with no node containing the hash h,
      * ===========
      */
-    pub def remove (mut self, h : usize, ref mut rm : bool) -> dmut &MapNode!{K, V} {
+    pub def remove (mut self, h : usize, key : K, ref mut rm : bool) -> dmut &MapNode!{K, V} {
         cte assert (__pragma!compile ({self.key == key;}), "unusable key type : (" ~ K ~ ") must be be comparable to itself (opEquals or opCmp)");
             
         if (self.key == key) {
@@ -792,7 +813,7 @@ class @final Empty {K, V} over MapNode!{K, V} {
  * assert (beg_it == x.end ()); 
  * =============
  */
-class @final MapIterator {K, V} {
+pub class @final MapIterator {K, V} {
 
     /// A reference on the table contained in the map we are traversing
     prv let mut _data : [&MapNode!{K, V}];

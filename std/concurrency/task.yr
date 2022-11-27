@@ -86,7 +86,7 @@ pub class @final TaskPool {
      * for _ in 0 .. 100 {
      *     pool:.submit (MyTask::new (100));
      * }
-     * pool.join ();
+     * pool:.join ();
      * =============
      */
     pub def submit (mut self, task : &Task) -> void {
@@ -102,7 +102,7 @@ pub class @final TaskPool {
     }
 
     /**
-     * 
+     * ===
      * def foo () {
      *     println ("Function pointer job");
      * }
@@ -117,14 +117,15 @@ pub class @final TaskPool {
      * for _ in 0 .. 100 {
      *     pool:.submit (&foo); 
      * }
-     * pool.join ();
-     * =============
+     * pool:.join ();
+     * ===
      */     
     pub def submit (mut self, task : (fn ()-> void)) {
         self:.submit (FnTask::new (task))
     }
 
     /**
+     * ===
      * class Foo {
      *    let mut i = 0;
      * 
@@ -147,8 +148,8 @@ pub class @final TaskPool {
      * for _ in 0 .. 100 {
      *     pool:.submit (&(f:.foo));  // closure from method
      * }
-     * pool.join ();
-     * =============
+     * pool:.join ();
+     * ===
      */
     pub def submit (mut self, task : (dg ()-> void)) {
         self:.submit (DgTask::new (task))
@@ -156,15 +157,16 @@ pub class @final TaskPool {
 
     /**
      * Wait the completion of all submitted jobs
+     * @warning: wait the end of the running jobs, if one of them is an infinite loop this function will never quit
      * @example:
      * =============
      * let dmut pool = TaskPool::new (2u64);
      * pool:.submit (&heavy_function_1 ());
      * pool:.submit (&heavy_function_2 ());
-     * pool.join (); // wait the completion of heavy_functions 1 and 2
+     * pool:.join (); // wait the completion of heavy_functions 1 and 2
      * 
      * pool:.submit (&heavy_function_3 ()); // pool is still usable afterwards
-     * pool.join (); // wait the completion of heavy_function_3
+     * pool:.join (); // wait the completion of heavy_function_3
      * =============
      */
     pub def join (mut self) -> void {
@@ -174,20 +176,21 @@ pub class @final TaskPool {
     }
     
     __version LINUX {
-    /**
-     * Kill all the tasks that are currently executing in the task pool, and the jobs that are in waiting queue
-     * The task pool is still usable afterwards
-     */
-    pub def cancel (mut self)-> void {
-        self._jobs = MailBox!{&Task}::new (); // clear all the remaining jobs
-        for _, th in self._runningThreads {
-            kill (th);
+        
+        /**
+         * Remove all submitted jobs from the job queue
+         * @warning: wait the end of the already running jobs, if one of them is an infinite loop this function will never quit
+         */
+        pub def cancel (mut self)-> void {
+            self._jobs = MailBox!{&Task}::new (); // clear all the remaining jobs
+            for _, th in self._runningThreads {
+                join (th);
+            }
         }
-    }
     }
 
     /**
-     * Get the number of spawnable threads in the task pool
+     * @returns: the number of spawnable threads in the task pool
      * @example: 
      * ===============
      * let dmut pool = TaskPool::new (2u64);
@@ -200,6 +203,9 @@ pub class @final TaskPool {
     
     /**
      * Spawn threads that can perform actions
+     * @params: 
+     *    - nb: the number of thread to spawn
+     *    - id: the id of the first thread  
      */
     prv def spawnThreads (mut self, nb : u64, id : u64) {        
         for i in 0u64 .. nb {
@@ -267,7 +273,7 @@ pub class @final TaskPool {
  * for _ in 0 .. 100 {
  *     pool:.submit (task); // Execute the task 100 times
  * }
- * pool.join (); 
+ * pool:.join (); 
  * ===========
  */
 pub class @abstract Task {
@@ -289,7 +295,7 @@ pub class @abstract Task {
  * pool:.submit (FnTask::new (|| => println ("foo")));
  * // Exactly the same as 
  * pool:.submit (|| => println ("foo"));
- * pool.join ();
+ * pool:.join ();
  * ==============
  */
 class @final FnTask over Task {
@@ -309,7 +315,7 @@ class @final FnTask over Task {
  * pool:.submit (DgTask::new (move || => println ("foo ", i)));
  * // Exactly the same as 
  * pool:.submit (move || => println ("foo ", i));
- * pool.join ();
+ * pool:.join ();
  * ==============
  */
 class @final DgTask over Task {

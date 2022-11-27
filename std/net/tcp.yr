@@ -7,7 +7,7 @@ import core::atom;
 
 import etc::c::socket, etc::c::files;
 
-import std::io, std::stream;
+import std::io, std::stream, std::traits;
 import std::net::address;
 import std::net::packet;
 
@@ -306,6 +306,11 @@ pub class TcpStream {
              _addr = addr
     {}
 
+
+    pub self empty ()
+        with _sockfd = 0i32, _addr = SockAddrV4::new (Ipv4::UNSPECIFIED, 0u16)
+    {}
+    
     /**
      * Create a client to address addr
      * The client is not connected 
@@ -363,10 +368,38 @@ pub class TcpStream {
     {
         if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
 
-        if (etc::c::socket::send (self._sockfd, cast!{&void} (a.ptr), sizeof (U) * cast!(usize) (a.len), 0) == -1) {
-            self._sockfd = 0;
-            throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
-        }    
+        let mut fullSize = 0us;
+        while (fullSize != a.len * sizeof (U)) {
+            let s = etc::c::socket::send (self._sockfd, cast!{&void} (a.ptr) + fullSize, cast!u32 ((sizeof (U) * cast!(usize) (a.len)) - fullSize), 0);
+            if (s == -1) {
+                self._sockfd = 0;
+                throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
+            }
+            
+            fullSize += cast!usize (s);
+        }        
+    }
+
+    /**
+     * Send data in a raw way (without packing)
+     * This methods are mainly used to communicate with external protocol
+     * @params: 
+     *    - a: the data to send
+     */
+    pub def if (isIntegral!{T} () || is!{T}{U of bool}) rawSend {T} (mut self, a : T)-> void
+        throws &TcpError
+    {
+        if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
+
+        let mut fullSize = 0us;
+        while (fullSize != sizeof (T)) {
+            let s = etc::c::socket::send (self._sockfd, cast!{&void} (&a) + fullSize, cast!u32 (sizeof (T)) - fullSize, 0);
+            if (s == -1) {
+                self._sockfd = 0;
+                throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
+            }
+            fullSize += cast!usize (s);
+        }
     }
 
     /**
@@ -380,13 +413,18 @@ pub class TcpStream {
         throws &TcpError
     {
         if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
-
+        
         let dmut alloc = core::duplication::allocArray!(U) (nb);
-        let r = etc::c::socket::recv (self._sockfd, alias cast!(&void) (alloc.ptr), nb * sizeof (U), 0);
-        if (r == -1) {
-            self._sockfd = 0;
-            throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
+        let mut fullSize = 0us;
+        while (fullSize != nb * sizeof (U)) {
+            let r = etc::c::socket::recv (self._sockfd, alias cast!(&void) (alloc.ptr) + fullSize, cast!u32 (((nb) * sizeof (U)) - fullSize), 0);
+            if (r == -1) {
+                self._sockfd = 0;
+                throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
+            }
+            fullSize += cast!usize (r);
         }
+        
         return alias alloc;
     }
 
@@ -401,10 +439,15 @@ pub class TcpStream {
         throws &TcpError
     {
         if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
-        let r = etc::c::socket::recv (self._sockfd, alias cast!(&void) (elem), sizeof (U), 0);
-        if (r == -1) {
-            self._sockfd = 0;
-            throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
+
+        let mut fullSize = 0us;
+        while (fullSize != sizeof (U)) {
+            let r = etc::c::socket::recv (self._sockfd, alias cast!(&void) (elem) + fullSize, cast!u32 (sizeof (U) - fullSize), 0);
+            if (r == -1) {
+                self._sockfd = 0;
+                throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
+            }
+            fullSize += cast!usize (r);
         }
     }
     
@@ -417,12 +460,9 @@ pub class TcpStream {
     {
         if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
         let packet = a.pack ();
-        // We start by sending the size of the packet
         
-        if (etc::c::socket::send (self._sockfd, cast!(&void) (&(packet.len)), sizeof (typeof (packet.len)), 0) == -1) {
-            self._sockfd = 0;
-            throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
-        }
+        // We start by sending the size of the packet
+        self:.rawSend (packet.len);
         // And then the packet
         self:.rawSend (packet);
     }
@@ -438,11 +478,7 @@ pub class TcpStream {
         if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
         
         let mut size = 0us;
-        if (etc::c::socket::recv (self._sockfd, alias cast!(&void) (&size), sizeof (usize), 0) == -1) {
-            self._sockfd = 0;
-            throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
-        }
-
+        self:.rawReceive (alias &size);
         let packet : [u8] = self:.rawReceive!{u8} (size);
         
         return packet.unpack ();
@@ -459,10 +495,8 @@ pub class TcpStream {
         if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
         
         let mut size = 0us;
-        if (etc::c::socket::recv (self._sockfd, alias cast!(&void) (&size), sizeof (usize), 0) == -1) {
-            throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
-        }
-
+        self:.rawReceive (alias &size);
+        
         self:.rawReceive!{u8} (size)
     }
     
@@ -473,7 +507,7 @@ pub class TcpStream {
      */
     pub def isAliveRead (self)-> bool {
         let mut c = '\u{0}'c8;
-        recv (self._sockfd, cast!(&void) (&c), 1us, cast!i32 (SocketFlag::MSG_PEEK)) == 1
+        recv (self._sockfd, cast!(&void) (&c), 1u32, cast!i32 (SocketFlag::MSG_PEEK)) == 1
     }
     
     prv def connectV4 (mut self, addr : &SockAddrV4)

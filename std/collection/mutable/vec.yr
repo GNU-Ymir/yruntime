@@ -1,3 +1,12 @@
+/**
+ * Module implementing a continious growable array type, that can store mutable intances of class.
+ * <br>
+ * Publically imported from `std::collection::vec`.
+ * <br>
+ * @Authors: Emile Cadorel
+ * @Licence: GPLv3
+ */
+
 mod std::collection::mutable::vec;
 
 import core::typeinfo;
@@ -30,8 +39,12 @@ prv enum : usize
  * x:.push (A::new (2));
  * x:.push (A::new (3));
  * 
- * assert (x == [A::new (1), A::new (2), A::new (3)]);
+ * assert (x[] == [A::new (1), A::new (2), A::new (3)]);
  * ===========================
+ * @info:
+ * This mutable implementation of Vec implements `core::duplication::Copiable` iif the inner element `Z` also implement `core::duplication::Copiable`.
+ * <br>
+ * It also implements the operator `==` iif class `Z` is comparable.
  */
 pub class @final Vec {T of dmut Z, class Z} {
 
@@ -67,7 +80,7 @@ pub class @final Vec {T of dmut Z, class Z} {
      * 
      * ===============
      * @complexity: O (n), with n = self._len
-     */
+     */    
     pub def push (mut self, dmut val : T) -> void {
         if (self._data.len == self._len) {
             self:.grow ();
@@ -450,7 +463,7 @@ pub class @final Vec {T of dmut Z, class Z} {
     }
     
     
-    impl Streamable {
+    impl std::stream::Streamable {
         
         pub over toStream (self, dmut stream : &StringStream) {
             cte if (__pragma!compile ({stream:.write (self._data [0]);})) {
@@ -469,27 +482,26 @@ pub class @final Vec {T of dmut Z, class Z} {
     }
 
 
-    cte if is!{T}{U impl Hashable} {
-        impl Hashable {
-
-            pub over hash (self)-> u64 {
-                cte if (__pragma!compile ({ hash (self._data [0]); })) {
-                    let mut hash_value = 0x345678u64;
-                    let mut mult = 31u64;
-                    mult;
-                    {
-                        for i in 0us .. self._len {
-                            hash_value = (hash_value ^ hash (self._data [i])) * mult;
-                            mult += (82520u64 + cast!u64 (self._len * 2us));
-                        }
-                    } 
-                    
-                    hash_value
-                } else {
-                    0x345678u64
-                }
+    impl std::hash::Hashable {
+        
+        pub over hash (self)-> u64 {
+            cte if (__pragma!compile ({ hash (self._data [0]); })) {
+                let mut hash_value = 0x345678u64;
+                let mut mult = 31u64;
+                mult;
+                {
+                    for i in 0us .. self._len {
+                        hash_value = (hash_value ^ hash (self._data [i])) * mult;
+                        mult += (82520u64 + cast!u64 (self._len * 2us));
+                    }
+                } 
+                
+                hash_value
+            } else {
+                0x345678u64
             }
         }
+        
     }
     
 
@@ -510,7 +522,7 @@ pub class @final Vec {T of dmut Z, class Z} {
             
 
     cte if is!{T}{U impl Copiable} {
-        impl Copiable {
+        impl core::duplication::Copiable {
             
             pub over deepCopy (self)-> dmut &Object {
                 let dmut aux = alias core::duplication::allocArray!{dmut T} (self._data.len);

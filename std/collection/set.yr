@@ -1,3 +1,90 @@
+/**
+ * This module implements a set. A set is a collection where each
+ * value is present only one time, without any guarantee on the order.
+ * <br>
+ * Unlike map, vec and list, there is no mutable version of the set. It would have no sense to modify values contained in the set, as it would remove its purpose. For example, if we have a set containing two values, `{1, 8}`, and we can modify the value `1` to make it equal to `8`, the set would have the same value two times `{8, 8}`, which is against the whole point of using a set. It is the same reason the governs the absence of mutability of keys in a HashMap.
+ * <br>
+ * @Authors: Emile Cadorel
+ * @Licence: GPLv3
+ * <hr>
+ * 
+ * @example : 
+ * =============
+ * let dmut set = HashSet!([c32])::new ();
+ *
+ * set:.insert ("foo"); 
+ * set:.insert ("foo"); // Does nothing the value is already inserted
+ * set:.insert ("bar");
+ *
+ * // HashSet can be used with the opContain operator
+ * if "baz" !in set {
+ *     println ("Set does not contain baz");
+ * }
+ * 
+ * assert (set.len () == 2us);
+ * 
+ * // Values can be removed from the set 
+ * set:.remove ("foo");
+ *
+ * // HashSet are iterable
+ * for elem in set {
+ *     println (elem); // there is only bar left in the set
+ * }
+ * 
+ * // Set are streamable
+ * println (set);
+ *
+ * // One can transform a set into a slice by using the operator []
+ * let slc = set[];  
+ * println (slc); 
+ * =============
+ * 
+ * HashSet can be used with any types as long as they are hashable, and comparable. 
+ * <br>
+ * @example:
+ * ===
+ * import std::io;
+ *
+ * import std::collection::set;
+ * import std::hash;
+ *
+ * class X {
+ *    
+ *    let _x : i32;
+ *    
+ *    pub self (x : i32) with _x = x {}
+ *
+ *    /*
+ *     * Provides a way of comparing instances of X
+ *     */
+ *    pub def opEquals (self, o : &X)-> bool {
+ *        self._x == o._x
+ *    }
+ *   
+ *    impl std::hash::Hashable;
+ *    impl std::stream::Streamable; // for println
+ * }
+ *
+ *
+ * def main () {
+ *     let dmut xs = HashSet!{&X}::new ();
+ *
+ *     xs:.insert (X::new (12));
+ *     xs:.insert (X::new (12)); // does nothing, the same value of X was already inserted
+ *
+ *     println (xs);
+ * }
+ * ===
+ * Unlike some other languages (such as Java), comparison between instances is always made by value, and never by address. 
+ * <br>
+ * Make the comparison by address is still possible, as it can be implemented in the opEquals method by returning `self is other`.
+ * ===
+ * pub def opEquals (self, o : &X)-> bool {
+ *     self is o // true if both instances share the same address
+ * }
+ * ===
+ */
+
 mod std::collection::set;
 
 import core::typeinfo;
@@ -6,7 +93,6 @@ import core::exception;
 import core::array, core::object;
 
 import std::collection::seq;
-pub import std::collection::mutable::set;
 
 import std::io, std::stream;
 import std::hash;
@@ -44,28 +130,24 @@ pub macro hset {
 
 /**
  * A hash set implementation that stores a list of uniq values
- * The data in the set are unordered
- * @drawbacks 
- * ============
- * The value contained in the hash set are considered equivalent if their hash is equivalent
- * Depending on the hash function, there may be more or less collisions
- * ============
+ * The data in the set are unordered.
+ * @info: 
+ * Values must be hashable (implement the trait `std::hash::Hashable` for classes) and must be comparable.
  * 
- * @example : 
- * =============
- * let dmut x = HashSet!([c32], i32)::new ();
- * x:.insert ("foo");
- * x:.insert ("foo");
- * x:.insert ("bar");
- * assert (x.len () == 2us);
- * =============
  */
 pub class @final HashSet {T} {
 
     /**
      * Assertion to avoid tones of error printing, if the key is not usable
+     * It ensure that stored values are hashable.
      */
-    cte assert (__pragma!compile ({hash!T;}) || __pragma!compile ({hash (T::init)}), "unusable element type : (" ~ T ~ ") must be hashable");
+    cte assert (__pragma!compile ({hash!T;}) || __pragma!compile ({hash (T::init)}), "unusable element type : (" ~ T::typeid ~ ") must be hashable");
+
+    /**
+     * Assertion to avoid tones of error printing, if the key is not usable
+     * It ensure that stored values are comparable
+     */
+    cte assert (__pragma!operator ("==", T, T), "unusable element type : (" ~ T::typeid ~ ") must be comparable with itself (opEquals)");
     
     let dmut _data : [dmut &SetNode!{T}] = [];
 
@@ -258,8 +340,28 @@ pub class @final HashSet {T} {
     pub def len (self)-> usize {
         self._size
     }
+
+    impl std::hash::Hashable {
+        pub over hash (self)-> u64 {
+            cte if (__pragma!compile ({hash (self._data[][0]);})) {
+                let mut hash_value = 0x345678u64;
+                let mut mult = 31u64;
+                mult;
+                {
+                    for i in self {
+                        hash_value = (hash_value ^ hash (i)) * mult;
+                        mult += (82520u64 + cast!u64 (self._len * 2us));
+                    }
+                }
+                
+                hash_value
+            } else {
+                0x345678u64
+            }
+        }
+    }
     
-    impl Streamable {
+    impl std::stream::Streamable {
 
 
         pub over toStream (self, dmut stream : &StringStream) {

@@ -1,3 +1,46 @@
+/**
+ * This module implements the Future class. A future represents the
+ * result of an asynchronous operation. A Future is a placeholder for
+ * a value that may not exists yet.
+ *
+ * @example: 
+ * =============
+ * import std::io;
+ *
+ * import std::conv; // for to
+ * import std::concurrency::future;
+ *
+ * def computePi (prec : i32)-> f64 {
+ *     let mut res = 0.0;
+ *     let n = prec.to!f64 ();
+ *     for i in 0 .. prec {
+ *         res += (4.0 / n) / ( 1.0 + (( to!f64 (i) - 0.5 ) * (1.0 / n)) * (( to!f64 (i) - 0.5 ) * (1.0 / n)));
+ *     }
+ *     res     
+ * }
+ *
+ * def foo ()-> &Future!i32 {
+ *     future (|| {
+ *         println ("1 : ", computePi (i32::max / 100));
+ *         42
+ *     })
+ * }
+ *
+ * def main () throws &AssertError {
+ *     let x = foo ();
+ *     println ("2 : ", computePi (i32::max / 1000));
+ *     assert (x.wait () == 42);
+ * }
+ * =============
+ *
+ * The value of the future is computed asynchronusely using a TaskPool. If no task pool is specified, a global task pool is initialized when asking for the first future of the program.
+ * <br>
+ * The number of thread in the global task pool is the number of cores available in the system minus 1, or 1 if there is only one core.
+ * <br>
+ * The task pool can be initialized by hand before creating the future, cf. <a href="#setFutureTaskPool">std::concurrency::future::setFutureTaskPool</a>.
+ * 
+ */
+
 mod std::concurrency::future;
 
 import core::typeinfo;
@@ -7,124 +50,6 @@ import core::exception;
 import std::concurrency::task;
 import std::concurrency::sync;
 import std::io;
-
-/**
- * Future is a placeholder for a value that may not exists yet
- * Its value is computed asynchronusely using a TaskPool
- * The task pool is a global task pool initialized when asking for the first future of the program
- * The number of thread in this task pool is the number of cores available in the system - 1, or 1 if there is only one
- * It can be initialized by hand before, see std::concurrency::future::setFutureTaskPool;
- * @example: 
- * =============
- * def foo ()-> Future!i32 {
- *    future (|| {
- *         heavy_computation ();
- *         42
- *    })
- * }
- * 
- * let x = foo ();
- * heavy_computation_2 ();
- * assert (x.wait () == 42);
- * =============
- */
-pub class @abstract Future {T} {
-
-    let mut _mutex = Mutex::new ();
-    
-    let mut _cond = Condition::new ();
-
-    cte if (!is!T {U of void}) {
-        let mut _value : (T)?;
-    }
-
-    let mut _finalized = false;
-
-    cte if (!is!T {U of void}) {
-        prot self () with _value = (T?)::err {}
-    } else {
-        prot self () {}
-    }
-
-    /**
-     * Execute the future in the current thread
-     */
-    pub def execute (mut self);
-
-    /**
-     * Wait the end of the execution of the future, and return the value in an option type
-     * @info: this is passive waiting, so what you want to do in case you need the result of the future
-     * @example: 
-     * =============
-     * =============
-     */
-    cte if (!is!T {U of void}) {
-        pub def @final wait (self)-> (T)? {
-            self._mutex.lock ();
-            if (!self._finalized) 
-                self._cond.wait (self._mutex);
-            self._mutex.unlock ();
-            self._value
-        }
-    } else {
-        pub def @final wait (self) {
-            self._mutex.lock ();
-            if (!self._finalized) 
-                self._cond.wait (self._mutex);
-            self._mutex.unlock ();
-        }
-    }
-
-    /**
-     * Tell if the computation of the value is finished
-     * @example: 
-     * ============
-     * let f = future (|| => {
-     *         // heavy computation stuff 
-     *         42
-     * });
-     * while !f.isFinished { // active waiting
-     *      println ("Waiting for the value of the future");
-     *      println ("Maybe we should use this time to do real computation ?");
-     * }
-     * assert (f.wait () == 42); // this will not really waits the future is already finished
-     * ============
-     */
-    pub def @final isFinished (self) -> bool {
-        self._finalized
-    }
-    
-    /**
-     * Emit the signal (thread condition), to inform that the future value is computed 
-     */
-    prot def @final signal (mut self) {
-        self._mutex.lock ();
-        self._finalized = true;
-        self._cond.signal ();
-        self._mutex.unlock ();
-    }
-    
-}
-
-/**
- * Set the task pool that will be used to compute the futures
- * @example: 
- * =============
- * import std::concurrency::task; 
- * 
- * let dmut pool = TaskPool::new ();
- * setFutureTaskPool (alias pool);
- * let f = future (|| => {
- *     // ...
- * });
- * 
- * pool.join ();
- * assert (f.isFinished ());
- * =============
- */
-pub def setFutureTaskPool (dmut pool : &TaskPool) -> void {
-    internal::__pool__ = [alias pool];
-}
 
 /**
  * Create a future value, and submit it to the task pool for future execution
@@ -203,6 +128,152 @@ pub def future {T} (dmut pool : &TaskPool, func : dg ()-> T) -> &Future!T {
     fut
 }
 
+/**
+ * Set the task pool that will be used to compute the futures
+ * @example: 
+ * ===
+ * import std::concurrency::task; 
+ * 
+ * let dmut pool = TaskPool::new ();
+ * setFutureTaskPool (alias pool);
+ * let f = future (|| => {
+ *     // ...
+ * });
+ * 
+ * pool.join ();
+ * assert (f.isFinished ());
+ * ===
+ * @warning: all future submitted before the change of the task pool are executed by the old task pool. However, this will not break them.
+ */
+pub def setFutureTaskPool (dmut pool : &TaskPool) -> void {
+    internal::__pool__ = [alias pool];
+}
+
+/**
+ * Ancestor of all kind of future
+ * @warning: we recommand to not inherit from this class but to use the function `future` that construct Future instances appropriately.
+ */
+pub class @abstract Future {T} {
+
+    let mut _mutex = Mutex::new ();
+    
+    let mut _cond = Condition::new ();
+
+    cte if (!is!T {U of void}) {
+        let mut _value : (T)?;
+    }
+
+    let mut _finalized = false;
+
+    cte if (!is!T {U of void}) {
+        prot self () with _value = (T?)::err {}
+    } else {
+        prot self () {}
+    }
+
+
+    cte if (!is!T {U of void}) {
+        /**
+         * Wait the end of the execution of the future, and return the value of the future
+         * @info: this is passive waiting, so what you want to do in case you need the result of the future
+         * @returns: the value generated by the future
+         * @example: 
+         * =============
+         * import std::conv; // for to
+         * import std::concurrency::future;
+         * 
+         * let f = future (|| => { 
+         *     let n = 100.0, mut res = 0.0;
+         *     for i in 0 .. 100 {
+         *          res += (4.0 / n) / ( 1.0 + (( to!f64 (i) - 0.5 ) * (1.0 / n)) * (( to!f64 (i) - 0.5 ) * (1.0 / n)));
+         *     }
+         *     res     
+         * });
+         * 
+         * let pi = f.wait ();
+         * println (pi);
+         * =============
+         * @warning: if the future is an infinite loop, this function will never return
+         */
+        pub def @final wait (self)-> T {
+            self._mutex.lock ();
+            if (!self._finalized) 
+                self._cond.wait (self._mutex);
+            self._mutex.unlock ();
+            __pragma!trusted ({
+                self._value.unwrap () // value is necessarily computed, the future is finised
+            })
+        }
+    }
+
+    cte if (is!T {U of void}) {
+        /**
+         * Wait the end of the execution of the future
+         * @info: this is passive waiting, so what you want to do in case you need the result of the future
+         * @example: 
+         * =============
+         * import std::conv; // for to
+         * import std::concurrency::future;
+         * 
+         * let f = future (|| => { 
+         *     let n = 100.0, mut res = 0.0;
+         *     for i in 0 .. 100 {
+         *          res += (4.0 / n) / ( 1.0 + (( to!f64 (i) - 0.5 ) * (1.0 / n)) * (( to!f64 (i) - 0.5 ) * (1.0 / n)));
+         *     }
+         *     res     
+         * });
+         * 
+         * let pi = f.wait ();
+         * println (pi);
+         * =============
+         * @warning: if the future is an infinite loop, this function will never return
+         */
+        pub def @final wait (self) {
+            self._mutex.lock ();
+            if (!self._finalized) 
+                self._cond.wait (self._mutex);
+            self._mutex.unlock ();
+        }
+    }
+
+    /**
+     * Tell if the computation of the value is finished
+     * @example: 
+     * ============
+     * let f = future (|| => {
+     *         // heavy computation stuff 
+     *         42
+     * });
+     * while !f.isFinished { // active waiting
+     *      println ("Waiting for the value of the future");
+     *      println ("Maybe we should use this time to do real computation ?");
+     * }
+     * assert (f.wait () == 42); // this will not really waits the future is already finished
+     * ============
+     */
+    pub def @final isFinished (self) -> bool {
+        self._finalized
+    }
+    
+    /**
+     * Emit the signal (thread condition), to inform that the future value is computed 
+     */
+    prot def @final signal (mut self) {
+        self._mutex.lock ();
+        self._finalized = true;
+        self._cond.signal ();
+        self._mutex.unlock ();
+    }
+
+    /**
+     * Execute the future in the current thread
+     * @info: internal function
+     */
+    pub def execute (mut self);
+    
+}
+
+
 /** Internal module */
 mod internal {
 
@@ -211,7 +282,7 @@ mod internal {
 
     /**
      * Get the global task pool for processing futures
-     * The number of thread in the task pool is set to the number of cores available on the system - 1, or 1 if there is only 1
+     * The number of thread in the task pool is set to the number of cores available on the system minus 1, or 1 if there is only 1
      * @example: 
      * ==============
      * import etc::c::sysinfo;

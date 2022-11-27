@@ -96,6 +96,7 @@ int _yrt_run_main_debug (int argc, char ** argv, int(* y_main)()) {
     __YRT_DEBUG__ = 1;
     
     GC_INIT ();
+    
 #ifdef __linux__
     bfd_init ();
 #endif

@@ -69,7 +69,7 @@ void* _yrt_alloc_class (void* vtable) {
 
     // the second element is the destructor
     void(*__dtor) () = *(void(**)()) ((void**) vtable + 1);
-    
+
     void* cl = GC_MALLOC (ti-> size);    
     *((void**)cl) = vtable; // vtable
     *((void**)cl+1) = NULL; // monitor

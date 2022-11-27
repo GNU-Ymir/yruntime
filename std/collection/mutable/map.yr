@@ -18,7 +18,13 @@
  * }
  *
  * let dmut x = A::new (42);
+ * 
+ * // by using the keyword dmut, template specialization is made to select the mutable version of map
+ * //                          |       otherwise immutable version is always selected
+ * //                          |
+ * //                         vvv
  * let dmut m = HashMap!{i32, dmut &A}::new ();
+ * 
  * 
  * m:.insert (12, A::new (10)); 
  * m:.insert (24, alias x); // the insertion must use a mutable version of the value
@@ -377,7 +383,7 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
      *    impl Streamable;
      * }
      *
-     * let mut z = A::new (345);
+     * let dmut z = A::new (345);
      * 
      * let dmut x = HashMap!{[c32], dmut &A}::new ();
      * (alias x)["foo"] = A::new (123);
@@ -389,6 +395,38 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
         self:.insert (k, alias v);
     }
 
+
+    /**
+     * Transform the map into a slice, where each element is a tuple of (key, value)
+     * @example:
+     * ===
+     * class A {
+     *    pub let mut i : i32;
+     *    pub self (i : i32) with i = i {}
+     *    impl Streamable;
+     * }
+     *
+     * let dmut z = A::new (345);
+     * 
+     * let dmut x = HashMap!{[c32], dmut &A}::new ();
+     * (alias x)["foo"] = A::new (123);
+     * (alias x)["bar"] = alias z;
+     *
+     * println (x[]); // ("bar", A(345)), ("foo", A(123))
+     * ===
+     * @complexity: O(n)
+     */
+    pub def opIndex (self)-> mut [mut (K, V)] {
+        let mut res : [mut (K, V)] = core::duplication::allocArray!{(K, V)} (self._size);
+        let mut index = 0us;
+        for i, j in self {
+            res[index] = (i, j);
+            index += 1us;
+        }
+
+        alias res
+    }
+    
     /**
      * Remove all the entries contained in the map
      * @example: 
@@ -885,7 +923,7 @@ class @final Empty {K, V of dmut Z, class Z} over MapNode!{K, dmut V} {
  * assert (beg_it == x.end ()); 
  * =============
  */
-class @final MapIterator {K, V of dmut Z, class Z} {
+pub class @final MapIterator {K, V of dmut Z, class Z} {
 
     /// A reference on the table contained in the map we are traversing
     prv let mut _data : [&MapNode!{K, dmut V}];
