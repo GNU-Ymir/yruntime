@@ -16,7 +16,7 @@ import core::array, core::object;
 
 import std::collection::seq;
 import std::io, std::stream;
-import std::hash;
+import std::hash, std::traits;
 
 import std::collection::vec;
 
@@ -28,7 +28,7 @@ prv enum : usize
  -> VecConst;
 
 /**
- * Vec is a growable array
+ * Vec is a growable array stored in continuous memory.
  * It stores immutable values, but is itself mutable
  * @templates: 
  *    - T: the type of the values stored in the vector
@@ -63,7 +63,7 @@ pub class @final Vec {T of dmut Z, class Z} {
      * =================
      * let x = Vec!{dmut &A}::new ();
      * 
-     * assert (x.capacity () == 0);
+     * assert (x.capacity () == 0us);
      * =================
      */
     pub self () {}
@@ -77,9 +77,8 @@ pub class @final Vec {T of dmut Z, class Z} {
      * let dmut x = Vec!{dmut &A}::new ();
      * x:.push (A::new (1));
      * x:.push (A::new (1));
-     * 
      * ===============
-     * @complexity: O (n), with n = self._len
+     * @complexity: O (n), with n = self._len when reallocation is necessary, but O(1) in average when the capacity of the vector is big enough.
      */    
     pub def push (mut self, dmut val : T) -> void {
         if (self._data.len == self._len) {
@@ -96,14 +95,12 @@ pub class @final Vec {T of dmut Z, class Z} {
      *    - OutOfArray: if the vector is empty
      * @example: 
      * ======================
-     * __test {
-     *     let dmut x = Vec!{dmut &A}::new ();
+     * let dmut x = Vec!{dmut &A}::new ();
      * 
-     *     x:.push (A::new (1));
-     *     assert (x:.pop () == A::new (1));
-     * }
+     * x:.push (A::new (1));
+     * assert (x:.pop () == A::new (1));
      * ======================
-     * @complexity: O (n), with n = self._len (in case of shrinking) O(1) otherwise
+     * @complexity: O (n), with n = self._len when reallocation is necessary, but O(1) in average when the vector does not need fit to avoid memory waste.
      */
     pub def pop (mut self) -> dmut T
         throws &OutOfArray
@@ -127,7 +124,7 @@ pub class @final Vec {T of dmut Z, class Z} {
      *    - OutOfArray: if the vector is empty
      * @example: 
      * ======================
-     * let dmut x = Vec!(dmut &A)::new ();
+     * let dmut x = Vec!{dmut &A}::new ();
      * 
      * for i in 0u64 .. 100u64 {
      *     x:.push (A::new (1));
@@ -150,15 +147,16 @@ pub class @final Vec {T of dmut Z, class Z} {
      * Remove the element at the i_em position
      * @example: 
      * ======================
-     * let dmut x = Vec!(dmut &A)::new ();
+     * let dmut x = Vec!{dmut &A}::new ();
      * 
      * for i in 0 .. 5 {
      *     x:.push (A::new (i));
      * }
+     * 
      * x:.remove (2u64); 
      * assert (x[] == [A::new (0), A::new (1), A::new (3), A::new (4)]);
      * ======================
-     * @complexity: O (n), with n = self._len
+     * @complexity: O (n), with n = self._len, but O (n - i) in average, as shifting is necessary for every elements after `i`.
      */
     pub def remove (mut self, i : u64)
     {
@@ -176,9 +174,11 @@ pub class @final Vec {T of dmut Z, class Z} {
      * @example: 
      * ==============
      * let dmut x = Vec!{dmut &A}::new ();
-     * for i in 0 ... 4 
+     * for i in 0 ... 4 {
      *     x:.push (A::new (i));
+     * }
      * println (x.capacity ()); // 10
+     * 
      * x:.fit ();
      * assert (x.capacity () == 5us); 
      * assert (x == [A::new (0), A::new (1), A::new (2), A::new (3), A::new (4)]);
@@ -196,22 +196,14 @@ pub class @final Vec {T of dmut Z, class Z} {
      * Does nothing if the capacity is already higher than the requested size
      * @example: 
      * =============
-     * let dmut x = Vec!(i32)::new ();
-     * let dmut y = Vec!(i32)::new ();
+     * let dmut x = Vec!{dmut &A}::new ();
      * x:.reserve (1000);
      * let mut old_cap_x = x.capacity ();
-     * let mut old_cap_y = y.capacity ();
      * for i in 0 .. 1000 {
-     *    x:.push (i);
-     *    y:.push (i);
+     *    x:.push (A::new (i));
      *    if (old_cap != x.capacity ())  {
-     *       println ("X grew");
+     *       println ("X grew"); // will never print
      *       old_cap_x = x.capacity ();
-     *    } 
-     *
-     *    if (old_cap_y != y.capacity ())  {
-     *       println ("Y grew");
-     *       old_cap_y = y.capacity ();
      *    } 
      * }
      * =============
@@ -228,15 +220,16 @@ pub class @final Vec {T of dmut Z, class Z} {
      * Remove all element inside the array
      * @example: 
      * =============
-     * let dmut x = Vec!(i32)::new ();
+     * let dmut x = Vec!{dmut &A}::new ();
      * for i in 0 .. 1_000 {
-     *     x:.push (i);
+     *     x:.push (A::new (i));
      * }
      * 
      * x:.clear ();
      * assert (x == []);
-     * assert (x.capacity () == 0);
+     * assert (x.capacity () == 0us);
      * =============
+     * @complexity: O (1)
      */
     pub def clear (mut self) {
         self._len = 0us;
@@ -253,18 +246,17 @@ pub class @final Vec {T of dmut Z, class Z} {
          * Compare two vectors of same type
          * @example: 
          * ============
-         * __test {
-         *     let x = Vec!{dmut &A}::new ();
-         *     let y = Vec!{dmut &A}::new ();
-         *     let z = Vec!{dmut &A}::new ();
-         *     x:.push (A::new (12));
-         *     y:.push (A::new (12));
-         *     z:.push (A::new (42));
+         * let x = Vec!{dmut &A}::new ();
+         * let y = Vec!{dmut &A}::new ();
+         * let z = Vec!{dmut &A}::new ();
+         * x:.push (A::new (12));
+         * y:.push (A::new (12));
+         * z:.push (A::new (42));
          * 
-         *     assert (x == y);
-         *     assert (x != z);
-         * }
+         * assert (x == y);
+         * assert (x != z);
          * ============
+         * @complexity: O (self.len ())
          */
         pub def opEquals (self, o : &Vec!{dmut T}) -> bool {
             if (self._len != o._data.len) return false;
@@ -278,14 +270,14 @@ pub class @final Vec {T of dmut Z, class Z} {
          * Compare a vector and an array of same inner type
          * @example: 
          * ============
-         * __test {
-         *     let x = Vec!{dmut &A}::new ();
-         *     for i in 0 .. 3 
-         *         x:.push (A::new (i));
-         * 
-         *     assert (x == [A::new (1), A::new (2), A::new (3)]);
+         * let x = Vec!{dmut &A}::new ();
+         * for i in 0 .. 3 {
+         *     x:.push (A::new (i));
          * }
+         * 
+         * assert (x[] == [A::new (1), A::new (2), A::new (3)]);
          * ============
+         * @complexity: O (self.len ())
          */
         pub def opEquals (self, o : [T]) -> bool {
             if (self._len != o.len) return false;
@@ -301,14 +293,13 @@ pub class @final Vec {T of dmut Z, class Z} {
      * Get the slice content of the vec 
      * @example: 
      * ==========
-     * __test {
-     *     let dmut x = Vec!{dmut &A}::new ();
-     *     for i in 0 .. 3 {
-     *         x:.push (A::new (i));
-     *     }
-     *     assert (x[] == [A::new (0), A::new (1), A::new (2)]);
+     * let dmut x = Vec!{dmut &A}::new ();
+     * for i in 0 .. 3 {
+     *     x:.push (A::new (i));
      * }
+     * assert (x == [A::new (0), A::new (1), A::new (2)]);
      * ==========
+     * @complexity: O (1)
      */
     pub def opIndex (self) -> [T] {
         self._data [0us .. self._len]
@@ -325,6 +316,7 @@ pub class @final Vec {T of dmut Z, class Z} {
      * let dmut res = alias ((alias x)[]);
      * assert (res == [A::new (0), A::new (1), A::new (2)]);
      * ==========
+     * @complexity: O (1)
      */
     pub def opIndex (mut self) -> dmut [T] {
         alias self._data [0us .. self._len]
@@ -347,16 +339,21 @@ pub class @final Vec {T of dmut Z, class Z} {
      *   _: &OutOfArray => {}
      *   _: &AssertError => {}
      * }
-     *
      * ===========
+     * @complexity: O (1)
      */
-    pub def opIndexAssign (mut self, i : usize, dmut val : T)
+    pub def if (isIntegral!{I}()) opIndexAssign {I} (mut self, i : I, dmut val : T)
         throws &OutOfArray
     {
+        cte if (isSigned!{I} ()) {
+            if (cast!isize (i) < 0is) throw OutOfArray::new ();
+        }
+        
         if (i < self._len) {
             self._data [i] = alias val;
         } else throw OutOfArray::new ();
     }
+    
     
     /**
      * @return: the number of element the vector can store without reallocation
@@ -404,24 +401,78 @@ pub class @final Vec {T of dmut Z, class Z} {
      * @complexity: O (1)
      * @example : 
      * ================
-     * let dmut x = Vec!(i32)::new ();
-     * x:.push (12);
-     * {
-     *     assert (x [0] == 12);
-     * } catch {
-     *     _: &OutOfArray => {}
-     *     _: &AssertError => {}
-     * }
+     * let dmut x = Vec!{dmut &A}::new ();
+     * x:.push (A::new (value-> 12));
+     *
+     * (alias x)[0].value = 87;
+     * assert (x[0].value == 87);
      * ================
+     * @complexity: O (1)
      */
-    pub def opIndex (mut self, i : usize) -> dmut T
+    pub def if (isIntegral!{I} ()) opIndex {I} (mut self, i : I) -> dmut T
+        throws &OutOfArray
+    {
+        cte if (isSigned!{I} ()) {
+            if (cast!isize (i) < 0is) throw OutOfArray::new ();
+        }
+        
+        if (i < self._len) {
+            return alias self._data [i];
+        } else throw OutOfArray::new ();
+    }
+
+    /**
+     * Access value in the vec by index
+     * @params: 
+     *    - i: the index
+     * @throws: 
+     *   - &OutOfArray: if the index is not in the vector
+     * @complexity: O (1)
+     * @example : 
+     * ================
+     * let dmut x = Vec!{dmut &A}::new ();
+     * x:.push (A::new (value-> 12));
+     *
+     * (alias x)[0us].value = 87;
+     * assert (x[0us].value == 87);
+     * ================
+     * @complexity: O (1)
+     */
+    pub def  opIndex (mut self, i : usize) -> dmut T
         throws &OutOfArray
     {
         if (i < self._len) {
             return alias self._data [i];
         } else throw OutOfArray::new ();
     }
-    
+
+    /**
+     * Access value in the vec by index
+     * @params: 
+     *    - i: the index
+     * @throws: 
+     *   - &OutOfArray: if the index is not in the vector
+     * @complexity: O (1)
+     * @example : 
+     * ================
+     * let dmut x = Vec!{dmut &A}::new ();
+     * x:.push (A::new (value-> 12));
+     * 
+     * assert (x[0].value == 12);
+     * ================
+     * @complexity: O (1)
+     */
+    pub def if (isIntegral!{I} ()) opIndex {I} (self, i : I) -> T
+        throws &OutOfArray
+    {
+        cte if (isSigned!{I} ()) {
+            if (cast!isize (i) < 0is) throw OutOfArray::new ();
+        }
+        
+        if (i < self._len) {
+            return self._data [i];
+        } else throw OutOfArray::new ();
+    }    
 
     
     impl std::collection::seq::Seq!{T} {
@@ -433,25 +484,6 @@ pub class @final Vec {T of dmut Z, class Z} {
             self._len
         }
         
-        /**
-         * Access value in the vec by index
-         * @params: 
-         *    - i: the index
-         * @throws: 
-         *   - &OutOfArray: if the index is not in the vector
-         * @complexity: O (1)
-         * @example : 
-         * ================
-         * let dmut x = Vec!(i32)::new ();
-         * x:.push (12);
-         * {
-         *     assert (x [0] == 12);
-         * } catch {
-         *     _: &OutOfArray => {}
-         *     _: &AssertError => {}
-         * }
-         * ================
-         */
         pub over opIndex (self, i : usize) -> T
             throws &OutOfArray
         {

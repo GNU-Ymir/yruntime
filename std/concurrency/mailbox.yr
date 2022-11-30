@@ -1,3 +1,39 @@
+/**
+ * This module implements a thread safe list that can be used to communicate between threads.
+ * @Authors: Emile Cadorel
+ * @Licence: GPLv3
+ * <hr>
+ * @example: 
+ * ===
+ * import std::concurrency::thread; // spawn
+ * import std::time::dur; // sleep
+ * import std::concurrency::mailbox;
+ *
+ * let dmut box = MailBox!{i32}::new ();
+ * let th = spawn (move |_| => {
+ * loop {
+ *     let msg = box:.receive ();
+ *     match msg {
+ *         Ok (x : i32) => {
+ *             println ("Finally received a message : ", x, " !!");
+ *                   break {}
+ *             }
+ *             _ => {
+ *                 println ("Still waiting for a mail, sleep 1 second.");
+ *                 sleep ((1u64).seconds ()); 
+ *             }
+ *         }
+ *     }
+ * });
+ *
+ * sleep ((2u64).seconds ());
+ *
+ * box:.send (42);
+ * th.join ();
+ * ===
+ * 
+ */
+
 mod std::concurrency::mailbox;
 
 import core::typeinfo;
@@ -8,31 +44,10 @@ import std::any;
 import std::io;
 
 /**
- * A mail box is a way of sending messages between threads in a non blocking manner unlike pipes
- * Its implementation is just an atomic list (Cf. std::collection::list)
- * @example: 
- * ===========
- * let dmut box = MailBox::new ();
- * let th = spawn (move |_| => {
- *     loop {
- *         let msg = box:.receive!(i32) ();
- *         match msg {
- *             x : &Some!(i32) => {
- *                 println ("Finally received a message : ", x, " !!");
- *                 break {}
- *             }
- *             _ => {
- *                 println ("Still waiting for a mail");
- *             }
- *         }
- *     }
- * });
- * 
- * for i in 0 .. 1_000_000 {} // unecessarily long useless action
- * 
- * box:.send (42);
- * th.join ();
- * =======
+ * A mail box is a way of sending messages between threads in a non blocking manner unlike pipes.
+ * Its implementation is just an atomic list (Cf. <a href="./std_collection_list.html#List">std::collection::list::List</a>)
+ * @waranty: 
+ * Mailbox is thread safe, and that is the whole point.
  */
 pub class @final MailBox {T} {
 
@@ -63,8 +78,8 @@ pub class @final MailBox {T} {
      * @info: this function is not blocking
      * @templates: 
      *     - T: any type
-     * @return: 
-     *    - Some!(T): if a message was found in the box
+     * @returns: 
+     *    - Ok(T): if a message was found in the box
      */
     pub def receive (mut self) -> T? {
         //println ("lock");

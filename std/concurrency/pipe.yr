@@ -1,13 +1,47 @@
+/**
+ * This module implements a way of communication between threads.
+ * @Authors: Emile Cadorel
+ * @Licence: GPLv3
+ * <hr>
+ * Depending on the context, (shared memory or not), different type of pipes can be choosed. ThreadPipe are used to communicate between threads of the same process.
+ * @example: 
+ * ===
+ * import std::box; // For Box!{T}
+ * 
+ * let dmut a = A::new ();
+ *
+ * let th = spawn (move |th : Thread| => {
+ *    // Spawn open a thread pipe for the thread that can be used directly to communicate
+ *    match th.pipe.read () { // read is blocking
+ *        Box!{i32}(value-> x : _) => println ("Received a i32 : ", x);
+ *        Box!{f64}(value-> x : _) => println ("Received a f64 : ", x);
+ *        _ => {
+ *            println ("Received something else.");
+ *        }
+ *    }
+ *
+ *    match th.pipe.read () { // read only the reference of classes stored in the heap
+ *        x : &A => println (x is a); // true
+ *    }  
+ * });
+ *
+ * th.pipe.write  (87); // write is blocking, and waits until the other end of the pipe is reading
+ * th.pipe.write (a); // Classes can be sent directly by reference without copy
+ * th.join ();
+ * ===
+ * Because `ThreadPipe` are blocking, they can be used to synchronize threads. Asynchronous communication can be made using a `MailBox` instead.
+ */
 mod std::concurrency::pipe;
 
 import core::typeinfo, core::array;
 import core::dispose;
+import core::exception, core::object;
 import etc::runtime::thread;
 import etc::c::stdio;
 import etc::c::files;
 
 import std::io;
-import std::any;
+import std::box;
 
 import std::concurrency::sync;
 import std::stream;
@@ -32,55 +66,46 @@ mod IOThreadPipe {T} {
 }
 
 /**
- * A pipe is a way to communicate between threads
- * It is assumed that pipes are used in shared memory context, and are only used to send references to class
- * If you want to send other types, of data, such as ints, bool etc. you can encapsulate the data into a Any type, or an Option
- * @example: 
- * =================
- * class Foo {
- *    let x : i32;
- *    pub self (i : i32) with x = i {}
- *    impl Streamable;
- * }
- *
- * // Thread 1 : 
- * pipe.write (Foo::new ());
- *
- * // Thread 2
- * println (pipe.read!(&Foo) ());
- * =================
+ * A pipe is a way to communicate between threads.
+ * It is assumed that pipes are used in shared memory context, and are only used to send references to class.
+ * Other type of data that are not classes are encapsulated into an `std::box::Box` type.
  * @warning: 
- * ===============
- * ThreadPipes are blocking, meaning that before writing inside the pipe we assure that someone is reading on the other side 
- * If you want to speak between thread without synchronization, use a IOPipe
- * ===============
+ * ThreadPipes are blocking, meaning that before writing inside the pipe we assure that someone is reading on the other side.
  */
 pub class @final ThreadPipe {
     
     __version LINUX {
         /** The read side of the pipe */
-        let mut _read : i32 = 0;
+        prv let mut _read : i32 = 0;
         
         /** The write side of the pipe */
-        let mut _write : i32 = 0;
+        prv let mut _write : i32 = 0;
     }
 
     __version WINDOWS {
         
-        let mut _read : &void = null;
+        prv let mut _read : &void = null;
 
-        let mut _write : &void = null;
+        prv let mut _write : &void = null;
         
     }
 
-    let mut _mutex = Mutex::new ();
+    prv let mut _mutex = Mutex::new ();
     
-    let mut _cond = Condition::new ();
+    prv let mut _cond = Condition::new ();
     
-    let mut _sem = Semaphore::new ();
-    
+    prv let mut _sem = Semaphore::new ();
+
+    /**
+     * Create a thread pipe
+     */
     pub self () with self (true) {}
 
+    /**
+     * Create a thread pipe
+     * @params: 
+     *    - create: if false, the pipe is not allocated and will not work
+     */
     pub self (create : bool) {
         if (create) {
             __version WINDOWS {
@@ -99,12 +124,15 @@ pub class @final ThreadPipe {
     /**
      * Get the reference of a object, that has been written in the pipe
      * @warning: it is a blocking process, the thread will wait until something is read
+     * @returns: an instance of an object
+     * @info: 
+     * Only objects can be written inside the pipe, if data that are not any object are written they are written inside a std::box::Box
      */
-    pub def read {class T} (self) -> T {                        
+    pub def read (self) -> &Object {                        
         self._mutex.lock ();
         self._sem.post ();
         self._cond.wait (self._mutex);
-        let ret = IOThreadPipe!{T}::_yrt_read_pipe (self._read, sizeof T);                    
+        let ret = IOThreadPipe!{&Object}::_yrt_read_pipe (self._read, sizeof &Object);                    
         self._mutex.unlock ();
         ret
     }
@@ -120,25 +148,17 @@ pub class @final ThreadPipe {
         self._cond.signal (); 
         self._mutex.unlock ();
     }
-
+    
     /**
-     * Get the reference of an any type in the pipe
-     * @warning: it is a blocking process, the thread will wait until someone is reading
-     */
-    pub def read (self) -> &Any {
-        self.read!(&Any) ()
-    }
-
-    /**
-     * Write the reference of an any type in the pipe
+     * Write data in the pipe.
+     * @info: Because data are not an instance of class, a std::box::Box is allocated.
      * @warning: it is a blocking process, the thread will wait until someone is reading
      */
     pub def write {T} (self, x : T) -> void {
-        self.write!{&Some!T} (Some!{T}::new (x))
+        self.write!{&Box!{T}} (Box::new (x))
     }    
     
-
-    impl Disposable {
+    impl core::dispose::Disposable {
         /**
          * Close the bidirectional pipe
          */
@@ -170,7 +190,7 @@ pub class @final ThreadPipe {
     }
 
 
-    impl Streamable {
+    impl std::stream::Streamable {
         pub over toStream (self, dmut stream : &StringStream) {
             stream:.write ("("s8):.write (self._read):.write (", "s8):.write (self._write):.write (")"s8);
         }
@@ -183,295 +203,3 @@ pub class @final ThreadPipe {
     
 }
 
-__version LINUX {
-
-    /**
-     * Single way pipe to write data to a IPipe (or another process)
-     */
-    pub class @final OPipe {
-
-
-        let mut _pipe : i32;
-        
-        pub self (pipe : i32) with _pipe = pipe
-        {}
-
-        pub def write (mut self, msg : [c8]) {
-            write (self._pipe, msg.ptr, msg.len);
-        }
-        
-        pub def getHandle (self)-> i32 {
-            self._pipe
-        }
-
-        pub def setNonBlocking (mut self) {
-            let err_flags = fcntl(self._pipe, FileFlags::F_GETFL, 0u32);
-            fcntl(self._pipe, FileFlags::F_SETFL, err_flags | O_NONBLOCK);
-        }    
-
-        impl Disposable {
-
-            pub over dispose (mut self) {     
-                if (self._pipe != 0) {
-                    close (self._pipe);
-                    self._pipe = 0;
-                }
-            }
-            
-        }
-        
-        __dtor (mut self) {
-            self:.dispose ();
-        }
-    }
-
-
-    /**
-     * Single way pipe to read from a OPipe, or another process
-     */
-    pub class @final IPipe {
-
-        let mut _pipe : i32;
-        
-        pub self (pipe : i32) with _pipe = pipe
-        {}
-        
-
-        pub def read (mut self) -> [c8] {
-            let dmut ret = Vec!(c8)::new ();
-            loop {
-                let mut c = '\u{0}'c8;
-                let n = read (self._pipe, alias &c, sizeof c8);
-                if (n != -1 && n != 0) {
-                    ret:.push (c);
-                } else break {}
-            }
-            ret:.fit ();
-            return ret [];
-        }
-
-        pub def readSome (mut self, len : u32 = 1u32)-> [c8] {
-            let dmut buf = ['\u{0}'c8 ; new len];
-            let n = read (self._pipe, alias buf.ptr, (sizeof c8 * buf.len));
-            if (n != 0is && n != -1) {
-                return buf[0is .. n];
-            }
-
-            return [];
-        }
-        
-
-        pub def getHandle (self)-> i32 {
-            self._pipe
-        }
-        
-        pub def setNonBlocking (mut self) {
-            let err_flags = fcntl(self._pipe, FileFlags::F_GETFL, 0u32);
-            fcntl(self._pipe, FileFlags::F_SETFL, err_flags | O_NONBLOCK);
-        }
-
-        
-        impl Disposable {
-            pub over dispose (mut self) {
-                if (self._pipe != 0) {
-                    close (self._pipe);
-                    self._pipe = 0;
-                }
-            }
-        }
-        
-        __dtor (mut self) {
-            self:.dispose ();
-        }
-        
-    }
-    
-
-    pub class @final IOPipe {
-        let dmut _read : &IPipe = IPipe::new (0);
-        
-        let dmut _write : &OPipe = OPipe::new (0);
-        
-        pub self () with self (createPipes ()) {}
-        
-        pub self (pipes : [i32 ; 2u32])
-            with _read = IPipe::new (pipes [0]), _write = OPipe::new (pipes [1])
-        {}
-
-        pub def opipe (mut self)-> dmut &OPipe {
-            alias self._write
-        }
-
-        pub def ipipe (mut self)-> dmut &IPipe {
-            alias self._read
-        }
-
-        impl Disposable {
-            pub over dispose (mut self) {
-                self._read:.dispose ();
-                self._write:.dispose ();
-            }
-        }        
-    }
-
-    prv def createPipes ()-> [i32; 2u32] {
-        let dmut ret = [0i32; 2u32];
-        etc::c::files::pipe (alias (ret).ptr);
-        return ret;
-    }
-
-}
-
-
-__version WINDOWS {
-
-    pub class OPipe {
-        let mut _pipe : &void;
-
-        pub self (pipe : &void) with _pipe = pipe
-        {}
-        
-        pub def write (mut self, msg : [c8]) {
-            WriteFile (self._pipe, msg.ptr, cast!i32 (msg.len), null, null);
-        }
-
-        pub def setNonBlocking (self) {
-            if (SetHandleInformation (self._pipe, 1, 0) != 1) {
-                __pragma!panic ();
-            }
-        }
-
-        pub def getHandle (mut self) -> &void {
-            self._pipe
-        }
-        
-        impl Disposable {
-
-            pub over dispose (mut self) {
-                if (self._pipe !is null) {
-                    CloseHandle (self._pipe);
-                    self._pipe = null;
-                }
-            }
-            
-        }
-        
-        __dtor (mut self) {
-            self:.dispose ();
-        }
-    }
-
-
-    pub class IPipe {
-
-        let mut _pipe : &void;
-
-        pub self (pipe : &void) with _pipe = pipe
-        {}
-
-        
-        pub def setNonBlocking (self) {
-            if (SetHandleInformation (self._pipe, 1, 0) != 1) {
-                __pragma!panic ();
-            }
-        }
-
-        pub def getHandle (mut self) -> &void {
-            self._pipe
-        }
-        
-        pub def read (mut self)-> [c8] {
-            let dmut res = Vec!{c8}::new ();
-            loop {
-                let mut c = '\u{0}'c8;
-
-                let mut n = 0i32;
-                ReadFile (self._pipe, alias &c, cast!i32 (sizeof c8), alias &n, null);
-                if (n != -1 && n != 0) {
-                    res:.push (c);
-                } else break {}
-            }
-
-            res:.fit ();
-            return res[];
-        }
-
-        pub def readSome (mut self, len : u32 = 1u32)-> [c8] {
-            let dmut buf = ['\u{0}'c8 ; new len];
-            let mut n = 0i32;
-            ReadFile (self._pipe, alias buf.ptr, cast!i32 (sizeof c8 * buf.len), alias &n, null);
-
-            if (n != -1 && n != 0) {
-                return buf[0 .. n];
-            }
-
-            return [];
-        }        
-
-        impl Disposable {
-            pub over dispose (mut self) {
-                if (self._pipe !is null) {
-                    CloseHandle (self._pipe);
-                    self._pipe = null;
-                }
-            }
-        }
-
-        __dtor (mut self) {
-            self:.dispose ();
-        }    
-    }
-
-
-    pub class IOPipe {
-
-        let dmut _ipipe : &IPipe;
-
-        let dmut _opipe : &OPipe;
-
-        pub self () with self (createPipes ()) {}
-
-        pub self (pipes : (&void, &void)) with _ipipe = IPipe::new (pipes.0), _opipe = OPipe::new (pipes.1)
-        {}
-
-
-        pub def opipe (mut self)-> dmut &OPipe {
-            alias self._opipe
-        }
-
-        pub def ipipe (mut self)-> dmut &IPipe {
-            alias self._ipipe
-        }
-
-        impl Disposable {
-            pub over dispose (mut self) {
-                self._ipipe:.dispose ();
-                self._opipe:.dispose ();
-            }
-        }
-        
-    }
-
-    struct
-    | nLength : u64 = cast!u64 (sizeof (SECURITY_ATTRIBUTES))
-    | lpSecurityDescriptor : &void = null
-    | bInheritHandle : i32 = 1
-     -> SECURITY_ATTRIBUTES;
-    
-    extern (C) def CreatePipe (mut readP : &(mut &void), mut writeP : &(mut &void), saAttr : &SECURITY_ATTRIBUTES, ig : i32)-> i32;
-    extern (C) def SetHandleInformation (pipe : &void, flag : i32, ig : i32)-> i32;
-
-    def createPipes () -> (&void, &void) {
-        let mut writeP : &void = null;
-        let mut readP : &void = null;
-
-        let mut saAttr = SECURITY_ATTRIBUTES ();
-        
-        if (CreatePipe (alias &readP, alias &writeP, &saAttr, 0) != 1) {
-            __pragma!panic ();
-        }
-        
-        (readP, writeP)
-    }
-    
-}

@@ -1,3 +1,10 @@
+/**
+ * Elementary classes for thread synchronization. 
+ * @warning: Everything in this module is extremely low level. High level synchronization should be prefered, such as the `atomic` construction, or `ThreadPipe` for example.
+ * @Authors: Emile Cadorel
+ * @Licence: GPLv3
+ */
+
 mod std::concurrency::sync;
 
 import core::typeinfo;
@@ -12,7 +19,7 @@ import etc::runtime::thread;
  *     mutex.lock (); 
  *     // Do some atomic computation
  * } exit {
- *     mutex.unlock ();
+ *     mutex.unlock (); // Don't forget to unlock the mutex, or it will never be unlocked
  * }
  * ===========
  */
@@ -28,15 +35,15 @@ pub class @final Mutex {
     }
 
     /**
-     * Wait for the mutex to be free
-     * And then lock it
+     * Wait for the mutex to be free, and locks it.
      */
     pub def lock (self) {
         _yrt_thread_mutex_lock (&self._lock);
     }
     
     /**
-     * Unlock the mutex
+     * Unlock the mutex.
+     * @assume: it was locked by the current thread
      */
     pub def unlock (self) {
         _yrt_thread_mutex_unlock (&self._lock);            
@@ -45,26 +52,42 @@ pub class @final Mutex {
 }
 
 /**
- * Semaphore are used to perform synchronization between basic threads
+ * Semaphore are used to perform synchronization between basic threads. 
+ * Semaphore are close to Mutex, with the difference that a given number of thread can access the resource at the same time.
  */
 pub class @final Semaphore {
 
     let _sem : sem_t;
-    
-    pub self () with _sem = sem_t::init {
-        _yrt_thread_sem_init (&self._sem, 0, 0);
+
+    /**
+     * @params: 
+     *   - nb_resources: the number of available resources managed by the semaphore
+     */
+    pub self (nb_resources : i32 = 0i32) with _sem = sem_t::init {
+        _yrt_thread_sem_init (&self._sem, 0, nb_resources);
     }
-    
+
+    /**
+     * Post the semaphor to signal that a certain section of code is being exited, releasing a slot.
+     * @assume: self.wait () was called before the access
+     */
     pub def post (self) {
         _yrt_thread_sem_post (&self._sem);
     }
-    
+
+    /**
+     * Wait until there is a resource available in the semaphore.
+     * @assume: post will be called when the resource will be released
+     */
     pub def wait (self) {
         _yrt_thread_sem_wait (&self._sem);
     }
     
 }
-    
+
+/**
+ * Condition are used to put thread in wait mode, until a particular condition occurs.
+ */
 pub class @final Condition {
     
     let _cond : _yrt_thread_cond_t;
@@ -72,11 +95,19 @@ pub class @final Condition {
     pub self () with _cond = _yrt_thread_cond_t::init {
         _yrt_thread_cond_init (&self._cond, null);
     }
-    
+
+    /**
+     * Wait for the signal to be emited by another thread
+     * @params: 
+     *     - mutex: a locked mutex that will be associated to the condition
+     */
     pub def wait (self, mutex : &(Mutex)) {
         _yrt_thread_cond_wait (&self._cond, &mutex._lock);
     }
-    
+
+    /**
+     * Emit the signal 
+     */
     pub def signal (self) {
         _yrt_thread_cond_signal (&self._cond);
     }

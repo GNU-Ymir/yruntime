@@ -1,3 +1,21 @@
+/**
+ * This module implements the `SubProcess` class, that is used to spawn sub processes.
+ * @Authors: Emile Cadorel
+ * @Licence: GPLv3
+ * <hr>
+ * @example: 
+ * ===
+ * // Spawn a sub process that run the ls command in the directory /path/to/print
+ * with dmut proc = SubProcess::run ("ls"s8, ["-la"s8], cwd-> Path::new ("/path/to/print"s8)) {
+ *      // Wait the end of the proc
+ *      proc:.wait ();
+ * 
+ *      // Print the stdout of the subprocess
+ *      println (proc:.stdout ():.read ());
+ * }
+ * ===
+ */
+
 mod std::concurrency::process;
 
 import std::collection::vec;
@@ -7,11 +25,11 @@ import core::dispose;
 import core::typeinfo;
 import core::exception;
 import std::stream;
-import std::concurrency::pipe;
 import etc::c::stdio;
 import std::fs::path;
 import std::conv;
 import std::concurrency::thread;
+import etc::c::files;
 
 __version LINUX {
     
@@ -37,28 +55,51 @@ __version LINUX {
     extern (C) def free (a : &void);
     extern (C) def GC_is_disabled()-> i32;
 
+    /**
+     * SubProcess class running a command or a program in a given directory. 
+     * @info: `SubProcess` are disposable, so it is a good practice to put them in with blocks.
+     */
     pub class @final SubProcess {
 
+        // The command to run
         let cmd : [c8];
-        
+
+        // The list of argument passed to the command line
         let args : [[c8]];
 
+        // The path of the execution of the command
         let cwd : [c8];
-        
+
+        // The pid of the command
         let mut pid : u32 = 0u32;
 
+        // The input pipe of the command
         let dmut _stdin = IOPipe::new ();
+
+        // The output pipe of the command
         let dmut _stdout = IOPipe::new ();
+
+        // The error pipe of the command        
         let dmut _stderr = IOPipe::new ();
 
         /**
          * Run a process in parallel of this process execution
-         * 
+         * @params: 
+         *     - cmd: the command to run
+         *     - args: the arguments to pass to the command
+         *     - cwd: the path in which the command will be ran (Current Working Directory)
          */
         pub self run (cmd : [c8], args : [[c8]], cwd : &Path = Path::new (".")) with cmd = cmd, args = args, cwd = cwd.toStr () {
             self:.run ();
         }
 
+        /**
+         * Run a process in parralel of this process execution
+         * @params: 
+         *    - path: the path of the program to execute
+         *    - args: the argument to pass to the program
+         *    - cwd: the path in which the command will be ran (Current Working Directory)
+         */
         pub self run (path : &Path, args : [[c8]], cwd : &Path = Path::new (".")) with self (path.toStr (), args, cwd-> cwd) {}
         
         prv def run (mut self) {
@@ -126,25 +167,68 @@ __version LINUX {
             _yrt_exit (0);
         }
 
+        /**
+         * @returns: the input pipe of the subprocess
+         * @example: 
+         * ===
+         * with dmut prc = SubProcess::run ("tee"s8, ["out.txt"s8]) {
+         *     prc:.stdin ():.write ("Hello \n"s8);
+         *     // close the input pipe, so the sub process does not wait for further inputs
+         *     prc:.stdin ():.dispose (); 
+         * 
+         *     println (prc:.wait ()); // wait the end of the sub process
+         *     println (prc:.stdout ():.read ());  // print Hello \n
+         * }  
+         * ===
+         */
         pub def stdin (mut self) -> dmut &OPipe {
             alias self._stdin:.opipe ()
         }
-        
+
+        /**
+         * @returns: the output pipe of the process
+         * @example: 
+         * ===
+         * with dmut prc = SubProcess::run ("ls"s8, ["-la"s8]) {
+         *     println (prc:.wait ()); // wait the end of the sub process
+         *     println (prc:.stdout ():.read ());  // print the list of file and directory in the pwd
+         * }  
+         * ===
+         */
         pub def stdout (mut self)-> dmut &IPipe {
             alias (self._stdout:.ipipe ())
         }
 
+        /**
+         * @returns: the pipe connected to the error pipe of the process
+         * @example: 
+         * ===
+         * with dmut prc = SubProcess::run ("ls"s8, ["/root/"s8]) {
+         *     println (prc:.wait ()); // wait the end of the sub process
+         *     println (prc:.stderr ():.read ());  // ls: cannot open directory '/root/': Permission denied
+         * }  
+         * ===
+         */
         pub def stderr (mut self)-> dmut &IPipe  {
             alias (self._stderr:.ipipe ())
         }
 
+        /**
+         * @returns: true if the subprocess is finished
+         * @info: 
+         * this function return immediately
+         */
         pub def isFinished (self)-> bool {
             waitpid (self.pid, null, 1);
             if (kill (self.pid, 0) == -1) return true;
 
             return false;                
         }
-        
+
+        /**
+         * Wait for the end of the subprocess
+         * @returns: the return code of the subprocess
+         */
         pub def wait (mut self)-> i32 {
             let mut status = 0i32;
             self._stdin:.dispose ();
@@ -152,7 +236,7 @@ __version LINUX {
             return status;
         }
 
-        impl Disposable {
+        impl core::dispose::Disposable {
 
             pub over dispose (mut self) {
                 self._stdin:.opipe ():.dispose ();
@@ -160,6 +244,12 @@ __version LINUX {
                 self._stderr:.ipipe ():.dispose ();
             }
             
+        }
+
+        impl std::stream::Streamable {
+            pub over toStream (self, dmut stream : &StringStream) {
+                stream:.write (typeof (self)::typeid, "("s8, self.cmd, " "s8, self.args, ", cwd = "s8, self.cwd, ")"s8);
+            }
         }
         
     }
@@ -306,6 +396,328 @@ __version WINDOWS {
             
         }
         
+    }
+    
+}
+
+
+__version LINUX {
+
+    /**
+     * Single way pipe to write data to a IPipe (or another process)
+     */
+    prv class @final OPipe {
+
+
+        let mut _pipe : i32;
+
+        /**
+         * @params: 
+         *    - pipe: the file descriptor of the pipe
+         */
+        pub self (pipe : i32) with _pipe = pipe
+        {}
+
+        /**
+         * Write raw data to the pipe
+         * @params : 
+         *     - msg: the data to write in the pipe
+         */
+        pub def write (mut self, msg : [c8]) {
+            write (self._pipe, msg.ptr, msg.len);
+        }
+
+        /**
+         * @returns: the file descriptor of the pipe
+         */
+        pub def getHandle (self)-> i32 {
+            self._pipe
+        }
+
+        /**
+         * Set the pipe to non blocking meaning that from now on, we can write in the pipe without waiting the read on the other end
+         */
+        pub def setNonBlocking (mut self) {
+            let err_flags = fcntl(self._pipe, FileFlags::F_GETFL, 0u32);
+            fcntl(self._pipe, FileFlags::F_SETFL, err_flags | O_NONBLOCK);
+        }    
+
+        impl core::dispose::Disposable {
+
+            pub over dispose (mut self) {     
+                if (self._pipe != 0) {
+                    close (self._pipe);
+                    self._pipe = 0;
+                }
+            }
+            
+        }
+        
+        __dtor (mut self) {
+            self:.dispose ();
+        }
+    }
+
+
+    /**
+     * Single way pipe to read from a OPipe, or another process
+     */
+    prv class @final IPipe {
+
+        let mut _pipe : i32;
+        
+        pub self (pipe : i32) with _pipe = pipe
+        {}
+        
+        /**
+         * Read raw data from the pipe
+         * @returns: all the data that were in the pipe
+         */
+        pub def read (mut self) -> [c8] {
+            let dmut ret = Vec!(c8)::new ();
+            loop {
+                let mut c = '\u{0}'c8;
+                let n = read (self._pipe, alias &c, sizeof c8);
+                if (n != -1 && n != 0) {
+                    ret:.push (c);
+                } else break {}
+            }
+            ret:.fit ();
+            return ret [];
+        }
+
+        /**
+         * Read raw data from the pipe
+         * @params:
+         *    - len: the number of bytes to read 
+         * @returns: some of the data that were in the pipe
+         */
+        pub def readSome (mut self, len : u32 = 1u32)-> [c8] {
+            let dmut buf = ['\u{0}'c8 ; new len];
+            let n = read (self._pipe, alias buf.ptr, (sizeof c8 * buf.len));
+            if (n != 0is && n != -1) {
+                return buf[0is .. n];
+            }
+
+            return [];
+        }
+        
+        /**
+         * @returns: the file handle of the pipe
+         */
+        pub def getHandle (self)-> i32 {
+            self._pipe
+        }
+
+        /**
+         * Change the behaviour of the pipe. From now on, the read function will return immediately even if nothing was read
+         */
+        pub def setNonBlocking (mut self) {
+            let err_flags = fcntl(self._pipe, FileFlags::F_GETFL, 0u32);
+            fcntl(self._pipe, FileFlags::F_SETFL, err_flags | O_NONBLOCK);
+        }
+
+        
+        impl core::dispose::Disposable {
+            pub over dispose (mut self) {
+                if (self._pipe != 0) {
+                    close (self._pipe);
+                    self._pipe = 0;
+                }
+            }
+        }
+        
+        __dtor (mut self) {
+            self:.dispose ();
+        }
+        
+    }    
+
+    prv class @final IOPipe {
+        let dmut _read : &IPipe = IPipe::new (0);
+        
+        let dmut _write : &OPipe = OPipe::new (0);
+        
+        pub self () with self (createPipes ()) {}
+        
+        pub self (pipes : [i32 ; 2u32])
+            with _read = IPipe::new (pipes [0]), _write = OPipe::new (pipes [1])
+        {}
+
+        pub def opipe (mut self)-> dmut &OPipe {
+            alias self._write
+        }
+
+        pub def ipipe (mut self)-> dmut &IPipe {
+            alias self._read
+        }
+
+        impl Disposable {
+            pub over dispose (mut self) {
+                self._read:.dispose ();
+                self._write:.dispose ();
+            }
+        }        
+    }
+
+    prv def createPipes ()-> [i32; 2u32] {
+        let dmut ret = [0i32; 2u32];
+        etc::c::files::pipe (alias (ret).ptr);
+        return ret;
+    }
+
+}
+
+
+__version WINDOWS {
+
+    prv class OPipe {
+        let mut _pipe : &void;
+
+        pub self (pipe : &void) with _pipe = pipe
+        {}
+        
+        pub def write (mut self, msg : [c8]) {
+            WriteFile (self._pipe, msg.ptr, cast!i32 (msg.len), null, null);
+        }
+
+        pub def setNonBlocking (self) {
+            if (SetHandleInformation (self._pipe, 1, 0) != 1) {
+                __pragma!panic ();
+            }
+        }
+
+        pub def getHandle (mut self) -> &void {
+            self._pipe
+        }
+        
+        impl Disposable {
+
+            pub over dispose (mut self) {
+                if (self._pipe !is null) {
+                    CloseHandle (self._pipe);
+                    self._pipe = null;
+                }
+            }
+            
+        }
+        
+        __dtor (mut self) {
+            self:.dispose ();
+        }
+    }
+
+
+    prv class IPipe {
+
+        let mut _pipe : &void;
+
+        pub self (pipe : &void) with _pipe = pipe
+        {}
+
+        
+        pub def setNonBlocking (self) {
+            if (SetHandleInformation (self._pipe, 1, 0) != 1) {
+                __pragma!panic ();
+            }
+        }
+
+        pub def getHandle (mut self) -> &void {
+            self._pipe
+        }
+        
+        pub def read (mut self)-> [c8] {
+            let dmut res = Vec!{c8}::new ();
+            loop {
+                let mut c = '\u{0}'c8;
+
+                let mut n = 0i32;
+                ReadFile (self._pipe, alias &c, cast!i32 (sizeof c8), alias &n, null);
+                if (n != -1 && n != 0) {
+                    res:.push (c);
+                } else break {}
+            }
+
+            res:.fit ();
+            return res[];
+        }
+
+        pub def readSome (mut self, len : u32 = 1u32)-> [c8] {
+            let dmut buf = ['\u{0}'c8 ; new len];
+            let mut n = 0i32;
+            ReadFile (self._pipe, alias buf.ptr, cast!i32 (sizeof c8 * buf.len), alias &n, null);
+
+            if (n != -1 && n != 0) {
+                return buf[0 .. n];
+            }
+
+            return [];
+        }        
+
+        impl Disposable {
+            pub over dispose (mut self) {
+                if (self._pipe !is null) {
+                    CloseHandle (self._pipe);
+                    self._pipe = null;
+                }
+            }
+        }
+
+        __dtor (mut self) {
+            self:.dispose ();
+        }    
+    }
+
+
+    prv class IOPipe {
+
+        let dmut _ipipe : &IPipe;
+
+        let dmut _opipe : &OPipe;
+
+        pub self () with self (createPipes ()) {}
+
+        pub self (pipes : (&void, &void)) with _ipipe = IPipe::new (pipes.0), _opipe = OPipe::new (pipes.1)
+        {}
+
+
+        pub def opipe (mut self)-> dmut &OPipe {
+            alias self._opipe
+        }
+
+        pub def ipipe (mut self)-> dmut &IPipe {
+            alias self._ipipe
+        }
+
+        impl Disposable {
+            pub over dispose (mut self) {
+                self._ipipe:.dispose ();
+                self._opipe:.dispose ();
+            }
+        }
+        
+    }
+
+    struct
+    | nLength : u64 = cast!u64 (sizeof (SECURITY_ATTRIBUTES))
+    | lpSecurityDescriptor : &void = null
+    | bInheritHandle : i32 = 1
+     -> SECURITY_ATTRIBUTES;
+    
+    extern (C) def CreatePipe (mut readP : &(mut &void), mut writeP : &(mut &void), saAttr : &SECURITY_ATTRIBUTES, ig : i32)-> i32;
+    extern (C) def SetHandleInformation (pipe : &void, flag : i32, ig : i32)-> i32;
+
+    def createPipes () -> (&void, &void) {
+        let mut writeP : &void = null;
+        let mut readP : &void = null;
+
+        let mut saAttr = SECURITY_ATTRIBUTES ();
+        
+        if (CreatePipe (alias &readP, alias &writeP, &saAttr, 0) != 1) {
+            __pragma!panic ();
+        }
+        
+        (readP, writeP)
     }
     
 }

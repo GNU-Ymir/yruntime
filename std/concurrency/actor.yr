@@ -1,5 +1,69 @@
 /**
- * @warning: work in progress
+ * This module implement a simple system for asynchronous communication between actors.
+ * @Authors: Emile Cadorel
+ * @Licence: GPLv3
+ * <hr>
+ *
+ * @Warranty: 
+ * An actor can only treat one message at a time, meaning that an actor is thread safe.
+ * @warning:
+ * There is no warranty on the order of the messages treated by an actor. Actor system uses a task pool to manage the treatment of messages, so it has the same limitations as the <a href="./std_concurrency_task.html#TaskPool">std::concurrency::task::TaskPool</a>.
+ * @example:
+ * =================
+ * import std::box, std::concurrency::actor;
+ * import std::io;
+ * 
+ * /*
+ *  * An actor is a class that can receive messages 
+ *  */
+ * class MyActor over Actor {
+ *     let _i : i32;
+ * 
+ *     pub self (dmut sys : &ActorSystem, name : [c8], i : i32) 
+ *         with super (alias sys, name), _i = i
+ *     {
+ *         println ("New actor spawned : ", self._name, " with i = ", self._i);
+ *     }
+ *    
+ *     pub over receive (dmut self, obj : &Object) {
+ *           // The actor received a message, we ca now treat it
+ *           match (obj) { 
+ *               Box!{[c8]} (value-> str : _) => {
+ *                   println ("Received : ", str); // it was a [c8] encapsulated in a Box
+ *               }
+ *               _ : &PoisonPill => {
+ *                   self:.exit (); // kill the actor
+ *                   self._sys:.terminate (); // kill the actor system managing the actor
+ *               }
+ *           }
+ *     }
+ * }  
+ * 
+ * // Create an actor system that operate on the port 127.0.0.1:8000
+ * let dmut sys = ActorSystem::new (SockAddrV4::new (Ipv4::LOCALHOST, 8000u16));
+ * 
+ * // Create a new actor and get its reference
+ * let dmut fstActorRef = MyActor::new (alias sys, "fst"s8):.getRef (); 
+ * 
+ * // Reference to actor are used to communicate with them
+ * fstActorRef.send ("Hello !!"s8); // Send a message to the actor
+ *
+ * 
+ * // A reference to an actor can be acquired from the actor system
+ * let dmut scdRef = sys:.localActor ("fst"s8);
+ *
+ * // Actor system can also be used to acquire reference to remote actor systems
+ * // Assuming that there is an actor system at 192.168.122.98:8000 and it has an registered actor named "Remote"
+ * let dmut remoteActor = sys:.remoteActor ("Remote"s8, sockaddrv4 ("192.168.122.98:8000"));
+ * 
+ * // Remote actor may be on other processes / other machines, enabling simple communications between applications
+ * remoteActor:.send ("Hi remote !");
+ * 
+ * // Send a kill signal to the local actor
+ * scdRef:.send (PoisonPill::new ());
+ *
+ * sys:.join (); // this function return only if the actor system is terminated 
+ * =================
  */
 
 mod std::concurrency::actor;
@@ -13,8 +77,10 @@ import std::concurrency::mailbox;
 import std::concurrency::task;
 import std::concurrency::pipe;
 import std::concurrency::thread;
-import std::any, std::box;
-import std::net::_;
+
+pub import std::net::_;
+pub import std::box;
+
 import etc::c::socket;
 import std::collection::vec;
 import std::collection::map;
@@ -66,7 +132,6 @@ pub class @abstract Actor {
     // The actor system managing the actor
     let dmut _sys : &ActorSystem;
        
-
     /**
      * @params: 
      *    - sys: the actor system that will manage the actor
@@ -225,32 +290,6 @@ pub class ActorRef {
 
 /**
  * An actor system, the is used to manage the actors
- * @example: 
- * =================
- * class MyActor over Actor {
- *     let _i : i32;
- * 
- *     pub self (dmut sys : &ActorSystem, name : [c8], i : i32) 
- *         with super (alias sys, name), _i = i
- *     {
- *         println ("New actor spawned : ", self._name, " with i = ", self._i);
- *     }
- *    
- *     pub over receive (dmut self, _ : &ActorRef, obj : &Object) {
- *           match (obj) {
- *               Box!{[c8]} (value-> str : _) => {
- *                   println ("Received : ", str);
- *               }
- *           }
- *     }
- * }  
- * 
- * let dmut sys = ActorSystem::new (SockAddrV4::new (Ipv4::UNSPECIFIED, 8000u16));
- *
- * let dmut fstActorRef = MyActor::new (alias sys, "fst"s8).getRef (); 
- * fstActorRef.send ("Hello !!"s8);
- * sys:.join (); 
- * =================
  */
 pub class @final ActorSystem {
 
@@ -258,7 +297,7 @@ pub class @final ActorSystem {
     let dmut _listener : &TcpListener;
 
     // The list of connected stream to remote ActorSystems
-    let dmut _streams = Vec!{dmut &TcpStream}::new ();
+    let dmut _streams = HashMap!{&SockAddress, dmut &TcpStream}::new ();
 
     // The stream to local actors
     let dmut _localStream = TcpStream::empty ();
@@ -315,18 +354,19 @@ pub class @final ActorSystem {
     }
     
     /**
-     * The port binded by the listener
+     * @returns: the port binded by the listener of the actor system
      */
     pub def getPort (self)-> u16 {
         self._port
     }
-    
-    
+        
     /**
      * Register a new actor in the system
      * This actor will now be used, and accessible from external code, and actors
      * @params: 
      *    - ac: the actor to register in the system
+     * @info: 
+     * This function is called by the constructor of an Actor, there is no need to call it by hand as it will do nothing    
      */
     pub def register (mut self, dmut ac : &Actor) {    
         atomic self {
@@ -338,7 +378,8 @@ pub class @final ActorSystem {
      * Remove an actor from the system
      * @params: 
      *    - name: the name of the actor to remove
-     * @info: does nothing if there is no actor named `name`
+     * @info:
+     * does nothing if there is no actor named `name`. This function is called by the method `exit` of an actor.
      */
     pub def remove (mut self, name : [c8]) {
         atomic self {
@@ -352,7 +393,7 @@ pub class @final ActorSystem {
      *    - name: the name of the local actor
      * @returns: an actor ref to send message to an actor declared in this local system
      * @throws: 
-     *   - &ActorError: if there is no actor named `name`
+     *   - &ActorError: if there is no actor named `name` managed by the local actor system
      */
     pub def localActor (mut self, name : [c8]) -> dmut &ActorRef
         throws &ActorError
@@ -384,23 +425,41 @@ pub class @final ActorSystem {
      * @params: 
      *    - name: the name of the actor
      *    - addr: the remote address of the remote actor system
-     * @returns: an actor ref to send message to an actor declared in this local system
+     * @returns: an actor ref to send message to an actor declared in a remote actor system
+     * @throws:
+     *    - &ActorError: 
+     *       + if the connection to the remote actor system failed
+     *       + if there is no actor named `name` in the remote system
      */
-    pub def remoteActor (self, name : [c8], addr : &SockAddress) -> dmut &ActorRef
+    pub def remoteActor (mut self, name : [c8], addr : &SockAddress) -> dmut &ActorRef
         throws &ActorError
     {
         import std::conv;
+        let dmut streamOpt = self._streams:.find (addr);
+        
+        let dmut stream = match ref streamOpt {
+            Ok (dmut str : _) => {
+                alias str
+            }
+            _ => {
+                let dmut stream = TcpStream::connect (addr);
+                alias stream
+            } catch {
+                _ => {
+                    throw ActorError::new ("Connection failed to remote system"s8 ~ std::conv::to![c8] (addr));
+                }
+            }              
+        };
         
         {
-            let dmut stream = TcpStream::connect (addr);
             stream:.rawSend (name.len);
             stream:.rawSend (name);
-
+            
             let mut exists = false;
             stream:.rawReceive (alias &exists);
             if (exists) {
-                    return ActorRef::new (name, alias stream);            
-            }
+                return ActorRef::new (name, alias stream);            
+            }                            
         } catch {
             _ => {
                 throw ActorError::new ("Connection failed to remote system"s8 ~ std::conv::to![c8] (addr));
@@ -411,8 +470,8 @@ pub class @final ActorSystem {
     }
 
     /**
-     * Close the actor system, and the actors running
-     * @warning: This functions waits for the end of the treatment of already submitted messages. If these treatments are infinite loops, this function will never return
+     * Close the actor system, and all the actors running.
+     * @warning: This functions waits for the end of the treatment of already submitted messages. If these treatments are infinite loops, this function will never return.
      */
     pub def terminate (mut self) {
         self._poisonPill:.rawSend (true)?;
@@ -426,8 +485,8 @@ pub class @final ActorSystem {
     }
     
     /**
-     * Wait for the actor system to finish.
-     * @warning: this will happen only if all registered actor are killed, and the system is terminated, otherwise this function will never return.
+     * Wait for the actor system to finish. 
+     * @warning: This function will never return if the method `terminate` is never called. 
      */
     pub def join (mut self)-> void {
         self._pool:.join ();
@@ -453,7 +512,7 @@ pub class @final ActorSystem {
         let dmut clients : [&TcpStream] = [alias pill];
 
         while self._isRunning {
-            if (poll (polls.ptr, polls.len, 5000u32) > 0) {                
+            if (poll (polls.ptr, polls.len, 5000u32) > 0) { // pollfd is usefull to                
                 let mut current_len = polls.len;
                 let mut closing = false;
                 for i in 0us .. current_len {

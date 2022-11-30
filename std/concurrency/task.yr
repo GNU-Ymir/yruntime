@@ -1,3 +1,40 @@
+/**
+ * This module implements the class TaskPool, that encapsulate a task queue and a set of worker thread to execute the tasks.
+ * The task queue is a FIFO queue. 
+ * @Authors: Emile Cadorel
+ * @Licence: GPLv3
+ * <hr>
+ * @example: 
+ * ===============
+ * import std::io; // for println
+ * import std::conv; // for to
+ * import std::concurrency::task;
+ * 
+ * def computePi (prec : i32)-> f64 {
+ *    let mut res = 0.0;
+ *    let n = prec.to!f64 ();
+ *    for i in 0 .. prec {
+ *        res += (4.0 / n) / ( 1.0 + (( to!f64 (i) - 0.5 ) * (1.0 / n)) * (( to!f64 (i) - 0.5 ) * (1.0 / n)));
+ *    }
+ *    res     
+ * }
+
+ * def main () {
+ *     let dmut pool = TaskPool::new (2u64); // Creating a task pool with at most two threads
+ *   
+ *     // Only two threads are spawned to perform 1_000_000 jobs
+ *     for _ in 0 .. 1_000_000 {
+ *         pool:.submit (move || => {
+ *             println (computePi (i32::max / 1000));
+ *         });
+ *     }
+ *
+ *     pool:.join ();    
+ *     // Does not need to empty the pool, the thread are exited if there is no job to do
+ * }
+ * ===============
+ * One can note the similarity between Task and Future. Indeed a Future is an advanced version of a task that can be waited and can return a value. 
+ */
 mod std::concurrency::task;
 
 import std::io;
@@ -9,39 +46,28 @@ import std::concurrency::thread;
 import std::concurrency::sync;
 import etc::c::sysinfo;
 import std::algorithm::comparison;
+import std::time::dur;
 
 import core::typeinfo;
 
+
+aka EXIT_THREAD_AFTER_LOST = 10us;
+
 /**
- * A task pool is a set of threads that are performing a list of given jobs
- * @example: 
- * ===============
- * 
- * let dmut pool = TaskPool::new (2); // Creating a task pool with at most two threads
- * 
- * // Only two threads are spawned to perform 1_000_000 jobs
- * for i in 0 .. 1_000_000 {
- *     pool:.submit (move || => {
- *          println ("Job : ", i);
- *     });
- * }
- * 
- * pool:.join () // Wait for the completion of all jobs in the task pool
- * // Does not need to empty the pool, the thread are exited if there is no job to do
- * ===============
+ * A task pool is a set of threads executing a list of tasks submitted through a task queue.
  * @warning: 
- *   - There is no guarantee on the order of execution of the jobs
- *   - There is no preemption of jobs, so if there is in a task pool infinite jobs, (at least as many as there is threads) they will block the execution of the following submissions
-*    - If jobs are to short (as the example above), there will be loss of efficiency due to spawning and killing many threads 
- *   - Task pools don't communicate, meaning that if you have two task pools spawning n threads, there can be n*2 threads spawned at a time
+ *   - There is no guarantee on the order of execution of the tasks, if they are submitted from different threads.
+ *   - There is no preemption of tasks, so if there is infinite tasks in the task queue, (at least as many as there are threads) they will block the execution of the following submissions.
+ *   - Task pools don't communicate, meaning that if you have two task pools spawning n threads, there can be n*2 threads spawned at a time. 
+ * @info: the number of thread running in the task queue may vary depending of the workload, it there is no need to spawn the number of asked thread, then they are not spawned. They may be spawned in the future to treat a pick of load, but the number of threads is always lower or equal to the maximum number specified when creating the `TaskPool`.
  */
 
 pub class @final TaskPool {
 
-    // The list of submitted jobs that are not completed yet
+    // The list of submitted tasks that are not completed yet
     let dmut _jobs = MailBox!{&Task}::new ();
 
-    // The maximum number of thread to spawn
+    // The maximum number of thread that can be spawned
     let _nbThreads : u64 = 0u64;
 
     // The threads that are currently running threads
@@ -61,12 +87,15 @@ pub class @final TaskPool {
 
     /**
      * Create an empty task pool
-     * @info: the number of thread in the pool is the number of cores available in the system - 1, or 1 if there is only one available core
+     * @info: the number of thread in the pool is the number of cores available in the system
      */
-    pub self () with _nbThreads = cast!u64 (std::algorithm::comparison::max (etc::c::sysinfo::_yrt_get_nprocs () - 1, 1)) {}
+    pub self () with _nbThreads = cast!u64 (etc::c::sysinfo::_yrt_get_nprocs ()) {}
     
     /**
-     * Submit a new job to execute in the task pool
+     * Submit a new task to execute in the task pool
+     * @params: 
+     *    - task: the task to execute
+     * @info: the task will be executed in the future when a thread is available.
      * @example: 
      * =============
      * class MyTask over Task {
@@ -94,28 +123,34 @@ pub class @final TaskPool {
         self:.removeExitedThreads ();
         let jobLen = cast!u64 (self._jobs.len ()) + 1u64;
         let max_th = self._nbThreads - cast!u64 (self._runningThreads.len ());
-        if (max_th > jobLen) {
-            self:.spawnThreads (jobLen, cast!u64 (self._runningThreads.len ()));
-        } else {
-            self:.spawnThreads (max_th, cast!u64 (self._runningThreads.len ()));
+        if (max_th != 0us) {
+            if (max_th > jobLen) {
+                self:.spawnThreads (jobLen, cast!u64 (self._runningThreads.len ()));
+            } else {
+                self:.spawnThreads (max_th, cast!u64 (self._runningThreads.len ()));
+            }
         }
     }
 
     /**
+     * Submit a new task to execute in the task pool.
+     * @params: 
+     *    - task: the task to submit
+     * @info: the task will be executed in the future when a thread is available.
      * ===
      * def foo () {
-     *     println ("Function pointer job");
+     *     println ("Function pointer task");
      * }
      * 
      * let dmut pool = TaskPool::new (2u64); // Two threads
      * for _ in 0 .. 100 {
      *     pool:.submit (|| => {
-     *           println ("Lambda function job");
+     *           println ("Lambda function task");
      *     });
      * }
      * 
      * for _ in 0 .. 100 {
-     *     pool:.submit (&foo); 
+     *     pool:.submit (&foo); // Function pointer from named function
      * }
      * pool:.join ();
      * ===
@@ -125,6 +160,10 @@ pub class @final TaskPool {
     }
 
     /**
+     * Submit a new task to execute in the task pool.
+     * @params: 
+     *    - task: the task to submit
+     * @info: the task will be executed in the future when a thread is available.
      * ===
      * class Foo {
      *    let mut i = 0;
@@ -132,7 +171,7 @@ pub class @final TaskPool {
      *    pub self () {}
      *    
      *    pub def foo (mut self) {
-     *        println ("Method job ", self.i);
+     *        println ("Method task ", self.i);
      *        self.i += 1;
      *    }
      * }
@@ -140,7 +179,7 @@ pub class @final TaskPool {
      * let dmut pool = TaskPool::new (2u64); // Two threads
      * for i in 0 .. 100 {
      *     pool:.submit (move || => {
-     *           println ("Closure function job : ", i);
+     *           println ("Closure function task : ", i);
      *     });
      * }
      * 
@@ -156,8 +195,9 @@ pub class @final TaskPool {
     }
 
     /**
-     * Wait the completion of all submitted jobs
-     * @warning: wait the end of the running jobs, if one of them is an infinite loop this function will never quit
+     * Wait the completion of all submitted tasks.
+     * @warning: wait the end of the running tasks, if one of them is an infinite loop this function will never quit
+     * @info: After this function the task queue is empty, but the task pool is still usable.
      * @example:
      * =============
      * let dmut pool = TaskPool::new (2u64);
@@ -173,16 +213,19 @@ pub class @final TaskPool {
         for _, th in self._runningThreads {
             th.join ()            
         }
+
+        self._runningThreads:.clear ();
     }
     
     __version LINUX {
         
         /**
-         * Remove all submitted jobs from the job queue
-         * @warning: wait the end of the already running jobs, if one of them is an infinite loop this function will never quit
+         * Remove all submitted tasks from the task queue
+         * @warning: wait the end of the already running tasks, if one of them is an infinite loop this function will never quit
          */
         pub def cancel (mut self)-> void {
-            self._jobs = MailBox!{&Task}::new (); // clear all the remaining jobs
+            self._jobs:.clear ();
+                        
             for _, th in self._runningThreads {
                 join (th);
             }
@@ -190,7 +233,8 @@ pub class @final TaskPool {
     }
 
     /**
-     * @returns: the number of spawnable threads in the task pool
+     * @returns: the number of spawnable threads in the task pool.
+     * @warning: this is not the number of running thread, but the maximum number of thread the task pool is allowed to spawn.
      * @example: 
      * ===============
      * let dmut pool = TaskPool::new (2u64);
@@ -207,17 +251,26 @@ pub class @final TaskPool {
      *    - nb: the number of thread to spawn
      *    - id: the id of the first thread  
      */
-    prv def spawnThreads (mut self, nb : u64, id : u64) {        
-        for i in 0u64 .. nb {
+    prv def spawnThreads (mut self, nb : u64, id : u64) {
+        for i in 0u64 .. nb {            
             let th = spawnNoPipe (move |th| => {
+                let mut nb_skips = 0us;
                 loop {
                     let msg = self._jobs:.receive ();                    
                     match msg {
                         Ok (x : &Task) => {
+                            nb_skips = 0us;
                             x.execute (i + id)
                         }
                         Err () => {
-                            break {}
+                            nb_skips += 1us;
+
+                            // Exit the thread if it failed to get a task for EXIT_THREAD_AFTER_LOST time
+                            if (nb_skips > EXIT_THREAD_AFTER_LOST) {
+                                break {}
+                            }
+                            
+                            sleep ((1u64).millis ());
                         }
                     }
                 }
@@ -230,7 +283,7 @@ pub class @final TaskPool {
     }    
 
     /**
-     * Remove all the threads that have exited because there were no job to execute
+     * Remove all the threads that have exited because there were no task to execute
      */
     prv def removeExitedThreads (mut self) {
         loop {
@@ -243,6 +296,7 @@ pub class @final TaskPool {
                             // join remove the thread from the known thread, this is necessary to avoid incapacity of creating new thread
                         }
                     }
+
                     self._runningThreads:.remove (x)
                 }
                 _ => {
@@ -255,8 +309,8 @@ pub class @final TaskPool {
 }
 
 /**
- * Ancestor of all class Task that can be launch in the task Pool
- * @info: Not really usefull for external use, and kind of too wordy, you may prefer submit jobs with function and closure 
+ * Ancestor of all class Task that can be launch in the task Pool.
+ * Task are really close to Future, but with less guarantees, so Future from `std::concurrency::future` should be preferred. 
  * @example: 
  * ===========
  * class MyTask over Task {
@@ -277,11 +331,11 @@ pub class @final TaskPool {
  * ===========
  */
 pub class @abstract Task {
-    // Does nothing
+
     prot self () {}
 
     /**
-     * Method called by a task pool thread
+     * Method called by a task pool thread when the task is executed
      */
     pub def execute (self, id : u64);
 

@@ -3,6 +3,16 @@
  * result of an asynchronous operation. A Future is a placeholder for
  * a value that may not exists yet.
  *
+ * @Authors: Emile Cadorel
+ * @Licence: GPLv3
+ * <hr>
+ * @info:
+ * The value of the future is computed asynchronusely using a TaskPool. If no task pool is specified, a global task pool is initialized when submitting the first future of the program.
+ * The number of thread in the global task pool is the number of cores available in the system minus 1, or 1 if there is only one core.
+ * The task pool can be initialized by hand before creating the future, cf. <a href="#setFutureTaskPool">std::concurrency::future::setFutureTaskPool</a>.
+ * @warning: 
+ * As specified future are executed by a task pool, so the limitations of the task pool are also relevant for future, cf <a href="./std_concurrency_task.html#TaskPool">std::concurrency::task::TaskPool</a>.
+
  * @example: 
  * =============
  * import std::io;
@@ -32,13 +42,6 @@
  *     assert (x.wait () == 42);
  * }
  * =============
- *
- * The value of the future is computed asynchronusely using a TaskPool. If no task pool is specified, a global task pool is initialized when asking for the first future of the program.
- * <br>
- * The number of thread in the global task pool is the number of cores available in the system minus 1, or 1 if there is only one core.
- * <br>
- * The task pool can be initialized by hand before creating the future, cf. <a href="#setFutureTaskPool">std::concurrency::future::setFutureTaskPool</a>.
- * 
  */
 
 mod std::concurrency::future;
@@ -52,7 +55,9 @@ import std::concurrency::sync;
 import std::io;
 
 /**
- * Create a future value, and submit it to the task pool for future execution
+ * Create a future value, and submit it to the task pool for future execution.
+ * @params: 
+ *   - func: the function to execute in the future
  * @example: 
  * ===========
  * let f = future (|| => {
@@ -71,7 +76,9 @@ pub def future {T} (func : fn ()-> T) -> &Future!T {
 }
 
 /**
- * Create a future value, and submit it to the task pool for future execution
+ * Create a future value, and submit it to the task pool for future execution.
+ * @params: 
+ *    - func: the delegate to execute in the future
  * @example: 
  * ===========
  * let i = 42;
@@ -91,7 +98,10 @@ pub def future {T} (func : dg ()-> T) -> &Future!T {
 }
 
 /**
- * Create a future value, and submit it to the task pool for future execution
+ * Create a future value, and submit it to the task pool for future execution.
+ * @params: 
+ *    - pool: the task pool to use for the submission and execution of the future
+ *    - func: the function to execute in the future
  * @example: 
  * ===========
  * let dmut pool = TaskPool::new (1u64);
@@ -110,7 +120,10 @@ pub def future {T} (dmut pool : &TaskPool, func : fn ()-> T) -> &Future!T {
 }
 
 /**
- * Create a future value, and submit it to the task pool for future execution
+ * Create a future value, and submit it to the task pool for future execution.
+ * @params: 
+ *    - pool: the task pool to use for the submission and execution of the future
+ *    - func: the delegate to execute in the future
  * @example: 
  * ===========
  * let i = 42;
@@ -129,7 +142,10 @@ pub def future {T} (dmut pool : &TaskPool, func : dg ()-> T) -> &Future!T {
 }
 
 /**
- * Set the task pool that will be used to compute the futures
+ * Set the task pool that will be used to compute the futures.
+ * A future submitted after the change of the task pool will be executed by this new task pool.
+ * @warning: 
+ * Future submitted before the change of task pool will be executed by the old task pool.
  * @example: 
  * ===
  * import std::concurrency::task; 
@@ -267,7 +283,7 @@ pub class @abstract Future {T} {
 
     /**
      * Execute the future in the current thread
-     * @info: internal function
+     * @info: internal function, that should be called by a TaskPool only
      */
     pub def execute (mut self);
     

@@ -1,10 +1,34 @@
 /**
- * Module implementing a continious growable array type.
+ * Module implementing a growable array type, stored in continuous memory.
  * <br>
  * Publically import mutable version of the vec from `std::collection::mutable::vec`.
  * <br>
  * @Authors: Emile Cadorel
  * @Licence: GPLv3
+ * <hr>
+ * @example:
+ * ===
+ * import std::collection::vec;
+ * 
+ * let dmut vec = Vec!{i32}::new ();
+ * vec:.push (1);
+ * vec:.push (2);
+ *
+ * assert (vec.len () == 2us);
+ * assert (vec[0] == 1);
+ * 
+ * vec[0] = 42;
+ * assert (vec[0] == 42);
+ * 
+ * match vec:.pop ()? {
+ *     Ok (2) => {}
+ *     _ => { assert (false); }
+ * }
+ * 
+ * for i, j in vec {
+ *     println ("value : ", i, ", index : ", j); 
+ * }
+ * ===
  */
 
 mod std::collection::vec;
@@ -15,7 +39,7 @@ import core::array, core::object;
 
 import std::collection::seq;
 import std::io, std::stream;
-import std::hash;
+import std::hash, std::traits;
 
 pub import std::collection::mutable::vec;
 
@@ -32,23 +56,32 @@ prv enum : usize
  * @example: 
  * ==========
  * let x = vec#[1, 2, 3];
- * {
- *    assert (x[] == [1, 2, 3]);
- * } catch {
- *   _: &AssertError => {}
- * }
+ * assert (x == [1, 2, 3]);
  * 
+ * // It can also be used to initialized a Vec with a given value
+ * let z = vec#[1 ; 4us];
+ * assert (z == [1, 1, 1, 1]);
  * ==========
  */
 pub macro vec {
 
     pub self (fst=__expr rest=("," val=__expr)*) skips (" " | "\n" | "\r" | "\t") {        
-        let dmut z = Vec!(typeof (#(fst)))::new ();
+        let dmut z = Vec!{typeof (#(fst))}::new ();
         z:.reserve ((#(rest::len)) + 1us);
         z:.push (#(fst));
         #(for i in rest) {
             z:.push (#(i::val))
         }
+        alias z
+    }
+
+    pub self (fst=__expr ";" len=__expr) skips (" " | "\n" | "\r" | "\t") {
+        let dmut z = Vec!{typeof (#(fst))}::new ();
+        z:.reserve (cast!usize (#(len)));
+        for _ in 0us .. cast!usize (#(len)) {
+            z:.push (#(fst));
+        }
+        
         alias z
     }
     
@@ -62,12 +95,28 @@ pub macro vec {
  *    - T: the type of the values stored in the vector
  * @example: 
  * ===========================
- * let dmut x = Vec!(i32)::new ();
+ * let dmut x = Vec!{i32}::new ();
  * x:.push (1);
  * x:.push (2);
  * x:.push (3);
  * 
  * assert (x == [1, 2, 3]);
+ * 
+ * // Vec is streamable
+ * println (x);
+ * 
+ * 
+ * // it is copiable
+ * let dmut z = dcopy x;
+ * z:.push (4);
+ * assert (x == [1, 2, 3] && z == [1, 2, 3, 4]);
+ * 
+ * // It is hashable 
+ * import std::hash;
+ * assert (hash (x) != hash (z));
+ * 
+ * // and it is sequence
+ * assert (x.len () == 3us && x[0us] == 1);
  * ===========================
  */
 pub class @final Vec {T} {
@@ -82,28 +131,27 @@ pub class @final Vec {T} {
     
     /**
      * Create an empty vector
-     * The vector does not allocate until push
+     * The vector does not allocate until the first push.
      * @example: 
      * =================
-     * let x = Vec!(i32)::new ();
+     * let x = Vec!{i32}::new ();
      * 
-     * assert (x.capacity () == 0);
+     * assert (x.capacity () == 0us);
      * =================
      */
     pub self () {}
 
     /**
-     * Append an element at the end of the vector
+     * Append an element at the end of the vector.
      * @params: 
      *    - val: the element to append
      * @example: 
      * ===============
-     * let dmut x = Vec!(i32)::new ();
+     * let dmut x = Vec!{i32}::new ();
      * x:.push (1);
      * x:.push (1);
-     * 
      * ===============
-     * @complexity: O (n), with n = self._len
+     * @complexity: O (n), with n = self._len when reallocation is necessary, but O(1) in average when the capacity of the vector is big enough.
      */
     pub def push (mut self, val : T) -> void {
         if (self._data.len == self._len) {
@@ -115,12 +163,13 @@ pub class @final Vec {T} {
     }
 
     /**
-     * Remove the last element of the vector, and returns it
+     * Remove the last element of the vector, and returns it.
+     * @returns: the last element of the vector
      * @throws: 
      *    - OutOfArray: if the vector is empty
      * @example: 
      * ======================
-     * let dmut x = Vec!(i32)::new ();
+     * let dmut x = Vec!{i32}::new ();
      * 
      * x:.push (1);
      * {
@@ -131,7 +180,7 @@ pub class @final Vec {T} {
      *    } 
      * } 
      * ======================
-     * @complexity: O (n), with n = self._len
+     * @complexity: O (n), with n = self._len when reallocation is necessary, but O(1) in average when the vector does not need fit to avoid memory waste.
      */
     pub def pop (mut self) -> T
         throws &OutOfArray
@@ -148,10 +197,10 @@ pub class @final Vec {T} {
     }
 
     /**
-     * Remove the last element of the vector, and returns it
+     * Remove the `nb` last elements of the vector.
      * @example: 
      * ======================
-     * let dmut x = Vec!(i32)::new ();
+     * let dmut x = Vec!{i32}::new ();
      * 
      * for i in 0 .. 100 {
      *     x:.push (1);
@@ -160,7 +209,7 @@ pub class @final Vec {T} {
      * x:.pop (10u64); 
      * assert (x.len () == 90us);
      * ======================
-     * @complexity: O (n), with n = self._len
+     * @complexity: O (n), with n = self._len when reallocation is necessary, but O(1) in average when the vector does not need fit to avoid memory waste.
      */
     pub def pop (mut self, nb : u64) 
     {
@@ -172,18 +221,18 @@ pub class @final Vec {T} {
     }
 
     /**
-     * Remove the element at the i_em position
+     * Remove the element at the i_em position.
      * @example: 
      * ======================
-     * let dmut x = Vec!(i32)::new ();
+     * let dmut x = Vec!{i32}::new ();
      * 
      * for i in 0 .. 5 {
      *     x:.push (i);
      * }
      * x:.remove (2u64); 
-     * assert (x[] == [0, 1, 3, 4]);
+     * assert (x == [0, 1, 3, 4]);
      * ======================
-     * @complexity: O (n), with n = self._len
+     * @complexity: O (n), with n = self._len, but O (n - i) in average, as shifting is necessary for every elements after `i`.
      */
     pub def remove (mut self, i : u64)
     {
@@ -197,14 +246,20 @@ pub class @final Vec {T} {
     }    
     
     /**
-     * Change the capacity of the vector to the number of element it stores
+     * Change the capacity of the vector to exactly the number of elements stored in the vector.
      * @example: 
      * ==============
-     * let dmut x = Vec!(i32)::new ();
-     * for i in 0 ... 4 
+     * let dmut x = Vec!{i32}::new ();
+     * for i in 0 ... 4 {
      *     x:.push (i);
+     * }
+     * assert (x == [0, 1, 2, 3, 4]);
+     * 
+     * // Capacity can be higher than the length, to prepare the vector for future insertions
      * println (x.capacity ()); // 10
+     * 
      * x:.fit ();
+     * 
      * assert (x.capacity () == 5us); 
      * assert (x == [0, 1, 2, 3, 4]);
      * ==============
@@ -217,19 +272,19 @@ pub class @final Vec {T} {
     }
 
     /**
-     * Pre allocate some memory space for the vector
-     * Does nothing if the capacity is already higher than the requested size
+     * Pre allocate some memory space for the vector.
+     * Does nothing if the capacity is already higher than the requested size.
      * @example: 
      * =============
-     * let dmut x = Vec!(i32)::new ();
-     * let dmut y = Vec!(i32)::new ();
-     * x:.reserve (1000);
+     * let dmut x = Vec!{i32}::new ();
+     * let dmut y = Vec!{i32}::new ();
+     * x:.reserve (1000us);
      * let mut old_cap_x = x.capacity ();
      * let mut old_cap_y = y.capacity ();
      * for i in 0 .. 1000 {
      *    x:.push (i);
      *    y:.push (i);
-     *    if (old_cap != x.capacity ())  {
+     *    if (old_cap != x.capacity ())  { // will never be true in this loop
      *       println ("X grew");
      *       old_cap_x = x.capacity ();
      *    } 
@@ -248,20 +303,21 @@ pub class @final Vec {T} {
         core::duplication::memCopy!T (self._data, alias aux);
         self._data = alias aux;
     }
-
+    
     /**
      * Remove all element inside the array
      * @example: 
      * =============
-     * let dmut x = Vec!(i32)::new ();
+     * let dmut x = Vec!{i32}::new ();
      * for i in 0 .. 1_000 {
      *     x:.push (i);
      * }
      * 
      * x:.clear ();
      * assert (x == []);
-     * assert (x.capacity () == 0);
+     * assert (x.capacity () == 0us);
      * =============
+     * @Complexity: O (1)
      */
     pub def clear (mut self) {
         self._len = 0us;
@@ -275,12 +331,12 @@ pub class @final Vec {T} {
     cte if ((__pragma!operator ("==", T, T))) {
 
         /**
-         * Compare two vectors of same type
+         * Compare two vectors of same type.
          * @example: 
          * ============
-         * let x = Vec!(i32)::new ();
-         * let y = Vec!(i32)::new ();
-         * let z = Vec!(i32)::new ();
+         * let x = Vec!{i32}::new ();
+         * let y = Vec!{i32}::new ();
+         * let z = Vec!{i32}::new ();
          * x:.push (12);
          * y:.push (12);
          * z:.push (42);
@@ -291,8 +347,9 @@ pub class @final Vec {T} {
          *    _: &AssertError => {}
          * }
          * ============
+         * @complexity: O (self.len ())
          */
-        pub def opEquals (self, o : &Vec!(T)) -> bool {
+        pub def opEquals (self, o : &Vec!{T}) -> bool {
             if (self._len != o._data.len) return false;
             for i in 0us .. self._len {
                 if (self._data [i] != o._data [i]) return false;
@@ -304,7 +361,7 @@ pub class @final Vec {T} {
          * Compare a vector and an array of same inner type
          * @example: 
          * ============
-         * let x = Vec!(i32)::new ();
+         * let x = Vec!{i32}::new ();
          * for i in 0 .. 3 
          *     x:.push (i);
          * {
@@ -313,6 +370,7 @@ pub class @final Vec {T} {
          *    _: &AssertError => {}
          * }
          * ============
+         * @complexity: O (self.len ())
          */
         pub def opEquals (self, o : [T]) -> bool {
             if (self._len != o.len) return false;
@@ -328,27 +386,29 @@ pub class @final Vec {T} {
      * Get the slice content of the vec 
      * @example: 
      * ==========
-     * let dmut x = Vec!(i32)::new ();
+     * let dmut x = Vec!{i32}::new ();
      * for i in 0 .. 3 {
      *     x:.push (i);
      * }
-     * assert (x [] == [0, 1, 2]);
+     * 
+     * let slc = x[]; // Create a slice containing all the values of the vector
+     * assert (slc == [0, 1, 2]);
      * ==========
+     * @complexity: O (1)
      */
     pub def opIndex (self) -> [T] {
         self._data [0us .. self._len]
-    }
-    
+    }    
 
     /**
-     * Change the value in the vec at a given index
+     * Change the value in the vec at a given index.
      * @params:
      *    - i: the index
     * @throws: 
      *   - &OutOfArray: if the index is not inside the vector
      * @example: 
      * ===========
-     * let dmut x = Vec!(i32)::new ();
+     * let dmut x = Vec!{i32}::new ();
      * x:.push (12);
      * {
      *    (alias x)[0] = 78;
@@ -357,27 +417,61 @@ pub class @final Vec {T} {
      *   _: &OutOfArray => {}
      *   _: &AssertError => {}
      * }
-     *
      * ===========
+     * @complexity: O (1)
      */
-    pub def opIndexAssign (mut self, i : usize, val : T)
+    pub def if (isIntegral!{I} ()) opIndexAssign {I} (mut self, i : I, val : T)
         throws &OutOfArray
     {
-        if (i < self._len) {
+        cte if (isSigned!{I} ()) {
+            if (cast!isize (i) < 0is) throw OutOfArray::new ();
+        }
+        
+        if (cast!usize (i) < self._len) {
             self._data [i] = val;
+        } else throw OutOfArray::new ();
+    }
+
+    /**
+     * Access value in the vec by index
+     * @params: 
+     *    - i: the index
+     * @throws: 
+     *   - &OutOfArray: if the index is not in the vector
+     * @example : 
+     * ================
+     * let dmut x = Vec!{i32}::new ();
+     * x:.push (12);
+     * {
+     *     assert (x [0] == 12);
+     * } catch {
+     *     _: &OutOfArray => {}
+     *     _: &AssertError => {}
+     * }
+     * ================
+     * @complexity: O (1)
+     */
+    pub def if (isIntegral!{I} ()) opIndex {I} (self, i : I)-> T
+        throws &OutOfArray
+    {
+        cte if (isSigned!{I} ()) {
+            if (cast!isize (i) < 0is) throw OutOfArray::new ();
+        }
+        
+        if (cast!usize (i) < self._len) {
+            return self._data [i];
         } else throw OutOfArray::new ();
     }
     
     /**
-     * @return: the number of element the vector can store without reallocation
+     * @return: the number of element the vector can store without reallocation.
      */
     pub def capacity (self) -> usize {
         self._data.len
     }
 
-
     /**
-     * @returns: an iterator to the beginning of the vector
+     * @returns: an iterator to the beginning of the vector.
      * @example: 
      * ==========
      * let x = vec#[1, 2, 3];
@@ -391,7 +485,7 @@ pub class @final Vec {T} {
     }
 
     /**
-     * @returns: an iterator to the end of the vector
+     * @returns: an iterator to the end of the vector.
      * @example: 
      * ==========
      * let x = vec#[1, 2, 3];
@@ -404,7 +498,7 @@ pub class @final Vec {T} {
         return VecIterator::new (self._len, self._len, self._data);
     }
 
-    impl std::collection::seq::Seq!(T) {
+    impl std::collection::seq::Seq!{T} {
 
         /**
          * @returns: the number of element inside the vector
@@ -422,10 +516,10 @@ pub class @final Vec {T} {
          * @complexity: O (1)
          * @example : 
          * ================
-         * let dmut x = Vec!(i32)::new ();
+         * let dmut x = Vec!{i32}::new ();
          * x:.push (12);
          * {
-         *     assert (x [0] == 12);
+         *     assert (x [0us] == 12);
          * } catch {
          *     _: &OutOfArray => {}
          *     _: &AssertError => {}
@@ -522,6 +616,7 @@ pub class @final Vec {T} {
  *     assert (x [index] == val);
  * } catch {
  *    _ : &OutOfArray => { } // Impossible
+ *    _ : &AssertError => { } // neither this is
  * }
  * ============
  */
@@ -546,33 +641,29 @@ pub class @final VecIterator {T} {
     {}
 
     /**
-     * Compare two iterators
-     * Iterators are equals if they points to the same index
+     * Compare two iterators.
+     * Iterators are equals if they points to the same index.
      */
     pub def opEquals (self, o : &VecIterator!T) -> bool {
         self._index == o._index 
     }
 
     /**
-     * Move the iterator to the next element in the vector
+     * Move the iterator to the next element in the vector.
      */
     pub def next (mut self) {
         self._index += 1us;
     }
 
     /**
-     * @returns: 
-     * =======
-     * the value pointed by the iterator
-     * None, if the iterator points to nothing
-     * =======
+     * @returns: the value pointed by the iterator
      */
     pub def get {0} (self) -> T {
         __pragma!trusted ({ self._data [self._index] })
     }
     
     /**
-     * @returns: the index in the vector, to which the iterator is pointing
+     * @returns: the index in the vector, to which the iterator is pointing.
      */
     pub def get {1} (self) -> usize {
         self._index
