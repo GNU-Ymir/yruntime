@@ -1,25 +1,33 @@
-mod std::config;
+/**
+ * This module defines the types of config. `Config` is an abstract class that defines some standard access methods, such that it is easier to traverse a configuration tree without conversion. Sub types do not necessarily override the access methods, thus an `OutOfArray` execption is thrown if we try to access them using `opIndex`.
+ * @warning: if `Config` data may seem convinient to create data collections that can store anything, they should be used only when dealing with configuration file and serialization. They don't aim to be general purpose types, hence the collections from the module <a href="./std_collection__.html">std::collection</a> should be preferred.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+mod std::config::data;
 
 import core::object, core::typeinfo, core::exception;
 import core::array;
 import core::dispose;
 
-import std::io, std::stream;
+import std::io, std::stream, std::conv;
 import std::collection::vec;
 import std::collection::map;
 
-
-pub import std::config::conv;
-pub import std::config::error;
-
 /**
- * A configuration file is composed of nodes
- * Each node contains a different type of information
+ * A configuration file is a tree composed of nodes.
+ * Each node contains a different type of information. Every node is an heir of the class `Config`. 
  */
 pub class @abstract Config {
 
     prot self () {}
 
+    /**
+     * Access a sub config at index `i`. 
+     * @throws:
+     *    - &OutOfArray: if the sub type does not override the function because it has no meaning, or the index `i` is just out of the array.
+     */
     pub def opIndex (self, i : i32) -> &Config
         throws &OutOfArray
     {
@@ -30,46 +38,80 @@ pub class @abstract Config {
         }
     }
 
-    pub def opIndex (self, _ : usize)-> &Config
+    /**
+     * Access a sub config at index `i`. 
+     * @throws:
+     *    - &OutOfArray: if the sub type does not override the function because it has no meaning, or the index `i` is just out of the array.
+     */
+    pub def opIndex (self, i : usize)-> &Config
         throws &OutOfArray
     {
-        throw OutOfArray::new ();
-    }
-    
-    pub def opIndex (self, _ : [c32])-> &Config
-        throws &OutOfArray
-    {
-        throw OutOfArray::new ();
-    }
-
-    pub def opIndexAssign (mut self, _ : usize, _ : &Config)-> void
-        throws &OutOfArray
-    {
-        throw OutOfArray::new ();
-    }
-    
-    pub def opIndexAssign (mut self, _ : [c32], _ : &Config)-> void
-        throws &OutOfArray
-    {
+        i;
         throw OutOfArray::new ();
     }
 
-    pub def opContains (self, _ : [c32])-> bool {
+    /**
+     * Access a sub config using a string key.
+     * @throws:
+     *    - &OutOfArray: if the sub type does not override the function because it has no meaning, or the key `key` does not exist.
+     */
+    pub def opIndex (self, key : [c32])-> &Config
+        throws &OutOfArray
+    {
+        key;
+        throw OutOfArray::new ();
+    }
+
+    /**
+     * Replace the value at index `i` by the value `c`.
+     * @throws:
+     *    - &OutOfArray: if the sub type does not override the function because it has no meaning, or the index `i` is just out of the array.
+     */
+    pub def opIndexAssign (mut self, i : usize, c : &Config)-> void
+        throws &OutOfArray
+    {
+        i;
+        c;
+        throw OutOfArray::new ();
+    }
+
+    /**
+     * Replace the value associated to the key `key` by the value `c`
+     * @throws:
+     *    - &OutOfArray: if the sub type does not override the function because it has no meaning.
+     */
+    pub def opIndexAssign (mut self, key : [c32], c : &Config)-> void
+        throws &OutOfArray
+    {
+        key;
+        c;
+        throw OutOfArray::new ();
+    }
+
+    /**
+     * @returns: true if the config contains an element associated to the key `key`, false otherwise or if it has no meaning.
+     */
+    pub def opContains (self, key : [c32])-> bool {
+        key;
         false
     }
     
-    impl Streamable;
+    impl std::stream::Streamable;
     
 }
 
 /**
- * An array is a list of nodes
- * It has the same properties as a Vec!(&Config)
+ * An array is a list of `Config`.
  * @example: 
  * ===============
  * let dmut array = Array::new ();
  * array:.push (Str::new ("foo"));
  * array:.push (Int::new (42));
+ * 
+ * // Arrays are iterable
+ * for v, index in array {
+ *     println ("At index ", index, " the value is ", v);
+ * }
  * ===============
  */
 pub class @final Array over Config {
@@ -93,7 +135,7 @@ pub class @final Array over Config {
 
 
     /**
-     * Add a node at the end of the Array
+     * Add a node at the end of the Array.
      * @example: 
      * ==============
      * let dmut array = Array::new ();
@@ -184,11 +226,11 @@ pub class @final Array over Config {
      * ===========
      */
     pub def opDollar (self) -> usize {
-        self._content.len ()
+        self._content.opDollar ()
     }
 
     /**
-     * @returns: the number of element contained in the array
+     * @returns: the number of element contained in the array.
      * @example: 
      * ==================
      * let i : &Config = Int::new (12);
@@ -202,7 +244,7 @@ pub class @final Array over Config {
     }
 
     /**
-     * Used to iterate over the array, (similar iteration as Vec!(&Config)).
+     * @returns: a iterator pointing at the beginning of the Array.
      * @example: 
      * =============
      * let a : &Config = Int::new (12);
@@ -213,15 +255,14 @@ pub class @final Array over Config {
      * }
      * =============
      */
-    pub def begin (self) -> dmut &VecIterator!(&Config) {
+    pub def begin (self) -> dmut &VecIterator!{&Config} {
         alias self._content.begin ()
     }
 
     /**
-     * Used to iterate over the array, (similar iteration as Vec!(&Config))
-     * @cf: begin
+     * @returns: a iterator pointing at the end of the Array.
      */
-    pub def end (self) -> &VecIterator!(&Config) {
+    pub def end (self) -> &VecIterator!{&Config} {
         self._content.end ()
     }
 
@@ -242,14 +283,18 @@ pub class @final Array over Config {
 }
 
 /**
- * A dictionnary associates to values to string keys
- * It has the same properties as HashMap!([c32], &Config)
+ * A dictionnary associates values to string keys.
  * @example: 
  * ============
  * let dmut dict = Dict::new ();
  * dict:.insert ("foo", Str::new ("foo"));
  * dict:.insert ("bar", Int::new (42));
  * dict:.insert ("baz", Array::new ());
+ * 
+ * // Dict are iterable
+ * for k, v in dict {
+ *     println ("Key : ", k, " is associated to value : ", v);
+ * }
  * ============
  */
 pub class @final Dict over Config {
@@ -395,6 +440,13 @@ pub class @final Dict over Config {
         self._content.end ()
     }
 
+    /**
+     * @returns: the number of element in the dict
+     */
+    pub def len (self)-> usize {
+        self._content.len ()
+    }
+
     
     impl Streamable {
 
@@ -415,12 +467,14 @@ pub class @final Dict over Config {
 }
 
 /**
- * Configuration encoding of an int 
+ * Configuration encoding of an int (i64).
  * @example: 
  * ============
  * let node : &Config = Int::new (12);
+ * 
+ * // Stored int is public, so we can access it in pattern deconstruction
  * match node {
- *    Int (i-> i:_) => assert (i == 42);
+ *    Int (i-> i : _) => assert (i == 12);
  * }
  * ============
  */
@@ -428,9 +482,16 @@ pub class @final Int over Config {
 
     pub let i : i64;
 
+    /**
+     * Creates an Int containing the value `i`
+     */
     pub self (i : i64) with i = i {}
 
+    /**
+     * Creates an Int containing the value `i`
+     */
     pub self (i : i32) with i = cast!i64 (i) {}
+    
 
     impl Streamable {
         pub over toStream (self, dmut stream : &StringStream) -> void {
@@ -441,13 +502,14 @@ pub class @final Int over Config {
 
 
 /**
- * Configuration encoding of a String
- * It contains a [c32] 
+ * Configuration encoding of a String ([c32]). 
  * @example: 
  * ============
  * let node : &Config = Str::new ("foo");
+ * 
+ * // Stored string is public, so we can access it in pattern deconstruction
  * match node {
- *    Int (str-> str:_) => assert (str == "foo");
+ *    Int (str-> str : _) => assert (str == "foo");
  * }
  * ============
  */
@@ -455,7 +517,16 @@ pub class @final Str over Config {
 
     pub let str : [c32];
 
+    /**
+     * Create a string containing the value `str`
+     */
     pub self (str : [c32]) with str = str {}
+
+    /**
+     * Create a string containing the value `str`
+     * @info: decode the string from utf8 to utf32
+     */
+    pub self (str : [c8]) with str = std::conv::to![c32] (str) {}
 
     impl Streamable {
         pub over toStream (self, dmut stream : &StringStream) -> void {
@@ -469,14 +540,19 @@ pub class @final Str over Config {
  * @example: 
  * ===========
  * let node : &Config = Bool::new (true);
+ * 
+ * // Stored bool value is public, so we can access it in pattern deconstruction
  * match node {
- *    Bool (b-> b:_) => assert (b == true);
+ *    Bool (b-> b : _) => assert (b == true);
  * }
  * ===========
  */
 pub class @final Bool over Config {
     pub let b : bool;
 
+    /**
+     * Create a Bool containing the value `b`
+     */
     pub self (b : bool) with b = b {}
 
     impl Streamable {
@@ -488,18 +564,24 @@ pub class @final Bool over Config {
 
 
 /**
- * Configuration encoding of a float
+ * Configuration encoding of a float (f64)
  * @example: 
  * ============
  * let node : &Config = Float::new (12.48)
+ * 
+ * // Stored float value is public, so we can access it in pattern deconstruction
  * match node {
- *    Float (f-> f:_) => assert (f == 12.48);
+ *    Float (f-> f : _) => assert (f == 12.48);
  * }
  * ============
  */
 pub class @final Float over Config {
+    
     pub let f : f64;
 
+    /**
+     * Create a Float containing the value `f`
+     */
     pub self (f : f64) with f = f {}
 
     impl Streamable {
@@ -510,10 +592,11 @@ pub class @final Float over Config {
 }
 
 /**
- * Configuration encoding of nothing
+ * Configuration encoding of nothing. 
  * @example:
  * ===========
  * let node : &Config = None::new ();
+ * 
  * match node {
  *    None () => {}
  * }

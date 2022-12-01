@@ -1,25 +1,172 @@
+/**
+ * This module implements conversion functions, to transforme `Config` into more convinient types such as `Int` to `i32`, `String` to `[c32]`, etc. It also implements functions that transforme convinient types into `Config` in order to serialize data. All functions defined in this module are called `to`, that way conversions are always done the same way `value.to!{&Config} ()` and `cfg.to!{T} ()`. Sometimes collision can happen with the functions defined in the module <a href="./std_conv.html">std::conv</a>, to resolve them the full name `config::conv::to` can be used.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * 
+ * @example:
+ * ===
+ * import std::config::_;
+ *
+ * let j = json#{"foo" : 89, "bar" : [1, 2, 3]};
+ *
+ * let iVal = j["foo"].to!{i32} ()?; // access and conversion might fail
+ * let slcVal =  j["bar"].to!{[i32]} ()?;
+ *
+ * assert (iVal.unwrap () == 89 && slcVal.unwrap () == [1, 2, 3]);
+ * ===
+ * <br>
+ * Conversion can be made from simple elements such as `i32`, `f32` or from more complex datatypes such as structures or classes.
+ * @example: 
+ * ===============
+ * struct 
+ * | x : i32
+ * | foo : [c32]
+ * | inner : [X]
+ *  -> X;
+ * 
+ * class A {
+ *     pub let value : i32;
+ *    
+ *     pub self (v : i32) with value = v {}
+ * 
+ *     impl Serializable {
+ *           pub over serialize (self)-> &Config {
+ *               let dmut dict = Dict::new ();
+ *               dict:.insert ("value", Int::new (self.value));
+ *               dict
+ *           }
+ *     }
+ * }
+ *
+ *  
+ * let st = X (1, "foo", [X (2, "bar", [])]);
+ * let cfg = st.to!{&Config} (); // struct are serializable automatically
+ * 
+ * // foo = "foo"
+ * // inner = [{x = 2, inner = [], foo = "bar"}]
+ * // x = 1
+ * println (toml::dump (cfg));
+
+ * let a = A::new (89); 
+ * let cfg2 = a.to!{&Config} (); // class impl serializable
+ * 
+ * // value = 89
+ * println (toml::dump (cfg2)); 
+ * ===============
+ */
+
 mod std::config::conv;
 
 import core::typeinfo, core::array, core::exception, core::object;
-import std::config;
+import std::config::_;
 import std::io, std::traits;
 
 /**
- * Simple trait to impl in a class to be convertible to a Config
+ * Exception thrown when conversion fails.
+ */
+pub class @final ConfigError over core::exception::Exception {
+
+    // The element that failed to be converted
+    pub let field : [c32];
+    
+    /// The type from which we want a cast    
+    pub let fr : TypeInfo;
+
+    /// The type to which we want a cast
+    pub let to : TypeInfo;
+
+    // The sub error that was the origin of the error
+    pub let subError : (&Exception)?;
+    
+    /**
+     * @params: 
+     *    - from, the type from which we want a cast
+     *    - to, the type to which we want a cast
+     *    - name: the name of the element that failed to be converted
+     *    - subError: the cause of the error
+     */
+    pub self (name : [c32] = "", to : TypeInfo, from : TypeInfo, subError : (&Exception)? = ((&Exception)?)::__err__) with fr = from, to = to, field = name, subError = subError  {}       
+    
+    impl stream::Streamable {
+
+        /**
+         * Just print the error to stdout
+         */
+        pub over toStream (self, dmut stream : &StringStream) {
+            stream:.write (self::typeinfo.name):.write (" ("s8);
+            stream:.write (self.fr.name):.write ("-> "s8):.write (self.to.name);
+            stream:.write (")"s8);
+            if (self.field != "")
+                stream:.write (" for field : "s8):.write (self.field);
+            
+            match self.subError {
+                Ok (x:_) => {
+                    stream:.writeln (""):.write (" => "s8):.write ("\t"s8):.write (x);
+                }
+                Err () => {
+                    if (self.hasTrace ()) {
+                        stream:.writeln (""):.write (":"s8):.write (self.getStackTrace ());
+                    }
+                }
+            }
+        }
+        
+    }    
+}    
+
+/**
+ * Simple trait to impl in a class to be serializable into a `Config`.
+ * @warning: Work in progress, for the moment the trait does not implement a standard behavior, but it is planned to be done.
+ * @example: 
+ * ===
+ * import std::config::_;
+ * import std::io;
+ * 
+ * class A {
+ *     pub let value : i32;
+ *    
+ *     pub self (v : i32) with value = v {}
+ * 
+ *     impl Serializable {
+ *           pub over serialize (self)-> &Config {
+ *               let dmut dict = Dict::new ();
+ *               dict:.insert (Int::new (self._value));
+ *               dict
+ *           }
+ *     }
+ * }
+ * 
+ * let a = A::new (89);
+ * 
+ * // transform A into &Config, and then dump it using toml format
+ * let cfg = a.to!{&Config} ();
+ * let t = toml::dump (cfg);
+ * 
+ * // and into json using the same config 
+ * let j = json::dump (cfg);
+ * ===
  */
 pub trait Serializable {
+
+    /**
+     * @info: Virtual, but planned to implement a standard serialization.
+     */
     pub def serialize (self)-> &Config;
 }
 
 /**
- * Try to transform the configuration into a structure
+ * Transform a configuration into a struct. This conversion is successful when the configuration contains a `Dict` where keys are the name of the fields of the struct, and their associated values are convertible to the type of the said fields.
+ * @throws: 
+ *   - &ConfigError: if the conversion failed.
+ * @returns: the converted value.
  * @example: 
  * ============
- * import std::config::toml;
+ * import std::config::_;
  * import std::io;
  * 
  * struct 
- * | mut package : Foo
+ * | mut package : Foo 
  *  -> Package;
  *  
  * struct 
@@ -33,17 +180,14 @@ pub trait Serializable {
  *     version = "1.0.0"
  * };
  * 
- * { 
- *    let cfg = tomlFile.parse ().to!Package ();
- *    println (cfg);
- * } catch {
- *    err: &ConfigError => { 
- *         println (err); 
- *    }
- * }
+ * // Conversion to structures uses the name of the fields as the key of dictionnary
+ * let pack = toml::parse (tomlFile).to!Package ();
+ * 
+ * assert (pack.package.name == "package name");
+ * assert (pack.package.version == "1.0.0");
+ * 
+ * println (pack); // Package(Foo(package name, 1.0.0))
  * ============
- * @throws: 
- *   - &ConfigError: if the cast cannot be made
  */
 pub def to {struct T} (cfg : &Config)-> mut T
     throws &ConfigError
@@ -60,26 +204,32 @@ pub def to {struct T} (cfg : &Config)-> mut T
 
 /**
  * Transform a configuration into a class
- * @info: The class must have a constructor taking a configuration as a parameter
+ * @info: The class must have a public constructor taking `Config` as a parameter.
+ * @throws:
+ *    - &ConfigError: if the conversion failed
+ * @info: in practice if the constructor throws nothing this function throws nothing 
+ * @returns: the converted value.
  * @example: 
  * ===========================
+ * import std::config::_;
+ * 
  * class A {
- *    let i = 0;
- *    pub self (c : &Config) {
- *        match c {
- *             Int (i-> i:_) => { self.i = i; }
- *        }
- *    }
+ *     pub let i : i64;
+ *    
+ *     // the constructor can throw an error (of any type)
+ *     // this is optional, it also works if it throws nothing
+ *     // For example by using (c["value"].to!{i64} ()?).getOr (0i64), to catch the errors
+ *     pub self (c : &Config)  with i = c["value"].to!{i64} ()    
+ *         throws &ConfigError, &OutOfArray
+ *     {}
  * }
  * 
- * {
- *     let c = tomlFile.parse ().to!(&A) ();
- *     println (c);
- * } catch {
- *     err: &ConfigError => { 
- *          println (err); 
- *     }
- * }
+ * let tomlFile = str#{
+ *     value = 98
+ * };
+ * 
+ * let c = toml::parse (tomlFile).to!(&A) ();
+ * assert (c.i == 98i64);
  * ===========================
  */
 pub def to {class T} (cfg : &Config)-> T
@@ -97,20 +247,23 @@ pub def to {class T} (cfg : &Config)-> T
 }
 
 /**
- * Transform a configuration into a i64
+ * Transform a configuration into any integer value (`i32`, `i64`, `u64`, etc.)
+ * @throws: 
+ *   - &ConfigError: if the conversion failed.
+ * @returns: the converted value.
+ * @warning: does not verify overflow. `Float` cannot be converted into an int value.
  * @example: 
  * =============
  * let i = Int::new (12);
- * assert (i.to!(i64) () == 12i64);
+ * assert (i.to!i64 () == 12i64);
+ * assert (i.to!i32 () == 12);
  * =============
- * @throws: 
- *   - &ConfigError: if the cast cannot be made
  */
 pub def if isIntegral!{T} () to {T, C of &Config} (cfg : C)-> T
     throws &ConfigError
 {
     match cfg {
-        Int (i-> i:_) => { return cast!T (i); }
+        Int (i-> i : _) => { return cast!T (i); }
         _ => {
             throw ConfigError::new (T::typeinfo, cfg::typeinfo);
         }
@@ -119,11 +272,16 @@ pub def if isIntegral!{T} () to {T, C of &Config} (cfg : C)-> T
 
 
 /**
- * Transform a configuration into a f64
+ * Transform a configuration into a float value (`f32`, `f64`).
+ * @throws: 
+ *   - &ConfigError: if the conversion failed.
+ * @returns: the converted value.
+ * @warning: `Int` cannot be converted into a float value.
  * @example: 
  * =============
  * let i = Float::new (12.0);
- * assert (i.to!(f64) () == 12.0);
+ * assert (i.to!f64 () == 12.0);
+ * assert (i.to!f32 () == 12.0f);
  * =============
  * @throws: 
  *   - &ConfigError: if the cast cannot be made
@@ -132,7 +290,7 @@ pub def if (isFloating!{T} ()) to {T, C of &Config} (cfg : C)-> T
     throws &ConfigError
 {
     match cfg {
-        Float (f-> f:_) => { return cast!T (f); }
+        Float (f-> f : _) => { return cast!T (f); }
         _ => {
             throw ConfigError::new (T::typeinfo, cfg::typeinfo);
         }
@@ -140,20 +298,21 @@ pub def if (isFloating!{T} ()) to {T, C of &Config} (cfg : C)-> T
 }
 
 /**
- * Transform a configuration into a string
+ * Transform a configuration into a string of `c32`.
+ * @throws: 
+ *   - &ConfigError: if the conversion failed.
+ * @returns: the converted value.
  * @example: 
  * =============
  * let i = Str::new ("foo");
- * assert (i.to!([c32]) () == "foo");
+ * assert (i.to!{[c32]} () == "foo");
  * =============
- * @throws: 
- *   - &ConfigError: if the cast cannot be made
  */
 pub def if is!{U}{X of c32} to {T of [U], U, C of &Config} (cfg : C)-> T
     throws &ConfigError
 {
     match cfg {
-        Str (str-> str:_) => { return str; }            
+        Str (str-> str : _) => { return str; }            
         _ => {
             throw ConfigError::new (T::typeinfo, cfg::typeinfo);
         }
@@ -161,37 +320,39 @@ pub def if is!{U}{X of c32} to {T of [U], U, C of &Config} (cfg : C)-> T
 }
 
 /**
- * Transform a configuration into a string
+ * Transform a configuration into a string of `c8`.
+ * @throws: 
+ *   - &ConfigError: if the cast cannot be made
+ * @returns: the converted value.
+ * @info: because string values are encoded in utf32, this function perform a decoding into utf8, hence the complexity of this function is higher than the complexity of `to![c32] (cfg)`.
  * @example: 
  * =============
  * let i = Str::new ("foo");
- * assert (i.to!([c8]) () == "foo"s8);
+ * assert (i.to![c8] () == "foo"s8);
  * =============
- * @throws: 
- *   - &ConfigError: if the cast cannot be made
  */
 pub def if is!{U}{X of c8} to {T of [U], U, C of &Config} (cfg : C)-> T
     throws &ConfigError
 {
     import std::conv;
     match cfg {
-        Str (str-> str:_) => { return str.to![c8] (); }            
+        Str (str-> str : _) => { return str.to![c8] (); }            
         _ => {
             throw ConfigError::new (T::typeinfo, cfg::typeinfo);
         }
     }
 }
 
-
 /**
  * Transform a configuration into a bool
+ * @throws: 
+ *   - &ConfigError: if the cast cannot be made
+ * @returns: the converted value.
  * @example: 
  * =============
  * let i = Bool::new (false);
- * assert (i.to!(bool) () == false);
+ * assert (i.to!bool () == false);
  * =============
- * @throws: 
- *   - &ConfigError: if the cast cannot be made
  */
 pub def if is!{T}{X of bool} to {T, C of &Config} (cfg : C)-> T
     throws &ConfigError
@@ -205,14 +366,26 @@ pub def if is!{T}{X of bool} to {T, C of &Config} (cfg : C)-> T
 }
 
 /**
- * Transform a configuration into an array
- * @example: 
- * =============
- * let i = Array::new (Int::new (1), Int::new (2));
- * assert (i.to!([i32]) () == [1, 2]);
- * =============
+ * Transform a configuration into a slice. 
  * @throws: 
  *   - &ConfigError: if the cast cannot be made
+ * @returns: the converted slice.
+ * @example: 
+ * =============
+ * let dmut i = Array::new ();
+ * i:.push (Int::new (1));
+ * i:.push (Int::new (2));
+ * assert (i.to!{[i32]} () == [1, 2]);
+ * 
+ * let dmut j = Array::new ();
+ * j:.push (i);
+ * let dmut k = Array::new ();
+ * k:.push (Int::new (9));
+ * k:.push (Int::new (10));
+ * j:.push (k);
+ * 
+ * assert (j.to!{[[i32]]} () == [[1, 2], [9, 10]]);
+ * =============
  */
 pub def to {T of [U], U, C of &Config} (cfg : C)-> T
     throws &ConfigError
@@ -233,10 +406,24 @@ pub def to {T of [U], U, C of &Config} (cfg : C)-> T
                         return str.to![c8] (); 
                     }
                 }
-            }                
-            return [cfg.(config::conv::to)!(U) ()];                
+            } else {
+                throw ConfigError::new (T::typeinfo, cfg::typeinfo);
+            }
         }
     }
+}
+
+/**
+ * Transform an `Array` into a slice. 
+ * @throws: 
+ *   - &ConfigError: if the cast cannot be made
+ * @returns: the converted slice.
+ * @info: just a template specialization
+ */
+pub def to {T of [U], U, C of &Array} (cfg : C)-> T
+    throws &ConfigError
+{
+    return CfgToConfig::fromArray!(T) (cfg);
 }
 
 
@@ -324,48 +511,64 @@ mod CfgToConfig {
 }
 
 /**
- * Transform a class into a configuration
+ * Transform a class into a `Config`.
+ * @params:
+ *    - value: the class instance to serialize
+ * @returns: a `Config`
  * @example:
  * ===================
  * class A {
+ *     let _value : f32;
+ * 
+ *     pub self (v : f32) with _value = v {}
+ *
  *     impl std::config::conv::Serializable {
  *          pub over seralize (self)-> &Config {
  *              let dmut d = Dict::new ();
- *              d:.insert ("foo", Float::new (12.0));
+ *              d:.insert ("foo", Float::new (self._value));
  *              d
  *          }
  *     }
  * }
+ * 
+ * let a = A::new (98.0f);
+ * let cfg = a.to!{&Config} ();
  * ===================
  */
-pub def if is!{C}{X of &Config} to {class C, T impl Serializable} (value : T)-> &Config {
-    value.serialize ()
-}
-
-
 pub def if is!{C}{X of &Config} to {class C, class T} (value : T)-> &Config {
-    cte assert ("Class " ~ T::typeid ~ " does not impl Serializable");
+    cte if (is!{T}{U impl Serializable}) {
+        value.serialize ()
+    } else {
+        cte assert (false, "Class " ~ (typeof (value)::typeid) ~ " does not impl Serializable");
+    }
 }
-
 
 /**
- * Transform a i32 into a configuration
+ * Transform an int value into a `Config`.
+ * @params: 
+ *    - value: the value to transform
+ * @returns: the created `Config`.
  * @example: 
  * ============
  * let i = 90;
- * let cfg : &Config = i.to!(&Config) ();
+ * let cfg : &Config = i.to!{&Config} ();
  * ============
  */
-pub def if (is!{C}{X of &Config} && isSigned!{T} ()) to {class C, T} (value : T)-> &Config {
+pub def if (is!{C}{X of &Config} && isIntegral!{T} ()) to {class C, T} (value : T)-> &Config {
     Int::new (cast!i64 (value))
 }
 
 /**
- * Transform a bool into a configuration
+ * Transform a bool into a `Config`.
+ * @params: 
+ *   - value: the value to transform
+ * @returns: the created `Config` * @params: 
+ *   - value: the value to transform
+ * @returns: the created `Config`
  * @example: 
  * ============
  * let b = false;
- * let cfg : &Config = b.to!(&Config) ();
+ * let cfg : &Config = b.to!{&Config} ();
  * ============
  */
 pub def if (is!{C}{X of &Config} && is!{T}{X of bool}) to {class C, T} (value : T)-> &Config {
@@ -373,11 +576,14 @@ pub def if (is!{C}{X of &Config} && is!{T}{X of bool}) to {class C, T} (value : 
 }
 
 /**
- * Transform a f64 into a configuration
+ * Transform a f64 into a configuration.
+ * @params: 
+ *   - value: the value to transform
+ * @returns: the created `Config`
  * @example: 
  * ============
  * let f = 3.14;
- * let cfg : &Config = f.to!(&Config) ();
+ * let cfg : &Config = f.to!{&Config} ();
  * ============
  */
 pub def if (is!{C}{X of &Config} && isFloating!{T} ()) to {class C, T} (value : T)-> &Config {
@@ -385,11 +591,14 @@ pub def if (is!{C}{X of &Config} && isFloating!{T} ()) to {class C, T} (value : 
 }
 
 /**
- * Transform a [c32] into a configuration
+ * Transform a [c32] into a configuration.
+ * @params: 
+ *   - value: the value to transform
+ * @returns: the created `Config`
  * @example: 
  * ============
  * let str = "test";
- * let cfg : &Config = str.to!(&Config) ();
+ * let cfg : &Config = str.to!{&Config} ();
  * ============
  */
 pub def if (is!{C}{X of &Config} && isChar!{U} ()) to {class C, T of [U], U} (value : T)-> &Config {
@@ -402,11 +611,14 @@ pub def if (is!{C}{X of &Config} && isChar!{U} ()) to {class C, T of [U], U} (va
 }
 
 /**
- * Transform a [c8] into a configuration
+ * Transform a [c8] into a configuration.
+ * @params: 
+ *   - value: the value to transform
+ * @returns: the created `Config`
  * @example: 
  * ============
  * let str = "test"s8;
- * let cfg : &Config = str.to!(&Config) ();
+ * let cfg : &Config = str.to!{&Config} ();
  * ============
  */
 pub def if is!{C}{X of &Config} to {class C, T of [U], U of c8} (value : T)-> &Config {
@@ -415,24 +627,30 @@ pub def if is!{C}{X of &Config} to {class C, T of [U], U of c8} (value : T)-> &C
 }
 
 /**
- * Transform a slice into a configuration
+ * Transform a slice into a configuration.
+ * @params: 
+ *   - value: the value to transform
+ * @returns: the created `Config`
  * @example: 
  * ============
  * let slc = [1, 2, 3];
- * let cfg : &Config = slc.to!(&Config) ();
+ * let cfg : &Config = slc.to!{&Config} ();
  * ============
  */
 pub def if is!{C}{X of &Config} to {class C, T of [U], U} (value : T)-> &Config {
     let dmut arr = Array::new ();
     for i in value {
-        arr:.push (to!(&Config) (i));
+        arr:.push (to!{&Config} (i));
     }
     arr
 }
 
-
 /**
- * Transform a structure into a configuration
+ * Transform a structure into a configuration.
+ * @params: 
+ *   - value: the value to transform
+ * @returns: the created `Config`
+ * @info: the returned `Config` is a `Dict` where the keys are the name of the field of the struct, and the values are the converted values of the fields of the struct.
  * @example: 
  * ===============
  * struct 
@@ -442,7 +660,7 @@ pub def if is!{C}{X of &Config} to {class C, T of [U], U} (value : T)-> &Config 
  *  -> X;
  * 
  * let st = X (1, "foo", [X (2, "bar", [])]);
- * let cfg : &Config = st.to!(&Config} ();
+ * let cfg : &Config = st.to!{&Config} ();
  * ===============
  */
 pub def if is!{C}{X of &Config} to {class C, struct T} (value : T)-> &Config {

@@ -1,7 +1,16 @@
+/**
+ * This module contains functions and macros used to transform json formatted content to `Config`, and dump `Config` into json formatted content.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * 
+ */
+
 mod std::config::json;
 
 import core::typeinfo, core::array, core::exception, core::object;
-import std::config;
+import std::config::_;
+import std::stream;
+
 pub import std::lexer;
 
 import std::config::conv;
@@ -9,16 +18,34 @@ import std::conv;
 
 
 /**
- * Macro to write json like configuration 
+ * Macro that can be used to write json like content directly in Ymir code.
  * @example: 
  * =====================
- * let x = json#{"fst" => {"foo" => {"bar" => "baz"}, "scd" => [1, "inner", 2.0f, 3]}};
+ * let x = json#{
+ *     "fst" : {
+ *           "foo" : {"bar" : "baz"},
+ *           "scd" : [1, "inner", 2.0f, 3]
+ *     }
+ * };
+ *
+ * let j = json#{        
+ *     "id": "file",
+ *     "value": "File",
+ *     "popup": {
+ *         // Ignored comments
+ *         "menuitem": [
+ *            {"value": "New", "onclick": "CreateNewDoc()"},
+ *            {"value": "Open", "onclick": "OpenDoc()"},
+ *            {"value": "Close", "onclick": "CloseDoc()"}]
+ *     }
+ * };
+ * 
  * =====================
  * 
  */
 pub macro json {
 
-    pub self (a=(dictEntry) b=("," inner=dictEntry)*) skips (" " | "\n") {
+    pub self (a=(dictEntry) b=("," inner=dictEntry)* (" " | "\n" | "\t" | "\r")*) skips (" " | "\n" | "\t" | "\r") {
         let dmut d = Dict::new ();
         let v = #{a};
         d:.insert (v._0, v._1);;        
@@ -31,7 +58,7 @@ pub macro json {
         d
     }
 
-    def dict ("{" a=(dictEntry) b=("," inner=dictEntry)* "}") skips (" " | "\n") {
+    def dict ("{" a=(dictEntry) b=("," inner=dictEntry)* "}") skips (" " | "\n" | "\t" | "\r") {
         {
             let dmut d_#{__index} = Dict::new ();
             let v_#{__index} = #{a};
@@ -47,11 +74,11 @@ pub macro json {
         }
     }
 
-    def emptyDict ("{" "}") skips (" " | "\n") {
+    def emptyDict ("{" "}") skips (" " | "\n" | "\t" | "\r") {
         Dict::new ()
     }
 
-    def array ("[" a=(array | dict | value) b=("," inner=(array | dict | value))* "]") skips (" " | "\n") {
+    def array ("[" a=(array | dict | value) b=("," inner=(array | dict | value))* "]") skips (" " | "\n" | "\t" | "\r") {
         {
             let dmut array_#{__index} = Array::new ();
             array_#{__index}:.push (#{a});
@@ -62,7 +89,7 @@ pub macro json {
         }
     }
     
-    def dictEntry (key=__str "=>" value=(array | dict | value)) skips (" " | "\n") {
+    def dictEntry (key=__str ":" value=(array | dict | value)) skips (" " | "\n" | "\t" | "\r") {
         cte if is!{typeof(#{key})}{U of [c32]} {
             (#{key}, #{value})
         } else {
@@ -70,7 +97,7 @@ pub macro json {
         }
     }
 
-    def value (a=__expr) skips (" " | "\n") {
+    def value (a=__expr) skips (" " | "\n" | "\t" | "\r") {
         config::conv::to!{&Config} (#{a})
     }
 }
@@ -93,38 +120,63 @@ enum
 
 
 /**
- * Parse a string containing a json formeted content
+ * Parse a string containing a json formatted content
+ * @throws: 
+ *    - &SyntaxError: if the format is not respected in the content
+ * @returns: a `Dict` containing the config tree of the json content.
  * @example: 
  * ==============
- * let str = "{\"foo\"={\"bar"=\"value\", \"baz\"=[1, 2]}}"s8;
- * let config = parse (str);
+ * let str = "{\"foo\" : \"bar" : \"value\", \"baz\" : [1, 2]}}"s8;
+ * let config = json::parse (str);
  * ==============
- * @throws: 
- *    - SyntaxError: if the format is not respected in the content
  */
 pub def parse (content : [c8])-> &Dict
     throws &SyntaxError
 {
     import std::conv;
-    return parse (content.to![c32] ());
+    return json::parse (content.to![c32] ());
 }
 
 
+
 /**
- * Parse a string containing a json formated content
- * @example: 
- * =============
- * let str = "{\"foo\"={\"bar"=\"value\", \"baz\"=[1, 2]}}";
- * let config = parse (str);
- * ==============
+ * Parse a string containing a json formatted content
  * @throws: 
- *    - SyntaxError: if the format is not respected in the content
+ *    - &SyntaxError: if the format is not respected in the content
+ * @returns: a `Dict` containing the config tree of the json content.
+ * @example: 
+ * ==============
+ * let str = "{\"foo\" : {\"bar" : \"value\", \"baz\" : [1, 2]}}";
+ * let config = json::parse (str);
+ * ==============
  */
 pub def parse (content : [c32])-> &Dict
     throws &SyntaxError
 {
     let dmut lex = Lexer!{c32}::new (content, tokens-> JsonTokens::members);
     Parser::parseDict (alias lex)
+}
+
+/**
+ * Transform a configuration into a json formatted string
+ * @example: 
+ * ===
+ * let str = "{\"foo\" : {\"bar" : \"value\", \"baz\" : [1, 2]}}";
+ * let config = json::parse (str);
+ * 
+ * // {
+ * //   "foo" : {
+ * //        "baz" : [1, 2], 
+ * //        "bar" : "value"
+ * //    }
+ * // }
+ * println (json::dump (config));
+ * ===
+ */
+pub def dump (cfg : &Config)-> [c8] {
+    let dmut stream = StringStream::new ();
+    Dumper::dump (alias stream, cfg);
+    stream[]
 }
 
 
@@ -163,7 +215,6 @@ mod Parser {
                 
                 let next = lex:.next ();
                 if (next._0 != JsonTokens::COMA && next._0 != JsonTokens::RACC) {
-                    println (dict);
                     throw SyntaxError::new ("expected ',' or '}' (not '" ~ next._0 ~ "')", next._1, next._2);                
                 }
                 if (next._0 == "}") break {}
@@ -383,3 +434,119 @@ mod Parser {
     
 }
 
+
+
+mod Dumper {
+
+    pub def dump (dmut stream : &StringStream, cfg : &Config, indent : i32 = 0) {
+        match cfg {
+            x : &Dict => {
+                Dumper::dumpDict (alias stream, x, indent-> indent)
+            }
+            arr : &Array => {
+                Dumper::dumpArray (alias stream, arr, indent-> indent)
+            }
+            Int (i-> i : _) => {
+                stream:.write (i);
+            }
+            Str (str-> str : _) => {
+                stream:.write ("\"", str, "\"");
+            }
+            Bool (b-> b : _) => {
+                if (b) { stream:.write ("true"); }
+                else { stream:.write ("false"); }
+            }
+            Float (f-> f : _) => {
+                stream:.write (f);
+            }
+        }
+    }
+
+    pub def dumpArray (dmut stream : &StringStream, x : &Array, indent : i32 = 0) {
+        stream:.write ("["s8);
+        let mut z = 0;
+        let mut returned = false;
+        for i in x {
+            if (z != 0) {
+                stream:.write (", "s8);
+                if (returned) {
+                    stream:.write ("\n"s8);
+                    for _ in 0 .. indent + 1 {
+                        stream:.write (" "s8);
+                    }
+                }
+            }
+            
+            match i {
+                j: &Array => {
+                    Dumper::dump (alias stream, j, indent -> indent + 1);
+                    returned = true;
+                }
+                j: &Str => {
+                    Dumper::dump (alias stream, j, indent -> indent + 1);
+                    returned = true;
+                }
+                j: &Dict => {
+                    Dumper::dump (alias stream, j, indent -> indent + 1);
+                    returned = true;
+                }
+                j: _ => {
+                    Dumper::dump (alias stream, j, indent -> indent + 1);
+                    returned = false;
+                }
+            }
+            z += 1;
+        }
+        stream:.write ("]"s8);
+    }
+
+    pub def dumpDict (dmut stream : &StringStream, d : &Dict, indent : i32 = 0) {
+        stream:.write ("{"s8);
+        
+        if (d.len () != 0us) {
+            stream:.write ("\n"s8);
+            for _ in 0 .. indent + 3 {
+                stream:.write (" "s8);
+            }
+        }
+
+        let mut z = 0;
+        for i, j_ in d {
+            if (z != 0) {
+                stream:.write (", \n"s8);
+                for _ in 0 .. indent + 3 {
+                    stream:.write (" "s8);
+                }
+            }
+            
+            match j_ {
+                j: &Array => {
+                    stream:.write ("\""s8, i, "\" : "s8);                    
+                    Dumper::dump (alias stream, j, indent -> indent + cast!i32 (i.len) + 3);
+                }
+                j: &Str => {
+                    stream:.write ("\""s8, i, "\" : "s8);                    
+                    Dumper::dump (alias stream, j, indent -> indent + cast!i32 (i.len) + 3);
+                }
+                j: &Dict => {
+                    stream:.write ("\""s8, i, "\" : "s8);                    
+                    Dumper::dump (alias stream, j, indent -> indent + cast!i32 (i.len) + 3);
+                }
+                j: _ => {
+                    stream:.write ("\""s8, i, "\" : "s8);                    
+                    Dumper::dump (alias stream, j, indent -> indent + cast!i32 (i.len) + 3);
+                }            
+            }
+            z += 1;
+        }
+
+        if (d.len () != 0us) {
+            stream:.write ("\n"s8);
+            for _ in 0 .. indent {
+                stream:.write (" "s8);
+            }
+        }
+        stream:.write ("}"s8);
+    }
+    
+}

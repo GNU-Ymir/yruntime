@@ -1,7 +1,14 @@
+/**
+ * This module contains functions to transform toml formatted content to `Config`, and dump `Config` into toml formatted content.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * 
+ */
+
 mod std::config::toml;
 
 import core::typeinfo, core::array, core::exception, core::object;
-import std::config;
+import std::config::_, std::stream;
 pub import std::lexer;
 
 /** 
@@ -23,33 +30,43 @@ enum
 
 
 /**
- * Parse a string containing a toml formated content 
- * @example: 
- * ================
- * let str = "[foo]\nbar=1\nbaz=2\n"s8
- * let config : &Dict = parse (str);
- * ================
+ * Parse a string containing a toml formated content.
  * @throws: 
  *    - &SyntaxError: if the format is not respected in the content
+ * @example: 
+ * ================
+ * let str = str8#{
+ *     [foo]
+ *     bar=1
+ *     baz=2
+ * };
+ *
+ * let cfg : &Dict = toml::parse (str);
+ * ================
  */
 pub def parse (content : [c8])-> &Dict
     throws &SyntaxError
 {
     import std::conv;
     let c = to![c32](content);
-    return parse (c);
+    return toml::parse (c);
 }
 
 
 /**
- * Parse a string containing a toml formated content 
- * @example: 
- * ================
- * let str = "[foo]\nbar=1\nbaz=2\n"
- * let config : &Dict = parse (str);
- * ================
+ * Parse a string containing a toml formated content.
  * @throws: 
  *    - &SyntaxError: if the format is not respected in the content
+ * @example: 
+ * ================
+ * let str = str#{
+ *     [foo]
+ *     bar=1
+ *     baz=2
+ * };
+ *
+ * let cfg : &Dict = toml::parse (str);
+ * ================
  */
 pub def parse (content : [c32])-> &Dict
     throws &SyntaxError
@@ -80,19 +97,32 @@ pub def parse (content : [c32])-> &Dict
 }
 
 /**
- * Transform a configuration into a toml formatted string
+ * Transform a configuration into a toml formatted string.
+ * @example: 
+ * ===
+ * let str = "{\"foo\" : {\"bar" : \"value\", \"baz\" : [1, 2]}}";
+ * let config = json::parse (str);
  * 
+ * // [foo]
+ * // baz = [1, 2]
+ * // bar = "value"
+ * println (json::dump (config));
+ * 
+ * ===
  */
-pub def dump (cfg : &Config, withSuper : bool = true)-> [c32] {
+pub def dump (cfg : &Config, withSuper : bool = true)-> [c8] {
+    let dmut stream = StringStream::new ();
     if (withSuper) {
         match cfg {
             x : &Dict => {
-                Dumper::dumpSuperDict (x)
+                Dumper::dumpSuperDict (alias stream, x);
             }
             _ =>
-                Dumper::dump (cfg)
+                Dumper::dump (alias stream, cfg);
         }
-    } else Dumper::dump (cfg)
+    } else Dumper::dump (alias stream, cfg);
+
+    stream[]
 }
 
 mod Parser {
@@ -376,136 +406,131 @@ mod Parser {
 
 mod Dumper {
 
-    pub def dump (cfg : &Config, global : bool = false, indent : i32 = 0)-> [c32] {
+    pub def dump (dmut stream : &StringStream, cfg : &Config, global : bool = false, indent : i32 = 0) {
         import std::conv;
         
         match cfg {
             x : &Dict => {
-                Dumper::dumpDict (x, global-> global, indent-> indent)
+                Dumper::dumpDict (alias stream, x, global-> global, indent-> indent)
             }
             arr : &Array => {
-                Dumper::dumpArray (arr, indent-> indent)
+                Dumper::dumpArray (alias stream, arr, indent-> indent)
             }
             Int(i-> i:_) => {
-                to![c32] (i)
+                stream:.write (i);
             }
             Str(str-> str:_) => {
-                "\"" ~ str ~ "\""
+                stream:.write ("\""s8, str, "\""s8);
             }
             Bool(b-> b:_) => {
-                if b { "true" }
-                else { "false" }
+                if b { stream:.write ("true"s8); }
+                else { stream:.write ("false"s8); }
             }
             Float (f-> f:_) => {
-                to![c32] (f)
+                stream:.write (f);
             }
-            _ => { "" }
+            _ => { }
         }
     }
 
-    pub def dumpArray (x : &Array, indent : i32 = 0) -> [c32] {
-        let mut res = "[";
+    pub def dumpArray (dmut stream : &StringStream, x : &Array, indent : i32 = 0) {
+        stream:.write ("["s8);
         let mut z = 0;
         let mut returned = false;
         for i in x {
             if (z != 0) {
-                res = res ~ ", ";
+                stream:.write (", "s8);
                 if (returned) {
-                    res = res ~ "\n";
+                    stream:.write ("\n"s8);
                     for _ in 0 .. indent + 1 {
-                        res = res ~ " ";
+                        stream:.write (" "s8);
                     }
                 }
             }
             
             match i {
                 j: &Array => {
-                    res = res ~ Dumper::dump (j, indent -> indent + 1);
+                    Dumper::dump (alias stream, j, indent -> indent + 1);
                     returned = true;
                 }
                 j: &Str => {
-                    res = res ~ Dumper::dump (j, indent -> indent + 1);
+                    Dumper::dump (alias stream, j, indent -> indent + 1);
                     returned = true;
                 }
                 j: &Dict => {
-                    res = res ~ Dumper::dump (j, indent -> indent + 1);
+                    Dumper::dump (alias stream, j, indent -> indent + 1);
                     returned = true;
                 }
                 j: _ => {
-                    res = res ~ Dumper::dump (j, indent -> indent + 1);
+                    Dumper::dump (alias stream, j, indent -> indent + 1);
                     returned = false;
                 }
             }
             z += 1;
         }
-        res ~ "]"
+        stream:.write ("]"s8);
     }
 
     
-    pub def dumpDict (x : &Dict, global : bool = false, indent : i32 = 0) -> [c32] {
+    pub def dumpDict (dmut stream : &StringStream, x : &Dict, global : bool = false, indent : i32 = 0) {
         if (global)
-            dumpGlobalDict (x)
+            dumpGlobalDict (alias stream, x)
         else
-            dumpLocalDict (x, indent-> indent)
+            dumpLocalDict (alias stream, x, indent-> indent)
     }
 
-    pub def dumpSuperDict (x : &Dict) -> [c32] {
-        let mut res = "";
+    pub def dumpSuperDict (dmut stream : &StringStream, x : &Dict) {
+        let dmut superStream = StringStream::new ();
+        let dmut innerStream = StringStream::new ();
         for i, j_ in x {
             match j_ {
                 j: &Dict => {
-                    res = res ~ "\n[" ~ i ~ "]\n" ~ Dumper::dump (j, global-> true);
+                    innerStream:.write ("\n["s8, i, "]\n"s8);
+                    Dumper::dump (alias innerStream, j, global-> true);
                 }
                 j: _ => {
-                    res = i ~ " = " ~ Dumper::dump (j) ~ "\n" ~ res;
+                    superStream:.write (i, " = "s8);
+                    Dumper::dump (alias superStream, j);
+                    superStream:.write ("\n"s8);
                 }                
             }
         }
-        res
+
+        stream:.write (superStream[]);
+        stream:.write (innerStream[]);
     }
     
-    pub def dumpLocalDict (x : &Dict, indent : i32 = 0) -> [c32] {
-        let mut res = "{";
+    pub def dumpLocalDict (dmut stream : &StringStream, x : &Dict, indent : i32 = 0) {
+        stream:.write ("{");
+        
         let mut z = 0;
         for i, j_ in x {
             if (z != 0) {
-                res = res ~ ", ";
+                stream:.write (", ");
             }
-            
-            match j_ {
-                j: &Array => {
-                    res = res ~ i ~ " = " ~ Dumper::dump (j, indent -> indent + cast!i32 (i.len) + 3);
-                }
-                j: &Str => {
-                    res = res ~ i ~ " = " ~ Dumper::dump (j, indent -> indent + cast!i32 (i.len) + 3);
-                }
-                j: &Dict => {
-                    res = res ~ i ~ " = " ~ Dumper::dump (j, indent -> indent + cast!i32 (i.len) + 3);
-                }
-                j: _ => {
-                    res = res ~ i ~ " = " ~ Dumper::dump (j, indent -> indent + cast!i32 (i.len) + 3);             
-                }            
-            }
+
+            stream:.write (i, " = "s8);
+            Dumper::dump (alias stream, j_, indent -> indent + cast!i32 (i.len) + 3);
             z += 1;
         }
         
-        res ~ "}"
+        stream:.write ("}"s8);
     }
 
-    pub def dumpGlobalDict (x : &Dict, indent : i32 = 0) -> [c32] {
-        let mut res = "";
+    pub def dumpGlobalDict (dmut stream : &StringStream, x : &Dict, indent : i32 = 0) {        
         let mut z = 0;
         for i, j in x {
             if (z != 0) {
                 for _ in 0 .. indent {
-                    res = res ~ " ";
+                    stream:.write (" "s8);
                 }
-            }            
-            res = res ~ i ~ " = " ~ Dumper::dump (j, indent -> indent + cast!i32 (i.len) + 3) ~ "\n";
+            }
+            stream:.write (i, " = "s8);            
+            Dumper::dump (alias stream, j, indent -> indent + cast!i32 (i.len) + 3);
+            stream:.write ("\n");
+            
             z += 1;
-        }
-        
-        res 
+        }        
     }
 
     
