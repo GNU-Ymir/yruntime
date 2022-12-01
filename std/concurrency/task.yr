@@ -2,7 +2,7 @@
  * This module implements the class TaskPool, that encapsulate a task queue and a set of worker thread to execute the tasks.
  * The task queue is a FIFO queue. 
  * @Authors: Emile Cadorel
- * @Licence: GPLv3
+ * @License: GPLv3
  * <hr>
  * @example: 
  * ===============
@@ -59,6 +59,7 @@ aka EXIT_THREAD_AFTER_LOST = 10us;
  *   - There is no guarantee on the order of execution of the tasks, if they are submitted from different threads.
  *   - There is no preemption of tasks, so if there is infinite tasks in the task queue, (at least as many as there are threads) they will block the execution of the following submissions.
  *   - Task pools don't communicate, meaning that if you have two task pools spawning n threads, there can be n*2 threads spawned at a time. 
+ * We are thinking about a way to make tasks preemptible, so that they can be paused when they take a long time in order to be able to execute the other tasks so that the second limitation can be removed.
  * @info: the number of thread running in the task queue may vary depending of the workload, it there is no need to spawn the number of asked thread, then they are not spawned. They may be spawned in the future to treat a pick of load, but the number of threads is always lower or equal to the maximum number specified when creating the `TaskPool`.
  */
 
@@ -96,7 +97,7 @@ pub class @final TaskPool {
      * @params: 
      *    - task: the task to execute
      * @info: the task will be executed in the future when a thread is available.
-     * @example: 
+     * @example:
      * =============
      * class MyTask over Task {
      *     let n : i32;
@@ -137,6 +138,7 @@ pub class @final TaskPool {
      * @params: 
      *    - task: the task to submit
      * @info: the task will be executed in the future when a thread is available.
+     * @example:
      * ===
      * def foo () {
      *     println ("Function pointer task");
@@ -164,6 +166,7 @@ pub class @final TaskPool {
      * @params: 
      *    - task: the task to submit
      * @info: the task will be executed in the future when a thread is available.
+     * @example:
      * ===
      * class Foo {
      *    let mut i = 0;
@@ -310,7 +313,7 @@ pub class @final TaskPool {
 
 /**
  * Ancestor of all class Task that can be launch in the task Pool.
- * Task are really close to Future, but with less guarantees, so Future from `std::concurrency::future` should be preferred. 
+ * Task are really close to `Future`, but with less guarantees, e.g. we cannot wait the end of execution of a `Task`.
  * @example: 
  * ===========
  * class MyTask over Task {
@@ -332,6 +335,9 @@ pub class @final TaskPool {
  */
 pub class @abstract Task {
 
+    /**
+     * Create an empty task
+     */
     prot self () {}
 
     /**

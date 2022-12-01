@@ -1,70 +1,129 @@
+/**
+ * This module implements basic management of threads. The threads described in this module, unlike task from TaskPool, or Future are real system threads.
+ * Ymir threads are spawned with a `ThreadPipe` that is used to communicate with them. If spawned threads are kind of low level, high level synchronization such as `atomic` can be used without any problem.
+ * Threads from this module are heavy, meaning there is a certain cost of spawning them. If many threads are to be spawned, maybe `Future` or `Task` should be preferred. However they don't suffer the limitations induced by the `TaskPool`, as an infinite thread can be spawned without affecting the execution of other threads.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @example:
+ * ===
+ * import std::concurrency::thread; // pub import std::box, and std::concurrency::pipe;
+ * import std::io; // for println
+ * 
+ * let th = spawn (|th| {
+ *     println ("This lambda function is running in a thread");
+ *     loop {
+ *         match th.pipe.read () {
+ *              // When the thread receive the value 9 it stops itself 
+ *              // this is just an example, nothing related to the value 9
+ *              Box!{i32} (value-> 9) => {  
+ *                  println ("Received kill message : 9"); 
+ *                  break {};
+ *              }
+ *              // Any other values are printed to stdout
+ *              x : _ => println ("Received a message : ", x);
+ *         }
+ *     }
+ * });
+ * 
+ * // Using the ThreadPipe of the thread to communicate with it
+ * // Every thread has its own ThreadPipe
+ * th.pipe.write ("Send a message to the thread from main thread");
+ * 
+ * let th2 = spawn (|th| => {
+ *       println ("Waiting the pipe from another thread");
+ *       match th.pipe.read () {
+ *            otherTh : &ThreadPipe => {
+ *                 // Sending the kill message to the first thread
+ *                 otherTh.write (9);
+ * 
+ *                 // Pipes can be used in both ways
+ *                 th.pipe.write ("ACK"s8); 
+ *            }
+ *       }
+ * });
+ *
+ *
+ * // Send the pipe of the first thread to the second thread, so they can communicate
+ * th2.pipe.write (th.pipe);
+ *
+ * // Waiting for the acknowlegment of the second thread
+ * match th2.pipe.read () {
+ *     Box!{[c8]}(value-> msg : _) => println (msg);
+ * }
+ *
+ * // Waiting fot the end of the first thread
+ * th.join ();
+ * // Waiting for the end of the second thread
+ * th2.join ();
+ * ===
+ */
+
 mod std::concurrency::thread;
 
-import core::typeinfo;
-
-import etc::runtime::thread;
 import std::io;
-import std::concurrency::pipe;
+pub import std::concurrency::pipe;
+pub import std::box;
 
-pub struct
-| mut id : usize
-| pipe : &ThreadPipe
- -> Thread;
-
+import core::typeinfo;
+import etc::runtime::thread;
 
 /**
- * Spawn the function inside of a thread
- * @warning: This type of thread are heavy thread
- * @info: to spawn light thread, use std::concurrency::future module instead
+ * Spawn a thread to run a function.
  * @params: 
- *    - func: the function to run inside a thread
- * 
+ *    - func: the function to run inside the thread
+ * @returns: the spawned thread
  * @example: 
  * ============
  * import std::io;
  * import std::concurrency::thread;
- * import std::any;
  *
  * def thread_func (th : Thread) -> void {
- *   let msg = th.pipe.read ();
- *   match msg {
- *      x : &Some!{i32} => {
- *          println ("Ping : ", x);
- *          th.pipe.write (x.unwrap () + 19);
- *      }
- *   }
+ *     let msg = th.pipe.read ();
+ *     match msg {
+ *         Box!{i32}(value-> x : _) => {
+ *             println ("Ping : ", x);
+ *             th.pipe.write (x + 19);
+ *         }
+ *     }
  * }
- *
+
  * def main () {
- *   let th = spawn (&thread_func);
- *   th.pipe.write (23);
- *   println ("Pong : ", th.pipe.read ());
- *   th.join ();
+ *     let th = spawn (&thread_func);
+ *     th.pipe.write (23);
+ *     match th.pipe.read () {
+ *         Box!{i32} (value-> x : _) => println ("Pong : ", x);
+ *     }
+ *     th.join ();
  * }
  * ============
  */
 pub def spawn (func : fn (Thread) -> void) -> Thread {
-    let dmut th = internal::FnThreadLauncher::new (func);    
+    let dmut th = internal::FnThreadLauncher::new (func, true);    
     Runtime!(&internal::FnThreadLauncher)::_yrt_thread_create (alias &(th.th_content.id), null, &internal::thread_fn_main, th);
     th.th_content
 }
 
 /**
- * Spawn a function from a closure inside a thread
- * @warning: This type of thread are heavy thread
- * @info: to spawn light thread, use std::concurrency::future module instead
+ * Spawn a function from a closure inside a thread.
  * @params: 
- *    - func: the function to run inside a thread
- * 
+ *    - func: the delegate to run inside the thread
+ * @returns: the spawned thread
  * @example: 
  * ==========
- * import std::box;
+ * import std::concurrency::thread;
+ * import std::box, std::io;
  * 
- * let dmut i = Box::new (0); // a box is a reference, so it's modification will be visible from a closure
+ * // a box is a reference to data in the heap, so it's modification will be visible from a closure inside a thread.
+ * let dmut i = Box::new (0);
+ * 
  * let th = spawn (move |_| => {
  *      loop {
  *         println ("I : ", i.get ()); // accessible by closure
- *         if (i.get () == 1) break {}
+ *         if (i.get () == 1) {
+ *             println ("I changed to : ", i.get ());
+ *             break {}
+ *         }
  *      }
  * });
  * 
@@ -80,7 +139,25 @@ pub def spawn (func : dg (Thread)-> void)-> Thread {
 
 
 /**
- * Spawn a thread by does not create pipe description
+ * Spawn a thread but does not create pipe description.
+ * @info: Such a thread cannot communicate using its thread pipe. Spawning is slightly faster.
+ * @params:
+ *    - func: the function to run in the thread
+ * @returns: the spawned thread.
+ */
+pub def spawnNoPipe (func : fn (Thread)-> void)-> Thread {
+    let dmut th = internal::FnThreadLauncher::new (func, false);
+    Runtime!(&internal::FnThreadLauncher)::_yrt_thread_create (alias &(th.th_content.id), null, &internal::thread_fn_main, th);
+    th.th_content
+}
+
+
+/**
+ * Spawn a thread but does not create pipe description.
+ * @info: Such a thread cannot communicate using its thread pipe. Spawning is slightly faster.
+ * @params:
+ *    - func: the delegate to run in the thread
+ * @returns: the spawned thread.
  */
 pub def spawnNoPipe (func : dg (Thread)-> void)-> Thread {
     let dmut th = internal::DgThreadLauncher::new (func, false);
@@ -90,11 +167,13 @@ pub def spawnNoPipe (func : dg (Thread)-> void)-> Thread {
 
 
 /**
- * Wait the end of execution of a thread
+ * Wait the end of execution of a thread.
  * @params: 
  *    - th: the thread to wait
  * @example: 
  * =============
+ * import std::concurrency::thread;
+ * 
  * let x = spawn (|_| => {
  *     for i in 0 .. 1_000_000 {
  *         println (i);
@@ -109,26 +188,10 @@ pub def join (th : Thread) -> void {
     _yrt_thread_join (th.id, null);
 }
 
-__version LINUX {
-/**
- * Kill a running thread
- * @params: 
- *    - th: the thread to kill
- * @example: 
- * ==============
- * let x = spawn (|_| => {
- *    loop {
- *       println ("Looping forever?");
- *    }
- * });
- * x.kill ();
- * println ("I guess not!");
- * ==============
- */
-pub def kill (th : Thread) -> void {
-    _yrt_thread_cancel (th.id);           
-}
-}
+pub struct
+| mut id : usize // The id of the thread
+| pipe : &ThreadPipe // The pipe of the thread used to communicate
+ -> Thread;
 
 mod Runtime {class T} {
     pub extern (C) def _yrt_thread_create (dmut id : &usize, attr : &void, func : fn (T)-> void, data : T)-> i32;
@@ -158,7 +221,8 @@ mod internal {
         // The function that is launch for the thread
         pub let func : fn (Thread)-> void;
         
-        pub self (func: fn (Thread)-> void) with func = func {}
+        pub self (func: fn (Thread)-> void, pipes : bool)
+            with th_content = Thread (0us, ThreadPipe::new (pipes)), func = func {}
             
     }
 

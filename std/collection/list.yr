@@ -4,7 +4,7 @@
  * This module publically import the mutable version of the `List` from `std::collection::mutable::list`, that can contain mutable values.
  * <br>
  * @Authors: Emile Cadorel
- * @Licence: GPLv3
+ * @License: GPLv3
  * <hr>
  * <br>
  * @example: 
@@ -54,21 +54,21 @@ import std::io, std::stream, std::hash;
 pub macro list {
     
     pub self (fst = __expr rest=("," val=__expr)*) skips (" " | "\n" | "\t" | "\r") {
-        let dmut z = List!(typeof (#(fst)))::new ();
-        z:.push (#(fst));
+        let dmut z_#{__index} = List!{typeof (#(fst))}::new ();
+        z_#{__index}:.push (#(fst));
         #(for i in rest) {
-            z:.push (#(i::val))
+            z_#{__index}:.push (#(i::val))
         }
-        alias z
+        alias z_#{__index}
     }
     
     pub self ("(" fst = __expr ")" rest=("::" "(" val=__expr ")")*) skips (" " | "\n" | "\t" | "\r") {
-        let dmut z = List!(typeof (#(fst)))::new ();
-        z:.push (#(fst));
+        let dmut z_#{__index} = List!{typeof (#(fst))}::new ();
+        z_#{__index}:.push (#(fst));
         #(for i in rest) {
-            z:.push (#(i::val))
+            z_#{__index}:.push (#(i::val))
         }
-        alias z
+        alias z_#{__index}
     }
 
 }
@@ -422,6 +422,11 @@ pub class @final List {T} {
             }
             
             throw OutOfArray::new (); // Can't get here, but well
+        }
+
+
+        pub over opDollar (self)-> usize {
+            self._len
         }
         
     }    

@@ -4,7 +4,7 @@
  * Publically import mutable version of the vec from `std::collection::mutable::vec`.
  * <br>
  * @Authors: Emile Cadorel
- * @Licence: GPLv3
+ * @License: GPLv3
  * <hr>
  * @example:
  * ===
@@ -17,7 +17,7 @@
  * assert (vec.len () == 2us);
  * assert (vec[0] == 1);
  * 
- * vec[0] = 42;
+ * (alias vec)[0] = 42;
  * assert (vec[0] == 42);
  * 
  * match vec:.pop ()? {
@@ -65,24 +65,33 @@ prv enum : usize
  */
 pub macro vec {
 
+    pub self (fst=__expr "," val=__expr) skips (" " | "\n" | "\r" | "\t") {
+        let dmut z_#{__index} = Vec!{typeof (#(fst))}::new ();
+        z_#{__index}:.reserve (2us);
+        z_#{__index}:.push (#(fst));
+        z_#{__index}:.push (#(val))
+            
+        alias z_#{__index}
+    }
+    
     pub self (fst=__expr rest=("," val=__expr)*) skips (" " | "\n" | "\r" | "\t") {        
-        let dmut z = Vec!{typeof (#(fst))}::new ();
-        z:.reserve ((#(rest::len)) + 1us);
-        z:.push (#(fst));
+        let dmut z_#{__index} = Vec!{typeof (#(fst))}::new ();
+        z_#{__index}:.reserve ((#(rest::len)) + 1us);
+        z_#{__index}:.push (#(fst));
         #(for i in rest) {
-            z:.push (#(i::val))
+            z_#{__index}:.push (#(i::val))
         }
-        alias z
+        alias z_#{__index}
     }
 
     pub self (fst=__expr ";" len=__expr) skips (" " | "\n" | "\r" | "\t") {
-        let dmut z = Vec!{typeof (#(fst))}::new ();
-        z:.reserve (cast!usize (#(len)));
+        let dmut z_#{__index} = Vec!{typeof (#(fst))}::new ();
+        z_#{__index}:.reserve (cast!usize (#(len)));
         for _ in 0us .. cast!usize (#(len)) {
-            z:.push (#(fst));
+            z_#{__index}:.push (#(fst));
         }
         
-        alias z
+        alias z_#{__index}
     }
     
 }
@@ -116,7 +125,7 @@ pub macro vec {
  * assert (hash (x) != hash (z));
  * 
  * // and it is sequence
- * assert (x.len () == 3us && x[0us] == 1);
+ * assert (x.len () == 3us && x[0us] == 1 && x[$ - 1us] == 3);
  * ===========================
  */
 pub class @final Vec {T} {
@@ -240,7 +249,8 @@ pub class @final Vec {T} {
         for j in cast!usize (i) .. self._len {
             self._data [j] = self._data [j + 1us];
         }
-        
+
+        self._len -= 1us;
         if (self._len < self._data.len / 2us)
             self:.fit ();
     }    
@@ -350,7 +360,7 @@ pub class @final Vec {T} {
          * @complexity: O (self.len ())
          */
         pub def opEquals (self, o : &Vec!{T}) -> bool {
-            if (self._len != o._data.len) return false;
+            if (self._len != o._len) return false;
             for i in 0us .. self._len {
                 if (self._data [i] != o._data [i]) return false;
             }
@@ -398,8 +408,28 @@ pub class @final Vec {T} {
      */
     pub def opIndex (self) -> [T] {
         self._data [0us .. self._len]
-    }    
+    }
 
+    /**
+     * Get a slice on the content of the vec.
+     * @example:
+     * @throws:
+     *    - &OutOfArray: if the range is bigger than the slice or is invalid (range.fst > range.scd)
+     * ===
+     * let v = vec#[1, 2, 3, 4];
+     * assert (v[1us .. $ - 1us] == [2, 3]);
+     * ===
+     */
+    pub def opIndex (self, r : ..usize)-> [T]
+        throws &OutOfArray
+    {
+        if r.fst > r.scd { throw OutOfArray::new (); }
+        if r.scd > self._len { throw OutOfArray::new (); }
+
+        self._data [r.fst .. r.scd]
+    }
+
+    
     /**
      * Change the value in the vec at a given index.
      * @params:
@@ -533,7 +563,19 @@ pub class @final Vec {T} {
                 return self._data [i];
             } else throw OutOfArray::new ();
         }
-        
+
+        /**
+         * An alias to get the length of the vector
+         * @example: 
+         * ===
+         * let v = vec#[1, 2, 3];
+         * assert (v[$ - 1us] == 3);
+         * ===
+         */
+        pub over opDollar (self)-> usize {
+            self._len
+        }
+
     }
     
     

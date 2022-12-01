@@ -5,11 +5,14 @@
  * Unlike map, vec and list, there is no mutable version of the set. It would have no sense to modify values contained in the set, as it would remove its purpose. For example, if we have a set containing two values, `{1, 8}`, and we can modify the value `1` to make it equal to `8`, the set would have the same value two times `{8, 8}`, which is against the whole point of using a set. It is the same reason the governs the absence of mutability of keys in a HashMap.
  * <br>
  * @Authors: Emile Cadorel
- * @Licence: GPLv3
+ * @License: GPLv3
  * <hr>
  * 
  * @example : 
  * =============
+ * import std::collection::set;
+ * import std::io; // for println
+ * 
  * let dmut set = HashSet!([c32])::new ();
  *
  * set:.insert ("foo"); 
@@ -117,7 +120,7 @@ prv enum : usize
 pub macro hset {
 
     pub self (fst=__expr rest=("," val = __expr)*) skips (" " | "\n" | "\r" | "\t") {
-        let dmut s_#{__index} = HashSet!(typeof (#(fst)))::new ();
+        let dmut s_#{__index} = HashSet!{typeof (#(fst))}::new ();
         s_#{__index}:.insert (#(fst));
         #(for i in rest) {
             s_#{__index}:.insert (#(i::val));
@@ -340,6 +343,13 @@ pub class @final HashSet {T} {
     pub def len (self)-> usize {
         self._size
     }
+
+    /**
+     * @returns: true iif the set is empty
+     */    
+    pub def isEmpty (self)-> bool {
+        self._size == 0us
+    }    
 
     impl std::hash::Hashable {
         pub over hash (self)-> u64 {

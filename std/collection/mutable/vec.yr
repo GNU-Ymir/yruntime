@@ -4,7 +4,7 @@
  * Publically imported from `std::collection::vec`.
  * <br>
  * @Authors: Emile Cadorel
- * @Licence: GPLv3
+ * @License: GPLv3
  */
 
 mod std::collection::mutable::vec;
@@ -165,6 +165,8 @@ pub class @final Vec {T of dmut Z, class Z} {
             self._data [j] = alias self._data [j + 1us];
         }
         
+        self._len -= 1us;
+        
         if (self._len < self._data.len / 2us)
             self:.fit ();
     }
@@ -259,7 +261,7 @@ pub class @final Vec {T of dmut Z, class Z} {
          * @complexity: O (self.len ())
          */
         pub def opEquals (self, o : &Vec!{dmut T}) -> bool {
-            if (self._len != o._data.len) return false;
+            if (self._len != o._len) return false;
             for i in 0us .. self._len {
                 if (self._data [i] != o._data [i]) return false;
             }
@@ -303,7 +305,32 @@ pub class @final Vec {T of dmut Z, class Z} {
      */
     pub def opIndex (self) -> [T] {
         self._data [0us .. self._len]
-    }     
+    }
+
+
+    /**
+     * Get a slice on the content of the vec.
+     * @throws:
+     *    - &OutOfArray: if the range is bigger than the slice or is invalid (range.fst > range.scd)
+     * @example:
+     * ===
+     * let dmut v = Vec!{dmut &A}::new ();
+     * for i in 0 .. 3 {
+     *     x:.push (A::new (i));
+     * }
+     * 
+     * assert (x[0us .. 2us] == [A::new (0), A::new (1)]);
+     * ===
+     * @complexity: O (1)
+     */
+    pub def opIndex (self, r : ..usize)-> [T]
+        throws &OutOfArray
+    {
+        if r.fst > r.scd { throw OutOfArray::new (); }
+        if r.scd > self._len { throw OutOfArray::new (); }
+
+        self._data [r.fst .. r.scd]
+    }    
 
     /**
      * Get the slice content of the vec 
@@ -322,6 +349,31 @@ pub class @final Vec {T of dmut Z, class Z} {
         alias self._data [0us .. self._len]
     }
 
+
+    /**
+     * Get a slice on the content of the vec.
+     * @throws:
+     *    - &OutOfArray: if the range is bigger than the slice or is invalid (range.fst > range.scd)
+     * @example:
+     * ===
+     * let dmut v = Vec!{dmut &A}::new ();
+     * for i in 0 .. 3 {
+     *     x:.push (A::new (i));
+     * }
+     * 
+     * assert (x[0us .. 2us] == [A::new (0), A::new (1)]);
+     * ===
+     * @complexity: O (1)
+     */
+    pub def opIndex (mut self, r : ..usize)-> dmut [T]
+        throws &OutOfArray
+    {
+        if r.fst > r.scd { throw OutOfArray::new (); }
+        if r.scd > self._len { throw OutOfArray::new (); }
+
+        alias self._data [r.fst .. r.scd]
+    }    
+    
     /**
      * Change the value in the vec at a given index
      * @params:
@@ -349,7 +401,7 @@ pub class @final Vec {T of dmut Z, class Z} {
             if (cast!isize (i) < 0is) throw OutOfArray::new ();
         }
         
-        if (i < self._len) {
+        if (cast!usize (i) < self._len) {
             self._data [i] = alias val;
         } else throw OutOfArray::new ();
     }
@@ -416,7 +468,7 @@ pub class @final Vec {T of dmut Z, class Z} {
             if (cast!isize (i) < 0is) throw OutOfArray::new ();
         }
         
-        if (i < self._len) {
+        if (cast!usize (i) < self._len) {
             return alias self._data [i];
         } else throw OutOfArray::new ();
     }
@@ -469,7 +521,7 @@ pub class @final Vec {T of dmut Z, class Z} {
             if (cast!isize (i) < 0is) throw OutOfArray::new ();
         }
         
-        if (i < self._len) {
+        if (cast!usize (i) < self._len) {
             return self._data [i];
         } else throw OutOfArray::new ();
     }    
@@ -492,6 +544,10 @@ pub class @final Vec {T of dmut Z, class Z} {
             } else throw OutOfArray::new ();
         }
 
+        pub over opDollar (self)-> usize {
+            self._len
+        }
+        
     }
     
     
