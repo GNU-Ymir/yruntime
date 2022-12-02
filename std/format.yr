@@ -1,3 +1,59 @@
+/**
+ * This module implement format functions, that format a list of parameters into a string according to a description.
+ * Formatter are used to align text, and format it in different form (hexadecimal, binary, scientific notations, etc.).
+ * 
+ * @authors: Emile Cadorel
+ * License: GPLv3
+ * <hr>
+ * 
+ * @example:
+ * ```
+ * import std::format;
+ * 
+ * // Simple formatting using formatter without information {}
+ * let mut f = format ("i : {}, j : {}"s8, 89, "test"s8);
+ * assert (f == "i : 89, j : test"s8);
+ *
+ * // aligning the parameter, char = '+', left = '<', len = '8'
+ * f = format ("{:+<8}"s8, 12u32);
+ * assert (f == "12++++++"s8);
+ *
+ * // aligning the parameter, char = '=', left = '<', len = '8'
+ * // and put the sign '+' if the value is positive, and in hexadecimal 'x'
+ * f = format ("{:=<+8x}"s8, 12u32);
+ * assert (f == "+0xc====="s8);
+ *
+ * // aligning the parameter 1, char = '=', right = '>' len = '8', parameter 0 is ignored
+ * f = format ("{1:=>8}"s8, 89u32, 78u32);
+ * assert (f == "======78"s8);
+ *
+ * // aligning parameter '1', char = '-', center = '^', len = parameter[i - 0] (parameter 0 here)
+ * f = format ("{1:-^*}"s8, 8u32, 19u32);
+ * assert (f == "---19---"s8);
+ *
+ * // aligning parameter '1', char = '+', left = '<', len = parameter[i - 0], in hexa format = 'x'
+ * f = format ("{1:+<*x} {0}"s8, 10, 255u32);
+ * assert (f == "0xff++++++ 10"s8); 
+ * 
+ * // parameter '3' is centered and formated in scientific format, aligned with '=', 
+ * // the width is the parameter '0', the precision the parameter '1' and the value the parameter '2'
+ * f = format ("{:=^*.*e}"s8, 20, 3, 314.0);
+ * assert (f == "======3.140e+02======"s8);
+ *
+ * // parameter '1' is right aligned in binary format, width is 10, and parameter '0' is formated after
+ * f = format ("{1:->10b} {0}"s8, "foo", 4u32);
+ * assert (f == "-----0b100 foo"s8);
+ *
+ * // formatter are ignored if the { are doubled, so we can write the value { in a format
+ * f = format ("{{} {0:}"s8, 9);
+ * assert (f == "{} 9"s8);
+ *
+ * // And a simple formatting to end all that ;)
+ * f = format ("{} and {}"s8, 1, true);
+ * assert (f == "1 and true"s8);
+ * ```
+ */
+
 mod std::format;
 import std::conv;
 import std::traits;
@@ -6,8 +62,7 @@ import std::io;
 import core::exception, core::object, core::array;
 
 /**
- * Exception thrown by the format function, when the format is not respected
- * This exception contains two fields, 1) index, the index of the error in the format string, 2) msg, the diagnosis of the error
+ * Exception thrown by the format function, when the format is not respected.
  * @example: 
  * ==============
  * { 
@@ -18,10 +73,19 @@ import core::exception, core::object, core::array;
  * ==============
  */
 pub class FormatError over Exception {
+
+    // the index of the error in the format string
     pub let index : usize;
-    pub let msg : [c32];
-    
-    pub self (index : usize, msg : [c32]) with index = index, msg = msg {}
+
+    // The message to diagnosis the error
+    pub let msg : [c8];
+
+    /**
+     * @params: 
+     *    - index: the index of the error in the format string
+     *    - msg: the message to help the diagnosis of the error
+     */
+    pub self (index : usize, msg : [c8]) with index = index, msg = msg {}
 
     impl Streamable {
         pub over toStream (self, dmut stream : &StringStream) {
@@ -31,8 +95,17 @@ pub class FormatError over Exception {
 }
 
 /**
- * The common format function available in many languages. 
- * The grammar of the format string : 
+ * Format the parameters passed to the function according to the format given as first parameter.
+ * @params:
+ *   - str: the format
+ *   - a: the list of values to format
+ * @throws: 
+ *   - FormatError: if the format is not valid for the type of values
+ *
+ * <br>
+ * <br>
+ * 
+ * The grammar of the format is described below : 
  * @verbatim:
  * =================
  * format_string := (any_c8 | maybe_format)*
@@ -40,37 +113,15 @@ pub class FormatError over Exception {
  * format := '{' (argument)? (':' format_spec)? '}'
  * argument := ([0-9]*)
  * 
- * format_spec := (fill align)? (sign)? (type)? (width)? ('.' precision)?
+ * format_spec := (fill align)? (sign)? (width)? (type)? ('.' precision)?
  * fill := any_c8
  * align := '<' | '^' | '>'
  * sign := '+'
+ * type := 'o' | 'x' | 'b' | 'e'
  * width := ([0-9])* | '*'
  * precision := ([0-9])* | '*'
  * =================
  * 
- * @example:
- * ================
- * let f = format ("{{{:=^*.*e}}"s8, 20, 3, 314.0); 
- * // arg '3' is centered and formated in scientific format, aligned with '=', the width is the argument '0', the precision the argument '1' and the value '2'
- * assert (f == "{=====3.140e+02======}"s8);
- *
- * let f2 = format ("{1:+<*x} {0}"s8, 10, 255u32);
- * // arg '1' is left aligned and in hex format, width is arg '0'
- * assert (f2 == "0xff+++++ 10"s8);
- *
- * let f3 = format ("{1:->10b} {0}"s8, "foo", 4u32); 
- * // arg '1' is right aligned in binary format, width is 10, and arg '0' is formated after
- * assert (f3 == "----0b100 foo"s8);
- * 
- * let f4 = format ("{} and {}"s8, 1, true);
- * assert (f4 == "1 and true"s8);
- * ================
- * 
- * @params;
- *   - str: the format
- *   - a: the list of values to format
- * @throws: 
- *   - FormatError: if the format is not valid for the type of values
  */
 pub def format {T...} (str : [c8], a : T)-> [c8]
     throws &FormatError
@@ -104,7 +155,7 @@ mod inner {
                                 let (endIndex, current_) = inner::specialFormat (str [i + 2us .. $], a, alias stream, current, i);
                                 current = current_ + 1us;
                                 i += endIndex + 2us;
-                                if (str [i] != '}'c8) throw FormatError::new (i, "Expected }, not " ~ [cast!c32 (str [i])]);
+                                if (str [i] != '}'c8) throw FormatError::new (i, "Expected }, not "s8 ~ [str [i]]);
                             } else if (str [i + 1us] == '{'c8) {
                                 stream:.write ('{'c8);
                                 i += 1us;
@@ -115,8 +166,8 @@ mod inner {
                                 else if str [i] == ':'c8 {
                                     let (endIndex, _) = inner::specialFormat!{T} (str [i .. $], a, alias stream, cast!usize (arg), i, explicitIndex-> true);
                                     i += endIndex;
-                                    if (str [i] != '}'c8) throw FormatError::new (i, "Expected }, not " ~ [cast!c32 (str [i])]);
-                                } else throw FormatError::new (i, "Expected : or }, not " ~ [cast!c32 (str [i])]);
+                                    if (str [i] != '}'c8) throw FormatError::new (i, "Expected }, not "s8 ~ [str [i]]);
+                                } else throw FormatError::new (i, "Expected : or }, not "s8 ~ [str [i]]);
                             }
                         } else {
                             stream:.write (j);
@@ -131,7 +182,7 @@ mod inner {
         } catch {
             x : &FormatError => throw x;
             _ => {
-                throw FormatError::new (i, "Invalid format");
+                throw FormatError::new (i, "Invalid format"s8);
             }
         }
     }
@@ -150,11 +201,10 @@ mod inner {
             while i < str.len {
                 let j = str [i];
                 if j == '}'c8 break {}
-                
                 match (current, j) {
                     (0us, '<'c8 | '^'c8 | '>'c8) => { align = j; current = 1us; }
                     (2us, '<'c8 | '^'c8 | '>'c8) => { align = j; current = 1us; fill = sign; sign = '\u{0}'c8; }
-                    (0us | 1us, '+'c8) => { sign = j; current = 2us; }
+                    (0us | 1us , '+'c8) => { sign = j; current = 2us; }
                     (0us ... 4us, '.'c8) => {
                         if str [i + 1us] == '*'c8 {
                             starPrec = true;
@@ -164,7 +214,7 @@ mod inner {
                             let (_prec, _i) = {
                                 inner::getInt (str[i + 1us .. $])
                             } catch {
-                                _ => throw FormatError::new (globalIndex + i + 1us, "Expected int value, or *");
+                                _ => throw FormatError::new (globalIndex + i + 1us, "Expected int value, or *"s8);
                             }
                             i += _i;   
                             prec = _prec;
@@ -182,7 +232,7 @@ mod inner {
                                             let (_width, _i) = {
                                                 inner::getInt (str[i .. $])
                                             } catch {
-                                                _ => throw FormatError::new (globalIndex + i + 1us, "Expected int value, or *");
+                                                _ => throw FormatError::new (globalIndex + i + 1us, "Expected int value, or *"s8);
                                             }
                                             if (_i != 0us) i += _i - 1us;                                            
                                             width = _width;
@@ -197,7 +247,7 @@ mod inner {
                     }
                     (4us ... 5us,  'o'c8 | 'x'c8 | 'b'c8 | 'e'c8) => { type = j; }
                     b : _ => {
-                        throw FormatError::new (i + globalIndex, "Invalid format " ~ [cast!c32(b._1)]);
+                        throw FormatError::new (i + globalIndex, "Invalid format "s8 ~ [b._1]);
                     }
                     
                 }
@@ -205,7 +255,7 @@ mod inner {
             }
         } catch {
             x : &FormatError => throw x;
-            _ => throw FormatError::new (i + globalIndex, "Invalid format");
+            _ => throw FormatError::new (i + globalIndex, "Invalid format"s8);
         }
 
         formatValue (a, alias stream, fill, align, sign, type, width, starWidth, prec, starPrec, m_index, globalIndex);
@@ -215,7 +265,7 @@ mod inner {
     prv def formatValue {T} (a : T, dmut stream : &StringStream, index : usize, globalIndex : usize)
         throws &FormatError
     {
-        if (index >= T::arity) { throw FormatError::new (globalIndex, "No argument " ~ index.to![c32] ()); }
+        if (index >= T::arity) { throw FormatError::new (globalIndex, "No argument "s8 ~ index.to![c8] ()); }
         let mut j = 0us;
         for i in a {
             if j == index {
@@ -230,31 +280,31 @@ mod inner {
     prv def formatValue {T} (a : T, dmut stream : &StringStream, fill : c8, align : c8, sign : c8, type : c8, width : u32, starWidth : bool, prec : u32, starPrec : bool, index : usize, i : usize)
         throws &FormatError
     {
-        if (index >= T::arity) { throw FormatError::new (i, "No argument " ~ index.to![c32] ()); }
+        if (index >= T::arity) { throw FormatError::new (i, "No argument "s8 ~ index.to![c8] ()); }
         let mut j = 0us;
         let mut gotWidth = false, mut gotPrec = false, mut resWidth = cast!usize (width), mut resPrec = prec;
         for x in a {
             if starWidth && !starPrec && j == index - 1us { 
-                cte if !isIntegral!{typeof x} () { throw FormatError::new (i, "Alignment width (at position " ~ (index - 1us).to![c32] () ~ " must be an integer"); }
+                cte if !isIntegral!{typeof x} () { throw FormatError::new (i, "Alignment width (at position "s8 ~ (index - 1us).to![c8] () ~ " must be an integer"s8); }
                 else {
                     resWidth = cast!usize (x);
                     gotWidth = true;
                 }
             } else if starWidth && starPrec && j == index - 2us {
-                cte if !isIntegral!{typeof x} () { throw FormatError::new (i, "Alignment width (at position " ~ (index - 2us).to![c32] () ~ " must be an integer"); }
+                cte if !isIntegral!{typeof x} () { throw FormatError::new (i, "Alignment width (at position "s8 ~ (index - 2us).to![c8] () ~ " must be an integer"s8); }
                 else {
                     resWidth = cast!usize (x);
                     gotWidth = true;
                 }
             } else if starPrec && j == index - 1us {
-                cte if !isIntegral!{typeof x} () { throw FormatError::new (i, "Precision (at position " ~ (index - 1us).to![c32] () ~ " must be an integer"); }
+                cte if !isIntegral!{typeof x} () { throw FormatError::new (i, "Precision (at position "s8 ~ (index - 1us).to![c8] () ~ " must be an integer"s8); }
                 else {
                     resPrec = cast!u32 (x);
                     gotPrec = true;
                 }
             } else if j == index {
-                if starWidth && !gotWidth { throw FormatError::new (i, "Undefined alignment width for argument at position " ~ index.to![c32] ()); }
-                if starPrec && !gotPrec { throw FormatError::new (i, "Undefined precision for argument at position " ~ index.to![c32] ()); }
+                if starWidth && !gotWidth { throw FormatError::new (i, "Undefined alignment width for argument at position "s8 ~ index.to![c8] ()); }
+                if starPrec && !gotPrec { throw FormatError::new (i, "Undefined precision for argument at position "s8 ~ index.to![c8] ()); }
                 let elem = {
                     convertValue (x, sign, type, resPrec)
                 } catch {
@@ -265,23 +315,23 @@ mod inner {
                     match align {
                         '<'c8 => {
                             stream:.write (elem);
-                            for _ in elem.len .. resWidth {
+                            for _ in elem.len ... resWidth {
                                 stream:.write (fill);
                             }
                         }
                         '>'c8 => {
-                            for _ in 0us .. (resWidth - elem.len) {
+                            for _ in 0us ... (resWidth - elem.len) {
                                 stream:.write (fill);
                             }
                             stream:.write (elem);
                         }
                         _ => {
                             let toAdd = resWidth - elem.len;
-                            for _ in 0us .. toAdd / 2us {
+                            for _ in 0us ... toAdd / 2us {
                                 stream:.write (fill);
                             }
                             stream:.write (elem);
-                            for _ in toAdd/2us .. toAdd {
+                            for _ in 0us .. toAdd - (toAdd/2us) {
                                 stream:.write (fill);
                             }
                         }                            
@@ -318,7 +368,7 @@ mod inner {
                 'x'c8 => { res = value.to!{[c8], "x"} (); }
                 _ => assert (false, "Invalid type format " ~ [cast!c32 (type)] ~ " for type " ~ T::typeid);
             }
-            if value > cast!T (0) && sign != '+'c8 { return [sign] ~ res; }
+            if value > cast!T (0) && sign == '+'c8 { return [sign] ~ res; }
             return res;
         } else cte if is!{T}{U of [C], C of c8} {
             sign;

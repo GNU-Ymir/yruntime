@@ -43,9 +43,9 @@ pub class @abstract Exception {
 }
 
 pub class AssertError over Exception {
-    pub let msg : [c32];
+    pub let msg : [c8];
 
-    pub self (msg : [c32]) with msg = msg {}
+    pub self (msg : [c8]) with msg = msg {}
 
     impl stream::Streamable {
         pub over toStream (self, dmut stream : &StringStream) {
@@ -79,15 +79,24 @@ pub class SegFault over Exception {
 pub def abort (test : bool, msg : [c32])
     throws &AssertError
 {
+    import std::conv;
+    if (!test) {
+        throw AssertError::new (msg.to![c8] ())
+    }
+}
+
+pub def abort (test : bool, msg : [c8])
+    throws &AssertError
+{
     if (!test)
-        throw AssertError::new (msg)
+    throw AssertError::new (msg)
 }
 
 pub def abort (test : bool)
     throws &AssertError
 {
     if (!test)
-        throw AssertError::new ("")
+        throw AssertError::new (""s8)
 }
 
 pub extern (C) def _yrt_throw_seg_fault () -> void
