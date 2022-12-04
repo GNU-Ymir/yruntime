@@ -1,12 +1,21 @@
+/**
+ * Error module for the errors that can occur when dealing with filesystem.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
 mod std::fs::errors;
 
-import etc::runtime::errno;
-import std::io, std::stream;
 import core::exception;
-import core::object;
+import etc::runtime::errno;
 
+import std::stream;
+
+/**
+ * Error code used to identify a specific filesystem error
+ */
 pub enum
-| FILE_CLOSED       = 1u8
+| FILE_CLOSED       = 1u8 
 | NOT_READABLE      = 2u8
 | NOT_WRITABLE      = 3u8
 | PERMISSION_DENIED = 4u8
@@ -20,11 +29,18 @@ pub enum
 | NOT_A_FILE        = 12u8
  -> FsErrorCode;
 
+/**
+ * Error thrown when an error occur in the std::fs module.
+ */
 pub class FsError over Exception {
 
+    // The message of the error
     pub let msg : [c8];
+
+    // The error code to identify the error
     pub let code : FsErrorCode;
-    
+
+
     pub self (code : FsErrorCode, msg : [c8]) with msg = msg, code = code {}
 
     impl Streamable {
@@ -39,6 +55,12 @@ pub class FsError over Exception {
     }   
 }
 
+/**
+ * Transform an errno error into an FsErrorCode
+* @params: 
+ *   - err: the error returned by errno
+ * @returns: a FsErrorCode usable by FsError exception
+ */
 pub def if is!{T}{X of FsErrorCode} to {T} (err : ErrnoValue) -> FsErrorCode {
     match err {
         ErrnoValue::EACCES => { FsErrorCode::PERMISSION_DENIED }
@@ -53,6 +75,12 @@ pub def if is!{T}{X of FsErrorCode} to {T} (err : ErrnoValue) -> FsErrorCode {
     }
 }
 
+/**
+ * Transform an error code into a readable string
+ * @params: 
+ *    - err: the error code to transform into a readable string
+ * @returns: a readable string 
+ */
 pub def if is!{U}{X of c8} to {C of [U], U, T of FsErrorCode} (err : T) -> [c8] {
     match err {
         FsErrorCode::FILE_CLOSED  => { "FILE_CLOSED"s8 }
@@ -70,3 +98,4 @@ pub def if is!{U}{X of c8} to {C of [U], U, T of FsErrorCode} (err : T) -> [c8] 
         _ => { ""s8 }
     }
 }
+

@@ -1,3 +1,60 @@
+/**
+ * This module implements the class File, that is used to access an open file in the filesystem. A file can be read and written depending on the options specified when opening it. Files are disposable, meaning that `with` construction should be preferred. When the file is not disposed, it is closed automatically when the garbage free the memory associated with the instance. 
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * 
+ * <hr>
+ * 
+ * @example: 
+ * Create a file and write a string in it : 
+ * ===
+ * import std::fs::file;
+ * import std::file::path; // For Path
+ * 
+ * // Create a file named "foo.txt", and write something in it
+ * with dmut file = File::create (Path::new ("foo.txt"s8), write-> true) {
+ *     file:.write ("Hello World!"s8); 
+ * } catch {
+ *     err : &FsError => { // creation failed for some reason
+ *         println (err);
+ *     }
+ * }
+ * ===
+ * <br>
+ * Open an existing file and read its content : 
+ * ===
+ * import std::fs::file;
+ * import std::fs::path; // For Path
+ * 
+ * let content = {
+ *     with dmut file = File::open (Path::new ("foo.txt"s8)) {
+ *         file:.readAll () // read the all the content of the file
+ *     } catch {
+ *        // File does not exist or permission denied
+ *        err : &FsError => { ""s8 } // return an empty string
+ *     }
+ * };
+ * 
+ * println (content);
+ * ===
+ * 
+ * <br>
+ * Open an existing file and append content to it : 
+ * ===
+ * import std::fs::file;
+ * import std::fs::path; // For Path
+ * 
+ * with dmut file = File::open (Path::new ("foo.txt"s8), append-> true) {
+ *     file:.write ("Appending content"s8);
+ * } catch {
+ *     // File does not exist or permission denied
+ *     err : &FsError => { 
+ *         println (err);
+ *     }
+ * }
+ * ===
+ */
+
 mod std::fs::file;
 
 import core::object, core::typeinfo, core::exception;
@@ -7,21 +64,13 @@ import std::conv;
 import std::io;
 import std::fs::path;
 import std::fs::errors;
-import std::fs;
+import std::fs::sys;
+
+import etc::c::files;
+import etc::runtime::errno;
 
 /**
- * This class is a reference to a file in the file system
- * @warning: files are disposable
- * @example: 
- * ===========
- * with dmut file = File::create ("foo.txt", write-> true) {
- *     file:.write ("Hello world !!\\n"s8);
- *  } catch {
- *      err : &FsError => {
- *          println (err);
- *      }
- *  }
- * ===========
+ * This class is a reference to a file in the file system.
  */
 pub class @final File {
 
@@ -36,9 +85,15 @@ pub class @final File {
     prv let _append : bool;    
     
     /**
-     * Open a file in the file system
-     * @throws: FsError, if the file failed to be created or opened
-     * @info: if the file already existed, it will be erased
+     * Create a file in the filesystem.
+     * @params: 
+     *    - path: the path of the file to create
+     *    - read: if true open the file in read mode (can be composed with write or append)
+     *    - write: if true open the file in write mode (can be composed with read)
+     *    - read: if true open the file in append mode (can be composed with read) 
+     * @throws: 
+     *     - &FsError, if the file failed to be created or opened.
+     * @info: if the file already existed, it will be erased.
      */
     pub self create (path : &Path, read : bool = true, write : bool = false, append : bool = false)
         with _filename = path.toStr (),
@@ -47,13 +102,20 @@ pub class @final File {
              _append = append
         throws &FsError
     {
-        std::fs::createFile (path);
+        std::fs::sys::createFile (path);
         self:.open ();
     }
     
     /**
-     * Open a file in the file system
-     * @throws: FsError, if the file does not exists
+     * Open an existing file in the file system.
+     * @params: 
+     *    - path: the path of the file to create
+     *    - read: if true open the file in read mode (can be composed with write or append)
+     *    - write: if true open the file in write mode (can be composed with read)
+     *    - read: if true open the file in append mode (can be composed with read)
+     * @throws: 
+     *    - &FsError, if the file does not exists, or current user does not have the proper permissions
+     * @info: if append and written are set to true, append is prioritized
      */
     pub self open (path : &Path, read : bool = true, write : bool = false, append : bool = false)
         with _filename = path.toStr (),
@@ -62,7 +124,7 @@ pub class @final File {
              _append = append
         throws &FsError
     {
-        if fs::isDir (path) || !fs::isReadable (path) {
+        if fs::sys::isDir (path) || !fs::sys::isReadable (path) {
             throw FsError::new (FsErrorCode::NOT_A_FILE, self._filename);       
         }
         self:.open ();
@@ -77,23 +139,33 @@ pub class @final File {
         let mode = self.createMode ();
         self._handle = etc::c::files::fopen ((self._filename.toStringZ ()), mode.ptr);
         if (self._handle is null) {
-            throw FsError::new (errno ().to!(FsErrorCode) (), self._filename);               
+            throw FsError::new (fs::errors::to!(FsErrorCode) (errno ()), self._filename);               
         }
     }
 
     /**
-     * Read all the char contained in the file from the current cursor position
+     * Read all the content contained in the file from the current cursor position.
+     * @throws: 
+     *   - &FsError: if the file is not opened, or not readable.
      * @example: 
      * ==============
-     * let dmut fs = File::create ("foo.txt", write-> true);
-     * fs:.write ("Hello World !"s8);
-     * fs:.seek (0u64);
+     * import std::fs::file, std::fs::path; 
      * 
-     * let res = fs:.readAll ();
-     * assert (res == "Hello World !"s8);
+     * // Create a file in read and write mode (read is set by default)
+     * with dmut fs = File::create (Path::new ("foo.txt"s8), write-> true) {
+     *     fs:.write ("Hello World !"s8);
+     * 
+     *     // Put the cursor to the beginning of the file
+     *     fs:.seek (0u32);
+     * 
+     *     let res = fs:.readAll ();
+     *     assert (res == "Hello World !"s8); 
+     * } catch {
+     *      err : _ => { 
+     *          println (err);
+     *      }
+     * }
      * ==============
-     * @throws: 
-     *   - FsError: if the file is not opened, or not readable
      */
     pub def readAll (mut self) -> dmut [c8]
         throws &FsError
@@ -122,18 +194,32 @@ pub class @final File {
     }
 
     /**
-     * Read the content of a file until the delimiter text if found or EOF
+     * Read the content of a file until the delimiter text if found or EOF.
+     * @params: 
+     *    - delim: the delimiter to find in the file content to stop the reading.
+     * @throws: 
+     *   - &FsError: if the file is not opened, or not readable
      * @example: 
      * ==============
-     * let dmut fs = File::create ("foo.txt", write-> true);
-     * fs:.write ("Hello World !"s8);
-     * fs:.seek (0u64);
+     * import std::fs::file, std::fs::path;
      * 
-     * let res = fs:.readUntil (" !"s8);
-     * assert (res == "Hello World"s8);
+     * with dmut fs = File::create (Path::new ("foo.txt"s8), write-> true) {
+     *     fs:.write ("Hello World !"s8);
+     * 
+     *     // Put the cursor to the begin of the file
+     *     fs:.seek (0u32);
+     * 
+     *     let res = fs:.readUntil ("Wor"s8);
+     *     assert (res == "Hello Wor"s8);
+     *
+     *     let end = fs:.readAll ();
+     *     assert (end == "ld !"s8); 
+     * } catch {
+     *      err : _ => { 
+     *          println (err);
+     *      }
+     * }
      * ==============
-     * @throws: 
-     *   - FsError: if the file is not opened, or not readable
      */
     pub def readUntil (mut self, delim : [c8])-> dmut [c8]
         throws &FsError
@@ -165,40 +251,25 @@ pub class @final File {
         
         return alias aux;
     }
-
-    /**
-     * Read the content of a file until the delimiter text if found or EOF
-     * @params: 
-     *    - delim: the delimiter 
-     * @example: 
-     * ==============
-     * let dmut fs = File::create ("foo.txt", write-> true);
-     * fs:.write ("Hello World !"s8);
-     * fs:.seek (0u32);
-     * 
-     * let res = fs:.readUntil (" !");
-     * assert (res == "Hello World"s8);
-     * ==============
-     * @throws: 
-     *   - FsError: if the file is not opened, or not readable
-     */
-    pub def readUntil (mut self, delim : [c32])-> dmut [c8]
-        throws &FsError
-    {
-        if (self._handle is null) {
-            throw FsError::new (FsErrorCode::FILE_CLOSED, self._filename);
-        } else if (!self._read) {
-            throw FsError::new (FsErrorCode::NOT_READABLE, self._filename);
-        }
-        
-        return self:.readUntil (to![c8] (delim));
-    }
-
     
     /**
-     * Write some text to a file
+     * Write text in a file.
+     * @params: 
+     *    - text: the text to write in the file.
      * @throws: 
-     *   - FsError: if the file is not opened, or not writable
+     *   - &FsError: if the file is not opened, or not writable
+     * @example: 
+     * ===
+     * import std::fs::file, std::fs::path;
+     * 
+     * with dmut file = File::open (Path::new ("foo.txt"s8), write-> true) {
+     *      file:.write ("Some text"s8);
+     * } catch {
+     *      err : &FsError => { 
+     *          println (err);
+     *      }
+     * }
+     * ===
      */
     pub def write (mut self, text : [c8]) -> void
         throws &FsError
@@ -213,19 +284,26 @@ pub class @final File {
     }
     
 
-
     /**
-     * Read all the char contained in the file from the current cursor position
-     * @example: 
-     * ==============
-     * let dmut fs = File::create ("foo.txt", write-> true);
-     * fs:.write ("Hello World !"s8);
-     * fs:.seek (0u32);
-     * 
-     * let res : [u8] = fs:.readBytesAll ();
-     * ==============
+     * Read all content contained in the file from the current cursor position in byte mode.
      * @throws: 
      *   - FsError: if the file is not opened, or not readable
+     * @example: 
+     * ==============
+     * import std::fs::file, std::fs::path;
+     * 
+     * with dmut fs = File::create (Path::new ("foo.txt"s8), write-> true) {
+     *     fs:.write ("Hello World !"s8);
+     *     fs:.seek (0u32);
+     * 
+     *     let res : [u8] = fs:.readBytesAll ();
+     *     assert (res == [72u8, 101u8, 108u8, 108u8, 111u8, 32u8, 87u8, 111u8, 114u8, 108u8, 100u8, 32u8, 33u8]);
+     * } catch {
+     *      err : _ => { 
+     *          println (err);
+     *      }
+     * }
+     * ==============
      */
     pub def readBytesAll (mut self) -> dmut [u8]
         throws &FsError
@@ -254,17 +332,30 @@ pub class @final File {
     }
 
     /**
-     * Read the content of a file until the delimiter bytes is found or EOF
-     * @example: 
-     * ==============
-     * let dmut fs = File::create ("foo.txt", write-> true);
-     * fs:.write ("Hello World !"s8);
-     * fs:.seek (0u32);
-     * 
-     * let res : [u8] = fs:.readBytesUntil ([cast!(u8)('\n'c8)]);
-     * ==============
+     * Read the content of a file until the delimiter bytes is found or EOF.
+     * @params: 
+     *    - delim: the delimiter to find in the file content to stop the reading.
      * @throws: 
      *   - FsError: if the file is not opened, are not readable
+     * @example: 
+     * ==============
+     * import std::fs::file, std::fs::path;
+     * 
+     * with dmut fs = File::create (Path::new ("foo.txt"s8), write-> true) {
+     *     fs:.write ("Hello World !"s8);
+     *     fs:.seek (0u32);
+     * 
+     *     let res : [u8] = fs:.readBytesUntil ([87u8, 111u8, 114u8]);
+     *     assert (res == [72u8, 101u8, 108u8, 108u8, 111u8, 32u8, 87u8, 111u8, 114u8]);
+     * 
+     *     let end = fs:.readAll ();
+     *     assert (end == "ld !"s8);
+     * } catch {
+     *      err : _ => { 
+     *          println (err);
+     *      }
+     * } 
+     * ==============
      */
     pub def readBytesUntil (mut self, delim : [u8])-> dmut [u8]
         throws &FsError
@@ -298,9 +389,23 @@ pub class @final File {
     }
     
     /**
-     * Write some bytes to a file
+     * Write some bytes to a file.
+     * @params: 
+     *    - text: the bytes to write in the file
      * @throws: 
      *   - FsError: if the file is not opened, are not writable
+     * @example: 
+     * ===
+     * import std::fs::file, std::fs::path;
+     * 
+     * with dmut file = File::open (Path::new ("foo.txt"s8), write-> true) {
+     *      file:.writeBytes ([83u8, 111u8, 109u8, 101u8, 32u8, 84u8, 101u8, 120u8, 116u8]);
+     * } catch {
+     *      err : &FsError => { 
+     *          println (err);
+     *      }
+     * }
+     * ===
      */
     pub def writeBytes (mut self, text : [u8]) -> void
         throws &FsError
@@ -317,7 +422,7 @@ pub class @final File {
     
     /**
      * Move the position of the cursor of the file
-     * @info: the cursor position is relative to the beginning of the file
+     * @info: the cursor position is relative to the beginning of the file in number of bytes.
      * @throws: 
      *   - FsError: if the file is not opened
      */
@@ -331,7 +436,7 @@ pub class @final File {
     }
 
     /**
-     * Tell the position of the cursor in the file relative to the beginning of the file
+     * Tell the position of the cursor in the file relative to the beginning of the file in number of bytes.
      * @throws: 
      *   - FsError: if the file is not opened
      */
@@ -345,7 +450,7 @@ pub class @final File {
     }
 
     /**
-     * @returns: the len of the file (from beginning to end)
+     * @returns: the len of the file (from beginning to end) in number of bytes.
      */
     pub def len (self)-> u32
         throws &FsError
@@ -358,7 +463,7 @@ pub class @final File {
     }
     
     /**
-     * Close the file
+     * Close the file.
      * @info: if the file was not open, this method does nothing
      */
     pub def close (mut self) {
