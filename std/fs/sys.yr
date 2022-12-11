@@ -134,12 +134,12 @@ pub def removeDir (path : &Path, recursive : bool = false)
         if (recursive) {
             for i in readDir (path) {
                 match i {
-                    f : &FileEntry => { removeFile (f.getPath ()); }
+                    f : &FileEntry => { removeFile (f.path); }
                     d : &DirEntry => {
-                        removeDir (d.getPath (), recursive-> true);                        
+                        removeDir (d.path, recursive-> true);                        
                     }
                     fs : &FsEntry => {
-                        removeFsEntry (fs.getPath ());
+                        removeFsEntry (fs.path);
                     }
                 }
             }
@@ -184,13 +184,13 @@ pub def copyDir (src : &Path, dst : &Path, recursive : bool = false, create : bo
         else if !isDir (dst) { throw FsError::new (FsErrorCode::PARENT_DONT_EXIST, dst.toStr ()); }
         for i in readDir (src) {
             match i {
-                f : &FileEntry => { copyFile (f.getPath (), dst.push (f.getPath ().removePrefix (src))); }
+                f : &FileEntry => { copyFile (f.path, dst.push (f.path.removePrefix (src))); }
                 d : &DirEntry => {
-                    createDir (dst.push (d.getPath ().removePrefix (src)));
-                    if (recursive) copyDir (d.getPath (), dst.push (d.getPath ().removePrefix (src)), recursive-> true, create-> create);
+                    createDir (dst.push (d.path.removePrefix (src)));
+                    if (recursive) copyDir (d.path, dst.push (d.path.removePrefix (src)), recursive-> true, create-> create);
                 }
                 fs : &FsEntry => {
-                    copyFsEntry (fs.getPath (), dst.push (fs.getPath ().removePrefix (src)));
+                    copyFsEntry (fs.path, dst.push (fs.path.removePrefix (src)));
                 }
             }
         }

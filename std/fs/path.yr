@@ -1,3 +1,46 @@
+/**
+ * This module implements the class Path, that is used to describe a path in a the filesystem.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @example: 
+ * ===
+ * import std::fs::path;
+ * 
+ * // Path are created from string, containing a path
+ * let p = Path::new ("./some/dir"s8);
+ * 
+ * // A custom separator can be used 
+ * let c = Path::new (".\\some\\windows\\dir\\"s8, sep-> "\\"s8);
+ * let m = Path::new ("std::fs::path"s8, sep-> "::"s8);
+ * 
+ * // parts, return the elements composing the path
+ * assert (c.parts () == ["."s8, "some"s8, "windows"s8, "dir"s8]);
+ * assert (m.parts () == ["std"s8, "fs"s8, "path"s8]);
+ * 
+ * // append a sub element to a path
+ * let fp = p.push ("some_file.txt"s8);
+ * 
+ * // append a path to a path from string, or a path
+ * let sp = c.push ("another/path/str"s8);
+ * let sp2 = c.push (Path::new ("another/path/str"s8));
+ * 
+ * assert (sp == sp2);
+ * 
+ * // file returns the last element of the path
+ * assert (fp.file () == "some_file.txt"s8 && fp.parts () == ["."s8, "some"s8, "dir"s8, "some_file.txt"s8]);
+ * 
+ * // root returns the first element of the path
+ * assert (fp.root () == "."s8);
+ * 
+ * // path can be translated to string
+ * assert (m.toStr () == "std/fs/path"s8);
+ * 
+ * // Or by using a custom separator
+ * assert (m.toStr (sep-> "::"s8) == "std::fs::path"s8);
+ * ===
+ */
+
 mod std::fs::path;
 
 import core::object, core::typeinfo, core::exception;
@@ -9,42 +52,83 @@ import std::collection::vec;
 import std::stream;
 import std::hash;
 
+/**
+ * Class used to represent a filesystem path, that contains some utility function to manipulate paths.
+ * This class is immutable, and can only be used to create other paths containing the modifications.
+ */
 pub class @final Path {
 
+    // The content of the path
     prv let dmut _parts = Vec!{[c8]}::new ();
 
     /**
-     * Create a new path from a utf32 path (simply converts it into a [c8])
+     * Create a new path from a utf32 path (simply converts it into a utf8).
+     * @info: Path encoding is always in utf8.
+     * @complexity: 
+     *     O(n x m + (n + m)), where n is the number of char path and m the number of char in the separator. The addition of (n + m) is due to the additional encoding from utf32 to utf8.
+     * 
      * @example: 
      * =========
-     * let dmut path = Path::new ("foo/bar/baz.txt");
+     * import std::fs::path;
+     * 
+     * // Create a path using the standard separator '/' ('\\' on windows)
+     * let path = Path::new ("foo/bar/baz.txt");
+     *
+     * // parts lists the different component of the path
      * assert (path.parts () == ["foo"s8, "bar"s8, "baz.txt"s8]);
      * =========
      */    
-    pub self (path : [c32]) with self (path.to![c8] ()) {}
+    pub self (path : [c32], sep : [c32] = __version WINDOWS { "\\" } else { "/" })
+        with self (path.to![c8] (), sep-> sep.to![c8] ())
+    {}
     
     /**
-     * Create a new path from a utf8 path
+     * Create a new path from a utf8 path.
+     * @params: 
+     *    - path: the path to split
+     *    - sep: the token used to split the path
+     * @warning: the path does not keep track of the separator, it is up to the user to maintain a consistence with the separators (cf. self::push).
+     * @complexity: O(n x m), where n is the number of char `path` and m the number of char in the separator
      * @example: 
      * =========
-     * let dmut path = Path::new ("foo/bar/baz.txt"s8);
+     * import std::fs::path;
+     * 
+     * // Create a path using the standard separator '/' ('\\' on windows)
+     * let path = Path::new ("foo/bar/baz.txt"s8);
+     * 
+     * // parts lists the different component of the path
      * assert (path.parts () == ["foo"s8, "bar"s8, "baz.txt"s8]);
      * =========
      */
-    pub self (path : [c8], sep : c8 = __version WINDOWS { '\\'c8 } else { '/'c8 }) {
+    pub self (path : [c8], sep : [c8] = __version WINDOWS { "\\"s8 } else { "/"s8 }) {
         let mut last = 0us;
         for i in 0us .. path.len {
-            if (path[i] == sep) {
-                self._parts:.push (copy (path[last .. i]));
-                last = i + 1us;
+            if (path[i .. $].len >= sep.len) {
+                if (path[i .. i + sep.len] == sep) {
+                    self._parts:.push (copy (path[last .. i]));
+                    last = i + sep.len;
+                }
             }
         }
+            
         if (last != path.len)
-            self._parts:.push (copy (path [last..$]));
+            self._parts:.push (copy (path [last .. $]));
     }
 
+    /**
+     * Inner construction to avoid unnecessary copies.
+     * @complexity: O(1)
+     * @params:
+     *    - path: the parts of the path (aliased)
+     */
     prv self (dmut path : &Vec!([c8])) with _parts = alias path {}
 
+    /**
+     * Inner construction to avoid unnecessary parsing.
+     * @complexity: O(n)
+     * @params: 
+     *    - path: the parts of the path
+     */
     prv self (path : [[c8]]) {
         for i in path {
             self._parts:.push (copy i);
@@ -52,114 +136,271 @@ pub class @final Path {
     }
     
     /**
-     * Transform the path into a os usable path
+     * Transform the path into a string.
+     * @complexity: O(n), where n is the number of char in the parts of the path
      * @example: 
      * ============
-     * let dmut path = Path::new ("/"s8);
-     * path:.push ("foo"s8);
-     * path:.push ("test.txt"s8)
+     * import std::fs::path;
+     * 
+     * let mut path = Path::new ("/foo/test.txt"s8);
+     * 
+     * // using the standard separator '/'
      * assert (path.toStr () == "/foo/test.txt"s8);
+     * 
+     * // Or using a custom separator '!'
+     * assert (path.toStr (sep-> "!"s8) == "!foo!test.txt"s8);
      * ============
      */
-    pub def toStr (self, sep : [c8] = "/"s8)-> [c8] {
-        import std::stream;
-        
+    pub def toStr (self, sep : [c8] = "/"s8)-> [c8] {        
         let dmut stream = StringStream::new ();        
-        let mut fst = true;
-        for i in self._parts {
-            if !fst {
+        for i, j in self._parts {
+            if j != 0us {
                 stream:.write (sep);
             }
-            fst = false;
+            
             stream:.write (i);
         }
         return stream[];
     }
 
     /**
-     * Compare two paths
+     * Compare two paths.
      * @params: 
      *   - o: another path
+     * @complexity: O(n), where n is the number of char in the parts of the path
+     * @example: 
+     * ===
+     * import std::fs::path;
+     * 
+     * let p = Path::new ("/some/root/dir"s8);
+     * let p2 = Path::new ("/"s8);
+     * 
+     * assert (p != p2 && p == p2.push ("some/root/dir"s8));
+     * ===
      */
     pub def opEquals (self, o : &Path)-> bool {
         self._parts[] == o._parts[]
     }
 
     /**
-     * Append a path to the current path
+     * Append a path to the current path, from a string. The string is splitted according the to the separator of given as parameter.
+     * @params: 
+     *    - path: the path to split and append to the path
+     *    - sep: the token used to split the path
+     * @warning: the separator of the current path is not kept in memory, it is up to the user to maintain a consistence with the separators.
+     * @complexity: O(k + (n x m)), where k is the number of parts in the self path, and n being the number of char in the path string, and m being the number of char in the sep string
      * @example: 
      * ===========
-     * let dmut path = Path::new ("/"s8);
-     * path:.push ("foo/bar/"s8);
-     * path:.push ("test.txt"s8)
+     * import std::fs::path;
+     * 
+     * let mut path = Path::new ("/"s8);
+     * path = path.push ("foo/bar/"s8);
+     * path = path.push ("test.txt"s8)
      * assert (path.toStr () == "/foo/bar/test.txt"s8);
+     * 
+     * // Example of inconsistent separators, that create no problem for the class
+     * // but has to be kept in mind by the user
+     * let mut ipath = Path::new ("std::fs::path"s8, sep-> "::"s8);
+     * ipath = ipath.push ("some::dir/some::file"s8, sep-> "/"s8);
+     * 
+     * assert (ipath.parts () == ["std"s8, "fs"s8, "path"s8, "some::dir"s8, "some::file"s8]);
      * ===========
      */
-    pub def push (self, path : [c8], sep : c8 = __version WINDOWS { '\\'c8 } else { '/'c8 } ) -> dmut &Path {
+    pub def push (self, path : [c8], sep : [c8] = __version WINDOWS { "\\"s8 } else { "/"s8 } ) -> &Path {
         let dmut aux = Path::new (self._parts[]);
         {            
             let mut last = 0us;
             for i in 0us .. path.len {
-                if (path[i] == sep) {
-                    aux._parts:.push (copy (path[last .. i]));
-                    last = i + 1us;
+                if (path[i .. $].len >= sep.len) {
+                    if (path[i .. i + sep.len] == sep) {
+                        aux._parts:.push (copy (path[last .. i]));
+                        last = i + sep.len;
+                    }
                 }
             }
+            
             if (last != path.len) {
-                aux._parts:.push (copy (path [last..$]));
+                aux._parts:.push (copy (path [last .. $]));
             }
         }
         
-        return alias aux;
+        aux
     }
 
-
     /**
-     * Append a path to the current path
+     * Append a path to the current path, from a utf32 string. 
+     * @params: 
+     *    - path: the path to split and append to the path
+     *    - sep: the token used to split the path
+     * @warning: 
+     *    - the separator of the current path is not kept in memory, it is up to the user to maintain a consistence with the separators.
+     *    - it converts the path and separator into utf8, if possible use directly utf8 encoding for efficiency reasons.
+     * @returns: a new Path being the concatenation of the two paths
+     * @complexity: O(k + (n x m) + (n + m)), where k is the number of parts in the self path, and n being the number of char in the path string, and m being the number of char in the sep string. The addition of (n+m) is due to the additional encoding from utf32 to utf8.
      * @example: 
      * ===========
-     * let dmut path = Path::new ("/"s8);
-     * path:.push (Path::new ("foo/bar/"s8));
-     * path:.push (Path::new ("test.txt"s8))
+     * import std::fs::path;
+     * 
+     * let mut path = Path::new ("/"s8);
+     * path = path.push ("foo/bar/");
+     * path = path.push ("test.txt")
+     * assert (path.toStr () == "/foo/bar/test.txt"s8); // path is always encoded in utf8
+     * 
+     * // Example of inconsistent separators, that create no problem for the class
+     * // but has to be kept in mind by the user
+     * let mut ipath = Path::new ("std::fs::path"s8, sep-> "::"s8);
+     * ipath = ipath.push ("some::dir/some::file", sep-> "/");
+     * 
+     * assert (ipath.parts () == ["std"s8, "fs"s8, "path"s8, "some::dir"s8, "some::file"s8]);
+     * ===
+     */
+    pub def push (self, path : [c32], sep : [c32] = __version WINDOWS { "\\" } else { "/" })-> &Path {
+        self.push (path.to![c8] (), sep-> sep.to![c8] ())
+    }
+    
+    /**
+     * Append a path to the current path.
+     * @params: 
+     *    - path: the path to append at the end of the current path.
+     * @returns: a new Path being the concatenation of the two paths
+     * @complexity: O(k + l), where k is the number of parts in the self path, and l the number of parts in the path to push
+     * @example: 
+     * ===========
+     * import std::fs::path;
+     * 
+     * let mut path = Path::new ("/"s8);
+     * 
+     * //  Pushing sub directories to the path (the last '/' is useless, and will be omitted)
+     * path = path.push (Path::new ("foo/bar/"s8));
+     * 
+     * // append a filename to the path (the fact that it is a filename is up to the user)
+     * path = path.push (Path::new ("test.txt"s8));
+     * 
      * assert (path.toStr () == "/foo/bar/test.txt"s8);
      * ===========
      */
-    pub def push (self, path : &Path) -> dmut &Path {
+    pub def push (self, path : &Path) -> &Path {
         let dmut aux = Path::new (self._parts[]);
         for i in path._parts {
             aux._parts:.push (copy i);
         }
-        return alias aux;
+        
+        aux
     }
 
     
     /**
-     * @returns: the parts composing the path
+     * @returns: the parts composing the path.
+     * @complexity: O(1)
      * @example: 
      * ==========
-     * let dmut path = Path::new ("/"s8);
-     * path:.push ("foo/bar/"s8);
-     * path:.push ("test.txt"s8)
-     * assert (path.parts () == [""s8, "foo"s8, "bar"s8, "test.txt"s8]);
+     * import std::fs::path;
+     * 
+     * // Create an absolute path 
+     * let abs = Path::new ("/some/absolute/dir/test.txt"s8);     
+     * 
+     * // Because path is absolute the first element of parts is an empty string
+     * assert (abs.parts () == [""s8, "some"s8, "absolute"s8, "dir"s8, "test.txt"s8]);
+     *
+     * // Create a relative path
+     * let rel = Path::new ("./some/relative/dir/test.txt"s8);
+     * 
+     * // It is a relative path, it does not contain an empty string at first index of parts
+     * assert (rel.parts () == ["."s8, "some"s8, "relative"s8, "dir"s8, "test.txt"s8]);
      * ==========
      */
     pub def parts (self)-> [[c8]] {
-        return self._parts[];
+        self._parts[]
     }
 
     /**
-     * Create a new path pointing to the parent directory of the current path
-     * @info: if self points to the root dir, its parent will also point to root
+     * @returns: true iif the path is absolute (defined from the root directory)
+     * @warning: empty paths are considered relative
+     * @complexity: O(1)
+     * @example: 
+     * ===
+     * import std::fs::path;
+     * import std::env; // for currentDir
+     * 
+     * let abs = Path::new ("/some/absolute/dir"s8);
+     * let rel = Path::new ("./some/relative/dir"s8);
+     * 
+     * assert (abs.isAbsolute () && !rel.isAbsolute ());
+     *
+     * // One can create an absolute path from a relative path using std::env::currentDir ()
+     * let absFromRel = env::currentDir ().push (rel);
+     * assert (absFromRel.isAbsolute ()); 
+     * ===
+     */
+    pub def isAbsolute (self)-> bool {
+        if (self._parts.len () > 0us) {
+            self._parts[0us] == ""s8
+        } else {
+            true
+        }
+    } catch {
+        _ : _ => __pragma!panic ();
+    }
+
+    /**
+     * @returns: true if a path is empty
+     * @warning: an empty path is different from a absolute path pointing to root, as it contains not part when a root directory contains only one part being an empty string
+     * @complexity: O(1)
+     * @example:
+     * ===
+     * import std::fs::path;
+     * 
+     * let root = Path::new ("/"s8);
+     * let cwd = Path::new ("."s8);
+     * 
+     * // There is no way to create an empty path from a constructor
+     * // But we can get one using a function that returns an empty path (for example parent, or commonPrefix)
+     * let empty1 = root.parent ();
+     * let empty2 = cwd.parent ();
+     * 
+     * assert (empty1.isEmpty () && empty2.isEmpty ());
+     * 
+     * // root is not empty, it contains one empty component 
+     * assert (!cwd.isEmpty () && !root.isEmpty ());
+     * 
+     * // Empty means it really contains nothing
+     * assert (empty1.toStr () == ""s8 && empty1.parts () == []);
+     * 
+     * // Empty path can still be used to create valid paths
+     * let notEmpty = empty1.push ("."s8);
+     * assert (!notEmpty.isEmpty () && notEmpty == cwd);
+     * 
+     * ===
+     */
+    pub def isEmpty (self)-> bool {
+        self._parts.len () == 0us
+    }
+    
+    /**
+     * Create a new path pointing to the parent directory of the current path.
+     * @warning:
+     *     - if the current path is empty, then parent path is also empty, thus in that case self.parent () == self.
+     *     - parents of root path and of paths containing only one element, are empty paths.
+     * @complexity: O(k - 1), with k being the number of parts in the path
      * @example: 
      * ===========
+     * import std::fs::path;
+     * 
      * let path = Path::new ("/foo/bar/baz.txt"s8);
+     * 
+     * // Parent remove the last component of a path
      * let parent = path.parent ();
+     * 
      * assert (parent.toStr () == "/foo/bar"s8);
+     * 
+     * // A root path has an empty parent directory (empty does not mean root, it means empty)
+     * let root = Path::new ("/"s8);
+     * assert (root.parent ().toStr () == ""s8 && root.parent ().isEmpty ());
      * ===========
      */
-    pub def parent (self)-> dmut &Path {
+    pub def parent (self)-> &Path {
         if (self._parts.len () == 0us) {
-            return Path::new ("");
+            return self;
         } else {
             let dmut aux = Vec!([c8])::new ();
             for i in 0us .. self._parts.len () - 1us {
@@ -173,148 +414,236 @@ pub class @final Path {
     }
     
     /**
-     * @returns: the file name of the current path
+     * @returns: the file name of the current path. 
+     * @warning: does not verify that it actually points to a file, you can assume that it just returns self.parts ()[$ - 1us] when self.parts().len != 0us, and empty otherwise.
+     * @complexity: O(1)
      * @example: 
      * =============
+     * import std::fs::path;
+     * 
      * let path = Path::new ("/foo/bar/baz.txt"s8);
+
+     * // The filename is the last component of a path
      * assert (path.file () == "baz.txt"s8);
-     * let path2 = Path::new (""s8);
-     * assert (path2.file () == ""s8);
+     * 
+     * // In case of empty path the file is simply empty
+     * let empty = Path::new ("/"s8).parent ();     
+     * assert (empty.file () == ""s8);
      * =============
      */
     pub def file (self)-> [c8] {
         if (self._parts.len () > 0us) {
-            return self._parts[self._parts.len () -1us]
+            return self._parts[$ - 1us]
         }
+        
         ""s8
-    } catch {
+    } catch { // cannot happen
         _ => __pragma!panic ();
     }
 
 
     /**
-     * @returns: the root name of the current path
+     * @returns: the root name of the current path.
+     * @info: 
+     *    - it returns the first element of the parts of the path, self.parts()[0us] when self.parts().len != 0us.
+     *    - it returns an empty string if the path is empty.
+     * @complexity: O(1)
      * @example: 
      * =============
+     * import std::fs::path;
+     * 
      * let path = Path::new ("/foo/bar/baz.txt"s8);
-     * assert (path.root () == "/"s8);
+     * 
+     * // root dir is defined by an empty part string at first index
+     * assert (path.root () == ""s8); 
+     * 
      * let path2 = Path::new ("foo/bar"s8);
      * assert (path2.root () == "foo"s8);
+     * 
+     * // Empty path root is undefined, but for convinience it just return an empty string
+     * let empty = Path::new ("/"s8).parent ();
+     * assert (empty.root () == ""s8);
      * =============
      */
     pub def root (self)-> [c8] {
         if (self._parts.len () > 0us) {
-            self._parts [0us]
-        } else {
-            ""s8
+            return self._parts [0us];
         }
+        
+        ""s8        
     } catch {
         _ => __pragma!panic ();
     }
 
     /**
-     * @returns: a new path where the extension of the file has been removed
+     * @params: 
+     *    - sep: the token describing an extension (`"."s8` by default)
+     * @returns: a new path where the extension of the file has been removed.
+     * @complexity: O(n + k) with n being the len of the file part of the path, and k being the number of component of the path
      * @example: 
      * ============
-     * let path = Path::new ("/foo/bar/baz.txt"s8).stripExtension ();
-     * assert (path.file () == "baz"s8);
+     * import std::fs::path;
      *
-     * let path2 = Path::new ("/foo/bar/baz.tar.gz"s8).stripExtension ();
-     * assert (path2.file () == "baz.tar"s8);
+     * let path = Path::new ("/foo/bar/baz.txt"s8);
+     * 
+     * // Remove the .txt extension
+     * assert (path.stripExtension ().file () == "baz"s8);
      *
-     * let path3 = Path::new ("/foo/bar/baz"s8).stripExtension ();
-     * assert (path3.file () == "baz"s8);
+     * let path2 = Path::new ("/foo/bar/baz.tar.gz"s8);
+     * 
+     * // Remove the .gz extension an keep the .tar one
+     * assert (path2.stripExtension ().file () == "baz.tar"s8);
+     *
+     * let path3 = Path::new ("/foo/bar/baz"s8);
+     *
+     * // Path has no extension, so it does nothing
+     * assert (path3.stripExtension ().file () == "baz"s8);
+     * 
+     * let path4 = Path::new ("/foo/bar/baz::txt"s8);
+     * 
+     * // Using a custom token as extension delimiter, to remove ::txt extension
+     * assert (path4.stripExtension (sep-> "::"s8).file () == "baz"s8);
      * ============
      */
-    pub def stripExtension (self)-> dmut &Path {
-        let dmut res = self.parent ();
+    pub def stripExtension (self, sep : [c8] = "."s8)-> &Path {
+        if (self._parts.len () == 0us) {
+            return self;
+        }
+
+        let dmut aux = Vec!{[c8]}::new ();
         if (self._parts.len () > 0us) {
-            let mut file = self.file ();
+            for i in 0us .. self._parts.len () - 1us {
+                aux:.push (self._parts [i]);
+            }
             
-            for i in file.len - 1us ... 0us {
-                if (file [i] == '.'c8) {
-                    file = file[0us..i];
-                    break {}
+            let mut file = self._parts [$ - 1us];            
+            for i in 1us .. file.len {
+                if (file [$ - i .. $].len >= sep.len) {
+                    if (file [$ - i .. $ - i + sep.len] == sep) {                        
+                        file = file[0us .. $ - i];
+                        break {}
+                    }
                 }
             }
             
-            res._parts:.push (file);
-        }         
-        alias res
+            aux:.push (file);
+        }
+        
+        Path::new (alias aux)
+    } catch {
+        _ : _ => __pragma!panic (); // cannot happen
     }
 
     /**
-     * @returns: the extension of the file of the path
+     * @params: 
+     *    - sep: the token describing an extension (`"."s8` by default)
+     * @returns: the extension of the file of the path.
+     * @complexity: O(n) with n being the len of the file part of the path
      * @example: 
      * ==============
+     * import std::fs::path;
+     * 
      * let path = Path::new ("/foo/bar/baz.txt"s8);
      * assert (path.extension () == "txt"s8);
      *
      * let path2 = Path::new ("/foo/bar/baz.tar.gz"s8);
      * assert (path2.extension () == "gz"s8);
      *
+     * // If path has no extension, simply return an empty string
      * let path3 = Path::new ("/foo/bar/baz"s8);
      * assert (path3.extension () == ""s8);
+     * 
+     * // A custom extension separator can be used
+     * let path4 = Path::new ("/foo/bar/baz::txt"s8);
+     * assert (path4.extension (sep-> "::"s8) == "txt"s8); 
      * ==============
      */
-    pub def extension (self)-> [c8] {
+    pub def extension (self, sep : [c8] = "."s8)-> [c8] {
         if (self._parts.len () > 0us) {
             let file = self.file ();
             if (file.len != 0us) {
                 for i in 0us .. file.len {
-                    if (file [$ - i - 1us] == '.'c8) {
-                        return file [($ - i) .. $];
+                    if (file [$ - i .. $].len >= sep.len) {
+                        if (file [$ - i .. $ - i + sep.len] == sep) {
+                            return file [($ - i + sep.len) .. $];
+                        }
                     }
                 }
             }            
-        }         
-        []
+        }
+        
+        ""s8
     }
 
     /**
-     * @returns: a new path where the extension of the file has been removed
+     * Add an new extension to the file of a path.
+     * @params: 
+     *    - ext: the extension to add to the file part of the path.
+     *    - sep: the separator to use when adding the extension ("."s8 by default)
+     * @complexity: O(n + k), where n is the len of the file part of the path, and k is the number of parts in the path
      * @example: 
      * ============
+     * import std::fs::path;
+     * 
      * let path = Path::new ("/foo/bar/baz"s8).addExtension ("txt"s8);
      * assert (path.file () == "baz.txt"s8);
      *
      * let path2 = Path::new ("/foo/bar/baz.tar"s8).addExtension ("gz"s8);
      * assert (path2.file () == "baz.tar.gz"s8);
+     *
+     * // empty path are not empty after adding an extension to them
+     * let empty = Path::new (""s8).parent ().addExtension ("empty"s8);
+     * assert (empty.file  () == ".empty"s8);
      * ============
      */
-    pub def addExtension (self, ext : [c8])-> dmut &Path {
-        let dmut res = self.parent ();
+    pub def addExtension (self, ext : [c8], sep : [c8] = "."s8)-> &Path {
+        let dmut aux = Vec!{[c8]}::new ();
         if (self._parts.len () > 0us) {
-            let mut file = self.file ();
-            res._parts:.push (file ~ "."s8 ~ ext);
-        } else {
-            res._parts:.push ("."s8 ~ ext);
+            for i in 0us .. self._parts.len () - 1us {
+                aux:.push (self._parts[i]);
+            }            
         }
-        alias res
+
+        let mut file = self.file ();
+        aux:.push (file ~ sep ~ ext);
+        
+        Path::new (alias aux)
+    } catch {
+        _ : _ => __pragma!panic ();
     }
 
     /**
-     * @returns: a new path with the prefix removed
+     * Remove a prefix path to the current path. This function can be useful to create relative paths.
+     * @params: 
+     *    - prefix: the prefix path to remove from the current path
+     * @info: does nothing if `prefix` is not a prefix of self.
+     * @returns: a new path with the prefix removed.
+     * @complexity: O (k), where k is the number of parts in the self path
      * @example: 
      * =====================
-     * let path = Path::new ("/foo/bar/baz/file.txt"s8).removePrefix (Path::new ("/foo/bar"s8));
-     * assert (path.toStr () == "baz/file.txt"s8);
+     * import std::fs::path;
+     * 
+     * let root = Path::new ("/foo/bar"s8);
+     * let subPath = Path::new ("/foo/bar/baz/file.txt"s8);
+     * 
+     * let cwd = Path::new ("./"s8);
+     * let relativePath = subPath.removePrefix (root);     
+     * 
+     * // Create a new relative path from "./"
+     * assert (cwd.push (relativePath).toStr () == "./baz/file.txt"s8);
      * =====================
      */
-    pub def removePrefix (self, prefix : &Path)-> dmut &Path {
-        import std::algorithm::comparison;
-        let mut j = 0us;
-
-        for i in 0us .. comparison::min (prefix._parts.len (), self._parts.len ()) {
-            if (prefix._parts [i] != self._parts [i]) {
-                j = i + 1us ;
-                break { }
-            }
-            j = i + 1us;
-        }
+    pub def removePrefix (self, prefix : &Path)-> &Path {
+        if (self._parts.len () < prefix._parts.len ()) return self;
         
+        for i in 0us .. prefix._parts.len () {
+            if (prefix._parts [i] != self._parts [i]) {
+                return self;
+            }
+        }
+
         let dmut res = Vec!{[c8]}::new ();
-        for i in j .. self._parts.len () {            
+        for i in prefix._parts.len () .. self._parts.len () {            
             res:.push (copy self._parts [i]);
         }
         
@@ -325,16 +654,101 @@ pub class @final Path {
         }
     }
 
+    /**
+     * @returns: true iif the self path is a prefix of subPath
+     * @warning: an empty path is considered to be the prefix of every possible paths
+     * @complexity: O(k), where k is the number of parts in the self path
+     * @example:
+     * ===
+     * import std::fs::path;
+     * 
+     * let root = Path::new ("/some/absolute/path"s8);
+     * let abs = Path::new ("/some/absolute/path/with/some/dirs"s8);
+     * let rel = Path::new ("./some/relative/dir"s8);
+     * 
+     * assert (root.isPrefix (abs) && !root.isPrefix (rel));
+     * 
+     * // A path is a prefix of itself
+     * assert (root.isPrefix (root) && rel.isPrefix (rel));
+     * ===
+     */
+    pub def isPrefix (self, subPath : &Path)-> bool {
+        if (self._parts.len () > subPath._parts.len ()) return false;
+        
+        for i in 0us .. self._parts.len () {
+            if (subPath._parts [i] != self._parts [i]) {
+                return false;
+            }
+        }
+
+        true
+    } catch {
+        _ : _ => __pragma!panic ();
+    }
 
     /**
-     * Remove the root of the path 
+     * @returns: A parent path that is common to self and other
+     * @complexity: O(k), where k is the minimum number of parts in the self path and other path
+     * @example: 
+     * ===
+     * import std::fs::path;
+     * 
+     * let abs1 = Path::new ("/some/absolute/path/leading/to/dir/1"s8);
+     * let abs2 = Path::new ("/some/absolute/path/with/other/dirs"s8);
+     *
+     * assert (abs1.commonPrefix (abs2) == Path::new ("/some/absolute/path"s8)); 
+     * 
+     * // This is a commutative operation
+     * assert (abs1.commonPrefix (abs2) == abs2.commonPrefix (abs1));
+     *
+     * // Evidently commonPrefix returns a prefix (when not empty)
+     * assert (abs1.commonPrefix (abs2).isPrefix (abs1));
+     * assert (abs1.commonPrefix (abs2).isPrefix (abs2)); 
+     * 
+     * 
+     * let root = Path::new ("/"s8);
+     * let cwd = Path::new ("."s8);
+     *
+     * // If there is no common prefix an empty path is returned
+     * assert (root.commonPrefix (cwd).isEmpty ());
+     * 
+     * // In that case it is still a prefix to root nor cwd
+     *  assert (root.commonPrefix (cwd).isPrefix (root));
+     * ===
+     */
+    pub def commonPrefix (self, other : &Path)-> &Path {
+        import std::algorithm::comparison;
+        let min = comparison::min (self._parts.len (), other._parts.len ());
+
+        let dmut aux = Vec!{[c8]}::new ();
+        for i in 0us .. min {
+            if (self._parts[i] != other._parts[i]) {
+                break {}
+            }
+            aux:.push (self._parts[i]);
+        }
+
+        Path::new (alias aux)
+    } catch {
+        _ : _ => __pragma!panic ();
+    }
+    
+    /**
+     * Remove the root of the path. 
+     * @info: does nothing if `self` is empty.
+     * @complexity: O(k), where k is the number of parts in the self path
      * @example: 
      * ====================
-     * assert (Path::new ("/path/to/somewhere"s8).removeRoot ().toStr () == "path/to/somewhere");
-     * assert (Path::new ("path/to/somewhere"s8).removeRoot ().toStr () == "to/somewhere");
+     * import std::fs::path;
+     * 
+     * let p = Path::new ("/path/to/somewhere"s8);
+     * let d = Path::new ("path/to/somewhere"s8);
+     *
+     * assert (p.removeRoot ().toStr () == "path/to/somewhere"s8);
+     * assert (d.removeRoot ().toStr () == "to/somewhere"s8);
      * ====================
      */
-    pub def removeRoot (self)-> dmut &Path {
+    pub def removeRoot (self)-> &Path {
         if (self._parts.len () != 0us) {
             let dmut res = Vec!{[c8]}::new ();
             for i in 1us .. self._parts.len () {
@@ -352,6 +766,20 @@ pub class @final Path {
     }
 
     
-    impl Streamable;
-    impl Hashable;
+    impl std::stream::Streamable {
+
+        pub over toStream (self, dmut stream : &StringStream) {            
+            stream:.write (typeof (self)::typeid, '('c8);
+            for j, i in self._parts {
+                if i != 0us {
+                    stream:.write ('/'c8);
+                }                
+                stream:.write (j);
+            }
+            stream:.write (')'c8);            
+        }        
+    }
+    
+    
+    impl std::hash::Hashable;
 }
