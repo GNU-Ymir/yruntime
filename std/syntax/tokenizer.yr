@@ -1,4 +1,28 @@
-mod std::tokenizer;
+/**
+ * This module implements the Tokenizer class that splits a string into a list of token.
+ * The Tokenizer always splits according to the longest tokens, for example if the tokens `"+=>"`, `"+="`, `"+"` and `" "` are defined, the string `"+=> x"` will be splitted in 3 tokens `"+=>"`, `" "` and `"x"`.
+ * This implementation uses an index tree to store the tokens, where each node is a single char. Tokenizer should be used for simple grammar, for complex branching decision a Lexer should be preferred - in practice the lexer uses a Tokenizer, but with more abstractions, facilitating the work and making sure no tokenization are made when not needed.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @example
+ * ===
+ * import std::syntax::tokenizer;
+ * 
+ * // using a tokenizer, tokens can be multiple letter long, and there can be collisions between tokens
+ * // For example, the token '=' and '=>' won't be a problem for the tokenizer
+ * let dmut tzer = Tokenizer::new (tokens-> ["(", ")", "=>", ",", " ", "="]);
+ * let str = "(x, y) => x = y";
+ * 
+ * // Transform the string into a list of tokens
+ * let lst = tzer.tokenize (str);
+ * 
+ * // the tokenized str, contains the token '=>' and '=', that are correctly rendered in the splitted array 
+ * assert (lst == ["(", "x", ",", " ", "y", ")", " ", "=>", " ", "x", " ", "=", " ", "y"]); 
+ * ===
+ */
+
+mod std::syntax::tokenizer;
 
 import core::object;
 import core::array;
@@ -12,19 +36,7 @@ import std::collection::vec;
 import std::io, std::stream;
 
 /**
- * A tokenizer is an enhanced string splitter, that splits strings using tokens instead of just chars
- * Tokenizer are really usefull for grammar visitor, and can be associated with Lexers pretty easily
- * @example: 
- * ============
- * // using a tokenizer, tokens can be multiple letter long, and there can be collision between tokens
- * // For example, the token '=' and '=>' won't be a problem for the tokenizer
- * let dmut tzer = Tokenizer::new (tokens-> ["(", ")", "=>", ",", " ", "="]);
- * let str = "(x, y) => x = y";
- * let lst = tzer.tokenize (str);
- * 
- * // the tokenized str, contains the token '=>' and '=', that are correctly rendering in the splitted array 
- * assert (lst == ["(", "x", ",", " ", "y", ")", " ", "=>", " ", "x", " ", "=", " ", "y"]); 
- * ============
+ * Implementation of a string Tokenizer, that can split a utf8 or utf32 string.
  */
 pub class if (is!T {U of c8} || is!T {U of c32}) @final Tokenizer {T} {
 
@@ -36,9 +48,15 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Tokenizer {T} {
      *   - tokens: the list of token that will split the string
      * @example: 
      * ============
+     * import std::syntax::tokenizer;
+     * 
      * let dmut tzer = Tokenizer::new (tokens-> ["(", ")", "=>", ":", "<", ">", ",", " "]);
+     * 
      * let str = "(x, y) => x > y";
+     * 
+     * // Transform the string into a list of tokens
      * let lst = tzer.tokenize (str);
+     * 
      * assert (lst == ["(", "x", ",", " ", "y", ")", " ", "=>", " ", "x", " ", ">", " ", "y"]); 
      * ============
      */
@@ -52,26 +70,34 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Tokenizer {T} {
      * Insert a new token in the tokenizer
      * @params: 
      *    - token: the token to insert
+     *    - isSkip: flag the token as a skip token
+     *    - isComment: flag the token as a comment token, where isComment is the token that ends the comment
      * @example: 
      * ================
-     * let dmut tzer = Tokenizer::new ();
+     * import std::syntax::tokenizer;
+     * 
+     * // cannot use the 'tokens' parameter of ctor to guess the type of the tokenizer
+     * //  so we have to put the template parameter
+     * let dmut tzer = Tokenizer!{c32}::new ();
+     * 
      * tzer:.insert ("+");
      * tzer:.insert ("+=");
      * tzer:.insert (" ");
+     * 
      * let lst = tzer.tokenize ("x += y");
      * assert (lst == ["x", " ", "+=", " ", "y"]);
      * ================
      */
-    pub def insert (mut self, token : [T]) {
+    pub def insert (mut self, token : [T], isSkip : bool = false, isComment : [T] = []) {
         if (token.len != 0us) {
             {
                 let fnd = (self._heads [token[0]])?;
                 match fnd {
                     Ok (x:_) => {
-                        (alias self._heads) [token[0]] = x.insert (token[1us..$]);                    
+                        (alias self._heads) [token[0]] = x.insert (token[1us..$], isSkip-> isSkip, isComment-> isComment);                    
                     }
                     _ => {
-                        (alias self._heads) [token[0]] = internal::Node!{T}::new (token[0]).insert (token [1us..$]);
+                        (alias self._heads) [token[0]] = internal::Node!{T}::new (token[0]).insert (token [1us..$], isSkip-> isSkip, isComment-> isComment);
                     }
                 }
             }
@@ -82,12 +108,15 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Tokenizer {T} {
      * @returns: the length of the next token inside the str
      * @example: 
      * ============
-     * let dmut tzer = Tokenizer::new (["+", " "]);
+     * import std::syntax::tokenizer;
+     * 
+     * let dmut tzer = Tokenizer::new (tokens-> ["+", " "]);
      * let mut str = "fst + scd";
      * let mut len = tzer.next (str);
      * assert (len == 3us); // "fst"
      * 
-     * str = str [len .. $];     
+     * // change the slice to move the cursor     
+     * str = str [len .. $]; 
      * len = tzer.next (str);
      * assert (len == 1us); // " "
      *
@@ -135,17 +164,50 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Tokenizer {T} {
     }
 
     /**
-     * Split the string in a list of token, according to the token registered in the tokenizer
+     * Perform the same treatment as self.next, but also returns the flag of the token that was read.
+     * @returns: 
+     *   - .0: the length of the next token inside the str
+     *   - .1: true if the token is a skip token
+     *   - .2: the end token if the returned token is a comment token
+     */
+    pub def nextWithFlags (self, str : [T])-> (usize, bool, [T]) {
+        for i in 0us .. str.len {
+            let fnd = (self._heads [str [i]])?;
+            {
+                match fnd { 
+                    Ok (x:_) => { // a possible token at index == i
+                        let len = x.completeLen (str [i + 1us .. $]); // get the length of the token
+                        // if the len is 0, then it is not really a token, it just start like one
+                        if (len._0 != 0us) {
+                            if (i == 0us) { 
+                                return len; // it is totally a token, we return its length
+                            } else {
+                                // it is a token, but there is something before it, so we return the len of the thing before it
+                                return (i, false, []); 
+                            }
+                        }
+                        // it was not a token, just started like one, we continue
+                    }
+                }
+            }
+        }
+        
+        // No token in the str, return the len of the str
+        return (str.len, false, []);
+    }
+
+    /**
+     * Split the string using the list of token registered in the tokenizer.
      * @example: 
      * =============== 
-     * let dmut tzer = Tokenizer::new (tokens-> ["+=", "+", " "]);     * 
+     * let dmut tzer = Tokenizer::new (tokens-> ["+=", "+", " "]);
      * 
      * let lst = tzer.tokenize ("x += y");
      * assert (lst == ["x", " ", "+=", " ", "y"]);
      * ===============
      */
     pub def tokenize (self, str : [T])-> [[T]] {
-        let dmut res = Vec!([T])::new ();
+        let dmut res = Vec!{[T]}::new ();
         let mut aux = str;
         { 
             while aux.len > 0us {
@@ -159,7 +221,43 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Tokenizer {T} {
         return res [];
     }
 
-    impl Streamable, Copiable ;    
+    /**
+     * Split the string using the list of token registered in the tokenizer, and add the flags of the tokens.
+     * @returns: An array of elements being : 
+     *    - .0: the token
+     *    - .1: true iif the token is flagged as a skip token
+     *    - .2: iif the token is a comment start, the token ending the comment, "" otherwise
+     * @example: 
+     * =============== 
+     * let dmut tzer = Tokenizer::new (tokens-> ["+=", "+"]);
+     * tzer:.insert (" ", isSkip-> true);
+     * tzer:.insert ("#", isComment-> "\n");
+     * 
+     * let lst = tzer.tokenizeWithFlags ("x += #");
+     *
+     * // Second token is a space token, and it was marked as skippable
+     * assert (lst[1]._0 == " " && lst[1]._1 == true);    
+     * 
+     * // Last token is '#' token, and it was flagged as being a comment, ending with '\n'
+     * assert (lst[$ - 1us]._0 == "#" && lst[$ - 1us]._2 == "\n");
+     * ===============
+     */
+    pub def tokenizeWithFlags (self, str : [T])-> [([T], bool, [T])] {
+        let dmut res = Vec!{([T], bool, [T])}::new ();
+        let mut aux = str;
+        { 
+            while aux.len > 0us {
+                let (len, isSkip, isComment) = self.nextWithFlags (aux);
+                res:.push ((aux [0us..len], isSkip, isComment));
+                aux = aux [len .. $];
+            }
+        }
+        
+        res:.fit ();
+        return res [];        
+    }
+    
+    impl std::stream::Streamable, core::duplication::Copiable;    
     
 }
 
@@ -176,6 +274,12 @@ mod internal {
         // Can terminate a token? or is part of bigger tokens
         let _isToken : bool = false;
 
+        // The end of the comment if this token is the start of a comment
+        let _isComment : [T]; 
+
+        // True if the token is a token to skip
+        let _isSkip : bool; 
+        
         // The list of possible continuation of the token
         let _heads : &HashMap!{T, &Node!{T}};
 
@@ -186,7 +290,7 @@ mod internal {
          *   - isToken: can terminate a token 
          *   - heads: the list of possible continuation
          */
-        pub self (key : T, isToken : bool = false, heads : &HashMap!{T, &Node!{T}} = {HashMap!{T, &Node!{T}}::new ()}) with _key = key, _isToken = isToken, _heads = heads
+        pub self (key : T, isToken : bool = false, isSkip : bool = false, isComment : [T] = [], heads : &HashMap!{T, &Node!{T}} = {HashMap!{T, &Node!{T}}::new ()}) with _key = key, _isToken = isToken, _heads = heads, _isSkip = isSkip, _isComment = isComment
         {}
         
         /**
@@ -219,9 +323,9 @@ mod internal {
          * assert (node.len ("[-") == 1us); // accept only the '['
          * ==============
          */
-        pub def insert (self, str : [T]) -> &Node!{T} {
+        pub def insert (self, str : [T], isSkip : bool = false, isComment : [T] = []) -> &Node!{T} {
             if (str.len == 0us) {
-                return Node::new (self._key, isToken-> true, heads-> self._heads)
+                return Node::new (self._key, isToken-> true, heads-> self._heads, isSkip-> isSkip, isComment-> isComment)
             }
 
             let dmut retDict = HashMap!{T, &Node!{T}}::new ();
@@ -233,15 +337,15 @@ mod internal {
             {
                 match fnd {
                     Ok (x:_) => {
-                        retDict:.insert (str [0], x.insert (str [1us..$]));
+                        retDict:.insert (str [0], x.insert (str [1us..$], isSkip-> isSkip, isComment-> isComment));
                     }
                     _ => {                    
-                        retDict:.insert (str [0], Node::new (str [0]).insert (str [1us..$]));
+                        retDict:.insert (str [0], Node::new (str [0]).insert (str [1us..$], isSkip-> isSkip, isComment-> isComment));
                     }
                 }
             }
             
-            return Node::new (self._key, isToken-> self._isToken, heads-> retDict);
+            return Node::new (self._key, isToken-> self._isToken, heads-> retDict, isSkip-> isSkip, isComment-> isComment);
         }
 
             
@@ -279,12 +383,38 @@ mod internal {
         }
 
         /**
+         * @returns: 
+         *    - .0: the length of the token at the beginning of the string content
+         *    - .1: true if this is a skip token
+         *    - .2: the end of the comment if this is a skip token
+         */
+        pub def completeLen (self, content : [T])-> (usize, bool, [T]) {
+            if (content.len == 0us) {
+                if (self._isToken) return (1us, self._isSkip, self._isComment);
+                else return (0us, false, []);
+            }
+
+            let fnd = (self._heads [content [0]])?;
+            match fnd {
+                Ok (x:_) => {
+                    let sub_len = x.completeLen (content [1us..$]);
+                    if (sub_len._0 != 0us || self._isToken) return (1us + sub_len.0, sub_len.1, sub_len.2);
+                    else return (0us, false, []);                
+                }
+            }
+
+            if (self._isToken) return (1us, self._isSkip, self._isComment);
+            return (0us, false, []);
+        }
+
+        
+        /**
          * @returns: the key of the node
          */
         def key (self) -> T {
             self._key
         }
-
+        
         impl Streamable {
             /**
              * For debug purposes, tokenizer Nodes are printable

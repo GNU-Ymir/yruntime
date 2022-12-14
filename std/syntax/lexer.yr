@@ -1,0 +1,522 @@
+/**
+ * This module implements a simple version of Lexer that perform a
+ * lexical analysis. The lexical analysis is the process of converting
+ * a text into lexical tokens. The lexer class is an advanced version
+ * of a tokenizer that can skip unwanted tokens, and comments. The
+ * Lexer can be used to tokenize a utf8 or a utf32 content. Lexer is a
+ * pretty efficient way to split a string into tokens when dealing
+ * with a complex grammar. It splits the string as it goes, so unlike
+ * the Tokenizer there is no need to read the full string two times (1
+ * time to split, and 1 time to analyse the splitted tokens).
+ * 
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @example: 
+ * ===
+ * import std::io;
+ * import std::syntax::lexer;
+ *
+ * enum
+ * | RPAR = "("
+ * | LPAR = ")"
+ * | LCRO = "["
+ * | RCRO = "]"
+ * | SPACE = " "
+ * | DARROW = "=>"
+ * | EQUAL = "="
+ * | ADD = "+"
+ * | ADD_EQ = "+="
+ * | LACC = "{"
+ * | RACC = "}"
+ * | SEMI_COLON = ";"
+ * | COMA = ","
+ * -> Tokens;
+ *
+ * aka content = str#{
+ *    
+ *    // Some line comment above
+ *    (x, y) => {
+ *        let i = x;
+ *        x += 2;
+ *        y = y + 3;
+ *        
+ *        /*
+ *         * Some multiline comments
+ *         * With 3 useless empty lines
+ *         *
+ *         *
+ *         *
+ *         */
+ *
+ *        return 8 + x + y;
+ *    }
+ *    
+ * };
+ *
+ * def main ()
+ * {
+ *     // Creating a lexer to split the content into tokens
+ *     // Define the comments as '//' to line return, and '/*' to '*/'
+ *     let dmut lex = Lexer::new (content,
+ *                                tokens-> Tokens::members, // list of tokens that splits the content
+ *                                comments-> [("/*", "*/"), ("//", "\n")]);
+ *
+ *    
+ *     loop {
+ *         let (n, l, c) = lex:.next ();
+ * 
+ *         // First line is 1, so 0 means no token was read, the lexer is EOF
+ *         if (l == 0us) break {} 
+ *       
+ *         // Print the token and their location in the content string (relative to the start)
+ *         println ("[", n, "] @", l, ":", c); 
+ *    }
+ * }
+ * ===
+ *
+ * <br>
+ * <br>
+ * The above example generates the following result : 
+ * ===
+ * [(] @4:5
+ * [x] @4:6
+ * [,] @4:7
+ * [y] @4:9
+ * [)] @4:10
+ * [=>] @4:12
+ * [{] @4:15
+ * [let] @5:9
+ * [i] @5:13
+ * [=] @5:15
+ * [x] @5:17
+ * [;] @5:18
+ * [x] @6:9
+ * [+=] @6:11
+ * [2] @6:14
+ * [;] @6:15
+ * [y] @7:9
+ * [=] @7:11
+ * [y] @7:13
+ * [+] @7:15
+ * [3] @7:17
+ * [;] @7:18
+ * [return] @17:9
+ * [8] @17:16
+ * [+] @17:18
+ * [x] @17:20
+ * [+] @17:22
+ * [y] @17:24
+ * [;] @17:25
+ * [}] @18:5
+ * ===
+ */
+mod std::syntax::lexer;
+    
+import core::object, core::typeinfo, core::array;
+import core::exception;
+import std::syntax::tokenizer;
+import std::collection::set;
+import std::io, std::stream;
+
+/**
+ * The lexer class used to split a string into lexical tokens.
+ */
+pub class if (is!T {U of c8} || is!T {U of c32}) @final Lexer {T} {
+
+    // The tokenizer used to split the content string
+    let dmut _tzer : &Tokenizer!{T};
+
+    // The content string to split
+    let mut _content : [T];
+
+    // True iif the lexer should skip skipable tokens    
+    let mut _doSkip = true;
+
+    // True iif the lexer should skip comments
+    let mut _doComments = true;
+
+    // The current line of the cursor
+    let mut _line = 1u64;
+
+    // The current colon of the cursor
+    let mut _col = 1u64;
+
+    /**
+     * Create a new lexer, with a content string to split, a list of tokens, and a list of comments.
+     * @params: 
+     *    - content: the string to split
+     *    - tokens: the list of tokens that split the string
+     *    - comments: the list of tokens that start and end a comment (by default `[("#", "\n")]`)
+     *    - skips: the list of tokens that will be omitted by the lexer when reading (by default `[" ", "\n", "\t", "\r"]`)
+     * @warning: 
+     *    - split tokens are tokens, so they split the content even if they are not in the tokens set
+     *    - because the lexer counts the line number, it consider the return line token `"\n"` by default (so token list always have at least one element `"\n"`)
+     */
+    pub self (content : [T],
+              tokens: [[T]] = { cte if (is!T {U of c8}) { [" "s8, "\n"s8] } else { [" ", "\n"] } } ,
+              comments : [([T], [T])] = { cte if (is!T {U of c8}) { [("#"s8, "\n"s8)] } else { [("#", "\n")] } },
+              skips: [[T]] = { cte if (is!T {U of c8}) { [" "s8, "\n"s8, "\t"s8, "\r"s8] } else { [" ", "\r", "\n", "\t"] } })        
+
+        with _tzer = Tokenizer::new (tokens-> tokens), _content = content
+    {
+        cte if (is!T {U of c8}) {
+            self._tzer:.insert ("\n"s8); // We must have a return line for the lexer to work properly
+        } else {
+            self._tzer:.insert ("\n"); 
+        }
+        
+        for i in skips {
+            self._tzer:.insert (i, isSkip-> true);
+        }
+
+        for i in comments {
+            self._tzer:.insert (i._0, isComment-> i._1);
+        }
+    }
+
+    /**
+     * @returns: the content of the lexer that will be splitted.
+     * @info: the content inside the lexer is the content that wasn't splitted yet. Getting the content can be useful when to restore the cursor position, cf self.setContent ().
+     * @complexity: O (1), no copy is made, the content is just a slice
+     */
+    pub def getContent (self)-> [T] {
+        self._content
+    }
+
+    /**
+     * Change the content to split in the lexer.
+     * This function can be used in two different ways.
+     *     - 1. simply to change the content to split, and use the same lexer to split different contents
+     *     - 2. When saving and restoring content to move the cursor back in branches, an example of that is presented below.
+     * @complexity: O (1), no copy is made, the content is just a slice
+     * @example:
+     * ===
+     * import std::syntax::lexer;
+     * import std::io; // for println
+     * 
+     * /*
+     *  * Try to read x + y
+     *  * @returns: true if succeeded, false otherwise
+     *  */
+     * def tryReadingAdd (dmut lex : &Lexer!c32)-> bool {
+     *     let (x, _, _) = lex:.next ();
+     *     let (add, _, _) = lex:.next ();
+     *     let (y, _, _) = lex:.next ();
+     *     
+     *     return x == "x" && add == "+" && y == "y";
+     * }
+     * 
+     * let dmut lex = Lexer::new ("x + z, u", tokens-> ["+", " ", ","], skips-> [" "]);
+     * let save = lex.getContent ();
+     * if (!tryReadingAdd (alias lex)) {
+     *     println ("Failed to read addition, restoring content");
+     * 
+     *     // The cursor of the lexer was moved in tryReadingAdd
+     *     let (comma, _, _) = lex:.next ();
+     *     assert (comma == ",");
+     *     
+     *     // So we restore it
+     *     lex:.setContent (save);
+     * }
+     * 
+     * // continue the reading of the lexer
+     * // If tryReadingAdd was successful, the cursor would have been after "x + y"
+     * // But because it wasn't successful it is like nothing was read
+     * 
+     * let (str, _, _) = lex:.next ();
+     * assert (str == "x");
+     * ===
+     */
+    pub def setContent (mut self, content : [T]) {
+        self._content = content;
+    }
+
+    /**
+     * @returns: the line location of the cursor
+     */
+    pub def getLine (self)-> u64 {
+        self._line
+    }
+
+    /**
+     * @returns: the column location of the cursor
+     */
+    pub def getColumn (self)-> u64 {
+        self._col
+    }
+
+    /**
+     * Move the cursor of the lexer forward and return the word that has been read.
+     * @returns: 
+     *    - ._0: the content of the word ("" if no word was read, EOF) 
+     *    - ._1: the line of the beginning of the word (0 if no word was read, EOF)
+     *    - ._2: the col of the beginning of the word (0 if no word was ref, EOF)
+     */
+    pub def next (mut self) -> ([T], u64, u64) {
+        loop {
+            let (wd, isSkip, isComment) = self._tzer.nextWithFlags (self._content);
+            if (wd != 0u64) {
+                {
+                    let ret = self._content [0us .. wd];
+                    self._content = self._content [wd .. $];
+                    
+                    let (line, col) = (self._line, self._col);                        
+                    let pos = self:.countNbLine (ret, self._line, self._col);
+                    self._line = pos._0;
+                    self._col = pos._1;
+                    
+                    if self._doComments && isComment.len != 0us {
+                        self._content = self:.skipComments (self._content, isComment, ref self._line, ref self._col);
+                    } else if !self._doSkip || !isSkip {
+                        return (ret, line, col);
+                    } 
+                }
+            } else {
+                cte if (is!T {U of c8}) {
+                    break (""s8, 0u64, 0u64);
+                } else {
+                    break ("", 0u64, 0u64);
+                }
+            }
+        }
+    }
+
+    /**
+     * Move the cursor of the lexer forward and return the next char.
+     * @warning: do not consider tokens, comments nor skips, but line and columns are correctly incremented
+     * @returns: 
+     *    - ._0: the content of the word ("" if the lexer is EOF) 
+     *    - ._1: the line of the beginning of the word (0 if the lexer is EOF)
+     *    - ._2: the col of the beginning of the word (0 if the lexer is EOF)
+     */
+    pub def nextChar (mut self)-> ([T], u64, u64) {
+        let wd = 1u64;
+        if (wd != 0u64) {
+            let ret = self._content [0u64..wd];
+            self._content = self._content [wd..cast!u64 ($)];
+            
+            let (line, col) = (self._line, self._col);                        
+            let pos = self:.countNbLine (ret, self._line, self._col);
+            self._line = pos._0;
+            self._col = pos._1;
+            
+            return (ret, line, col);             
+        }
+
+        cte if (is!T {U of c8}) {
+            (""s8, 0u64, 0u64)
+        } else {
+            ("", 0u64, 0u64)
+        }
+    }
+
+    /**
+     * Read the next word inside the content of the lexer, but does
+     * not move the cursor of the lexer. This function is usefull to
+     * make a simple branch decision based on the token that
+     * follows. Because `nextNoConsume` returns the same token if
+     * called 2 successive times, it cannot be used to read multiple
+     * tokens to make a more complex branching decision. Moving and
+     * restoring the cursor is the designed way of doing so,
+     * (cf. self.setContent).
+     * @returns: 
+     *    - ._0: the content of the word ("" if no word) 
+     *    - ._1: the line of the beginning of the word (0 if no word)
+     *    - ._2: the col of the beginning of the word (0 if no word)
+     */
+    pub def nextNoConsume (self) -> ([T], u64, u64) {
+        let mut aux_content = self._content;
+        let mut pos: (mut u64, mut u64) = (self._line, self._col);
+        
+        loop {
+            let (wd, isSkip, isComment) = self._tzer.nextWithFlags (aux_content);
+            if (wd != 0u64) {
+                {
+                    let ret = aux_content [0us..wd];
+                    aux_content = aux_content [wd..$];
+                    
+                    let (line, col) = pos;
+                    pos = self.countNbLine (ret, pos._0, pos._1);
+                    
+                    if self._doComments && isComment.len != 0us {
+                        aux_content = self.skipComments (aux_content, isComment, ref pos._0, ref pos._1);          
+                    } else if !self._doSkip || !isSkip {
+                        return (ret, line, col);
+                    } 
+                }
+            } else {
+                cte if (is!T {U of c8}) {
+                    break (""s8, 0u64, 0u64);
+                } else {
+                    break ("", 0u64, 0u64);
+                }
+            }
+        }
+    }
+
+    /**
+     * Tell to the lexer if it must skip the 'skip' tokens or not.
+     * @info: 
+     *   - by default the lexer skips the skip tokens.
+     *   - This function is used to disable token skipping when reading string content for example.
+     * @example:
+     * ===
+     * import std::syntax::lexer;
+     * 
+     * let content = str#{a = "a string with spaces in it"};
+     *
+     * let dmut lex = Lexer::new (content, tokens-> [" ", "=", "\""], skips-> [" "]);
+     * let (a, _, _) = lex:.next (); // read 'a'
+     * let (eq, _, _) = lex:.next (); // read '=' token
+     * let (qut, _, _) = lex:.next (); // read '"' token
+     * 
+     * lex:.doSkip (false);
+     * let mut str_content = "";
+     * let mut i = 0;
+     * loop {
+     *    let (tok, _, _) = lex:.next (); 
+     *    i += 1;
+     *
+     *    if (tok == "\"") break {}
+     *    else str_content = str_content ~ tok;      
+     * }
+     * 
+     * // Because skip was disable, space token was not skipped and is present in the string
+     * assert (str_content == "a string with spaces in it");
+     *
+     * // Warning, it still split the content
+     * // so the loop above iterates 12 times (6 words + 5 spaces + 1 closing quote)
+     * assert (i == 12);
+     * 
+     * lex:.doSkip (true); // future skippable tokens are skiped
+     * ===
+     */
+    pub def doSkip (mut self, d : bool) -> void {
+        self._doSkip = d;
+    }
+
+    /**
+     * Tell to the lexer if it must skip the 'comments' or not. As for doSkip, this function can be used to read comments when they are inside a string for example.    
+     * @example:
+     * ===
+     * import std::syntax::lexer;
+     * 
+     * let content = str#{a = "# not ignored !"};
+     *
+     * let dmut lex = Lexer::new (content, tokens-> [" ", "=", "\""], skips-> [" "], comments-> [("#", "\n")]);
+     * let (a, _, _) = lex:.next (); // read 'a'
+     * let (eq, _, _) = lex:.next (); // read '=' token
+     * let (qut, _, _) = lex:.next (); // read '"' token
+     * 
+     * lex:.doSkip (false);
+     * lex:.doComments (false); // Future comments will not be considered comments
+     * 
+     * let mut str_content = "";
+     * let mut i = 0;
+     * loop {
+     *    let (tok, _, _) = lex:.next (); 
+     *    i += 1;
+     *
+     *    if (tok == "\"") break {}
+     *    else str_content = str_content ~ tok;      
+     * }
+     * 
+     * // Because skip was disable, space token was not skipped and is present in the string
+     * assert (str_content == "# not ignored !");
+     *
+     * // Warning, it still split the content
+     * // so the loop above iterates 8 times (4 words + 3 spaces + 1 closing quote)
+     * assert (i == 8);
+     * 
+     * lex:.doComments (true); // future comments will be ignored
+     * ===
+     */
+    pub def doComments (mut self, d : bool) -> void {
+        self._doComments = d;
+    }
+
+    /**
+     * Move the cursor of buf to the end of comment, in order to skip the comments
+     * @params: 
+     *   - buf: the content 
+     *   - end: the token that stop the reading 
+     * @returns: a slice of content, where the first line has been removed
+     */
+    prv def skipComments (self, buf : [T], end : [T], ref mut line : u64, ref mut col : u64)-> mut [T] {
+        let mut content = buf;
+        {
+            loop {
+                let wd = self._tzer.next (content);
+                if (wd == 0us) break {} // Comment is never closed, but we just ignore that
+                let ret = content [0us..wd];
+                content = content [wd.. $];                
+
+                cte if (is!T {U of c8}) {
+                    let pos = self.countNbLine (ret, line, col);
+                    line = pos._0;
+                    col = pos._1;
+                    if (ret == end) break {}
+                } else {
+                    let pos = self.countNbLine (ret, line, col);
+                    line = pos._0;
+                    col = pos._1;
+
+                    if (ret == end) break {}
+                }
+            }
+        }
+        
+        return content;
+    }
+
+    /**
+     * Increment the number of line if the content of the word is a line return
+     * @returns: 
+     *   - ._0: the new line number
+     *   - ._1: the new column number
+     */
+    prv def countNbLine (self, word : [T], line : u64, col : u64) -> (u64, u64) {
+        cte if (is!T{U of c8}) {
+            if (word == "\n"s8) {
+                (line + 1u64, 1u64)
+            } else {
+                (line, col + word.len)
+            }
+        } else {
+            if (word == "\n") {
+                (line + 1u64, 1u64)
+            } else {
+                (line, col + word.len)
+            }
+        }
+    }
+
+    /**
+     * Clear the lexer, and return the rest of the text that was not read yet.
+     * @example: 
+     * ======================
+     * let dmut lex = Lexer::new ("text to read");
+     * 
+     * assert (lex:.next ()._0 == "text");
+     * assert (lex:.clear () == " to read");
+     * assert (lex:.next ()._0 == "")
+     * ======================
+     */
+    pub def clear (mut self)-> [T] {
+        let ret = self._content;
+        self._content = [];
+        ret
+    }
+
+    /**
+     * @returns: true iif the lexer reached the end of the text to split.
+     */
+    pub def isEof (self)-> bool {
+        self._content.len == 0us
+    }
+    
+}
+
+
+

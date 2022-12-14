@@ -144,12 +144,26 @@ void _yrt_putwchar (unsigned int code) {
     printf ("%s", _yrt_to_utf8 (code, c, &nb));    
 }
 
+void _yrt_eputwchar (unsigned int code) {
+    char c[5];
+    int nb = 0;
+    fprintf (stderr, "%s", _yrt_to_utf8 (code, c, &nb));    
+}
+
 void _yrt_printf32 (float x) {
     printf ("%f", x);
 }
 
 void _yrt_printf64 (double x) {
     printf ("%lf", x);
+}
+
+void _yrt_eprintf32 (float x) {
+    fprintf (stderr, "%f", x);
+}
+
+void _yrt_eprintf64 (double x) {
+    fprintf (stderr, "%lf", x);
 }
 
 void _yrt_print_error (char * format) {
@@ -200,8 +214,6 @@ unsigned int _yrt_getwchar_in_file (FILE * file) {
     size_t nb;
     return _yrt_to_utf32 (c, &nb);
 }
-
-
 
 void _yrt_fflush_stdout () {
     fflush (stdout);

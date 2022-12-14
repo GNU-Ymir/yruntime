@@ -1,8 +1,66 @@
+/**
+ * This module implements a set of functions for input and output to
+ * stdout, stderr and stdin.  There are three subset of functions,
+ * functions named `print` that print data to stdout, functions named
+ * `eprint` that print data to stderr, and functions named `read` that
+ * read data from stdin. `print` and `eprint` functions are variadic,
+ * so they can take an arbitrary number of parameters to be printed on
+ * respectively stdout and stderr. The suffix `ln` for both those kind of
+ * functions can be set to add a newline at the end of the printing.
+ * @Authors: Emile Cadorel
+ * @Licence: GPLv3
+ * <hr>
+ * @example:
+ * ===
+ * import std::io;
+ * 
+ * println ("Hello World !");
+ * println (); // just print a newline
+ * 
+ * print ("Without a newline");
+ * 
+ * // Print and println functions are variadic
+ * println ("I : ", 12, ", J : ", 89.0f, " T : ", (1, 2, 'r'));
+ * 
+ * // Read a int from stdin
+ * let i = read!i32 (ask-> "Type a int > ");
+ * 
+ * // Read a string from stdin
+ * let msg = read![c8] (ask-> "Type a string > ");
+ * 
+ * 
+ * if (i < 89) {
+ *     // As for print and println, eprint version are variadic
+ *     eprintln ("Error I : ", i, " must be greater than J : ", 89, " ", msg);
+ *
+ *     eprint ("Printing an error with no line return");
+ *     eprintln ();
+ * }
+ * 
+ * // Classes are printable if they are Streamable
+ * class A {
+ *      let _i : i32;
+ *      pub self (i : i32) with _i = i {}
+ * 
+ *      impl std::stream::Streamable;
+ * }
+ *
+ * let a = A::new (12), b = A::new (89);
+ * 
+ * // A instances are printable
+ * println (a, " ", b);
+ * eprintln (a, " ", b);
+ * ===
+ */
+
 mod std::io;
 
 import core::exception, core::typeinfo, core::array;
 import core::object;
 pub import std::stream;
+import etc::c::stdio;
+
+extern (C) static stderr : &void;
 
 /**
  * Put a simple ascii char on stdout
@@ -10,9 +68,19 @@ pub import std::stream;
 extern (C) def putchar (c : c8);
 
 /**
+ * Put a simple ascii char to fd
+ */
+extern (C) def putc (c : c8, fd : &void);
+
+/**
  * Runtime function that write a c32 char on stdout
  */
 extern (C) def _yrt_putwchar (c : c32);
+
+/**
+ * Runtime function that write a c32 char on stderr
+ */
+extern (C) def _yrt_eputwchar (c : c32);
 
 /**
  * Runtime function that read a c32 char from stdin
@@ -23,6 +91,11 @@ extern (C) def _yrt_getwchar ()-> c32;
  * C printf function 
  */
 extern (C) def printf (c : &c8, ...);
+
+/**
+ * C fprintf function 
+ */
+extern (C) def fprintf (fd : &void, c : &c8, ...);
 
 /**
  * C scanf function
@@ -40,31 +113,52 @@ extern (C) def _yrt_printf32 (f : f32);
 extern (C) def _yrt_printf64 (f : f64);
 
 /**
+ * Runtime function that prints a f32 to stderr
+ */
+extern (C) def _yrt_eprintf32 (f : f32);
+
+/**
+ * Runtime function that prints a f64 to stderr
+ */
+extern (C) def _yrt_eprintf64 (f : f64);
+
+/**
  * flush the stdout for immediate printing
  */
 extern (C) def _yrt_fflush_stdout ();
 
 pub {
     /**
-     * Print a char of size 8 in stdout
-     * @params : 
-     * - c: the char to print
+     * Print a char to stdout.
      */
-    def print (c : c8) -> void
+    def print (c : c8) -> void {
         putchar (c)
+    }
 
     /**
-     * Print a char of size 32 in stdout
-     * @params : 
-     * - c: the char to print
+     * Print an utf8 char to stderr.
      */
-    def print (c : c32) -> void
+    def eprint (c : c8) {
+        
+        putc (c, std::io::stderr);
+    }
+        
+    /**
+     * Print an utf32 char to stdout.
+     */
+    def print (c : c32) -> void {
         _yrt_putwchar (c)
+    }
 
     /**
-     * Print an array of c32 in stdout
-     * @params : 
-     * - s: the string to print
+     * Print an utf32 char to stderr.
+     */
+    def eprint (c : c32) {
+        _yrt_eputwchar (c);
+    }
+
+    /**
+     * Print an utf32 string to stdout.
      */
     def print (s : [c32]) -> void {
         let mut i = 0_u64;
@@ -73,11 +167,18 @@ pub {
             i = i + 1_u64;
         }
     }
+
+    /**
+     * Print an utf32 string to stderr.
+     */
+    def eprint (s :  [c32]) {
+        for i in 0us .. s.len {
+            eprint (s [i]);            
+        }
+    }
     
     /**
-     * Print an array of c8 in stdout
-     * @params : 
-     * - s: the string to print
+     * Print an utf8 string to stdout.
      */
     def print (s : [c8]) -> void {
         let mut i = 0_u64;
@@ -86,78 +187,141 @@ pub {
             i = i + 1_u64;
         }
     }
+
+    /**
+     * Print an utf8 string to stderr.
+     */
+    def eprint (s : [c8]) {
+        for i in 0us .. s.len {
+            eprint (s [i]);
+        }
+    }
     
     /**
-     * Print a isize to stdout
-     * @params:
-     *    - i: the int to print
+     * Print a isize to stdout.
      */
-    def print (i : isize) -> void
-        printf ((alias "%lld"s8).ptr, i)
+    def print (i : isize) -> void {
+        printf ((alias "%lld"s8).ptr, i);
+    }
 
     /**
-     * Print a usize to stdout
-     * @params:
-     *    - i: the int to print
+     * Print a isize to stderr.
      */
-    def print (i : usize) -> void
-        printf ((alias "%lld"s8).ptr, i)
-    
-    /**
-     * Print a i64 to stdout
-     * @params:
-     *    - i: the int to print
-     */
-    def print (i : i64) -> void
-        printf ((alias "%lld"s8).ptr, i)
-
-    /**
-     * Print a i32 to stdout
-     * @params:
-     *    - i: the int to print
-     */
-    def print (i : i32) -> void
-        printf ((alias "%d"s8).ptr, i)
-
-    /**
-     * Print a i16 to stdout
-     * @params:
-     *    - i: the int to print
-     */
-    def print (i : i16) -> void
-        printf ((alias "%hd"s8).ptr, i)
-
-    /**
-     * Print a i8 to stdout
-     * @params:
-     *    - i: the int to print
-     */
-    def print (i : i8) -> void
-        printf ((alias "%hhx"s8).ptr, i)
-
-    /**
-     * Print a u64 to stdout
-     * @params:
-     *    - i: the int to print
-     */
-    def print (i : u64) -> void
-        printf ((alias "%llu"s8).ptr, i)
+    def eprint (i : isize) {
+        fprintf (std::io::stderr, "%lld"s8.ptr, i);
+    }
         
     /**
-     * Print a u32 to stdout
-     * @params:
-     *    - i: the int to print
+     * Print a usize to stdout.
      */
-    def print (i : u32) -> void
-        printf ((alias "%u"s8).ptr, i)
+    def print (i : usize) -> void {
+        printf ((alias "%lld"s8).ptr, i);
+    }
 
     /**
-     * Print a u16 to stdout
-     * @params:
-     *    - i: the int to print
+     * Print a usize to stderr.
      */
-    def print (i : u16) -> void
-        printf ((alias "%hu"s8).ptr, i)
+    def eprint (i : usize) -> void {
+        fprintf (std::io::stderr, (alias "%lld"s8).ptr, i);
+    }
+
+    /**
+     * Print a i64 to stdout.
+     */
+    def print (i : i64) -> void {
+        printf ((alias "%lld"s8).ptr, i);
+    }
+
+    /**
+     * Print a i64 to stdout.
+     */
+    def eprint (i : i64) -> void {
+        fprintf (std::io::stderr, (alias "%lld"s8).ptr, i);
+    }
+
+    /**
+     * Print a i32 to stdout.
+     */
+    def print (i : i32) -> void {
+        printf ((alias "%d"s8).ptr, i);
+    }
+
+    /**
+     * Print a i32 to stderr.
+     */
+    def eprint (i : i32) -> void {
+        fprintf (std::io::stderr, (alias "%d"s8).ptr, i);
+    }
+
+    /**
+     * Print a i16 to stdout.
+     */
+    def print (i : i16) -> void {
+        printf ((alias "%hd"s8).ptr, i);
+    }
+
+    /**
+     * Print a i16 to stderr.
+     */
+    def eprint (i : i16) -> void {
+        fprintf (std::io::stderr, (alias "%hd"s8).ptr, i);
+    }
+
+    /**
+     * Print a i8 to stdout.
+     */
+    def print (i : i8) -> void {
+        printf ((alias "%hhx"s8).ptr, i);
+    }
+
+    /**
+     * Print a i8 to stderr.
+     */
+    def eprint (i : i8) -> void {
+        fprintf (std::io::stderr, (alias "%hhx"s8).ptr, i);
+    }
+
+    /**
+     * Print a u64 to stdout.
+     */
+    def print (i : u64) -> void {
+        printf ((alias "%llu"s8).ptr, i);
+    }
+
+    /**
+     * Print a u64 to stderr.
+     */
+    def eprint (i : u64) -> void {
+        fprintf (std::io::stderr, (alias "%llu"s8).ptr, i);
+    }
+        
+    /**
+     * Print a u32 to stdout.
+     */
+    def print (i : u32) -> void {
+        printf ((alias "%u"s8).ptr, i);
+    }
+
+    /**
+     * Print a u32 to stderr.
+     */
+    def eprint (i : u32) -> void {
+        fprintf (std::io::stderr, (alias "%u"s8).ptr, i);
+    }
+
+    /**
+     * Print a u16 to stdout.
+     */
+    def print (i : u16) -> void {
+        printf ((alias "%hu"s8).ptr, i);
+    }
+
+    /**
+     * Print a u16 to stderr.
+     */
+    def eprint (i : u16) -> void {
+        fprintf (std::io::stderr, (alias "%hu"s8).ptr, i);
+    }
 
     /** 
      * Print a u8 to stdout 
@@ -167,47 +331,70 @@ pub {
     def print (i : u8) -> void
         printf ((alias "%hhx"s8).ptr, i)
         
+    /**
+     * Print an address to stdout.
+     */
+    def print (i : &(void))-> void {
+        printf ((alias "%x"s8).ptr, i);
+    }
 
     /**
-     * Print an address to stdout
-     * @params: 
-     *    - i: the address to print
+     * Print an address to stderr.
      */
-    def print (i : &(void))-> void
-        printf ((alias "%x"s8).ptr, i)
-        
+    def eprint (i : &(void))-> void {
+        fprintf (std::io::stderr, (alias "%x"s8).ptr, i);
+    }
+    
     /**
      * Print a float value of size 64 to stdout
-     * @params:
-     *    - f: the float to print
      */
     def print (f : f64) -> void {
         _yrt_printf64 (f);
     }
+
+    /**
+     * Print a float value of size 64 to stderr.
+     */
+    def eprint (f : f64) -> void {
+        _yrt_eprintf64 (f);
+    }
         
     /**
      * Print a float value of size 32 to stdout
-     * @params:
-     *    - f: the float to print
      */
     def print (f : f32) -> void {
         _yrt_printf32 (f);
     }       
 
     /**
-     * Print a bool value to stdout
-     * @params:
-     *    - b: the bool to print
+     * Print a float value of size 32 to stderr.
+     */
+    def eprint (f : f32) -> void {
+        _yrt_eprintf32 (f);
+    }       
+    
+    /**
+     * Print a bool value to stdout.
      */
     def print (b : bool) -> void {
         if (b) 
-            printf ((alias "true"s8).ptr)
+            printf ((alias "true"s8).ptr);
         else
-            printf ((alias "false"s8).ptr)
+            printf ((alias "false"s8).ptr);
     }
 
     /**
-     * Print an array of type U to stdout
+     * Print a bool value to stderr.
+     */
+    def eprint (b : bool) -> void {
+        if (b) 
+            fprintf (std::io::stderr, (alias "true"s8).ptr);
+        else
+            fprintf (std::io::stderr, (alias "false"s8).ptr);
+    }
+
+    /**
+     * Print an array of type U to stdout.
      * @params:
      *    - a: an array to print
      * @templates : 
@@ -225,6 +412,27 @@ pub {
             i = i + 1_u64;
         }
         print (']'c8);
+    }
+
+    /**
+     * Print an array of type U to stderr.
+     * @params:
+     *    - a: an array to print
+     * @templates : 
+     *    - T: a slice type
+     *    - U: any 
+     */
+    def eprint {T of [U], U} (a : T) -> void {
+        let mut i = 0_u64;
+        eprint ('['c8);
+        while i < a.len {
+            if i != 0_u64
+                fprintf (std::io::stderr, (alias ", "s8).ptr);
+            
+            eprint (a [i]);
+            i = i + 1_u64;
+        }
+        eprint (']'c8);
     } 
 
     /**
@@ -247,6 +455,25 @@ pub {
     } 
 
     /**
+     * Print a static array of type U to stderr.
+     * @params : 
+     *    - a: an array to print
+     * @templates : 
+     *    - T: an static array type 
+     *    - U: any
+     *    - N: the static size 
+     */
+    def eprint {T of [U;N], U, N : usize} (a : T) -> void {
+        eprint ('['c8);
+        for i in 0_u64 .. cast!u64 (N) {
+            if i != 0_u64
+                fprintf (std::io::stderr, (", "s8).ptr);
+            eprint (a [i]);
+        }
+        eprint (']'c8);
+    } 
+    
+    /**
      * Print an option type to stdout
      * @params: 
      *   - a: a value of type option 
@@ -268,9 +495,32 @@ pub {
             }
         }
     }
+
+    /**
+     * Print an option type to stderr.
+     * @params: 
+     *   - a: a value of type option 
+     * @templates: 
+     *   - T: any type
+     */
+    def eprint {T} (a : T?) -> void {
+        cte if (!is!{T}{U of void}) {
+            match a {
+                Ok  (x:_)   => eprint ("Ok(", x, ")");
+                Err (msg:_) => eprint ("Err(", msg, ")");
+                Err ()      => eprint ("Err()");
+            }
+        } else {
+            match a {
+                Ok  ()   => eprint ("Ok()");
+                Err (msg:_) => eprint ("Err(", msg, ")");
+                Err ()      => eprint ("Err()");
+            }
+        }
+    }
     
     /**
-     * Print multiple elements to stdout
+     * Print multiple elements to stdout.
      */
     def print  {F, T...} (a : F, b : T) {
         print (a);
@@ -282,6 +532,19 @@ pub {
         }
     }
 
+    /**
+     * Print multiple elements to stderr.
+     */
+    def eprint  {F, T...} (a : F, b : T) {
+        eprint (a);
+        cte if (is!T {Z of (U,), U...}) {
+            for i in b 
+                eprint (i);
+        } else {
+            eprint (b);
+        }
+    }
+    
     /**
      * Print an element of type tuple to stdout
      * @params: 
@@ -301,11 +564,48 @@ pub {
         print (')');
     }
 
+    /**
+     * Print an element of type tuple to stderr.
+     * @params: 
+     *    - a: a tuple of arbitrary arity
+     */
+    def eprint {T of (U,), U...} (a : T) {
+        eprint ('(');
+        let mut j = 0;
+        for i in a {
+            if j != 0 {
+                eprint (',');
+            }
+            eprint (i);
+            j += 1;
+        }        
+        if (j == 1) eprint (',');
+        eprint (')');
+    }
+
+    /**
+     * Print an empty tuple to stdout.
+     */
     def print (_ : ()) {
         print ('('c8,')'c8);
     }
+    
+    /**
+     * Print an empty tuple to stderr.
+     */
+    def eprint (_ : ()) {
+        eprint ('('c8,')'c8);
+    }
 
+    /**
+     * Print nothing to stdout (only used for variadic template loop end condition)
+     */
     def print () {}
+
+    /**
+     * Print nothing to stderr (only used for variadic template loop end condition)
+     */
+    def eprint () {}
     
     /**
      * Print a struct to stdout
@@ -322,6 +622,22 @@ pub {
         }
         print (")");
     }
+
+    /**
+     * Print a struct to stderr
+     */
+    def eprint {struct T} (a : T) -> void {
+        eprint (T::typeid, "(");
+        cte if (typeof (__pragma!tupleof (a))::arity > 0us) {
+            let mut j = 0;
+            for i in __pragma!tupleof (a) {
+                if (j != 0) eprint (", ");
+                eprint (i);
+                j += 1;
+            }
+        }
+        eprint (")");
+    }
     
     /**
      * Print a class that implement the trait Streamable to stdout
@@ -333,12 +649,28 @@ pub {
     }
 
     /**
-     * Print the typeid of a object
+     * Print a class that implement the trait Streamable to stderr.
+     */
+    def eprint {T impl Streamable} (a : T)-> void {
+        let dmut stream = StringStream::new ();
+        a.toStream (alias stream);
+        eprint (stream []);
+    }
+    
+    /**
+     * Print the typeid of a object to stdout.
      */
     def print (a : &Object) -> void {
         print (a::typeinfo.name);
     }
 
+    /**
+     * Print the typeid of a object to stderr.
+     */
+    def eprint (a : &Object) -> void {
+        eprint (a::typeinfo.name);
+    }
+    
     /**
      * Print an arbitrary number of element on stdout, and add a return line afterwards
      */
@@ -351,6 +683,34 @@ pub {
         }
         
         print ('\n'c8);
+    }
+
+    /**
+     * Print a return line to stdout.
+     */
+    def println () {
+        print ('\n'c8);
+    }
+    
+    /**
+     * Print an arbitrary number of element on stderr, and add a return line afterwards
+     */
+    def eprintln {T...} (a : T) {
+        cte if (is!T {Z of (U,), U...}) {
+            for i in a 
+                eprint (i);
+        } else {
+            eprint (a);
+        }
+        
+        eprint ('\n'c8);
+    }
+
+    /**
+     * Print a return line to stderr.
+     */
+    def eprintln () {
+        eprint ('\n'c8);
     }
     
     /**
