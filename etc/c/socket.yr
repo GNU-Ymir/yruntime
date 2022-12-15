@@ -4,15 +4,27 @@ pub {
 
 
     struct
-| mut sin_family : u16 = 0u16
-| mut sin_port   : u16 = 0u16
-| mut sin_addr   : in_addr = in_addr (s_addr -> 0u32)
-| mut aux : [u8; 8u32] = [0u8; 8u32]
- -> sockaddr_in;
+    | mut sin_family : u16 = 0u16
+    | mut sin_port   : u16 = 0u16
+    | mut sin_addr   : in_addr = in_addr (s_addr -> 0u32)
+    | mut aux : [u8; 8u32] = [0u8; 8u32]
+     -> sockaddr_in;
 
     struct
-| mut s_addr : u32 = 0u32
- -> in_addr;
+    | mut sin6_family : u16 = 0u16
+    | mut sin6_port : u16 = 0u16
+    | mut sin6_flowinfo : u32 = 0u32
+    | mut sin6_addr : in6_addr = in6_addr (s6_addr-> [0u16 ; 8u32])
+    | mut sin6_scope_id : u32 = 0u32
+     -> sockaddr_in6;
+
+    struct
+    | mut s_addr : u32 = 0u32
+     -> in_addr;
+
+    struct
+    | mut s6_addr : [u16 ; 8u32] = [0u16 ; 8u32]
+     -> in6_addr;
 
     extern (C) def htons (i : u16)-> u16;
     extern (C) def htonl (i : u32)-> u32;
@@ -21,11 +33,15 @@ pub {
     extern (C) def ntohl (i : u32)-> u32;
 
     extern (C) def socket (fam : AddressFamily, sock : SocketType, i : i32)-> i32;
-    extern (C) def bind (i : i32, servaddr : &sockaddr_in, size : usize)-> i32; 
+    extern (C) def bind (i : i32, servaddr : &sockaddr_in, size : usize)-> i32;
+    extern (C) def bind (i : i32, servaddr : &sockaddr_in6, size : usize)-> i32; 
     extern (C) def listen (sock : i32, nb : i32)-> i32;
     extern (C) def connect (sock : i32, servaddr : &sockaddr_in, size : u32)-> i32;
+    extern (C) def connect (sock : i32, servaddr : &sockaddr_in6, size : u32)-> i32;
     extern (C) def accept (sock : i32, dmut clientaddr : &sockaddr_in, dmut size : &usize)-> i32;
-    extern (C) def getsockname (sock : i32, dmut servaddr : &sockaddr_in, dmut size : &usize)-> i32; 
+    extern (C) def accept (sock : i32, dmut clientaddr : &sockaddr_in6, dmut size : &usize)-> i32;
+    extern (C) def getsockname (sock : i32, dmut servaddr : &sockaddr_in, dmut size : &usize)-> i32;
+    extern (C) def getsockname (sock : i32, dmut servaddr : &sockaddr_in6, dmut size : &usize)-> i32; 
 
     extern (C) def write (sock : i32, ptr : &(void), size : usize)-> i32;
     extern (C) def read (sock : i32, ptr : &(void), size : usize)-> i32;

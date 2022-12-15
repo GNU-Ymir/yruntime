@@ -267,14 +267,8 @@ pub class ActorRef {
         pub over toStream (self, dmut stream : &StringStream) {            
             stream:.write ("std::concurrency::actor::ActorRef ("s8,
                            self._name, ", "s8);
-            let (ip, port)  = match self._stream.getAddr () {
-                i : &SockAddrV4 => {
-                    (i.ip ()[], i.port ())
-                }
-                _ => { ([0u8 ; 4us], 0u16) }
-            }
 
-            stream:.write (ip[0], '.'c8, ip[1], '.'c8, ip[2], '.'c8, ip[3], '@'c8, port, ')'c8);
+            stream:.write (self._stream.getAddr ().ip (), '@'c8, self._stream.getAddr ().port (), ')'c8);
         }
     }
 
@@ -345,11 +339,11 @@ pub class @final ActorSystem {
 
 
     /**
-     * Create an actor system with a automatic port, listening from every address
+     * Create an actor system with a automatic port, listening from every address in ipv4
      * @info: Start a TaskPool waiting for remote connection and messages
      */
     pub self ()
-        with _listener = TcpListener::listen (),
+        with _listener = TcpListener::listen ("0.0.0.0:0"s8),
              _pool = TaskPool::new (),
              _port = 0u16
         throws &TcpError

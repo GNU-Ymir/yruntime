@@ -1,3 +1,53 @@
+/**
+ * This module implements packing function that flattens data into
+ * array of bytes, so they can be transferred more easily. Aliasable
+ * types (such as slices, class, etc.) are located in the heap and may
+ * have multiple level of aliasiing. It is not easy to send a
+ * aliasable type through a network socket as only flat data can be
+ * sent, indeed pointers are not transferable from a process to
+ * another process, without talking about different machines. This is
+ * where the pack module comes in handy. It allows to transform any
+ * type into a flatten version of the type, and converserly, so the
+ * type can be sent and received.
+ * 
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @example: 
+ * =============
+ * import std::net::pack;
+ * 
+ * class X {
+ *    let i : [i32];
+ * 
+ *    pub self (i : [i32]) with i = i {}
+ * 
+ *    impl Streamable;
+ * 
+ *    // Packable trait takes care of the packing by default
+ *    // It packs all the field of the class
+ *    impl Packable;
+ * }
+ * 
+ * def foo () -> [u8] {
+ *     let x = X::new ([1, 2, 3]);
+ *     x.pack ()   
+ * }
+ * 
+ * def main () {
+ *     // This byte packet contains an instance of X
+ *     let packet : [u8] = foo ();
+ * 
+ *     // It can be unpacked to create an new instance of X with the same content
+ *     match packet.unpack () {
+ *        dmut x : &X => {
+ *             println (x);
+ *        }
+ *     }
+ * }
+ * =============
+ */
+
 mod std::net::packet;
 
 import std::conv;
@@ -11,35 +61,18 @@ import std::stream;
 import core::exception, core::typeinfo;
 import core::duplication, core::array, core::object;
 
+
 /**
- * A packable class is class that can create a packet of raw data from its content
- * Such class can also instantiate an object from a packet without calling a constructor
- * This is very useful to send a class through network socket
- * @example: 
- * =============
- * class X {
- *    let i : [i32];
- * 
- *    pub self (i : [i32]) with i = i {}
- * 
- *    impl Streamable;
- *    impl Packable;
- * }
- * 
- * def foo () -> [u8] {
- *     let x = X::new ([1, 2, 3]);
- *     x.pack ()   
- * }
- * 
- * def main () {
- *     let packet : [u8] = foo ();
- *     match packet.unpack () {
- *        dmut x : &X => {
- *             println (x);
- *        }
- *     }
- * }
- * =============
+ * Exception thrown when unpacking an invalid packet
+ */
+pub class UnpackError over Exception {
+    pub self () {}
+
+    impl std::stream::Streamable;    
+}
+
+/**
+ * Trait used to transform a class instance into a slice of bytes.
  */
 pub trait Packable {
     
@@ -73,8 +106,6 @@ pub trait Packable {
      * All the packet data are append at the end of the vector
      * @params: 
      *     - packet: the vector to fill with object data
-     * @returns: 
-     *     - packet
      */
     pub def pack (self, dmut packet : &Vec!u8) {                        
         let name = (__pragma!mangle (typeof (self))).to![c8] ();
@@ -164,6 +195,8 @@ pub trait Packable {
  *    - The instantiated object
  * @throws: 
  *    - UnpackError: if an error occured when unpacking
+ *      + the packet is no valid (some data are missing)
+ *      + the packet refers to a type that does not exist in the current process (cf. std::reflect)
  */
 pub def unpack (mut packet : [u8])-> dmut &Object
     throws &UnpackError
@@ -183,14 +216,6 @@ pub def unpack (mut packet : [u8])-> dmut &Object
             throw UnpackError::new ();
         }
     }   
-}
-
-pub class UnpackError over Exception {
-
-    pub self () {}
-
-    impl Streamable;
-    
 }
 
 mod internal_pack {

@@ -1,3 +1,26 @@
+/**
+ * This module implements the class `TcpListener` and `TcpStream` used to communicate using tcp protocol.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * ===
+ * import std::net::_;
+ *
+ * pub def greetsClient (dmut client : &TcpStream) {
+ *    // Communicate with the client
+ *    client:.rawSend ("Hello !!"s8);
+ * }
+ *
+ * with dmut server = TcpListener::listen ("127.0.0.1:4000"s8) {
+ *     loop {
+ *         let dmut client = server:.accept ();
+ *         println ("New client connected : ", client);
+ *         greetsClient (alias client);
+ *     }
+ * }
+ * ===
+ */
+
 mod std::net::tcp;
 
 import core::object, core::typeinfo, core::exception;
@@ -12,7 +35,7 @@ import std::net::address;
 import std::net::packet;
 
 /**
- * The type errors that can occur when listening, or connecting to a TCP socket
+ * The types of error that can occur when listening, or connecting to a TCP socket
  */
 pub enum
 | ADDR_TYPE       = 0u8
@@ -24,57 +47,18 @@ pub enum
 | SOCKET_CLOSED   = 6u8
  -> TcpErrorCode;
 
-__version WINDOWS {
-    static mut __init__ = 0u32;
-
-
-    struct
-    | data : [u8 ; 408u32] = [0u8 ; 408u32]
-     -> WSADATA;
-
-    extern (C) def WSAStartup (version : u16, data : &WSADATA);
-    extern (C) def WSACleanup ();
-
-    
-    /**
-     * Windows socket lib need to be initialized
-     */
-    def initSocketDll () {
-        atomic {
-            if (__init__ == 0u32) {
-                let WSAData = WSADATA ();
-                WSAStartup (2u16, &WSAData);
-            }
-
-            __init__ += 1u32;
-        }
-    }
-
-    /**
-     * It also needs to be cleaned up (when the last socket use is disposed)
-     */
-    def cleanSocketDll () {
-        atomic {
-            __init__ -= 1u32;
-            if (__init__ == 0u32) {
-                WSACleanup ();
-            }
-        }
-    }        
-}
-
-
 /**
- * Exception that can occur when trying to create a TcpListener, or a TcpStream
+ * Exception that can occur when trying to create a TcpListener, or a TcpStream.
  */
 pub class TcpError over Exception {
-    
+
     pub let msg  : [c32];
+
     pub let code : TcpErrorCode;
-    
+
     pub self (code : TcpErrorCode, msg : [c32])
         with msg = msg,
-             code = code
+    code = code
     {}
 
     impl Streamable {
@@ -82,22 +66,38 @@ pub class TcpError over Exception {
             self::super.toStream (alias stream);
         }
     }
-       
+    
 }
 
 /**
- * A tcp socket server that is listening for incoming connection
+ * A tcp socket server that is listening for incoming connection.
  */
-pub class TcpListener {
+pub class @final TcpListener {
 
     /** The listening socket */
     let mut _sockfd : i32 = 0;
     let mut _addr : &SockAddress;
     let mut _port : u16 = 0u16;
-        
+    
     /**
-     * Create a new TcpListener and bind it to the specific address
-     * The create listener is ready for accepting connection
+     * Create a new TcpListener and bind it to the specific address.
+     * The create listener is ready for accepting connection.
+     * @info: by setting the socket address port to 0, a unused port is automatically selected.
+     * @throws: 
+     *   - &TcpError: 
+     *      + The address is invalid
+     *      + The port binding failed
+     * @example:
+     * ===
+     * import std::net::_;
+     * 
+     * // Accept incoming connection from any address on port 4000
+     * with dmut server = TcpListener::listen (SockAddrV4::new (Ipv4::UNSPECIFIED, 4000u16)) {
+     *     let dmut client = server:.accept ();
+     *     client:.rawSend ("Hi !");
+     *     client:.close ();
+     * }
+     * ===
      */
     pub self listen (addr : &SockAddress)
         with _addr = addr
@@ -111,6 +111,13 @@ pub class TcpListener {
                 
                 self:.bindV4 (v4);
             }
+            v6 : &SockAddrV6 => {
+                __version WINDOWS {
+                    initSocketDll ();
+                }
+
+                self:.bindV6 (v6);
+            }
             _ => {
                 throw TcpError::new (TcpErrorCode::ADDR_TYPE, "Unknown addr type : " ~ addr::typeinfo.name);
             }
@@ -118,29 +125,57 @@ pub class TcpListener {
     }
 
     /**
-     * Create a listener ready for accepting connection
-     * The port and address are unspecified (port is automatically choosed, and can be retreived by self.getPort ())
-     */
-    pub self listen ()
-        with _addr = SockAddrV4::new (Ipv4::LOCALHOST, 0u16)
-        throws &TcpError
+     * Create a new TcpListener and bind it to the specific address.
+     * The create listener is ready for accepting connection.
+     * @info: by setting the socket address port to 0, a unused port is automatically selected.
+     * @throws: 
+     *   - &TcpError: 
+     *      + The address is invalid 
+     *      + The port binding failed
+     * @example:
+     * ===
+     * import std::net::_;
+     * 
+     * // Accept incoming connection from localhost on port 8080
+     * with dmut server = TcpListener::listen ("127.0.0.1:8080"s8) {
+     *     let dmut client = server:.accept ();
+     *     client:.rawSend ("Hi !");
+     *     client:.close ();
+     * }
+     * ===
+     */    
+    pub self listen (addr : [c8])
+        with _addr = {
+            address::to!{&SockAddress} (addr)
+        } catch {
+            _ : &CastFailure => throw TcpError::new (TcpErrorCode::ADDR_TYPE, "Inalid address : " ~ addr.(conv::to)![c32] ());
+        }
+    throws &TcpError
     {
         match self._addr {
             v4 : &SockAddrV4 => {
                 __version WINDOWS {
                     initSocketDll ();
                 }
-                
+
                 self:.bindV4 (v4);
             }
+            v6 : &SockAddrV6 => {
+                __version WINDOWS {
+                    initSocketDll ();
+                }
+                
+                self:.bindV6 (v6);
+            }
             _ => {
-                throw TcpError::new (TcpErrorCode::ADDR_TYPE, "Unknown addr type : " ~ (self._addr)::typeinfo.name);
+                throw TcpError::new (TcpErrorCode::ADDR_TYPE, "Unknown addr type : " ~ addr.(conv::to)![c32]());
             }
         }
     }
     
     /**
-     * Accept a new client connection 
+     * Accept a new client connection. This function is blocking, it waits until a client is connected.
+     * @returns: the TcpStream used to communicate with the connected client.
      * @example: 
      * =============
      * pub def greets_client (dmut client : &TcpStream) {
@@ -159,40 +194,52 @@ pub class TcpListener {
     pub def accept (mut self) -> dmut &TcpStream
         throws &TcpError
     {
-        let mut client = sockaddr_in ();
-        let mut len = sizeof (sockaddr_in);
-
-        let sock = etc::c::socket::accept (self._sockfd, alias (&client), alias (&len));
-        if (sock <= 0) {
-            throw TcpError::new (TcpErrorCode::ACCEPT, "failed to accept client");
-        }        
-        
-        return TcpStream::new (sock, self.createAddr (client));
+        match self._addr {
+            SockAddrV4 () => {
+                let mut client = sockaddr_in ();
+                let mut len = sizeof (sockaddr_in);
+                
+                let sock = etc::c::socket::accept (self._sockfd, alias (&client), alias (&len));
+                if (sock <= 0) {
+                    throw TcpError::new (TcpErrorCode::ACCEPT, "failed to accept client");
+                }        
+                
+                return TcpStream::new (sock, self.createAddr (client));
+            }
+            SockAddrV6 () => {
+                let mut client = sockaddr_in6 ();
+                let mut len = sizeof (sockaddr_in);
+                
+                let sock = etc::c::socket::accept (self._sockfd, alias (&client), alias (&len));
+                if (sock <= 0) {
+                    throw TcpError::new (TcpErrorCode::ACCEPT, "failed to accept client");
+                }        
+                
+                return TcpStream::new (sock, self.createAddr (client));
+            }
+            _ => {
+                throw TcpError::new (TcpErrorCode::ACCEPT, "failed to accept client");
+            }
+        }
     }
-
-    // pub def setNonBlocking (mut self)-> void {
-    //     let flags = fcntl(self._sockfd, FileFlags::F_GETFL);
-    //     fcntl(self._sockfd, FileFlags::F_SETFL, flags | SocketFlag::O_NONBLOCK);
-    // }
-    
 
     /**
      * @returns: the file descriptor of the socket
-     * @warning: closing this socket will make the listener close, this should be done outside the listener
+     * @warning: closing this socket will make the listener close, this should not be done outside the listener
      */
     pub def getFd (self)-> i32 {
         self._sockfd
     }
     
     /**
-     * @returns: the listening port
+     * @returns: the port on which the listener is listening
      */
     pub def getPort (self)-> u16 {
         self._port
     }
 
     /**
-     * Bind the tcp listener to an ipv4 address
+     * Bind the tcp listener to an ipv4 address.
      */
     prv def bindV4 (mut self, ip : &SockAddrV4)
         throws &TcpError
@@ -203,10 +250,15 @@ pub class TcpListener {
         }
 
         let mut servaddr = sockaddr_in ();
-        servaddr.sin_family = AddressFamily::AF_INET;
-        servaddr.sin_addr.s_addr = ip.ip ().toN ();
-        servaddr.sin_port        = htons (ip.port ());
-        
+        match ip.ip () {
+            v4 : &Ipv4Address => {        
+                servaddr.sin_family = AddressFamily::AF_INET;
+                servaddr.sin_addr.s_addr = v4.toN ();
+            }
+            _ => __pragma!panic ();
+        }
+
+        servaddr.sin_port        = htons (ip.port ());        
         if (bind (self._sockfd, &servaddr, sizeof (sockaddr_in)) != 0) {
             throw TcpError::new (TcpErrorCode::BIND, "socket bind failed");
         }
@@ -223,6 +275,45 @@ pub class TcpListener {
             }
         } else self._port = ip.port ();
     }
+
+    /**
+     * Bind the tcp listener to an ipv6 address.
+     */
+    prv def bindV6 (mut self, ip : &SockAddrV6)
+        throws &TcpError
+    {
+        self._sockfd = etc::c::socket::socket (AddressFamily::AF_INET6, SocketType::SOCK_STREAM, 0);
+        if (self._sockfd == -1) {
+            throw TcpError::new (TcpErrorCode::SOCKET_CREATION, "socket creation failed");
+        }
+
+        let mut servaddr = sockaddr_in6 ();
+        match ip.ip () {
+            v6 : &Ipv6Address => {
+                servaddr.sin6_family = AddressFamily::AF_INET6;
+                servaddr.sin6_addr.s6_addr = v6[];
+            }
+            _ => __pragma!panic ();
+        }
+
+        servaddr.sin6_port        = htons (ip.port ());        
+        if (bind (self._sockfd, &servaddr, sizeof (sockaddr_in6)) != 0) {
+            throw TcpError::new (TcpErrorCode::BIND, "socket bind failed");
+        }
+
+        if (listen (self._sockfd, 100) != 0) {
+            throw TcpError::new (TcpErrorCode::LISTEN, "socket listen failed");
+        }
+
+        if (ip.port () == 0us) {
+            let mut len = sizeof (sockaddr_in6);
+            let r = etc::c::socket::getsockname (self._sockfd, alias &servaddr, alias &len);
+            if (r == 0) {
+                self._port = ntohs (servaddr.sin6_port);
+            }
+        } else self._port = ip.port ();          
+    }
+    
 
     /**
      * Read a sockaddr_in structure and create the associated SockAddress
@@ -250,9 +341,31 @@ pub class TcpListener {
         }
     }
 
-    impl Streamable;
+    /**
+     * Read a sockaddr_in structure and create the associated SockAddress
+     */
+    prv def createAddr (self, s_addr : sockaddr_in6) -> &SockAddress
+        throws &TcpError
+    {
+        match s_addr.sin6_family {
+            AddressFamily::AF_INET6 => {
+                {
+                    let h = s_addr.sin6_addr.s6_addr;
+                    let port : u16 = ntohs (s_addr.sin6_port);
+                    return SockAddrV6::new (Ipv6Address::new (h[0], h[1], h[2], h[3],
+                                                              h[4], h[5], h[6], h[7]), port);
+                }
+            }
+            _ => {
+                throw TcpError::new (TcpErrorCode::ADDR_TYPE, "unknown address type");
+            }
+        }
+    }
 
-    impl Disposable {
+    
+    impl std::stream::Streamable;
+
+    impl core::dispose::Disposable {
         /**
          * Close the listener
          */
@@ -273,6 +386,7 @@ pub class TcpListener {
     }
     
 }
+
 
 
 /**
@@ -296,14 +410,14 @@ pub class TcpListener {
 pub class TcpStream {
 
     let mut _sockfd : i32;
+    
     let _addr : &SockAddress;
 
     /**
      * Create a TcpStream on a already opened socket
      */
     pub self (socket : i32, addr : &SockAddress)
-        with _sockfd = socket,
-             _addr = addr
+        with _sockfd = socket, _addr = addr
     {}
 
 
@@ -322,7 +436,7 @@ pub class TcpStream {
      */
     pub self connect (addr : &SockAddress)
         with _sockfd = 0,
-             _addr = addr
+    _addr = addr
         throws &TcpError
     {
         match self._addr {
@@ -331,6 +445,12 @@ pub class TcpStream {
                     initSocketDll ();
                 }
                 self:.connectV4 (v4);
+            }
+            v6 : &SockAddrV6 => {
+                __version WINDOWS {
+                    initSocketDll ();
+                }
+                self:.connectV6 (v6);
             }
             _ => {
                 throw TcpError::new (TcpErrorCode::ADDR_TYPE, "unknwon addr type : " ~ (self._addr)::typeinfo.name);
@@ -344,7 +464,6 @@ pub class TcpStream {
     pub def getAddr (self)-> &SockAddress {
         self._addr
     }
-
     
     /**
      * @returns: the file descriptor of the socket
@@ -519,9 +638,15 @@ pub class TcpStream {
         }
 
         let mut servaddr = sockaddr_in ();
-        
         servaddr.sin_family = AddressFamily::AF_INET;
-        servaddr.sin_addr.s_addr = addr.ip ().toN ();
+        
+        match addr.ip () {
+            v4 : &Ipv4Address => {
+                servaddr.sin_addr.s_addr = v4.toN ();
+            }
+            _ => __pragma!panic ();
+        }
+        
         servaddr.sin_port =        htons (addr.port ());
         
         if (connect (self._sockfd, &servaddr, 16u32) != 0) {
@@ -529,10 +654,34 @@ pub class TcpStream {
         }
     }
 
+    prv def connectV6 (mut self, addr : &SockAddrV6)
+        throws &TcpError
+    {
+        self._sockfd = etc::c::socket::socket (AddressFamily::AF_INET6, SocketType::SOCK_STREAM, 0);
+        if (self._sockfd == -1) {
+            throw TcpError::new (TcpErrorCode::SOCKET_CREATION, "failed to create socket");
+        }
 
-    impl Streamable;
+        let mut servaddr = sockaddr_in6 ();
+        servaddr.sin6_family = AddressFamily::AF_INET6;
+        
+        match addr.ip () {
+            v6 : &Ipv6Address => {
+                servaddr.sin6_addr.s6_addr = v6[];
+            }
+            _ => __pragma!panic ();
+        }
+        
+        servaddr.sin6_port =        htons (addr.port ());
+        
+        if (connect (self._sockfd, &servaddr, 16u32) != 0) {
+            throw TcpError::new (TcpErrorCode::CONNECT, "failed to connect");
+        }
+    }
+
+    impl std::stream::Streamable;
     
-    impl Disposable {
+    impl core::dispose::Disposable {
         /**
          * Close the connection with the remote
          */
@@ -550,4 +699,44 @@ pub class TcpStream {
     __dtor (mut self) {
         self:.dispose ();
     }    
+}
+
+
+__version WINDOWS {
+    static mut __init__ = 0u32;
+
+
+    struct
+    | data : [u8 ; 408u32] = [0u8 ; 408u32]
+     -> WSADATA;
+
+    extern (C) def WSAStartup (version : u16, data : &WSADATA);
+    extern (C) def WSACleanup ();
+
+    
+    /**
+     * Windows socket lib need to be initialized
+     */
+    def initSocketDll () {
+        atomic {
+            if (__init__ == 0u32) {
+                let WSAData = WSADATA ();
+                WSAStartup (2u16, &WSAData);
+            }
+
+            __init__ += 1u32;
+        }
+    }
+
+    /**
+     * It also needs to be cleaned up (when the last socket use is disposed)
+     */
+    def cleanSocketDll () {
+        atomic {
+            __init__ -= 1u32;
+            if (__init__ == 0u32) {
+                WSACleanup ();
+            }
+        }
+    }        
 }

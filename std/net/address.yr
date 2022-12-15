@@ -1,24 +1,113 @@
+/**
+ * This module declares the IP address, either V4 or V6.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @example: 
+ * ===
+ * import std::net::address; 
+ *
+ * let localhost_v4 = Ipv4Address::new (127u8, 0u8, 0u8, 1u8);
+ * let localhost_v6 = Ipv6Address::new (0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 1u16);
+ * 
+ * let ip_v4 : &IpAddress = parse_ip ("127.0.0.1"s8);
+ * assert (ip_v4 == localhost_v4 && localhost_v4 == Ipv4::LOCALHOST);
+ * 
+ * let ip_port_v6 : &SockAddress = parse_sock ("[::1]:8080"s8);
+ * assert (ip_port_v6.ip () == localhost_v6 && ip_port_v6.ip () == Ipv6::LOCALHOST);
+ * assert (ip_port_v6.port () == 8080u16);
+ * ===
+ */
+
 mod std::net::address;
 
 import core::object, core::typeinfo, core::exception;
 import std::io, std::stream;
+pub import std::conv;
 
+import std::syntax::_;
+import std::syntax::errors;
+
+/**
+ * An IP Address, either v4 or v6.
+ */
 pub class @abstract IpAddress {
+
     prot self () {}
+
+    /**
+     * @returns: true if the two addresses are equal
+     */
+    pub def opEquals (self, ot : &IpAddress)-> bool;
+
+    /**
+     * @returns: true if the address is an ipv4 address
+     */
+    pub def @final isV4 (self)-> bool {
+        match self {
+            Ipv4Address () => { true }
+            _ => { false }
+        }        
+    }
+
+    /**
+     * @returns: true if the address is an ipv6 address
+     */
+    pub def @final isV6 (self)-> bool {
+        match self {
+            Ipv6Address () => { true }
+            _ => { false }
+        }
+    }
     
     impl std::stream::Streamable;
     impl std::hash::Hashable;
 }
 
+/**
+ * A address with a port, that can be used to bind or connect to a socket
+ */
 pub class @abstract SockAddress {
-    prot self () {}
 
+    // The ip of the socket address
+    prot let _ip : &IpAddress;
+
+    // The port of the socket address
+    prot let _port : u16;
+
+    /**
+     * @params: 
+     *    - ip: the ip part of the socket address
+     *    - port: the port part of the socket address
+     */
+    prot self (ip : &IpAddress, port : u16) with _port = port, _ip = ip {}
+
+    /**
+     * @returns: true if the two addresses are equal
+     */
     pub def opEquals (self, ot : &SockAddress)-> bool;
+
+    /**
+     * @returns: the ip part of the socket address
+     */
+    pub def @final ip (self)-> &IpAddress {
+        self._ip
+    }
+
+    /**
+     * @returns: the port part of the socket address
+     */
+    pub def @final port (self)-> u16 {
+        self._port
+    }
     
     impl std::stream::Streamable;
     impl std::hash::Hashable;
 }
 
+/**
+ *  Common IPV4 addresses
+ */
 pub enum
 | LOCALHOST   = Ipv4Address::new (127u8, 0u8, 0u8, 1u8)
 | UNSPECIFIED = Ipv4Address::new (0u8, 0u8, 0u8, 0u8)
@@ -28,7 +117,7 @@ pub enum
 /**
  * An ip v4 address, composed of four part A.B.C.D
  */
-pub class Ipv4Address over IpAddress {
+pub class @final Ipv4Address over IpAddress {
 
     let _a : u8;
     let _b : u8;
@@ -39,8 +128,13 @@ pub class Ipv4Address over IpAddress {
      * Create a new ip address
      * @example: 
      * ==========
+     * import std::net::address;
+     * 
      * let ip = Ipv4Address::new (127u8, 0u8, 0u8, 1u8);
      * assert (ip == Ipv4::LOCALHOST);
+     * 
+     * let ip2 = parse_ipv4 ("192.168.1.89"s8);
+     * assert (ip2[] == [192u8, 168u8, 1u8, 89u8]);
      * ==========
      */
     pub self (a : u8, b : u8, c : u8, d : u8)
@@ -66,13 +160,10 @@ pub class Ipv4Address over IpAddress {
 
     /**
      * @returns: true if this is a private address : 
-     * @info: 
-     * ============ 
-     * Private address are ranges in : 
+     * @info: Private address are ranges in : 
      *    - 10.0.0.0/8
      *    - 172.16.0.0/12
      *    - 192.168.0.0/16
-     * =============
      */
     pub def isPrivate (self)-> bool {
         (self._a == 10u8) ||
@@ -81,21 +172,29 @@ pub class Ipv4Address over IpAddress {
     }
 
     /**
-     * Test the equality between two ipv4 address
+     * Test the equality between two ip addresses
      * @example: 
      * ============
+     * import std::net::address;
+     * 
      * assert (Ipv4Address::new (127u8, 0u8, 0u8, 1u8) == Ipv4::LOCALHOST);
+     * assert (Ipv4::LOCALHOST != Ipv6::LOCALHOST);
      * ============
      */
-    pub def opEquals (self, other : &Ipv4Address) -> bool {
-        self._a == other._a &&
-        self._b == other._b &&
-        self._c == other._c &&
-        self._d == other._d 
+    pub over opEquals (self, other : &IpAddress) -> bool {
+        match other {
+            v4 : &Ipv4Address => {
+                self._a == v4._a &&
+                    self._b == v4._b &&
+                    self._c == v4._c &&
+                    self._d == v4._d
+            }
+            _ => { false }
+        }
     }
 
     /**
-     * Store the four part of the ip A.B.C.D in a single u64 (A << 24 | B << 16 | C << 8 | D)
+     * @returns: the four part of the ip A.B.C.D in a single u32 (A << 24 | B << 16 | C << 8 | D)
      */
     pub def toN (self)-> u32 {
         let mut n : u32 = 0u32;
@@ -124,58 +223,445 @@ pub class Ipv4Address over IpAddress {
         return res;
     }
     
-    impl std::stream::Streamable;
+    impl std::stream::Streamable {
+
+        pub over toStream (self, dmut stream : &StringStream) {
+            stream:.write (self._a, '.'c8, self._b, '.'c8, self._c, '.', self._d);
+        }
+        
+    }
+    
     impl std::hash::Hashable;
 }
 
-
-pub class SockAddrV4 over SockAddress {
-
-    let _addr : &Ipv4Address;
-    let _port : u16;
+/**
+ * An ipv4 version of a socket address.
+ */
+pub class @final SockAddrV4 over SockAddress {
 
     /**
-     * Create a new sock address from a ip address and a port
+     * Create a new sock address from an ip address and a port
      */
     pub self (addr : &Ipv4Address, port : u16)
-        with _addr = addr, _port = port
+        with super (addr, port)
     {}
 
     /**
-     * @return: the address part 
-     * @example: 
-     * ============
-     * let s_addr : SockAddress = SockAddrV4::new (Ipv4Address (127u8, 0u8, 0u8, 1u8), 8080u16);
-     * assert (s_addr.ip () == Ipv4Address::new (127u8, 0u8, 0u8, 1u8));
-     * ============
+     * @returns: true if self is equal to ot (same type, ip and port)
      */
-    pub def ip (self)-> &Ipv4Address {
-        self._addr
-    }
-
-    /**
-     * @return: the port part 
-     * @example: 
-     * ============
-     * let s_addr : SockAddress = SockAddrV4::new (Ipv4Address (127u8, 0u8, 0u8, 1u8), 8080u16);
-     * assert (s_addr.port () == 8080u16);
-     * ============
-     */
-    pub def port (self)-> u16 {
-        self._port
-    }
-
-
     pub over opEquals (self, ot : &SockAddress)-> bool {
         match (ot) {
             x : &SockAddrV4 => {
-                return self._addr == x._addr && self._port == x._port
+                self._ip == x._ip && self._port == x._port
             }
+            _ => { false }
         }
-        false
     }
     
     impl std::stream::Streamable;
     impl std::hash::Hashable;
     
 }
+
+/**
+ * Common Ipv6 addresses
+ */
+pub enum
+| LOCALHOST   = Ipv6Address::new (0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 1u16)
+| UNSPECIFIED = Ipv6Address::new (0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 0u16)
+ -> Ipv6;
+
+
+pub class @final Ipv6Address over IpAddress {
+
+    // The content of the ipv6 address
+    let dmut _values : [u16 ; 8u32] = [0u16 ; 8u32];
+
+    /**
+     * Create a new ipv6 address `a:b:c:d:e:f:g:h`.
+     */
+    pub self (a : u16, b : u16, c : u16, d : u16,
+              e : u16, f : u16, g : u16, h : u16)
+    {
+        self._values[0] = a;
+        self._values[1] = b;
+        self._values[2] = c;
+        self._values[3] = d;
+        self._values[4] = e;
+        self._values[5] = f;
+        self._values[6] = g;
+        self._values[7] = h;
+    }
+
+    /**
+     * @returns: true if this is a loopback address `::1`.
+     */
+    pub def isLoopback (self)-> bool {
+        for i in 0us .. 7us {
+            if (self._values[i] != 0u16) return false;
+        }
+
+        self._values[7] == 0x1u16
+    }
+
+    /**
+     * @returns: true if this address is unspecified `::`
+     */
+    pub def isUnspecified (self)-> bool {
+        for i in 0us .. 8us {
+            if (self._values[i] != 0u16) return false;
+        }
+
+        true
+    }
+    
+    /**
+     * @returns: the eight segments of the ipv6 address
+     */
+    pub def opIndex (self)-> [u16 ; 8u32] {
+        self._values
+    }
+
+    /**
+     * @returns: true if self is equal to ot (same type and segments)
+     */
+    pub over opEquals (self, ot : &IpAddress)-> bool {
+        match ot {
+            v6 : &Ipv6Address => {
+                self._values == v6._values
+            }
+            _ => { false }
+        }
+    }
+
+    impl std::stream::Streamable {
+
+        pub over toStream (self, dmut stream : &StringStream) {
+            import std::conv;
+            
+            let mut current = 0us, mut longest = 0us, mut start = 0us, mut current_start = 0us;
+            for j, i in self._values {
+                if i != 0u16 { current = 0us; current_start = 8us; }
+                else {
+                    current += 1us;
+                    if (current_start == 8us) current_start = j;
+                    if (current >= longest) {
+                        start = current_start;
+                        longest = current;
+                    }
+                }
+            }
+
+            let mut j = 0us, mut wrote_number = false;
+            while j < 8us {
+                if (start == j && longest > 1us) {
+                    stream:.write ("::"s8);
+                    j += longest;
+                    wrote_number = false;
+                } else {
+                    if (wrote_number) { stream:.write (':'c8); }
+                    stream:.write (self._values[j].to!{[c8], 16us} ());
+                    j += 1us;
+                    wrote_number = true;
+                }
+            }            
+        }
+        
+    }    
+
+    impl std::hash::Hashable;    
+}
+
+/**
+ * An ipv6 version of a socket address.
+ */
+pub class @final SockAddrV6 over SockAddress {
+
+    /**
+     * Create a new sock address from an ip and a port
+     */
+    pub self (addr : &Ipv6Address, port : u16)
+        with super (addr, port)
+    {}
+
+    /**
+     * @returns: true if self is equal to ot (same type, ip and port)
+     */
+    pub over opEquals (self, ot : &SockAddress)-> bool {
+        match (ot) {
+            x : &SockAddrV6 => {
+                self._ip == x._ip && self._port == x._port
+            }
+            _ => { false }
+        }
+    }
+
+    impl std::stream::Streamable;
+    impl std::hash::Hashable;
+}
+
+
+/**
+ * Convert a string address and port into a SockAddress.
+ * @returns: the SockAddress
+ * @example: 
+ * ===
+ * import std::net::address;
+ *
+ * let local_ipv4 = ("127.0.0.1:8080"s8).to!{&SockAddress} (); 
+ * let local_ipv6 = ("[::1]:8080"s8).to!{&SockAddress} (); 
+ * ===
+ */
+pub def to {C of &SockAddress, T of [U], U of c8} (addr : T)-> &SockAddress
+    throws &CastFailure
+{
+    if (addr.len == 0us) throw CastFailure::new (T::typeinfo, C::typeinfo);
+    if (addr[0us] == '['c8) {
+        to!{&SockAddrV6} (addr)
+    } else {
+        to!{&SockAddrV4} (addr)
+    }
+}
+
+/**
+ * Convert a string address and port into a SockAddrV4.
+ * @returns: the converted address.
+ * @example: 
+ * ===
+ * import std::net::address;
+ * 
+ * let local_ip = ("127.0.0.1:8080"s8).to!{&SockAddrV4} ();
+ * let remot_ip = ("192.168.122.7:8080"s8).to!{&SockAddrV4} ();
+ * ===
+ */
+pub def to {C of &SockAddrV4, T of [U], U of c8} (addr : T)-> &SockAddrV4
+    throws &CastFailure
+{
+    import std::algorithm::searching;
+    
+    match addr.find (':'c8) {
+        Ok (i : _) => {
+            let ipv4 = to!{&Ipv4Address} (addr[0us .. i]);
+            let port = {
+                conv::to!{u32} (addr[i + 1us .. $])
+            } catch {
+                _ : &CastFailure => throw CastFailure::new (T::typeinfo, C::typeinfo);
+            }
+            
+            if (port > u16::max) {
+                throw CastFailure::new (T::typeinfo, C::typeinfo);
+            }
+
+            return SockAddrV4::new (ipv4, cast!u16 (port));
+        }
+        _ => {
+            return SockAddrV4::new (to!{&Ipv4Address} (addr), 0u16);
+        }
+    }
+}
+
+
+/**
+ * Convert a string address and port into a SockAddrV6.
+ * @returns: the converted address.
+ * @example: 
+ * ===
+ * import std::net::address;
+ * 
+ * let local_ip = ("[::1]:8080"s8).to!{&SockAddrV6} ();
+ * let remot_ip = ("[fe80:1::8:2]:8080"s8).to!{&SockAddrV6} ();
+ * ===
+ */
+pub def to {C of &SockAddrV6, T of [U], U of c8} (addr : T)-> &SockAddrV6
+    throws &CastFailure
+{
+    import std::algorithm::searching;
+    
+    match addr.find (']'c8) {
+        Ok (i : _) => {
+            if (i > addr.len - 1us) throw CastFailure::new (T::typeinfo, C::typeinfo);
+            if (addr[i + 1us] != ':'c8) throw CastFailure::new (T::typeinfo, C::typeinfo);
+            
+            let ipv6 = to!{&Ipv6Address} (addr [1us .. i]);
+            let port = {
+                conv::to!{u32} (addr[i + 2us .. $])
+            } catch {
+                _ : &CastFailure => throw CastFailure::new (T::typeinfo, C::typeinfo);
+            };
+            
+            if (port > u16::max) {
+                throw CastFailure::new (T::typeinfo, C::typeinfo);
+            }
+            
+            return SockAddrV6::new (ipv6, cast!u16 (port));               
+        }
+        _ => {
+            throw CastFailure::new (T::typeinfo, C::typeinfo);
+        }
+    }
+}
+
+
+/**
+ * Convert a string address into a IpAddress.
+ * @returns: the ip address
+ * @example:
+ * ===
+ * import std::net::address;
+ * 
+ * let local_ipv4 = ("127.0.0.1"s8).to!{&IpAddress} ();
+ * let local_ipv6 = ("::1"s8).to!{&IpAddress} ();
+ * 
+ * let remote_ipv6 = ("fe80:1::8:2"s8).to!{&IpAddress} ();
+ * ===
+ */
+pub def to {C of &IpAddress, T of [U], U of c8} (addr : T)-> &IpAddress
+    throws &CastFailure
+{
+    import std::algorithm::searching;
+    // Assume that an ip with ':' is ipv6
+    match (addr.find (':'c8)) {
+        Ok () => {
+            return to!{&Ipv6Address} (addr);
+        }
+        _ => {
+            return to!{&Ipv4Address} (addr);
+        }
+    }
+}
+
+
+/**
+ * Convert a string address into a Ipv6Address.
+ * @returns: the ip address
+ * @example: 
+ * ===
+ * import std::net::address;
+ * 
+ * let local  = ("127.0.0.1"s8).to!{&Ipv4Address} ();
+ * let remote = ("192.168.128.32"s8).to!{&Ipv4Address} ();
+ * ===
+ */
+pub def to {C of &Ipv4Address, T of [U], U} (addr : T)-> &Ipv4Address
+    throws &CastFailure
+{
+    let dmut tzer = Tokenizer::new (tokens-> ["."s8]);
+    
+    let tokens = tzer.tokenize (addr);
+    if (tokens.len != 7us) { // 4 numbers + 3 points
+        throw CastFailure::new (T::typeinfo, C::typeinfo);
+    }
+    
+    let dmut res = [0u8; new 4u32];
+    let mut col = 0u64;
+    for i in 0us .. 3us {
+        {
+            let a = tokens[i * 2us].to!{u64} ();
+            res[i] = cast!u8 (a);
+            if (a > cast!u64 (u8::max)) throw CastFailure::new (T::typeinfo, C::typeinfo);
+        } catch {            
+            _ : &CastFailure => {
+                throw CastFailure::new (T::typeinfo, C::typeinfo);
+            }            
+        }
+        
+        col += cast!u64 (tokens[i * 2us].len);
+        if (tokens[i * 2us + 1us] != "."s8) {
+            throw CastFailure::new (T::typeinfo, C::typeinfo);
+        }
+        
+        col += 1u64;
+    }
+    
+    {
+        let a = tokens[$ - 1us].to!{u64} ();
+        res[3] = cast!u8 (a);
+        if (a > cast!u64 (u8::max)) throw CastFailure::new (T::typeinfo, C::typeinfo);
+    } catch {            
+        _: &CastFailure => {
+            throw CastFailure::new (T::typeinfo, C::typeinfo);
+        }
+    }
+    
+    Ipv4Address::new (res[0], res[1], res[2], res[3])    
+}
+
+
+/**
+ * Convert a string address into a Ipv6Address.
+ * @returns:: the ip address
+ * @example:
+ * ===
+ * import std::net::address;
+ * 
+ * let local_ipv6 = ("::1"s8).to!{&Ipv6Address} ();
+ * let remote_ipv6 = ("fe80:1::8:2"s8).to!{&Ipv6Address} ();
+ * ===
+ */
+pub def to {C of &Ipv6Address, T of [U], U of c8} (addr : T)-> &Ipv6Address
+    throws &CastFailure
+{
+    let dmut lex = Lexer::new (addr, tokens-> [":"s8, "::"s8, ":::"s8], skips-> [":"s8], comments-> []);
+    
+    let dmut start : [u16 ; 8] = [0u16 ; 8];
+    let dmut end : [u16 ; 8] = [0u16 ; 8];
+
+    let mut startI = 0us, mut endI = 0us;
+    let mut readEnd = false;
+    loop {
+        let (v, _, _) = lex:.next ();
+        if (v == ""s8) break {};
+        
+        if (v == "::"s8) {
+            if (readEnd || startI == 8us) throw CastFailure::new (T::typeinfo, C::typeinfo);
+            readEnd = true;
+        } else {
+            if (startI + endI >= 8us || (startI + endI >= 7us && readEnd)) throw CastFailure::new (T::typeinfo, C::typeinfo);
+            
+            let val = {
+                v.to!{u64, 16us} ()
+            } catch {
+                _ : &CastFailure => {
+                    // Let's suppose this is an ipv4 addr                    
+                    let v4Addr = to!{&Ipv4Address} (v)?;                    
+                    match v4Addr {
+                        Ok (v4 : &Ipv4Address) => {                            
+                            let dmut pack1 : &u8 = alias cast!(&u8) (cast!(&void) (&end[endI]));
+                            let dmut pack2 : &u8 = alias cast!(&u8) (cast!(&void) (&end[endI + 1us]));
+                            __pragma!trusted ({
+                                *pack1 = v4[][1];
+                                *(pack1 + 1u32) = v4[][0];
+                                *pack2 = v4[][3];
+                                *(pack2 + 1u32) = v4[][2];
+                            });
+                            
+                            endI += 2us;
+                            break {}
+                        }
+                    }
+                    
+                    throw CastFailure::new (T::typeinfo, C::typeinfo);
+                }
+            }
+                        
+            if (val > u16::max) throw CastFailure::new (T::typeinfo, C::typeinfo);
+            if (readEnd) { end [endI] = cast!u16 (val); endI += 1us; }
+            else { start [startI] = cast!u16 (val); startI += 1us; }
+            if (startI + endI >= 8us) break {}
+        }
+    }
+
+    if (startI + endI < 8us && !readEnd) throw CastFailure::new (T::typeinfo, C::typeinfo);
+
+    // It should be the end of the lexer
+    let rest = lex:.clear ();
+    if (rest != ""s8) throw CastFailure::new (T::typeinfo, C::typeinfo);
+    
+    let skipped = 8us - (endI + startI);
+    for i in 0us .. endI {
+        start [startI + i + skipped] = end[i];
+    }
+        
+    Ipv6Address::new (start[0], start[1], start[2], start[3],
+                      start[4], start[5], start[6], start[7])
+} 
