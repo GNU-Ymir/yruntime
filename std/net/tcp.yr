@@ -11,6 +11,7 @@
  *    client:.rawSend ("Hello !!"s8);
  * }
  *
+ * // Create a tcp listener, listening on an ipv4 address at port 4000
  * with dmut server = TcpListener::listen ("127.0.0.1:4000"s8) {
  *     loop {
  *         let dmut client = server:.accept ();
@@ -426,12 +427,15 @@ pub class TcpStream {
     {}
     
     /**
-     * Create a client to address addr
-     * The client is not connected 
+     * Connect a client to address `addr`.
      * @example: 
      * ==========     
+     * import std::net::_;
+     * 
      * let addr = SockAddrV4 (Ipv4Address::new (127u8, 0u8, 0u8, 1u8), 8080u16);
-     * let dmut client = TcpStream::connect (addr);
+     * with dmut client = TcpStream::connect (addr) {
+     *      client:.rawSend ("Ping !"s8);
+     * }
      * ==========
      */
     pub self connect (addr : &SockAddress)
@@ -458,6 +462,45 @@ pub class TcpStream {
         }
     }    
 
+    /**
+     * Connect a client to address `addr`.
+     * @example: 
+     * ===
+     * import std::net::_;
+     * 
+     * with dmut client = TcpStream::connect ("[::1]:8080"s8) {
+     *      client:.rawSend ("Ping !"s8);
+     * }
+     * ===
+     */
+    pub self connect (addr : [c8])
+        with _sockfd = 0, _addr = {
+            addr.to!{&SockAddress} ()
+        } catch {
+            _ : &CastFailure => throw TcpError::new (TcpErrorCode::ADDR_TYPE, "Invalid address " ~ (addr.(conv::to)![c32] ()));
+        }
+    throws &TcpError
+    {
+        match self._addr {
+            v4 : &SockAddrV4 => {
+                __version WINDOWS {
+                    initSocketDll ();
+                }
+                self:.connectV4 (v4);
+            }
+            v6 : &SockAddrV6 => {
+                __version WINDOWS {
+                    initSocketDll ();
+                }
+                self:.connectV6 (v6);
+            }
+            _ => {
+                throw TcpError::new (TcpErrorCode::ADDR_TYPE, "unknwon addr type : " ~ (self._addr)::typeinfo.name);
+            }
+        }
+    }
+
+    
     /**
      * @returns: the address to which the stream is connected
      */
@@ -649,7 +692,7 @@ pub class TcpStream {
         
         servaddr.sin_port =        htons (addr.port ());
         
-        if (connect (self._sockfd, &servaddr, 16u32) != 0) {
+        if (connect (self._sockfd, &servaddr, cast!u32 (sizeof (sockaddr_in))) != 0) {
             throw TcpError::new (TcpErrorCode::CONNECT, "failed to connect");
         }
     }
@@ -664,6 +707,7 @@ pub class TcpStream {
 
         let mut servaddr = sockaddr_in6 ();
         servaddr.sin6_family = AddressFamily::AF_INET6;
+        servaddr.sin6_port =        htons (addr.port ());
         
         match addr.ip () {
             v6 : &Ipv6Address => {
@@ -671,10 +715,10 @@ pub class TcpStream {
             }
             _ => __pragma!panic ();
         }
-        
-        servaddr.sin6_port =        htons (addr.port ());
-        
-        if (connect (self._sockfd, &servaddr, 16u32) != 0) {
+
+        let z = connect (self._sockfd, &servaddr, cast!u32 (sizeof (sockaddr_in6)));
+        println (z);
+        if (z != 0) {
             throw TcpError::new (TcpErrorCode::CONNECT, "failed to connect");
         }
     }
