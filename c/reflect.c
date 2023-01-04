@@ -18,6 +18,7 @@ static struct ReflectSymbolTable __yrt_reflectSymbolTable__ =
 
 static int __INDEX_TABLE_CONSTRUCTED__ = 0;
 
+#if _WIN32
 
 void _yrt_reflect_register_symbol_table (const char* moduleName, unsigned long long numberOfSymbols, struct ReflectSymbol* symbols) {
     unsigned long nbEntry = __yrt_reflectSymbolTable__.numberOfEntries;
@@ -42,11 +43,15 @@ void _yrt_reflect_register_symbol_table (const char* moduleName, unsigned long l
     }
 }
 
+#else
+
+void _yrt_reflect_update_index_table ();
+
+#endif
 
 int startsWith( const char * theString, const char * theBase ) {
     return strncmp( theString, theBase, strlen( theBase ) ) == 0;
 }
-
 
 struct ReflectSymbol _yrt_reflect_find_symbol_in_table_string (_ystring mangledName) {
     _yrt_c8_array_ array;
@@ -57,20 +62,28 @@ struct ReflectSymbol _yrt_reflect_find_symbol_in_table_string (_ystring mangledN
 }
 
 struct ReflectSymbol _yrt_reflect_find_symbol_in_table_array (_yrt_c8_array_ mangledName) {
+#if _WIN32 
     if (!__INDEX_TABLE_CONSTRUCTED__) {
 	_yrt_reflect_construct_index_table (__yrt_reflectSymbolTable__);
-	__INDEX_TABLE_CONSTRUCTED__ = 1;
+	__INDEX_TABLE_CONSTRUCTED__ = 1;	
     }
+#else
+    _yrt_reflect_update_index_table ();
+#endif
 
     return _yrt_reflect_find_symbol_in_indexed_table (mangledName);   
 }
 
 struct ReflectSymbol _yrt_reflect_find_symbol_from_addr (void* addr) {
+#if _WIN32
     if (!__INDEX_TABLE_CONSTRUCTED__) {
 	_yrt_reflect_construct_index_table (__yrt_reflectSymbolTable__);
 	__INDEX_TABLE_CONSTRUCTED__ = 1;
     }
-
+#else
+    _yrt_reflect_update_index_table ();    
+#endif
+    
     return _yrt_reflect_find_symbol_in_indexed_table_from_addr (addr);   
 }
 
@@ -155,15 +168,18 @@ void* _yrt_reflect_create_class_from_name_no_construct_utf32 (_yrt_c32_array_ cl
  * ================================================================================
  */
 
-void * _yrt_reflect_get_function (_yrt_c8_array_ funcName, _yrt_c8_array_ retName, _yrt_array_ paramNames) {
-    _yrt_c8_array_ mangle = _yrt_mangle_path (funcName);
+void * _yrt_reflect_get_function (_yrt_c8_array_ mangle, _yrt_c8_array_ retName, _yrt_array_ paramNames) {
+    // _yrt_c8_array_ mangle = _yrt_mangle_path (funcName);
     
     _ystring name = str_create_len (mangle.data, mangle.len);
     name = str_concat (str_create_len ("_Y", 2), name);
     name = str_concat (name, str_create_len ("F", 1));
     for (int i = 0 ; i < paramNames.len ; i++) {
-	name = str_concat (name, str_create_len (((_yrt_c8_array_**) paramNames.data) [i]-> data, ((_yrt_c8_array_**) paramNames.data) [i]-> len));
+	void* j = paramNames.data + i * sizeof (_yrt_c8_array_);
+	_yrt_c8_array_ p_name = *(_yrt_c8_array_*)j;
+	name = str_concat (name, str_create_len (p_name.data, p_name.len));
     }
+    
     name = str_concat (name, str_create_len ("Z", 1));
     name = str_concat (name, str_create_len (retName.data, retName.len));
 
@@ -172,7 +188,7 @@ void * _yrt_reflect_get_function (_yrt_c8_array_ funcName, _yrt_c8_array_ retNam
 	return sym.ptr;
     } else {
 	_ystring name2 = str_create ("Could not find symbol in reflection table : symbol ");
-	name = str_fit (str_concat (name2, str_create_len (name.data, name.len)));
+	name2 = str_fit (str_concat (name2, str_create_len (name.data, name.len)));
 	_yrt_c8_array_ arr;
 	arr.data = name2.data;
 	arr.len = name2.len;
@@ -207,14 +223,50 @@ void * _yrt_reflect_get_method (_yrt_c8_array_ mangleClassName, _yrt_c8_array_ _
     
     _ystring className = str_create_len (mangleClassName.data, mangleClassName.len);
     _ystring funcName = str_create_len (mangle.data, mangle.len);
+    _ystring name = str_concat (str_concat (str_create_len ("_Y", 2), className), funcName);
+    
+    name = str_concat (name, str_create_len ("FP", 2));
+    name = str_concat (name, str_from_int (className.len));
+    name = str_concat (name, className);
+    for (int i = 0 ; i < paramNames.len ; i++) {
+	void* j = paramNames.data + i * sizeof (_yrt_c8_array_);
+	_yrt_c8_array_ p_name = *(_yrt_c8_array_*)j;
+	name = str_concat (name, str_create_len (p_name.data, p_name.len));
+    }
+    
+    name = str_concat (name, str_create_len ("Z", 1));
+    name = str_concat (name, str_create_len (retName.data, retName.len));
+    
+    struct ReflectSymbol sym = _yrt_reflect_find_symbol_in_table_string (name);
+    if (sym.ptr != NULL) {
+	return sym.ptr;
+    } else {
+	_ystring name2 = str_create ("Could not find symbol in reflection table : symbol ");
+	name2 = str_fit (str_concat (name2, str_create_len (name.data, name.len)));
+	_yrt_c8_array_ arr;
+	arr.data = name2.data;
+	arr.len = name2.len;
+	
+	_yrt_throw_runtime_abort (arr);
+    }
+}
+
+void * _yrt_reflect_get_impl_method (_yrt_c8_array_ mangleClassName, _yrt_c8_array_ _funcName, _yrt_c8_array_ retName, _yrt_array_ paramNames) {
+    _yrt_c8_array_ mangle = _yrt_mangle_path (_funcName);
+    
+    _ystring className = str_create_len (mangleClassName.data, mangleClassName.len);
+    _ystring funcName = str_create_len (mangle.data, mangle.len);
     _ystring name = str_concat (str_create_len ("_Y", 2), funcName);
     
     name = str_concat (name, str_create_len ("FP", 2));
     name = str_concat (name, str_from_int (className.len));
     name = str_concat (name, className);
     for (int i = 0 ; i < paramNames.len ; i++) {
-	name = str_concat (name, str_create_len (((_yrt_c8_array_**) paramNames.data) [i]-> data, ((_yrt_c8_array_**) paramNames.data) [i]-> len));
+	void* j = paramNames.data + i * sizeof (_yrt_c8_array_);
+	_yrt_c8_array_ p_name = *(_yrt_c8_array_*)j;
+	name = str_concat (name, str_create_len (p_name.data, p_name.len));
     }
+    
     name = str_concat (name, str_create_len ("Z", 1));
     name = str_concat (name, str_create_len (retName.data, retName.len));
     
@@ -251,7 +303,7 @@ void * _yrt_reflect_get_method_mutable (_yrt_c8_array_ mangleClassName, _yrt_c8_
     
     _ystring className = str_create_len (mangleClassName.data, mangleClassName.len);
     _ystring funcName = str_create_len (mangle.data, mangle.len);
-    _ystring name = str_concat (str_create_len ("_Y", 2), funcName);
+    _ystring name = str_concat (str_concat (str_create_len ("_Y", 2), className), funcName);
     
     name = str_concat (name, str_create_len ("FxP", 3));
     name = str_concat (name, str_from_int (className.len + 1)); // +1 because we add an x 
@@ -260,8 +312,11 @@ void * _yrt_reflect_get_method_mutable (_yrt_c8_array_ mangleClassName, _yrt_c8_
     name = str_concat (name, className);
 
     for (int i = 0 ; i < paramNames.len ; i++) {
-    	name = str_concat (name, str_create_len (((_yrt_c8_array_**) paramNames.data) [i]-> data, ((_yrt_c8_array_**) paramNames.data) [i]-> len));	
+	void* j = paramNames.data + i * sizeof (_yrt_c8_array_);
+	_yrt_c8_array_ p_name = *(_yrt_c8_array_*)j;
+	name = str_concat (name, str_create_len (p_name.data, p_name.len));
     }
+    
     name = str_concat (name, str_create_len ("Z", 1));
     name = str_concat (name, str_create_len (retName.data, retName.len));
     
@@ -278,6 +333,43 @@ void * _yrt_reflect_get_method_mutable (_yrt_c8_array_ mangleClassName, _yrt_c8_
 	_yrt_throw_runtime_abort (arr);
     }
 }
+
+void * _yrt_reflect_get_impl_method_mutable (_yrt_c8_array_ mangleClassName, _yrt_c8_array_ _funcName, _yrt_c8_array_ retName, _yrt_array_ paramNames) {
+    _yrt_c8_array_ mangle = _yrt_mangle_path (_funcName);
+    
+    _ystring className = str_create_len (mangleClassName.data, mangleClassName.len);
+    _ystring funcName = str_create_len (mangle.data, mangle.len);
+    _ystring name = str_concat (str_create_len ("_Y", 2), funcName);
+    
+    name = str_concat (name, str_create_len ("FxP", 3));
+    name = str_concat (name, str_from_int (className.len + 1)); // +1 because we add an x 
+    name = str_concat (name, str_create_len ("x", 1));
+
+    name = str_concat (name, className);
+
+    for (int i = 0 ; i < paramNames.len ; i++) {
+	void* j = paramNames.data + i * sizeof (_yrt_c8_array_);
+	_yrt_c8_array_ p_name = *(_yrt_c8_array_*)j;
+	name = str_concat (name, str_create_len (p_name.data, p_name.len));
+    }
+    
+    name = str_concat (name, str_create_len ("Z", 1));
+    name = str_concat (name, str_create_len (retName.data, retName.len));
+    
+    struct ReflectSymbol sym = _yrt_reflect_find_symbol_in_table_string (name);
+    if (sym.ptr != NULL) {
+	return sym.ptr;
+    } else {
+	_ystring name2 = str_create ("Could not find symbol in reflection table : symbol ");
+	name2 = str_fit (str_concat (name2, str_create_len (name.data, name.len)));
+	_yrt_c8_array_ arr;
+	arr.data = name2.data;
+	arr.len = name2.len;
+	
+	_yrt_throw_runtime_abort (arr);
+    }
+}
+
 
 void* _yrt_reflect_get_method_mutable_utf32 (_yrt_c32_array_ _className, _yrt_c32_array_ name, _yrt_c32_array_ _retType, _yrt_array_ _paramNames) {
     _yrt_c8_array_ className = _yrt_to_utf8_array (_className);

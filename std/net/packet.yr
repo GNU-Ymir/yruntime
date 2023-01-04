@@ -1,14 +1,20 @@
 /**
- * This module implements packing function that flattens data into
- * array of bytes, so they can be transferred more easily. Aliasable
- * types (such as slices, class, etc.) are located in the heap and may
- * have multiple level of aliasiing. It is not easy to send a
- * aliasable type through a network socket as only flat data can be
- * sent, indeed pointers are not transferable from a process to
- * another process, without talking about different machines. This is
- * where the pack module comes in handy. It allows to transform any
- * type into a flatten version of the type, and converserly, so the
- * type can be sent and received.
+ * This module is a useful utility that enables the conversion of
+ * complex data structures into a simple, flat array of bytes. This is
+ * often necessary when transferring data over a network connection,
+ * as only flat data can be effectively transmitted in this
+ * manner. The pack function is specifically designed to handle the
+ * transformation of class-type objects, including all of their
+ * fields, into a byte slice. This can be useful for sending data
+ * between processes or even between different machines. However,
+ * there are currently some limitations to the pack function, as it is
+ * unable to handle function pointers or slices. There are plans to
+ * address this in the future, but at the moment these types of data
+ * cannot be converted into a byte slice. The unpack function performs
+ * the opposite task, taking a byte slice and converting it back into
+ * the original data structure. This is useful for receiving data that
+ * has been transmitted in this manner and reconstructing it on the
+ * receiving end.
  * 
  * @Authors: Emile Cadorel
  * @License: GPLv3
@@ -18,6 +24,8 @@
  * import std::net::pack;
  * 
  * class X {
+ *    // A slice is a pointer
+ *    // Thus in memory, the type X can be seen as a pointer to a pointer of i32
  *    let i : [i32];
  * 
  *    pub self (i : [i32]) with i = i {}
@@ -31,6 +39,8 @@
  * 
  * def foo () -> [u8] {
  *     let x = X::new ([1, 2, 3]);
+ * 
+ *     // Transform the instance x into a packet of bytes
  *     x.pack ()   
  * }
  * 
@@ -205,18 +215,20 @@ pub def unpack (mut packet : [u8])-> dmut &Object
     {
         let (_, offset) = internal_unpack::unpack!{[c8]} (alias cast!(&u8) (cast!(&void) (&name)), packet);
         let dmut obj = internal_reflect::totallyUnsafeFactoryDontDoThat (name);        
-        obj:.callImplMutable!(usize) (s_name-> name.to![c32] (), "std::net::packet::Packable::__stdnetwork__unpackContent", packet[offset .. $]);
+        internal_reflect::callImplMutable!(usize) (alias obj, s_name-> name, "std::net::packet::Packable::__stdnetwork__unpackContent"s8, packet[offset .. $]);
         
         return alias obj;               
     } catch {
         x : &UnpackError => {
             throw x;
         }
-        _ : &RuntimeError => {
+        z : &RuntimeError => {
+            println (z);
             throw UnpackError::new ();
         }
     }   
 }
+
 
 mod internal_pack {
 
@@ -387,6 +399,27 @@ mod internal_reflect {
         let dmut ret = _yrt_reflect_create_class_from_name_no_construct (name);
         alias ret
     }
+
+    pub def callImplMutable {T, class S, F...} (dmut s : S, s_name : [c8], name : [c8], params : F) -> T
+    throws &RuntimeError
+{
+    {
+        import std::conv;
+        
+        let dmut names = Vec!([c8])::new ();
+        cte if (is!F {U of (J,), J...}) {
+            for i in params {
+                names:.push ((__pragma!mangle (typeof (i))).to![c8] ());
+            }
+        } else {
+            names:.push ((__pragma!mangle (typeof (params))).to![c8] ());
+        }
+        
+        let ret = Reflect!{fn (dmut S, F)-> T}::_yrt_reflect_get_impl_method_mutable (s_name, name, (__pragma!mangle (T)).to![c8] (), names[]);
+        ret (alias s, expand params)
+    } 
+}
+
 }
 
 mod Runtime {F, T} {

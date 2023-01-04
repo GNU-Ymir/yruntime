@@ -202,7 +202,7 @@ void _yrt_exc_panic_exception (_yrt_exception_header_* eh)
 }
 
 void _yrt_exc_panic (const char* file, const char * function, unsigned int line) {
-    fprintf (stderr, "Panic in file \"%s\", at line %lu", file, line);
+    fprintf (stderr, "Panic in file \"%s\", at line %u", file, line);
     fprintf (stderr, ", in function \"%s\" !!! \n", function);
     _yrt_array_ trace = _yrt_exc_resolve_stack_trace (_yrt_exc_get_stack_trace ());
     if (trace.len != 0) {

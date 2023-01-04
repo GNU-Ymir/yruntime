@@ -3,7 +3,13 @@ PROJECT(Midgard C)
 SET(CMAKE_YMIR_COMPILER "gyc")	
 set(CMAKE_YMIR_COMPILE_OBJECT "${CMAKE_YMIR_COMPILER} ${CMAKE_YMIR_FLAGS} <FLAGS> -I<INCLUDES> -c <SOURCE> -o <OBJECT>")
 set(CMAKE_YMIR_CREATE_STATIC_LIBRARY "<CMAKE_AR> rc <TARGET> <LINK_FLAGS> <OBJECTS>")
-set(CMAKE_YMIR_FLAGS "${CMAKE_C_FLAGS} -g -nostdinc -nomidgardlib -fdoc")
+
+IF (WIN32) 
+  set(CMAKE_YMIR_FLAGS "${CMAKE_C_FLAGS} -g -nostdinc -nomidgardlib -fdoc -fno-reflect")
+ELSE()
+  set(CMAKE_YMIR_FLAGS "${CMAKE_C_FLAGS} -g -nostdinc -nomidgardlib -fdoc")
+ENDIF()
+
 set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g")
 
 

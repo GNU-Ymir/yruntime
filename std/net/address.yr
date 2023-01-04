@@ -1,5 +1,5 @@
 /**
- * This module declares the IP address, either V4 or V6.
+ * This module declares classes and functions to manage IPv4 and IPv6 addresses.
  * @Authors: Emile Cadorel
  * @License: GPLv3
  * <hr>
@@ -20,6 +20,8 @@
  */
 
 mod std::net::address;
+
+extern (C) def printf (c : &c8, ...);
 
 import core::object, core::typeinfo, core::exception;
 import std::io, std::stream;
@@ -294,6 +296,17 @@ pub class @final Ipv6Address over IpAddress {
     }
 
     /**
+     * Create a new ipv6 address from bytes segments
+     */
+    pub self fromN (bytes : [u8 ; 16u32]) {
+        let mut j = 0us;
+        for i in 0us .. 8us {
+            self._values[i] = (cast!u16 (bytes[j]) << 8u16) | cast!u16 (bytes[j + 1us]);
+            j += 2us;
+        }
+    }
+
+    /**
      * @returns: true if this is a loopback address `::1`.
      */
     pub def isLoopback (self)-> bool {
@@ -320,6 +333,21 @@ pub class @final Ipv6Address over IpAddress {
      */
     pub def opIndex (self)-> [u16 ; 8u32] {
         self._values
+    }
+
+    /**
+     * @returns: the segment of the address encoded in bytes
+     */
+    pub def toN (self)-> [u8 ; 16u32] {
+        let dmut res = [0u8 ; 16u32];
+        let mut j = 0us;
+        for i in 0us .. 8us {
+            res[j + 1us] = cast!u8 ((self._values[i] & 0x00ffu16));
+            res[j] = cast!u8 ((self._values[i] & 0xff00u16) >> 8u16);
+            j += 2us;
+        }
+
+        res
     }
 
     /**

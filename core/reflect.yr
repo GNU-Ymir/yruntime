@@ -4,13 +4,13 @@ import std::collection::map;
 import std::conv;
 import std::io;
 
-enum
+pub enum
 | FUNCTION = 0
 | VTABLE   = 1
 | NONE	   = 2
  -> ReflectSymbolType;
 
-struct
+pub struct
 | type : ReflectSymbolType
 | ptr : usize
 | name : &c8
@@ -18,33 +18,63 @@ struct
 | line : i32
  -> ReflectSymbol;
 
-struct
-| moduleName : &c8
-| symbols : [ReflectSymbol]
- -> ReflectSymbolTableEntry;
-
-struct
-| entries : [ReflectSymbolTableEntry]
- -> ReflectSymbolTable;
-
 static dmut __REFLECT_SYMBOL_TABLE__ = HashMap!{[c8], ReflectSymbol}::new ();
 static dmut __INV_REFLECT_SYMBOL_TABLE__ = HashMap!{usize, ReflectSymbol}::new ();
 
-extern (C) def _yrt_reflect_construct_index_table (symbol_table : ReflectSymbolTable) {
-    for entry in symbol_table.entries {
-        for sym in entry.symbols {
-            let name = sym.name.fromStringZ ()?;
-            match name {
-                Ok (s : _) => 
-                    __REFLECT_SYMBOL_TABLE__:.insert (s, sym);
+__version WINDOWS {
+    struct
+    | entries : [ReflectSymbolTableEntry]
+     -> ReflectSymbolTable;
+
+    struct
+    | moduleName : &c8
+    | symbols : [ReflectSymbol]
+     -> ReflectSymbolTableEntry;
+    
+    extern (C) def _yrt_reflect_construct_index_table (symbol_table : ReflectSymbolTable) {
+        for entry in symbol_table.entries {
+            for sym in entry.symbols {
+                let name = sym.name.fromStringZ ()?;
+                match name {
+                    Ok (s : _) => 
+                        __REFLECT_SYMBOL_TABLE__:.insert (s, sym);
+                }
+                
+                __INV_REFLECT_SYMBOL_TABLE__:.insert (sym.ptr, sym);
             }
-            
-            __INV_REFLECT_SYMBOL_TABLE__:.insert (sym.ptr, sym);
         }
     }
 }
 
+__version LINUX {
+
+    import etc::elf;
+    
+    static dmut __ELF_LOADER__ = ELFLoader::new ();
+
+    extern (C) def _yrt_reflect_update_index_table () {
+        __ELF_LOADER__:.update ();
+    }
+    
+    pub extern (C) def _yrt_reflect_register_symbol (sym : ReflectSymbol) {
+        let name = sym.name.fromStringZ ()?;
+        match name {
+            Ok (s : _) => {
+                __REFLECT_SYMBOL_TABLE__:.insert (s, sym);
+            }
+        }
+        
+        __INV_REFLECT_SYMBOL_TABLE__:.insert (sym.ptr, sym);        
+    }
+    
+}
+
 extern (C) def _yrt_reflect_find_symbol_in_indexed_table (name : [c8])-> ReflectSymbol {
+    // for i, j in __REFLECT_SYMBOL_TABLE__ {
+    //     if (j.type == ReflectSymbolType::VTABLE) {
+    //         println (i);
+    //     }
+    // }
     match __REFLECT_SYMBOL_TABLE__.find (name) {
         Ok (sym : _) => {
             return sym
@@ -54,7 +84,6 @@ extern (C) def _yrt_reflect_find_symbol_in_indexed_table (name : [c8])-> Reflect
         }
     }
 }
-
 
 extern (C) def _yrt_reflect_find_symbol_in_indexed_table_from_addr (addr : usize)-> ReflectSymbol {
     let mut min = usize::max;

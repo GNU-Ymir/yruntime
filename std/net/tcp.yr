@@ -1,23 +1,119 @@
 /**
- * This module implements the class `TcpListener` and `TcpStream` used to communicate using tcp protocol.
+ * This module implements the classes `TcpListener` and `TcpStream`
+ * used to communicate using tcp protocol. Tcp stream and listener are
+ * working with both ipv4 and ipv6 protocols, though they cannot be
+ * intermixed (e.g. using an ipv6 TcpListener and ipv4 TcpStream to
+ * connect to it). `TcpStream` are used to communicate through
+ * connexions either opened by a `TcpListener` accepting new clients
+ * or by connecting it to a remote tcp server. `TcpListener` and
+ * `TcpStream` use low level protocol and can be used to communicate
+ * with software using the tcp protocol that were not necessarily
+ * developped in Ymir with no problem. They also implements higher
+ * level communications to ease their use and be closer to the Ymir
+ * philosophy.
+ *
  * @Authors: Emile Cadorel
  * @License: GPLv3
  * <hr>
- * ===
- * import std::net::_;
- *
- * pub def greetsClient (dmut client : &TcpStream) {
+ * 
+ * 
+ * @example: 
+ * 
+ * While `TcpListener` is used to create a tcp server and open
+ * connections, the `TcpStream` class is used to communicate using an
+ * open connection. There are two way of creating `TcpStream`, 1) by
+ * accepting client connection using a `TcpListener`.
+ * 
+ * ===============
+ * import std::net::tcp;
+ * 
+ * def greets_client (client : &TcpStream) 
+ *     throws &TcpError
+ * {
  *    // Communicate with the client
  *    client:.rawSend ("Hello !!"s8);
  * }
  *
- * // Create a tcp listener, listening on an ipv4 address at port 4000
- * with dmut server = TcpListener::listen ("127.0.0.1:4000"s8) {
+ * with dmut server = TcpListener::new ("127.0.0.1:8080"s8) {
  *     loop {
- *         let dmut client = server:.accept ();
- *         println ("New client connected : ", client);
- *         greetsClient (alias client);
+ *        // Accept creates a TcpStream to a connected client
+ *        let dmut client = server:.accept ();
+ *        println ("New client connected : ", client);
+ *        greets_client (client);
+ * 
+ *        // Closing the connection to the client
+ *        client:.dispose ();
  *     }
+ * }
+ * ===============
+ * 
+ * <br>
+ * 
+ * 2). By connecting a `TcpStream` to a tcp server. 
+ * 
+ * 
+ * @example:
+ * ===
+ * import std::net::tcp;
+ *
+ * with dmut client = TcpStream::connect ("127.0.0.1:8080"s8) {
+ *     println ("Message from server : ", client:.rawReceive!{c8} (8us));
+ * } 
+ * // client is automatically closed by the with construction
+ * ===
+ * 
+ * <br>
+ * 
+ * `TcpStream` are able to automatically manage the packing and
+ * unpacking of data sent and received. In other word any class can be
+ * sent through a `TcpStream` as long as they are `<a href="std_net_packet.html#Packable_1">Packable</a>`. This is
+ * the easier way to communicate using the tcp streams as the
+ * management of data sizes to read and write on the stream is
+ * hidden. Evidently it has a small overhead when sending only simple
+ * data (whose sizes are knwon on both sides of the stream). Packing
+ * is done in the the module `std::net::packet` using reflectivity.
+ * 
+ * <br>
+ *
+ * @example: 
+ * ===
+ * import std::net::tcp;
+ * import std::box;
+ * 
+ * with dmut client = TcpStream::connect ("127.0.0.1:8080"s8) {
+ *     // Sending a string to server
+ *     client:.send (Box::new ("Hello Server !, here are an int and a double : "));
+ *     client:.send (Box::new (34));
+ *     client:.send (Box::new (892.13f));
+ * 
+ *     match client:.receive () { // Waiting for a packet from the server
+ *          Box!{i32} (value-> i : _) => println ("Result : ", i);
+ *          unk : _ => println ("Unknown result : ", unk);
+ *     } 
+ * } 
+ * ===
+ * 
+ * @warning: the stream is not able to dynamically create types (the
+ * language being statically typed). So if the type that was sent is
+ * not a type present somewhere in the program of the reading end,
+ * then the unpack error is thrown even if the types is perfectly
+ * packed and contains no error whatsoever. 
+ * 
+ * @example: 
+ * ===
+ * {
+ *    match client:.receive () { 
+ *        // All the types listed below will always successfully unpack
+ *        x : &Box!{i32} => { println ("A i32 : ", x.value); } 
+ *        x : &Box!{[c32]} => { println ("A utf32 string : ", x.value); }
+ *        unk : _ => println ("A type that is refered somewhere in the program : ", unk);
+ *    }
+ * } catch {
+ *    // A type that has probably a meaning on the other side ot the stream but not locally
+ *    uerr : &UnpackError => { println ("Unknown type for the program"); }
+ *   
+ *    // Stream failed anyway
+ *    terr : &TcpError => { println ("Failed to receive a packet"); }
  * }
  * ===
  */
@@ -34,6 +130,8 @@ import etc::c::socket, etc::c::files;
 import std::io, std::stream, std::traits;
 import std::net::address;
 import std::net::packet;
+
+extern (C) def printf (c : &c8, ...);
 
 /**
  * The types of error that can occur when listening, or connecting to a TCP socket
@@ -71,7 +169,7 @@ pub class TcpError over Exception {
 }
 
 /**
- * A tcp socket server that is listening for incoming connection.
+ * A tcp socket server that is listening for incoming connections.
  */
 pub class @final TcpListener {
 
@@ -292,7 +390,7 @@ pub class @final TcpListener {
         match ip.ip () {
             v6 : &Ipv6Address => {
                 servaddr.sin6_family = AddressFamily::AF_INET6;
-                servaddr.sin6_addr.s6_addr = v6[];
+                servaddr.sin6_addr.s6_addr = v6.toN ();
             }
             _ => __pragma!panic ();
         }
@@ -351,10 +449,9 @@ pub class @final TcpListener {
         match s_addr.sin6_family {
             AddressFamily::AF_INET6 => {
                 {
-                    let h = s_addr.sin6_addr.s6_addr;
+                    let h = Ipv6Address::fromN (s_addr.sin6_addr.s6_addr);
                     let port : u16 = ntohs (s_addr.sin6_port);
-                    return SockAddrV6::new (Ipv6Address::new (h[0], h[1], h[2], h[3],
-                                                              h[4], h[5], h[6], h[7]), port);
+                    return SockAddrV6::new (h, port);
                 }
             }
             _ => {
@@ -391,8 +488,8 @@ pub class @final TcpListener {
 
 
 /**
- * A tcp stream is a tcp connection from a client to a server, or a server to a client
- * It can be acquired directly by construction, or using a TcpListener
+ * A tcp stream is a tcp connection from a client to a server, or a server to a client.
+ * It can be acquired directly by construction, or using a TcpListener when accepting clients.
  * @example: 
  * ===============
  * pub def greets_client (client : &TcpStream) {
@@ -400,13 +497,27 @@ pub class @final TcpListener {
  *    client:.rawSend ("Hello !!"s8);
  * }
  *
- * let dmut server = TcpListener::new ("127.0.0.1:8080");
- * loop {
- *    let dmut client = server:.accept ();
- *    println ("New client connected : ", client);
- *    greets_client (client);
+ * with dmut server = TcpListener::new ("127.0.0.1:8080"s8) {
+ *     loop {
+ *        // Accept creates a TcpStream to a connected client
+ *        let dmut client = server:.accept ();
+ *        println ("New client connected : ", client);
+ *        greets_client (client);
+ * 
+ *        // Closing the connection to the client
+ *        client:.dispose ();
+ *     }
  * }
  * ===============
+ * 
+ * A TcpStream is also used on the client side to connect to a tcp server.
+ * @example:
+ * ===
+ * with dmut client = TcpStream::connect ("127.0.0.1:8080"s8) {
+ *     println ("Message from server : ", client:.rawReceive!{c8} (8us));
+ * } 
+ * // client is automatically by the with construction
+ * ===
  */
 pub class TcpStream {
 
@@ -421,7 +532,9 @@ pub class TcpStream {
         with _sockfd = socket, _addr = addr
     {}
 
-
+    /**
+     * Create an empty tcp stream connected to nothing.
+     */
     pub self empty ()
         with _sockfd = 0i32, _addr = SockAddrV4::new (Ipv4::UNSPECIFIED, 0u16)
     {}
@@ -509,7 +622,7 @@ pub class TcpStream {
     }
     
     /**
-     * @returns: the file descriptor of the socket
+     * @returns: the file descriptor of the socket. 
      */
     pub def getFd (self)-> i32 {
         self._sockfd
@@ -517,22 +630,22 @@ pub class TcpStream {
     
     /**
      * Send data in a raw way (without packing, nor sending the size of the data)
-     * This methods are mainly used to communicate with external protocol
-     * In Ymir, it is more common to use packet sending via Packable objects
+     * @info: This method is mainly used to communicate with external protocol (outside Ymir), as communication through packets is to be preferred in Ymir.
      * @params: 
-     * - a: the data to send    
-     * @templates: 
-     *  - T: a slice type
-     *  - U: any type
+     *     - a: the data to send    
+     * @throws:
+     *    - &TcpError: if the sending failed (stream closed)
+     * 
      */
     pub def rawSend {T of [U], U} (mut self, a : T) -> void
         throws &TcpError
     {
         if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
-
+        
         let mut fullSize = 0us;
         while (fullSize != a.len * sizeof (U)) {
             let s = etc::c::socket::send (self._sockfd, cast!{&void} (a.ptr) + fullSize, cast!u32 ((sizeof (U) * cast!(usize) (a.len)) - fullSize), 0);
+
             if (s == -1) {
                 self._sockfd = 0;
                 throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
@@ -543,10 +656,12 @@ pub class TcpStream {
     }
 
     /**
-     * Send data in a raw way (without packing)
-     * This methods are mainly used to communicate with external protocol
+     * Send data in a raw way (without packing).
+     * @info: This method is mainly used to communicate with external protocol (outside Ymir), as communication through packets is to be preferred in Ymir.   
      * @params: 
      *    - a: the data to send
+     * @throws:
+     *    - &TcpError: if the sending failed (stream closed)
      */
     pub def if (isIntegral!{T} () || is!{T}{U of bool}) rawSend {T} (mut self, a : T)-> void
         throws &TcpError
@@ -566,10 +681,12 @@ pub class TcpStream {
 
     /**
      * Receive data in a raw way (without unpacking it)
+     * @info: This method is mainly used to communicate with external protocol (outside Ymir), as communication through packets is to be preferred in Ymir.
+     * @warning: does not verify the integrity of received data. 
      * @params: 
-     *   - nb: the number of element to receive (nb * sizeof(U)) will be read from the stream
-     * @templates: 
-     * - U: any type
+     *   - nb: the number of element to receive (nb * sizeof(U)) will be read from the stream.
+     * @throws:
+     *    - &TcpError: if the sending failed (stream closed)
      */
     pub def rawReceive {U} (mut self, nb : usize) -> dmut [U]
         throws &TcpError
@@ -591,11 +708,13 @@ pub class TcpStream {
     }
 
     /**
-     * Receive data in a raw way (without unpacking it)
+     * Receive data in a raw way (without unpacking them).
+     * @info: This method is mainly used to communicate with external protocol (outside Ymir), as communication through packets is to be preferred in Ymir.
+     * @warning: does not verify the integrity of the received data.
      * @params: 
      *   - nb: the number of element to receive (nb * sizeof(U)) will be read from the stream
-     * @templates: 
-     * - U: any type
+     * @throws:
+     *    - &TcpError: if the sending failed (stream closed)
      */
     pub def rawReceive {U} (mut self, dmut elem : &U) -> void
         throws &TcpError
@@ -615,7 +734,10 @@ pub class TcpStream {
     
 
     /**
-     * Send a packable class through the stream
+     * Send a packable class through the stream. 
+     * @assume: the piece of software reading on the other side of the stream is aware of how to receive the result. In practice the class is transformed into a packet ([u8]) and sendPacket method is used.
+     * @throws:
+     *    - &TcpError: if the sending failed (stream closed)
      */
     pub def send {T impl std::net::packet::Packable} (mut self, a : T) -> void
         throws &TcpError
@@ -630,9 +752,12 @@ pub class TcpStream {
     }
 
     /**
-     * Receive a packet from the stream, and unpack it into an object
-     * @return: an object if the packet stored an object known by the current program, std::any::None otherwise
-     * @cf: std::network::packet
+     * Receive a packet from the stream, and unpack it into an object.
+     * @warning: the piece of software sending the data on the other side of the stream is aware of how to send the datas, either by mimicking the creation and sending of a valid packet capable of creating a class, or by using the method `self:.send`.
+     * @return: an object if the packet stored an object known by the current program
+     * @throws:
+     *    - &TcpError: if the reception failed (stream closed)
+     *    - &UnpackError: a packet was received but was invalid (e.g. refering to an unkwnown class for example).
      */
     pub def receive (mut self)-> dmut &Object
         throws &UnpackError, &TcpError
@@ -646,6 +771,22 @@ pub class TcpStream {
         return packet.unpack ();
     }
 
+
+    /**
+     * Send a packet of bytes of any size into the stream.
+     * @warning: the piece of software that will receive the packet on the other side should be know how to read the sent datas. In practice the size of the packet is send first using 64 bits so the other side of the stream knowns how many bytes to read for the packet, the packet is then sent directly after. 
+     * @throws:
+     *    - &TcpError: if the sending failed (stream closed)
+     */
+    pub def sendPacket (mut self, packet : [u8])
+        throws &TcpError
+    {
+        if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
+        
+        self:.rawSend (packet.len);
+        self:.rawSend (packet);
+    }
+    
     /**
      * Receive a packet from the stream, but does not unpack it into an object
      * @returns: a packet of data
@@ -711,17 +852,31 @@ pub class TcpStream {
         
         match addr.ip () {
             v6 : &Ipv6Address => {
-                servaddr.sin6_addr.s6_addr = v6[];
+                servaddr.sin6_addr.s6_addr = v6.toN ();
             }
             _ => __pragma!panic ();
         }
 
-        let z = connect (self._sockfd, &servaddr, cast!u32 (sizeof (sockaddr_in6)));
+        println (servaddr);
+        
+        let z = connect (self._sockfd, &servaddr, cast!u32 (sizeof (typeof (servaddr))));
         println (z);
         if (z != 0) {
             throw TcpError::new (TcpErrorCode::CONNECT, "failed to connect");
         }
     }
+
+    prv def toBigEndian (self, a : [u16 ; 8u32])-> [u8 ; 16u32] {
+        let dmut res = [0u8 ; 16u32];
+        let mut j = 0us;
+        for i in 0us .. 8us {
+            res[j + 1us] = cast!u8 ((a[i] & 0x00ffu16));
+            res[j] = cast!u8 ((a[i] & 0xff00u16) >> 8u16);
+            j += 2us;
+        }
+
+        res
+    }    
 
     impl std::stream::Streamable;
     
