@@ -46,20 +46,25 @@ import std::conv;
 pub macro json {
 
     pub self (a=(dictEntry) b=("," inner=dictEntry)* (" " | "\n" | "\t" | "\r")*) skips (" " | "\n" | "\t" | "\r") {
-        let dmut d = Dict::new ();
-        let v = #{a};
-        d:.insert (v._0, v._1);;        
-        #(for x in b) {
-            {
-                let v_ = #{x::inner};
-                d:.insert (v_._0, v_._1);
+        {
+            import std::config::data;
+            
+            let dmut d = Dict::new ();
+            let v = #{a};
+            d:.insert (v._0, v._1);;        
+            #(for x in b) {
+                {
+                    let v_ = #{x::inner};
+                    d:.insert (v_._0, v_._1);
+                }
             }
+            d
         }
-        d
     }
 
     def dict ("{" a=(dictEntry) b=("," inner=dictEntry)* "}") skips (" " | "\n" | "\t" | "\r") {
         {
+            import std::config::data;
             let dmut d_#{__index} = Dict::new ();
             let v_#{__index} = #{a};
             d_#{__index}:.insert (v_#{__index}._0, v_#{__index}._1);
@@ -75,11 +80,15 @@ pub macro json {
     }
 
     def emptyDict ("{" "}") skips (" " | "\n" | "\t" | "\r") {
-        Dict::new ()
+        {
+            import std::config::data;
+            Dict::new ()
+        }
     }
 
     def array ("[" a=(array | dict | value) b=("," inner=(array | dict | value))* "]") skips (" " | "\n" | "\t" | "\r") {
         {
+            import std::config::data;
             let dmut array_#{__index} = Array::new ();
             array_#{__index}:.push (#{a});
             #(for i in b) {
@@ -90,15 +99,23 @@ pub macro json {
     }
     
     def dictEntry (key=__str ":" value=(array | dict | value)) skips (" " | "\n" | "\t" | "\r") {
-        cte if is!{typeof(#{key})}{U of [c32]} {
-            (#{key}, #{value})
-        } else {
-            (#{key}.(std::conv::to)![c32](), #{value})
+        {
+            import std::config::data, std::conv;
+            
+            cte if is!{typeof(#{key})}{U of [c32]} {
+                (#{key}, #{value})
+            } else {
+                (#{key}.(std::conv::to)![c32](), #{value})
+            }
         }
     }
 
     def value (a=__expr) skips (" " | "\n" | "\t" | "\r") {
-        config::conv::to!{&Config} (#{a})
+        {
+            import std::config::_;
+        
+            config::conv::to!{&Config} (#{a})
+        }
     }
 }
 

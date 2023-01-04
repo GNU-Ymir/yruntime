@@ -1,3 +1,8 @@
+/**
+ * This module implements duplication functions necessary to the compiler for `copy` and `dcopy` constructions.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
 mod core::duplication;
 
 import core::exception;
@@ -43,16 +48,25 @@ mod DcopyMap {
 }
 
 
+/**
+ * Allocate memory on the heap for that can contain the type `T`.
+ */
 pub def alloc {T} (a : T) -> mut & (mut T) {
     let mut x = alias allocMod!{T}::_yrt_new_block (sizeof T, 1u64)        
     *x = a;
     return x;
 }
-    
+
+/**
+ * Allocate memory on the heap that can contains `len` elements of type `T`.
+ */
 pub def allocBlock {T} (len : usize) -> dmut &T {
     alias allocMod!{T}::_yrt_new_block (sizeof T, len)
 }
 
+/**
+ * Allocate a slice on the heap that can contain `len` elements of type `T`.
+ */
 pub def allocArray {T} (len : usize) -> dmut [T] {
     alias allocMod!{T}::_yrt_new_array (sizeof T, len)
 }
@@ -68,6 +82,9 @@ pub def memCopy {T} (fr : [T], mut to : [mut T]) {
 
 pub {
 
+    /**
+     * Trait to implement for a class to be deeply copiable `dcopy`.
+     */
     trait Copiable {
         
         prot def @{final} __coreduplication_copyInner (self, dmut packet : &(u8)) {            
@@ -92,7 +109,51 @@ pub {
                 }
             }            
         }
-               
+
+        /**
+         * Default implementation of deep copy deeply copies all the field of the class.
+         * If it is prefered to use the keyword `dcopy`, there is no problem to call this method directly as `dcopy` is just a syntax rewrite.
+         * @info: It keeps track of copied class instances so recursive class instances (containing themselves somewhere) creates recursive class copies, and no infinite loop is made.
+         * @example: 
+         * ===
+         * import std::io;
+         * 
+         *
+         * class A {
+
+         *     let mut _i : [&A] = [];
+
+         *     pub self () {
+         *         self._i = self._i ~ [self]; // Make sure it contains a reference to itself
+         *     }
+
+         *     pub def verifRecurse (self) {
+         *         __pragma!trusted ({
+         *             assert (self is self._i[0]); // make sure it still contains a reference to itself
+         *         });
+         *     }
+    
+         *     impl Streamable;
+         *     impl Copiable;
+         * }
+         *
+         *
+         * def main () {
+         *    let a = A::new ();
+         *    let b = dcopy a; 
+         *
+         *    // By constructions a contains a reference to itself
+         *    a.verifRecurse ();
+         * 
+         *    // b contains a reference to b
+         *    // Deep copy conserve the data structure
+         *    b.verifRecurse ();
+         *
+         *    // streamable have the same verification to avoid infinite looping 
+         *    println (a, " ", b);
+         * }
+         * ===
+         */            
         pub def deepCopy (self)-> dmut &Object {
             let started = DcopyMap::_yrt_dcopy_map_is_started ();
             {                
@@ -120,7 +181,11 @@ pub {
             }
         }
     }
-    
+
+    /**
+     * Function called by the compiler when `dcopy` construction is used.
+     * If it is prefered to use the keyword `dcopy`, there is no problem to call this function directly as `dcopy` is just a syntax rewrite.
+     */
     def deepCopy {T} (a : T)-> dmut T {
         cte if (is!{T}{class U}) {
             cte assert (false, "Class " ~ T::typeid ~ " does not implement Copiable");

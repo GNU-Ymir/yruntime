@@ -1,3 +1,15 @@
+/**
+ * This module implements the management of reflection for symbol
+ * retreiving using their string name. Symbols are stored in a HashMap
+ * once loaded (from ELF on Linux for example), so that accessing them
+ * is not that costly. The creation of the index is relatively
+ * expensive on the other hand, but is done only one time for every
+ * loaded segments (executable, so libs on linux, etc.).
+ * 
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
 mod core::reflect;
 
 import std::collection::map;
@@ -70,11 +82,6 @@ __version LINUX {
 }
 
 extern (C) def _yrt_reflect_find_symbol_in_indexed_table (name : [c8])-> ReflectSymbol {
-    // for i, j in __REFLECT_SYMBOL_TABLE__ {
-    //     if (j.type == ReflectSymbolType::VTABLE) {
-    //         println (i);
-    //     }
-    // }
     match __REFLECT_SYMBOL_TABLE__.find (name) {
         Ok (sym : _) => {
             return sym

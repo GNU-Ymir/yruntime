@@ -1,3 +1,9 @@
+/**
+ * This module implement utility functions and classes to manage slices at a low level.
+ * @Authors: Emile Cadorel
+ * License: GPLv3
+ */
+
 mod core::array;
 import core::exception, core::typeinfo;
 import std::io, std::stream;
@@ -6,7 +12,11 @@ mod allocMod {T} {
     pub extern (C) def _yrt_new_array (_ : usize, _ : u64)-> mut [mut T];
 }
 
+/**
+ * Exception thrown when an index access was made out of the capacity range. 
+ */
 pub class OutOfArray over Exception {
+    
     pub self () {}
 
     impl stream::Streamable {
@@ -16,6 +26,9 @@ pub class OutOfArray over Exception {
     }
 }
 
+/**
+ * Functions that just throws an OutOfArray exception.
+ */
 pub def outOfArray ()
     throws &OutOfArray
 {
@@ -23,6 +36,19 @@ pub def outOfArray ()
 }
 
 
+/**
+ * Compare two slices that contains the same inner type of data.
+ * @info: Lexicographic order is used. If one of the slices is the prefix of the other, the slices with the biggest length is considered bigger than the other.
+ * @example:
+ * ===
+ * let a = [1, 2, 3];
+ * let b = [1, 2, 3, 4];
+ * 
+ * assert (a < b);
+ * assert (a == b[0us .. $ - 1us]);
+ * assert (a > b[0us .. $ - 2us]);
+ * ===
+ */
 pub def opCmp {T of [U], U} (a : T, b : T)-> i32 {
     let dmut len = if (b.len < a.len) {b.len} else {a.len};
     for i in 0us .. len {
@@ -33,6 +59,9 @@ pub def opCmp {T of [U], U} (a : T, b : T)-> i32 {
     cast!(i32) (a.len - b.len)
 }
 
+/**
+ * Compare two slices that contains the same inner type of data.
+ */
 pub def opEquals {T of [U], U} (a : T, b : T)-> bool {
     if (a.len != b.len) return false;
     for i in 0us .. a.len {
@@ -42,12 +71,34 @@ pub def opEquals {T of [U], U} (a : T, b : T)-> bool {
     true
 }
 
+/**
+ * Macro used to write a utf32 literal on multiple lines.
+ * @example: 
+ * ===
+ * let a : [c32] = str#{ 
+ *     This string contains 
+ *     Multiple lines
+ *     But that is not a problem
+ * };
+ * ===
+ */
 pub macro str {
     pub self (fst=(__char)*) {
         "#(fst)"
     }
 }
 
+/**
+ * Macro used to write a utf8 literal on multiple lines.
+ * @example: 
+ * ===
+ * let a : [c8] = str8#{ 
+ *     This string contains 
+ *     Multiple lines
+ *     But that is not a problem
+ * };
+ * ===
+ */
 pub macro str8 {
     pub self (fst=(__char)*) {
         "#(fst)"s8

@@ -1,5 +1,30 @@
 /**
- * This modules stores some shortcut for template specialization
+ * This modules defines functions with `cte` values that can be used
+ * to simplify template specialization. This module has nothing to do
+ * with the `trait` semantic, so maybe we should rename it.
+ *
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @example: 
+ * ===
+ * import std::traits;
+ * 
+ * /*
+ *   This function accept every integral type for T (u8 to usize, and i8 to isize)
+ * */
+ * def if (isIntegral!{T} ()) foo {T} (a : T)-> T {
+ *     a + cast!T (12)
+ * }
+ * 
+ * let a = foo ();
+ * 
+ * cte if isFloating!{typeof (a)} () {
+ *     println ("a is either a f32 or a f64");
+ * } else {
+ *     println ("a is something else");
+ * }
+ * ===
  */
 mod std::traits;
 
@@ -58,10 +83,18 @@ pub def isChar {T} ()-> bool {
     cte (is!{T}{U of c8} || is!{T}{U of c32})
 }
 
+/**
+ * @CTE 
+ * @returns: true 
+ */
 pub def isTuple{T, U...}()-> bool {
     true
 }
 
-
-pub def isTuple {T}()-> bool
+/**
+ * @CTE
+ * @returns: false
+ */
+pub def isTuple {T}()-> bool {
     false
+}

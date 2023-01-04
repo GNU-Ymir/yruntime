@@ -1,24 +1,57 @@
+/**
+ * This module implements the structure `Instant` and some utility function to encode timestamp.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @example: 
+ * ===
+ * import std::time::_;
+ *
+ * // Make a timestamp of the system clock
+ * let start = instant::now ();
+ * 
+ * // Perform some computation that takes some time
+ * some_heavy_computation ();
+ *
+ * // Make a timestamp of the system clock
+ * let end = instant::now ();
+ * 
+ * // Instant can be used to compute a duration
+ * println ("Computation took : ", (end - start).to![c8] ());
+ *
+ * // They are also comparable
+ * assert (start <= end);
+ * ===
+ */
+
 mod std::time::instant;
 import std::io;
 import etc::c::time;
 import std::time::dur;
 
 /**
- * Structure representing a nondecreasing clock
- * This structure can be used to compute durations, between instant
+ * Structure representing a nondecreasing clock.
+ * This structure can be used to compute durations, between instants.
  */
 pub struct
-| sec : u64
-| usec : u64
+| sec : u64 // The number of second since 1 january 1970
+| usec : u64 // The number of micro seconds 
  -> Instant;
     
 /**
- * @returns: the current instant of the system clock
+ * @returns: the current instant of the system clock.
  * @example: 
  * ===================
+ * import std::time::_;
+ * 
+ * // Get the current timestamp of the system
  * let now = instant::now ();
- * sleep ((2u64).dur::seconds ());
- * println (instant::now () - now);
+ * 
+ * // Sleep for two seconds
+ * sleep (dur::seconds (2));
+ * 
+ * // Will be more than 2 seconds
+ * assert ((instant::now () - now) >= dur::seconds (2));
  * ===================
  */
 pub def now () -> Instant {
@@ -28,11 +61,15 @@ pub def now () -> Instant {
 }
 
 /**
- * @returns: the instant 0
+ * @returns: the instant 0, timestamp of the 1 january 1970. 
  * @example: 
  * ==================
- * let system_duration = instant::now () - instant::zero ();
- * println (system_duration);
+ * import std::time::_;
+ * 
+ * let d = instant::now () - instant::zero ();
+ * 
+ * // Print the duration since the 1 january 1970
+ * println (d.to![c8] ());
  * ==================
  */
 pub def zero ()-> Instant {
@@ -41,12 +78,20 @@ pub def zero ()-> Instant {
 
 
 /**
- * @returns: the duration between the two time instants
+ * @returns: the duration between two time instants.
  * @example: 
  * =================
+ * import std::time::_;
+ * 
  * let start = instant::now ();
- * sleep ((2u64).dur::seconds ());
- * println ((instant::now () - start).to![c8] ());
+ * sleep (dur::seconds (2));
+ * 
+ *
+ * // The duration between the creation of instant start and now 
+ * let dur_of_sleep = instant::now () - start;
+ * 
+ * // We slept for 2 seconds so the difference should ne higher than 2 seconds
+ * assert (dur_of_sleep >= dur::seconds (2));
  * =================
  */
 pub def opBinary {"-"} (left : Instant, right : Instant, negative : bool = false) -> Duration {
@@ -71,13 +116,23 @@ pub def opBinary {"-"} (left : Instant, right : Instant, negative : bool = false
 }
 
 /**
- * Move the instant in the time
- * @warning: an instant cannot be negative, if the duration is negative and lower than the instant, the function will return the zero instant
+ * Add some duration to an instant, to get an instant in the future (or the past if the duration is negative).
+ * @warning: an instant cannot be negative, if the duration is negative and lower than the instant, the function returns the zero instant.
  * @example: 
  * ====================
  * import std::time::_;
  * 
- * println (instant::now () + (5u64).seconds ());
+ * // Future instant in 5 seconds from now
+ * let f = instant::now () + (5u64).seconds ();
+ *
+ * // f is in the future 
+ * assert (f > instant::now ());
+ *
+ * // Sleep 6 seconds
+ * sleep (dur::seconds (6)); 
+ * 
+ * // f is in the past
+ * assert (f < instant::now ());
  * ====================
  */
 pub def opBinary {"+"} (left : Instant, right : Duration)-> Instant {
@@ -94,13 +149,16 @@ pub def opBinary {"+"} (left : Instant, right : Duration)-> Instant {
 }
 
 /**
- * Move the instant in the time
- * @warning: an instant cannot be negative, if the duration is higher than the instant, the function will return the zero instant
+ * Remove some duration to an instant, to get an instant in the past (or in the future if the duration is negative).
+ * @warning: an instant cannot be negative, if the duration is higher than the instant, the function returns the zero instant.
  * @example: 
  * ====================
  * import std::time::_;
  * 
- * println (instant::now () - (5u64).seconds ());
+ * let p = instant::now () - dur::seconds (5);
+ * 
+ * // p is five seconds in the past
+ * assert (p < instant::now ());
  * ====================
  */
 pub def opBinary {"-"} (left : Instant, right : Duration)-> Instant {
@@ -127,12 +185,22 @@ pub def opBinary {"-"} (left : Instant, right : Duration)-> Instant {
 }
 
 /**
- * Compare two instant
+ * Compare two instant.
  * @example: 
  * ===============
+ * import std::time::_;
+ *
  * let start = instant::now ();
+ * 
+ * // Some useless computation to waste some time 
+ * for i in 0 .. 1000 { 
+ *     println (i);
+ * }
+
  * let end = instant::now ();
- * assert (start < end);
+ * 
+ * // Some time pass between the two timestamps, so start is in the past of end
+ * assert (start <= end);
  * assert (start == start);
  * ===============
  */

@@ -2,6 +2,9 @@
  * This module implements the Signal class. Signal class is a list of function or closure pointers that are called when the signal is emitted.
  * This is really useful when using event system, with elements triggered by other elements without caring to much about side effects.
  * Connected functions can be called asynchronusely using futures when emitting the signal. All created future can be awaited by the signal emit method.
+ * @authors: Emile Cadorel
+ * @license: GPLv3
+ * <hr>
  * @example:
  * ===
  * import std::io;
@@ -21,12 +24,12 @@
  *     println ("Lambda called : ", x, " ", y, " ", i);
  * });
  * 
- * // Call all the functions connected to the signal
+ * // Call all the slots connected to the signal
  * // Functions are called inside a future, and are awaited by the emit function
  * sig.emit (1, 2);
  * 
  * // Emit the signal in the current thread (synchronusly)
- * // Connected are executed one after the other
+ * // Connected slots are executed one after the other 
  * sig.emitSync (5, 6);
  * 
  * // Disconnecting the foo function
@@ -36,8 +39,6 @@
  * // Also it does not wait the end of the execution of the connected slots
  * sig.emitNoWait (2, 3);
  * ===
- * @authors: Emile Cadorel
- * @license: GPLv3
  */
 mod std::concurrency::signal;
 
@@ -45,7 +46,7 @@ import std::stream;
 import std::collection::vec;
 
 /**
- * Signal connected to functions with parameters. Parameters passed to the function are those passed when emitting the signal.
+ * Signal connected to functions with parameters. Parameters passed to the slots are those passed when emitting the signal.
  */
 pub class Signal {T...} {
 
@@ -166,7 +167,7 @@ pub class Signal {T...} {
 
     /**
      * Emit the signal (calling all the connected functions and closure).
-     * @info: run the function in the current threads in the order they were connected. 
+     * @info: run the slots in the current threads with no guarantee on calling order.
      * @warning: if one of the connected function is infinite this method may never return, and some connected slots may never be called.
      * @params:
      *    - values: the list of parameters to pass to the connected functions and closures.
@@ -307,7 +308,7 @@ pub class Signal {T of void} {
 
     /**
      * Emit the signal (calling all the connected functions and closure).
-     * @info: run the function in the current threads in the order they were connected. 
+     * @info: run the slots in the current threads with no guarantee on calling order.
      * @warning: if one of the connected function is infinite this method may never return, and some connected slots may never be called.
      */
     pub def emitSync (self) {
