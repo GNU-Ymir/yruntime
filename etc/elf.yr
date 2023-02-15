@@ -16,12 +16,20 @@ import std::syntax::tokenizer;
 
 import std::time::_;
 
+
 __version LINUX {
 
     extern (C) def getpid ()-> u32;
 
     extern (C) def realpath (name : &c8, buffer : &c8)-> &c8;
 
+    extern (C) def _yrt_exc_panic_no_trace ();
+    
+    aka EI_MAG0 = 0
+    aka EI_MAG1 = 1
+    aka EI_MAG2 = 2
+    aka EI_MAG3 = 3
+    aka EI_CLASS = 4
     aka EI_NIDENT = 16
 
     struct
@@ -131,6 +139,14 @@ __version LINUX {
                 let content = file:.readBytesAll ();
                 
                 let hdr = cast!{&Elf64_Ehdr} (cast!{&void} (content.ptr));
+                if ((*hdr).e_ident [EI_MAG0] != '\u{7f}'c8 ||
+                    (*hdr).e_ident [EI_MAG1] != '\u{45}'c8 ||
+                    (*hdr).e_ident [EI_MAG2] != '\u{4c}'c8 ||
+                    (*hdr).e_ident [EI_MAG3] != '\u{46}'c8 ||
+                    (*hdr).e_ident [EI_CLASS] != '\u{2}'c8) {
+                    return {}
+                }
+                
                 let shdr = cast!{&Elf64_Shdr} (cast!{&void} (content.ptr + (*hdr).e_shoff));
                 
                 for i in 0u16 .. (*hdr).e_shnum {
@@ -148,9 +164,9 @@ __version LINUX {
                 }
                 
             } catch {
-                err : _ => {
-                    eprintln (err);
-                    __pragma!panic ();
+                _ : &FsError => {}
+                _ => {
+                    _yrt_exc_panic_no_trace ();
                 }
             }
         }

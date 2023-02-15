@@ -201,6 +201,11 @@ void _yrt_exc_panic_exception (_yrt_exception_header_* eh)
     exit (-1);
 }
 
+void _yrt_exc_panic_no_trace () {
+    fprintf (stderr, "Panic during stacktrace !");
+    exit (-1);
+}
+
 void _yrt_exc_panic (const char* file, const char * function, unsigned int line) {
     fprintf (stderr, "Panic in file \"%s\", at line %u", file, line);
     fprintf (stderr, ", in function \"%s\" !!! \n", function);
