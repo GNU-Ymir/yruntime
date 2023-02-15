@@ -273,7 +273,7 @@ mod internal_unpack {
 
     pub def unpack {T} (dmut u8_ptr : &u8, packet : [u8]) -> (usize, usize)
         throws &UnpackError
-    {
+    {        
         for i in 0us .. sizeof (T) {
             *(u8_ptr + i) = packet [i];
         }
@@ -284,15 +284,16 @@ mod internal_unpack {
             throw UnpackError::new ();
         }
     }
-       
+    
+    
     pub def unpack {T of [U], U} (dmut c_ptr : &(u8), packet : [u8])-> (usize, usize)
         throws &UnpackError
     {
         let mut len : usize = 0us;
         let dmut p_len : &u8 = alias cast!(&u8) (cast!(&void) (&len));
-        
-        let (_, _offset) = unpack!usize (alias p_len, packet);
-        let dmut res = alias core::duplication::allocArray!U (len);
+
+        let (_, _offset) = unpack!{usize} (alias p_len, packet);
+        let dmut res = core::duplication::allocArray!U (len);
         let mut offset = _offset;
         {
             for i in 0us .. len {

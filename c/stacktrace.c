@@ -7,13 +7,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <gc/gc.h>
+#include <libdwarf/dwarf.h>
+#include <libdwarf/libdwarf.h>
+#include <stdint.h>
 
+#include <sys/types.h> /* For open() */
+#include <sys/stat.h>  /* For open() */
+#include <fcntl.h>     /* For open() */
+#include <unistd.h>     /* For close() */
 
 int __YRT_MAXIMUM_TRACE_LEN__ = 128;
 
 #ifdef __linux__
 #include <execinfo.h>
-#include <bfd.h>
 #include <unistd.h>
 
 #define PATH_MAX 255
@@ -56,109 +62,105 @@ char* _yrt_resolve_path (const char * filename, char * resolved, int size) {
     return resolved;
 }
 
-void _yrt_slurp_sym_table (struct bfd_handle * handle) {
-    unsigned int size;
-    if ((bfd_get_file_flags (handle-> ptr) & HAS_SYMS) == 0) {
-	_yrt_close_bfd_file (*handle);
-	handle-> ptr = NULL;
-	return;
+int _yrt_find_dwarf_die (Dwarf_Debug obj, uint64_t addr, Dwarf_Die * die) {
+    Dwarf_Die returnDie;
+    Dwarf_Error error = DW_DLE_NE;
+    Dwarf_Arange * aranges;
+    Dwarf_Signed arange_count;
+
+    Dwarf_Bool found = 0;
+    if (dwarf_get_aranges (obj, &aranges, &arange_count, &error) != DW_DLV_OK) {
+	aranges = NULL;
     }
 
-    handle-> nb_syms = bfd_read_minisymbols (handle-> ptr, FALSE, (void*) &handle-> syms, &size);
-    if (handle-> nb_syms == 0)
-	handle-> nb_syms = bfd_read_minisymbols (handle-> ptr, TRUE, (void*) &handle-> syms, &size);
-    
-    if (handle-> nb_syms < 0) {
-	_yrt_close_bfd_file (*handle);
-	return;
+    if (aranges) {
+	Dwarf_Arange arange;
+	if (dwarf_get_arange (aranges, arange_count, addr, &arange, &error) == DW_DLV_OK) {
+
+	    Dwarf_Off cu_die_offset;
+	    if (dwarf_get_cu_die_offset (arange, &cu_die_offset, &error) == DW_DLV_OK) {
+		int dwarf_res = dwarf_offdie_b (obj, cu_die_offset, 1, &returnDie, &error);
+
+		found = (dwarf_res == DW_DLV_OK);
+	    }
+	    dwarf_dealloc (obj, arange, DW_DLA_ARANGE);
+	}
     }
+
+    if (found) {
+	*die = returnDie;
+	return 0;
+    }
+
+    return 1;
 }
 
-struct bfd_handle _yrt_get_bfd_file (const char * filename) {
-    char realPath [PATH_MAX + 1];
-    struct bfd_handle handle;
-    handle.filename = _yrt_resolve_path (filename, realPath, PATH_MAX);
+void _yrt_find_in_dwarf (const char * filename, void * addr, _ystring * file, int * line) {
+    Dwarf_Debug dbg = 0;
+    int res = DW_DLV_ERROR;
+    Dwarf_Error error;
+    Dwarf_Handler errhand = 0;
+    Dwarf_Ptr errarg = 0;
+
+    int fd = open(filename, O_RDONLY);
+    if (fd == 0) return;
     
-    handle.ptr = bfd_openr (handle.filename, NULL);
-    if (handle.ptr == NULL)
-	return handle;
+    if (dwarf_init (fd, DW_DLC_READ, NULL, NULL, &dbg, &error)) goto end;
 
-    if (bfd_check_format (handle.ptr, bfd_object) == 0) {
-	_yrt_close_bfd_file (handle);
-	handle.ptr = NULL;
-	return handle;
-    }
+    Dwarf_Die die;
+    if (_yrt_find_dwarf_die (dbg, (uint64_t) addr, &die)) goto end_dwarf;
 
-    _yrt_slurp_sym_table (&handle);
-    return handle;
-}
+    Dwarf_Line * lines;
+    Dwarf_Signed nlines;
+    if (dwarf_srclines (die, &lines, &nlines, &error)) goto end_die;
 
-void _yrt_find_address_in_section (bfd * abfd, asection* section, void * data) {
-    struct bfd_context * context = (struct bfd_context*) data;    
-    if (context-> set != 0) return;
-    
-    bfd_vma vma;
-    bfd_size_type size;
+    char * srcfile;
+    Dwarf_Unsigned lineno;
+    Dwarf_Addr lineaddr;
+    int n;
+    for (n = 0; n < nlines; n++) {
+	/* Retrieve the virtual address for this line. */
+	if (dwarf_lineaddr(lines[n], &lineaddr, &error)) {
+	    break;
+	}
 
-#ifdef bfd_get_section_flags 
-    if ((bfd_get_section_flags (abfd, section) & SEC_ALLOC) == 0)
-	return;
-#else
-    if ((bfd_section_flags (section) & SEC_ALLOC) == 0)
-	return;
-#endif
-  
-#ifdef bfd_get_section_vma
-    vma = bfd_get_section_vma (abfd, section);
-#else
-    vma = bfd_section_vma (section);
-#endif
-  
-    if (context-> pc < vma)
-	return;
-#ifdef bfd_get_section_size  
-    size = bfd_get_section_size (section);
-#else
-    size = bfd_section_size (section);
-#endif
-  
-    if (context-> pc >= vma + size)
-	return;
-    
-    context-> set = bfd_find_nearest_line (abfd, section, context-> handle.syms, context-> pc - vma,
-					   &context-> file, &context-> function, &context-> line);    
-}
+	if (lineaddr == (uint64_t) addr) {
+	    /* Retrieve the file name for this errorscriptor. */
+	    if (dwarf_linesrc(lines[n], &srcfile, &error)) {
+		break;
+	    }
+	    
+	    *file = str_copy (srcfile);
+	    dwarf_dealloc (dbg, srcfile, DW_DLA_STRING);
 
-int _yrt_resolve_address (const char * filename, void* addr, _ystring * file, _ystring * func, int* line, struct bfd_handle handle) {
-    if (handle.ptr != NULL) {
-
-	struct bfd_context context;
-	context.handle = handle;
-	context.set = 0;
-	context.file = NULL;
-	context.function = NULL;
-	
-	context.pc = bfd_scan_vma (str_from_ptr (addr).data, NULL, 16);
-	bfd_map_over_sections (handle.ptr, _yrt_find_address_in_section, (void*) &context);
-	
-	if (context.set != 0) {	    
-	    *file = str_create (context.file);
-	    *func = str_create (context.function);
-	    *line = context.line;
-	    return 1;
-	} 
+	    /* Retrieve the line number in the source file. */
+	    if (dwarf_lineno(lines[n], &lineno, &error)) {
+		break;
+	    }
+	    
+	    *line = lineno;
+	}
     }
     
+    dwarf_srclines_dealloc (dbg, lines, nlines);
+    
+end_die:
+    dwarf_dealloc (dbg, die, DW_DLA_DIE);
+    
+end_dwarf: 
+    res = dwarf_finish (dbg, &error);
+    
+end:   
+    close(fd);
+}
+
+int _yrt_resolve_address (const char * filename, void* addr, _ystring * file, int* line) {
     *file = str_empty ();
-    *func = str_empty ();
     *line = 0;
+    
+    _yrt_find_in_dwarf (filename, addr, file, line);		        
     return 0;
 }
-
-void _yrt_close_bfd_file (struct bfd_handle handle) {
-    bfd_close (handle.ptr);
-}
-
 
 _yrt_array_ _yrt_exc_resolve_stack_trace (_yrt_array_ syms) {
     if (__YRT_DEBUG__ == 1 || __YRT_FORCE_DEBUG__ == 1) {	
@@ -181,8 +183,12 @@ _yrt_array_ _yrt_exc_resolve_stack_trace (_yrt_array_ syms) {
 	    _ystring file;
 	    _ystring func;
 	    int line;
-	    struct bfd_handle handle = _yrt_get_bfd_file (filename);
-	    if (_yrt_resolve_address (filename, ((void**) syms.data) [i], &file, &func, &line, handle)) {
+	    struct ReflectSymbol sym = _yrt_reflect_find_symbol_from_addr (((void**) syms.data) [i]);
+	    
+	    if (sym.name != NULL) {
+		_yrt_find_in_dwarf (filename, ((void**) syms.data) [i], &file, &line);
+		func = str_create (sym.name);
+		
 		if (file.data != NULL) {
 		    ret = str_concat_c_str (ret, "\n╞═ bt ╕ #");
 		    ret = str_concat (ret, str_from_int (i - 1));

@@ -10,30 +10,6 @@ extern int __YRT_TEST_CODE__;
 
 #ifdef __linux__
 
-#include <bfd.h>
-
-/**
- * The handle of an object file
- */
-struct bfd_handle {
-    bfd* ptr;
-    const char* filename;
-    asymbol** syms;
-    long nb_syms;
-};
-
-/**
- * The result of a bfd address search
- */
-struct bfd_context {
-    struct bfd_handle handle;
-    int set;
-    int pc;
-    
-    const char* file;
-    const char* function;
-    unsigned int line;
-};
 
 /**
  * Find a filename in the PATH env
@@ -45,25 +21,6 @@ struct bfd_context {
  */
 char* _yrt_resolve_path (const char* filename, char* resolved, int size);
 
-/**
- * Retreive the symbol table of a bfd handle
- * @params:
- *    - handle: an opened handle
- */
-void _yrt_slurp_sym_table (struct bfd_handle * handle);
-
-/**
- * Open a file in bfd format and return the pointer 
- * @params: 
- *    - filename: the path of the obj file
- * @return: the pointer of the readable bfd file
- */
-struct bfd_handle _yrt_get_bfd_file (const char * filename);
-
-/**
- * Close all the opened files
- */
-void _yrt_close_bfd_file (struct bfd_handle);
 
 /**
  * Resolve the address in the obj file
@@ -75,7 +32,7 @@ void _yrt_close_bfd_file (struct bfd_handle);
  *    - func: the name of the function 
  *    - line: the line of the symbol
  */
-int _yrt_resolve_address (const char * filename, void* addr, _ystring * file, _ystring * func, int* line, struct bfd_handle handle);
+int _yrt_resolve_address (const char * filename, void* addr, _ystring * file, int* line);
 
 #endif
 

@@ -59,9 +59,6 @@ void _yrt_force_debug (int act) {
 	__YRT_FORCE_DEBUG__ = __YRT_DEBUG__;
 	__YRT_DEBUG__ = 1;
     }
-#ifdef __linux__
-    bfd_init ();
-#endif
 }
 
 _yrt_array_ _yrt_create_args_array (int len, char ** argv) {
@@ -97,10 +94,6 @@ int _yrt_run_main_debug (int argc, char ** argv, int(* y_main)()) {
     
     GC_INIT ();
     
-#ifdef __linux__
-    bfd_init ();
-#endif
-
     installHandler ();
     _yrt_exc_init ();
             
