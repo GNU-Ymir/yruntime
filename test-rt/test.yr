@@ -1,0 +1,61 @@
+mod test;
+
+import core::duplication;
+import core::exception;
+import core::typeinfo;
+
+import std::stream, std::io;
+import std::collection::map;
+import std::conv;
+
+extern (C) def printf (_ : &c8, ...);
+extern (C) def _yrt_get_test_code ()-> i32;
+extern (C) def _yrt_set_test_code (i : i32);
+extern (C) def _yrt_force_debug (i : i32);
+
+extern (C) def _yrt_get_test_map ()-> dmut &(&HashMap!{[c8], fn()-> void});
+extern (C) def _yrt_set_test_map (dmut map : &HashMap!{[c8], fn()-> void});
+
+pub static dmut __TESTS__ : &(&HashMap!{[c8], fn ()-> void}) = null;
+
+extern (C) def _yrt_run_tests (name : &c8, f : fn ()-> void) {
+    let dmut t = _yrt_get_test_map ();
+    if (t is null) {        
+        _yrt_set_test_map (alias HashMap!{[c8], fn ()-> void}::new ());
+        t = _yrt_get_test_map ();
+    }
+
+    (*t):.insert (fromStringZ (name), f);
+} catch {
+    _ : &SegFault => __pragma!panic ();
+}
+
+
+def runTest (name : [c8], f : fn ()-> void) {    
+    __pragma!fake_throw (&Exception);
+    _yrt_force_debug (1);
+    f ();
+    _yrt_force_debug (0);
+    println ("[SUCCESS] ", name);
+} catch {
+    x : _ => {
+        _yrt_set_test_code (-1i32);
+        eprintln ("[FAILURE] In test : ", name);
+        let dmut stream = StringStream::new ();
+        stream:.write (x);
+        eprintln (stream[]);
+    }
+}
+
+extern (C) def _yrt_test_main (_ : [[c8]]) -> i32 {
+    let dmut t = _yrt_get_test_map ();
+    if (t !is null) {
+        for n, f in *t {
+            runTest (n, f);
+        }
+    }
+
+    return _yrt_get_test_code ();
+} catch {
+    _ : &SegFault => __pragma!panic ();
+}

@@ -5,33 +5,6 @@
  */
 
 mod core::test;
-import core::typeinfo;
-import core::exception;
-import std::stream, std::io;
-
-extern (C) def _yrt_print_error (c : &c8);
-extern (C) def _yrt_set_test_code (i : i32);
 
 
-extern (C) def printf (c : &c8, ...);
-extern (C) def _yrt_force_debug (i : i32);
-
-extern (C) def _yrt_run_tests (name : &c8, f : fn ()-> void) {    
-    __pragma!fake_throw (&Exception);
-    _yrt_force_debug (1);
-    f ();
-    _yrt_force_debug (0);
-    print ("[SUCCESS] ");
-    printf ("%s\n"s8.ptr, name);
-} catch {
-    x : _ => {
-        _yrt_set_test_code (-1i32);
-        _yrt_print_error ("[FAILURE] In test : "s8.ptr);
-        _yrt_print_error (name);
-        _yrt_print_error ("\n"s8.ptr);
-        let dmut stream = StringStream::new ();
-        stream:.write (x);
-        _yrt_print_error (stream[].ptr);
-        _yrt_print_error ("\n"s8.ptr);
-    }
-}
+pub extern (C) def _yrt_run_tests (name : &c8, f : fn ()-> void) ;

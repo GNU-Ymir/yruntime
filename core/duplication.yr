@@ -5,6 +5,7 @@
  */
 mod core::duplication;
 
+import core::typeinfo;
 import core::exception;
 import core::object;
 
@@ -52,9 +53,22 @@ mod DcopyMap {
  * Allocate memory on the heap for that can contain the type `T`.
  */
 pub def alloc {T} (a : T) -> mut & (mut T) {
-    let mut x = alias allocMod!{T}::_yrt_new_block (sizeof T, 1u64)        
+    let mut x : mut &(mut T) = alias allocMod!{T}::_yrt_new_block (sizeof T, 1us);        
     *x = a;
-    return x;
+    return alias x;
+} catch {
+    _ : &SegFault => __pragma!panic ();
+}
+
+/**
+ * Allocate memory on the heap for that can contain the type `T`.
+ */
+pub def alloc {T} (dmut a : T) -> dmut &(T) {
+    let dmut x = alias allocMod!{T}::_yrt_new_block (sizeof T, 1us);        
+    *x = alias a;
+    return alias x;
+} catch {
+    _ : &SegFault => __pragma!panic ();
 }
 
 /**

@@ -58,11 +58,17 @@ FILE (
   test-rt/*.c
   )
 
+FILE (
+  GLOB_RECURSE
+  SRC_UNITTEST_YR
+  test-rt/*.yr
+  )
 
-SET_SOURCE_FILES_PROPERTIES(${SRC_CORE} ${SRC_STD} ${SRC_ETC} overview.yr PROPERTIES LANGUAGE YMIR)
+
+SET_SOURCE_FILES_PROPERTIES(${SRC_CORE} ${SRC_STD} ${SRC_ETC} ${SRC_UNITTEST_YR} overview.yr PROPERTIES LANGUAGE YMIR)
 
 add_library (gymidgard STATIC ${SRC_CORE} ${SRC_STD} ${SRC_ETC} ${SRC_CORE_C} ${SRC_STD_C} ${SRC_RUNTIME} overview.yr)
-add_library (gymidgard-tests STATIC ${SRC_UNITTEST})
+add_library (gymidgard-tests STATIC ${SRC_UNITTEST} ${SRC_UNITTEST_YR})
 
 IF(UNIX) 
     install (TARGETS gymidgard DESTINATION /usr/lib/)
