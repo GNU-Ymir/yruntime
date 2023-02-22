@@ -5,12 +5,12 @@ set(CMAKE_YMIR_COMPILE_OBJECT "${CMAKE_YMIR_COMPILER} ${CMAKE_YMIR_FLAGS} <FLAGS
 set(CMAKE_YMIR_CREATE_STATIC_LIBRARY "<CMAKE_AR> rc <TARGET> <LINK_FLAGS> <OBJECTS>")
 
 IF (WIN32) 
-  set(CMAKE_YMIR_FLAGS "${CMAKE_C_FLAGS} -g -fPIC -nostdinc -nomidgardlib -fdoc -fno-reflect")
+  set(CMAKE_YMIR_FLAGS "${CMAKE_C_FLAGS} -O3 -fPIC -nostdinc -nomidgardlib -fdoc -fno-reflect")
 ELSE()
-  set(CMAKE_YMIR_FLAGS "${CMAKE_C_FLAGS} -g -fPIC -nostdinc -nomidgardlib -fdoc")
+  set(CMAKE_YMIR_FLAGS "${CMAKE_C_FLAGS} -O3 -fPIC -nostdinc -nomidgardlib -fdoc")
 ENDIF()
 
-set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -fPIC")
+set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -fPIC")
 
 
 FILE (
