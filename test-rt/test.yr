@@ -13,19 +13,14 @@ extern (C) def _yrt_get_test_code ()-> i32;
 extern (C) def _yrt_set_test_code (i : i32);
 extern (C) def _yrt_force_debug (i : i32);
 
-extern (C) def _yrt_get_test_map ()-> dmut &(&HashMap!{[c8], fn()-> void});
-extern (C) def _yrt_set_test_map (dmut map : &HashMap!{[c8], fn()-> void});
-
-pub static dmut __TESTS__ : &(&HashMap!{[c8], fn ()-> void}) = null;
+pub extern (C) static dmut __YRT_TEST_RT_MAP__ : &(&HashMap!{[c8], fn ()-> void});
 
 extern (C) def _yrt_run_tests (name : &c8, f : fn ()-> void) {
-    let dmut t = _yrt_get_test_map ();
-    if (t is null) {        
-        _yrt_set_test_map (alias HashMap!{[c8], fn ()-> void}::new ());
-        t = _yrt_get_test_map ();
+    if (__YRT_TEST_RT_MAP__ is null) {        
+        __YRT_TEST_RT_MAP__ = duplication::alloc (alias HashMap!{[c8], fn ()-> void}::new ());
     }
 
-    (*t):.insert (fromStringZ (name), f);
+    (*__YRT_TEST_RT_MAP__):.insert (fromStringZ (name), f);
 } catch {
     _ : &SegFault => __pragma!panic ();
 }
@@ -48,9 +43,8 @@ def runTest (name : [c8], f : fn ()-> void) {
 }
 
 extern (C) def _yrt_test_main (_ : [[c8]]) -> i32 {
-    let dmut t = _yrt_get_test_map ();
-    if (t !is null) {
-        for n, f in *t {
+    if (__YRT_TEST_RT_MAP__ !is null) {
+        for n, f in *__YRT_TEST_RT_MAP__ {
             runTest (n, f);
         }
     }

@@ -18,6 +18,8 @@
 #include <gc/gc.h>
 #include <semaphore.h>
 
+void** __YRT_TASK_POOL__ = 0;
+
 _yrt_mutex_t __monitor_mutex__ = PTHREAD_MUTEX_INITIALIZER;
 
 #ifdef _WIN32

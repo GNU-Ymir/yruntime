@@ -25,13 +25,12 @@ pub enum
 pub struct
 | type : ReflectSymbolType
 | ptr : usize
+| size : usize
 | name : &c8
-| locFile : &c8
-| line : i32
  -> ReflectSymbol;
 
-static dmut __REFLECT_SYMBOL_TABLE__ = HashMap!{[c8], ReflectSymbol}::new ();
-static dmut __INV_REFLECT_SYMBOL_TABLE__ = HashMap!{usize, ReflectSymbol}::new ();
+extern (C) static dmut __YRT_REFLECT_SYMBOL_TABLE__ : &(&HashMap!{[c8], ReflectSymbol});
+extern (C) static dmut __YRT_INV_REFLECT_SYMBOL_TABLE__ : &(&HashMap!{usize, ReflectSymbol});
 
 __version WINDOWS {
     struct
@@ -62,41 +61,66 @@ __version LINUX {
 
     import etc::elf;
     
-    static dmut __ELF_LOADER__ = ELFLoader::new ();
+    extern (C) static dmut __YRT_ELF_LOADER__ : &(&ELFLoader);
 
     extern (C) def _yrt_reflect_update_index_table () {
-        __ELF_LOADER__:.update ();
+        if (__YRT_ELF_LOADER__ is null) {
+            __YRT_ELF_LOADER__ = duplication::alloc (alias ELFLoader::new ());
+        }
+        
+        __pragma!trusted ((*__YRT_ELF_LOADER__):.update ());
+    }
+
+    extern (C) def _yrt_reflect_update_index_table_with_elf_name (name : [c8]) {
+        if (__YRT_ELF_LOADER__ is null) {
+            __YRT_ELF_LOADER__ = duplication::alloc (alias ELFLoader::new ());
+        }
+        
+        __pragma!trusted ((*__YRT_ELF_LOADER__):.update (name));
     }
     
     pub extern (C) def _yrt_reflect_register_symbol (sym : ReflectSymbol) {
+        if (__YRT_REFLECT_SYMBOL_TABLE__ is null) {
+            __YRT_REFLECT_SYMBOL_TABLE__ = duplication::alloc (alias HashMap!{[c8], ReflectSymbol}::new ());
+            __YRT_INV_REFLECT_SYMBOL_TABLE__ = duplication::alloc (alias HashMap!{usize, ReflectSymbol}::new ());
+        }
+        
         let name = sym.name.fromStringZ ()?;
         match name {
             Ok (s : _) => {
-                __REFLECT_SYMBOL_TABLE__:.insert (s, sym);
+                __pragma!trusted ((*__YRT_REFLECT_SYMBOL_TABLE__):.insert (s, sym));
             }
         }
         
-        __INV_REFLECT_SYMBOL_TABLE__:.insert (sym.ptr, sym);        
+        __pragma!trusted ((*__YRT_INV_REFLECT_SYMBOL_TABLE__):.insert (sym.ptr, sym));        
     }
     
 }
 
 extern (C) def _yrt_reflect_find_symbol_in_indexed_table (name : [c8])-> ReflectSymbol {
-    match __REFLECT_SYMBOL_TABLE__.find (name) {
+    if (__YRT_REFLECT_SYMBOL_TABLE__ is null) {
+        return ReflectSymbol (ReflectSymbolType::NONE, 0us, 0us, null);
+    }
+    
+    match (__pragma!trusted ((*__YRT_REFLECT_SYMBOL_TABLE__))).find (name) {
         Ok (sym : _) => {
             return sym
         }
         _ => {
-            return ReflectSymbol (ReflectSymbolType::NONE, 0us, null, null, 0);
+            return ReflectSymbol (ReflectSymbolType::NONE, 0us, 0us, null);
         }
     }
 }
 
 extern (C) def _yrt_reflect_find_symbol_in_indexed_table_from_addr (addr : usize)-> ReflectSymbol {
+    if (__YRT_REFLECT_SYMBOL_TABLE__ is null) {
+        return ReflectSymbol (ReflectSymbolType::NONE, 0us, 0us, null);
+    }
+    
     let mut min = usize::max;
-    let mut symbol = ReflectSymbol (ReflectSymbolType::NONE, 0us, null, null, 0);
-    for _, sym in __REFLECT_SYMBOL_TABLE__ {
-        if (sym.ptr < addr && (addr - sym.ptr) < min) {
+    let mut symbol = ReflectSymbol (ReflectSymbolType::NONE, 0us, 0us, null);
+    for _, sym in __pragma!trusted ((*__YRT_REFLECT_SYMBOL_TABLE__)) {
+        if (sym.ptr < addr && addr < (sym.ptr + sym.size)  && (addr - sym.ptr) < min) {
             symbol = sym;
             min = (addr - sym.ptr);
         } else if (sym.ptr == addr) {

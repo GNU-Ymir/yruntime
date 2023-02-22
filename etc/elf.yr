@@ -67,7 +67,7 @@ __version LINUX {
     | st_info : u8
     | st_other : u8
     | st_shndx : u16
-    | st_value : usize
+    | st_value : u64
     | st_size : u64
      -> Elf64_Sym;
     
@@ -132,6 +132,16 @@ __version LINUX {
         }
 
         /**
+         * Update the elf loading, but for only one file
+         */
+        pub def update (mut self, name : [c8]) {
+            if name !in self._readElf {
+                self:.readElf (name);
+                self._readElf:.insert (name);
+            }
+        }
+        
+        /**
          * Read an elf file and register the symbols
          */
         def readElf (mut self, filename : [c8]) {
@@ -188,23 +198,21 @@ __version LINUX {
                 
                 let name = names + sym.st_name;
                 let realName = name.fromStringZ ();                
-                if (sym.st_info & SymbolInfo::STT_FUNC != 0u32 && sym.st_value != 0us) {
+                if (sym.st_info & SymbolInfo::STT_FUNC != 0u32 && sym.st_value != 0u64) {
                     if (realName.len > 2us && realName[0us .. 2us] == "_Y"s8) {
                         let reflect = ReflectSymbol (type-> ReflectSymbolType::FUNCTION,
-                                                     ptr-> sym.st_value,
+                                                     ptr-> cast!usize (sym.st_value),
                                                      name-> realName.ptr,
-                                                     locFile-> null,
-                                                     line-> 0);
+                                                     size-> cast!usize (sym.st_size));
                         _yrt_reflect_register_symbol (reflect);
                     }
                 } else if (sym.st_info & SymbolInfo::STT_OBJECT != 0u32 && sym.st_value != 0us) {
                     if (realName.len > 4us && realName[0us .. 2us] == "_Y"s8) {
                         if (realName[$ - 2us .. $] == "VT"s8) {
                             let reflect = ReflectSymbol (type-> ReflectSymbolType::VTABLE,
-                                                         ptr-> sym.st_value,
+                                                         ptr-> cast!usize (sym.st_value),
                                                          name-> realName.ptr,
-                                                         locFile-> null,
-                                                         line-> 0);
+                                                         size-> cast!usize (sym.st_size));
                             _yrt_reflect_register_symbol (reflect);
                         }
                     }

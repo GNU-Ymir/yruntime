@@ -12,6 +12,11 @@
 #endif
 
 
+void** __YRT_ELF_LOADER__ = 0;
+void** __YRT_REFLECT_SYMBOL_TABLE__ = 0;
+void** __YRT_INV_REFLECT_SYMBOL_TABLE__ = 0;
+
+
 static struct ReflectSymbolTable __yrt_reflectSymbolTable__ =
 { .numberOfEntries = 0,
   .data = NULL };
@@ -46,6 +51,8 @@ void _yrt_reflect_register_symbol_table (const char* moduleName, unsigned long l
 #else
 
 void _yrt_reflect_update_index_table ();
+
+void _yrt_reflect_update_index_table_with_elf_name (_yrt_c8_array_ elfPath);
 
 #endif
 
@@ -86,6 +93,21 @@ struct ReflectSymbol _yrt_reflect_find_symbol_from_addr (void* addr) {
     
     return _yrt_reflect_find_symbol_in_indexed_table_from_addr (addr);   
 }
+
+
+struct ReflectSymbol _yrt_reflect_find_symbol_from_addr_with_elf_name (void* addr, _yrt_c8_array_ filename) {
+#if _WIN32
+    if (!__INDEX_TABLE_CONSTRUCTED__) {
+	_yrt_reflect_construct_index_table (__yrt_reflectSymbolTable__);
+	__INDEX_TABLE_CONSTRUCTED__ = 1;
+    }
+#else
+    _yrt_reflect_update_index_table_with_elf_name (filename);    
+#endif
+    
+    return _yrt_reflect_find_symbol_in_indexed_table_from_addr (addr);   
+}
+
 
 /**
  * ================================================================================

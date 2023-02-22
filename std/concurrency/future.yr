@@ -46,6 +46,7 @@
 
 mod std::concurrency::future;
 
+import core::duplication;
 import core::typeinfo;
 import core::array;
 import core::exception;
@@ -53,6 +54,9 @@ import core::exception;
 import std::concurrency::task;
 import std::concurrency::sync;
 import std::io;
+
+
+extern (C) static dmut __YRT_TASK_POOL__ : &(&TaskPool);
 
 /**
  * Create a future value, and submit it to the task pool for future execution.
@@ -162,7 +166,12 @@ pub def future {T} (dmut pool : &TaskPool, func : dg ()-> T) -> &Future!T {
  * @warning: all future submitted before the change of the task pool are executed by the old task pool. However, this will not break them.
  */
 pub def setFutureTaskPool (dmut pool : &TaskPool) -> void {
-    internal::__pool__ = [alias pool];
+    if (__YRT_TASK_POOL__ is null) __YRT_TASK_POOL__ = duplication::alloc (alias pool);
+    else {
+        *__YRT_TASK_POOL__ = alias pool;
+    }
+} catch {
+    _ => __pragma!panic ();
 }
 
 /**
@@ -293,9 +302,6 @@ pub class @abstract Future {T} {
 /** Internal module */
 mod internal {
 
-    /** The task pool */
-    pub static mut __pool__ : dmut [&TaskPool] = [];
-
     /**
      * Get the global task pool for processing futures
      * The number of thread in the task pool is set to the number of cores available on the system minus 1, or 1 if there is only 1
@@ -309,11 +315,11 @@ mod internal {
      * ==============
      */
     pub def getTaskPool () -> dmut &TaskPool {
-        if (__pool__.len == 0u64) {
-            __pool__ = [TaskPool::new ()];
-        }
+        if (__YRT_TASK_POOL__ is null) __YRT_TASK_POOL__ = duplication::alloc (alias TaskPool::new ());
         
-        return alias __pool__ [0];        
+        return alias *__YRT_TASK_POOL__;        
+    } catch {
+        _ => __pragma!panic ();
     }
 
     /**

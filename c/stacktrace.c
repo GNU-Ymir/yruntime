@@ -10,6 +10,8 @@
 #include <libdwarf/dwarf.h>
 #include <libdwarf/libdwarf.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <time.h>
 
 #include <sys/types.h> /* For open() */
 #include <sys/stat.h>  /* For open() */
@@ -28,37 +30,28 @@ char* _yrt_resolve_path (const char * filename, char * resolved, int size) {
     char * PATH_AUX = getenv ("PATH");
     char * PATH = malloc (strlen (PATH_AUX));
     memcpy (PATH, PATH_AUX, strlen (PATH_AUX));
-
+    
+    int len_f = strlen (filename);
+    
     char * strToken = strtok (PATH, ":");
     int found = 0;
     while (strToken != NULL) {
 	if (found == 0) {
 	    int len = strlen (strToken);
-	    len = len > size ? size : len;
-	    int i = 0;
-	    for (i = 0 ; i < len ; i ++) {
-		resolved [i] = strToken [i];
-	    }
-	    resolved [i] = '/';
-	    for (i = 0 ; i < size - len; i++) {
-		resolved [i + len + 1] = filename [i];
-		if (filename [i] == '\0') break;
-	    }
-	
-	    if (access (resolved, F_OK) == 0) {
-		found = 1;
+	    if (len + len_f + 2 < PATH_MAX) {
+		int n = snprintf (resolved, PATH_MAX, "%s/%s", strToken, filename);
+		resolved [n] = '\0';
+		
+		if (access (resolved, F_OK) == 0) {
+		    found = 1;
+		    break;
+		}
 	    }
 	}
 	strToken = strtok (NULL, ":");	
     }
 
     free (PATH);
-    if (found == 0) {
-	for (int i = 0 ; i < size; i ++) {
-	    resolved [i] = filename [i];
-	    if (filename [i] == '\0') break;
-	}
-    }
     return resolved;
 }
 
@@ -103,28 +96,38 @@ void _yrt_find_in_dwarf (const char * filename, void * addr, _ystring * file, in
     Dwarf_Ptr errarg = 0;
 
     int fd = open(filename, O_RDONLY);
-    if (fd == 0) return;
-    
-    if (dwarf_init (fd, DW_DLC_READ, NULL, NULL, &dbg, &error)) goto end;
+    if (fd == 0)  return; 
 
+    if (dwarf_init (fd, DW_DLC_READ, NULL, NULL, &dbg, &error)) {
+	goto end;
+    }
+
+    
     Dwarf_Die die;
-    if (_yrt_find_dwarf_die (dbg, (uint64_t) addr, &die)) goto end_dwarf;
+    if (_yrt_find_dwarf_die (dbg, (uint64_t) addr, &die)) {
+	goto end_dwarf;
+    }
 
     Dwarf_Line * lines;
     Dwarf_Signed nlines;
-    if (dwarf_srclines (die, &lines, &nlines, &error)) goto end_die;
-
+    if (dwarf_srclines (die, &lines, &nlines, &error)) {
+	goto end_die;
+    }
+    
     char * srcfile;
     Dwarf_Unsigned lineno;
     Dwarf_Addr lineaddr;
     int n;
+    uint64_t max = (uint64_t) addr;
     for (n = 0; n < nlines; n++) {
 	/* Retrieve the virtual address for this line. */
 	if (dwarf_lineaddr(lines[n], &lineaddr, &error)) {
 	    break;
 	}
 
-	if (lineaddr == (uint64_t) addr) {
+	int dist = abs ((uint64_t) addr) - lineaddr;
+	if (dist < max) {
+	    max = dist;
 	    /* Retrieve the file name for this errorscriptor. */
 	    if (dwarf_linesrc(lines[n], &srcfile, &error)) {
 		break;
@@ -133,14 +136,16 @@ void _yrt_find_in_dwarf (const char * filename, void * addr, _ystring * file, in
 	    *file = str_copy (srcfile);
 	    dwarf_dealloc (dbg, srcfile, DW_DLA_STRING);
 
+	    
 	    /* Retrieve the line number in the source file. */
 	    if (dwarf_lineno(lines[n], &lineno, &error)) {
 		break;
 	    }
 	    
 	    *line = lineno;
+	    if (dist == 0) break;
 	}
-    }
+    }    
     
     dwarf_srclines_dealloc (dbg, lines, nlines);
     
@@ -180,13 +185,18 @@ _yrt_array_ _yrt_exc_resolve_stack_trace (_yrt_array_ syms) {
 	    }
 	    filename [p] = '\0';
 
+	    char resolved [PATH_MAX];
+	    char* succ = _yrt_resolve_path (filename, resolved, PATH_MAX);
+
 	    _ystring file;
 	    _ystring func;
 	    int line;
-	    struct ReflectSymbol sym = _yrt_reflect_find_symbol_from_addr (((void**) syms.data) [i]);
+	    _yrt_c8_array_ resolvedC8 = {.len = strlen (resolved), .data = resolved };
 	    
+	    struct ReflectSymbol sym = _yrt_reflect_find_symbol_from_addr_with_elf_name (((void**) syms.data) [i], resolvedC8);
+	    	    
 	    if (sym.name != NULL) {
-		_yrt_find_in_dwarf (filename, ((void**) syms.data) [i], &file, &line);
+		_yrt_resolve_address (resolved, ((void**) syms.data) [i], &file, &line);	    
 		func = str_create (sym.name);
 		
 		if (file.data != NULL) {
@@ -204,7 +214,7 @@ _yrt_array_ _yrt_exc_resolve_stack_trace (_yrt_array_ syms) {
 		    ret = str_concat (ret, name);
 		    ret = str_concat_c_str (ret, "\e[0m");
 		    need_break = (strcmp (name.data, "main (...)") == 0); 
-		}
+		} 
 		
 		if (file.data != NULL) {		    
 		    ret = str_concat_c_str (ret, "\n│     ╘═> \e[32m");
@@ -216,9 +226,9 @@ _yrt_array_ _yrt_exc_resolve_stack_trace (_yrt_array_ syms) {
 	    } else {
 		ret = str_concat_c_str (ret, "\n╞═ bt ╕ #");
 		ret = str_concat (ret, str_from_int (i - 1));
-		ret = str_concat_c_str (ret, "\n│     ╘═> \e[32m");
+		ret = str_concat_c_str (ret, " in ??\n│     ╘═> \e[32m");
 		ret = str_concat_c_str (ret, filename);
-		ret = str_concat_c_str (ret, "\e[0m:??");
+		ret = str_concat_c_str (ret, "\e[0m");
 	    }
 	    
 	}

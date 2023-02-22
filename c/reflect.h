@@ -3,6 +3,7 @@
 
 #include "yarray.h"
 #include "type.h"
+#include <stdint.h>
 
 /**
  * 
@@ -22,14 +23,11 @@ struct ReflectSymbol {
     // The pointer to that symbol
     void * ptr;
 
+    // The size of the symbol
+    uint64_t size;
+    
     // The name of the symbol
     char* name;
-
-    // The name of the file that defined that symbol (warning: set only in debug mode)
-    char* locFile;
-
-    // The line location of the symbol in the source file (warning: set only in debug mode)
-    unsigned int locLine;
 };
 
 /**
@@ -80,6 +78,13 @@ void _yrt_reflect_construct_index_table (struct ReflectSymbolTable symbolTable);
  *    - addr: the addr of the symbol to find
  */
 struct ReflectSymbol _yrt_reflect_find_symbol_from_addr (void* addr);
+
+/**
+ * Find a symbol table in the index
+ * @params:
+ *    - addr: the addr of the symbol to find
+ */
+struct ReflectSymbol _yrt_reflect_find_symbol_from_addr_with_elf_name (void* addr, _yrt_c8_array_ filename);
 
 /**
  * Find a symbol table in the index, assuming indexed table was constructed
