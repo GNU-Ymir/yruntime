@@ -4,8 +4,8 @@
 #include <stdio.h>
 #include "gc.h"
 
-_ystring str_grow (_ystring self, unsigned long min) {
-    unsigned long n_len = self.len;
+_ystring str_grow (_ystring self, uint64_t min) {
+    uint64_t n_len = self.len;
     if (n_len == 0) n_len = 100;
     else n_len = n_len * 2;
     
@@ -14,7 +14,7 @@ _ystring str_grow (_ystring self, unsigned long min) {
     char* res = (char*) GC_malloc (n_len);
     memcpy (res, self.data, self.len);
 
-    unsigned long old_len = self.len;
+    uint64_t old_len = self.len;
 
     _ystring ret;
     ret.data = res;
@@ -26,7 +26,7 @@ _ystring str_grow (_ystring self, unsigned long min) {
 
 
 _ystring str_concat (_ystring left, _ystring right) {
-    unsigned long min = (left.len + right.len) + 1;
+    uint64_t min = (left.len + right.len) + 1;
     if (left.capacity < min)
 	left = str_grow (left, min);
 
@@ -91,7 +91,7 @@ _ystring str_create (const char * data) {
     return ret;
 }
 
-_ystring str_create_len (const char * data, unsigned long len) {
+_ystring str_create_len (const char * data, uint64_t len) {
     _ystring ret;
     ret.data = (char*) data;
     if (ret.data != NULL) {
@@ -105,7 +105,7 @@ _ystring str_create_len (const char * data, unsigned long len) {
 }
 
 
-_ystring str_copy_len (const char *data, unsigned long len) {
+_ystring str_copy_len (const char *data, uint64_t len) {
     char * res = (char*) GC_malloc (len);
     memcpy (res, data, len);
     

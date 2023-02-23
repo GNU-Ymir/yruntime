@@ -1,6 +1,8 @@
 #ifndef _Y_STRING_H_
 #define _Y_STRING_H_
 
+#include <stdint.h>
+
 /**
  * A string is a buffer of chars
  * The allocated size if generally larger that the used once
@@ -9,8 +11,8 @@
  */
 typedef struct {
     char * data;
-    unsigned long long len;
-    unsigned long long capacity;    
+    uint64_t len;
+    uint64_t capacity;    
 } _ystring;
 
 /**

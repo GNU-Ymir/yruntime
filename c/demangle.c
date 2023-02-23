@@ -14,7 +14,7 @@ int _yrt_demangle_number (char * data, int * current) {
     return nb;
 }
 					  
-_ystring _yrt_demangle_symbol (char * data, unsigned long len) {
+_ystring _yrt_demangle_symbol (char * data, uint64_t len) {
     _ystring ret = str_empty ();
     if (len <= 2 || data [0] != '_' || data [1] != 'Y')
 	return str_create_len (data, len);
@@ -36,6 +36,12 @@ _ystring _yrt_demangle_symbol (char * data, unsigned long len) {
     } 
     
     return ret;    
+}
+
+_yrt_c8_array_ _yrt_demangle_symbol_to_slice (char * data, uint64_t len) {
+    _ystring s = _yrt_demangle_symbol (data, len);
+    _yrt_c8_array_ ret = {.len = s.len, .data = s.data};
+    return ret;
 }
 
 _yrt_c8_array_ _yrt_mangle_path (_yrt_c8_array_ data) {

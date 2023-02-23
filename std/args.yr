@@ -882,10 +882,32 @@ prv def parseValue {T of [U], U of c32} (line : [[c32]], ref mut read : usize)->
  * @throws : 
  *    - &ArgumentError: if the reading of the string failed
  */
+prv def parseValue {T of [U], U of c8} (line : [[c32]], ref mut read : usize)-> [c8]
+    throws &ArgumentCastError
+{
+    read += 1us;
+    if (line.len > 0us) {
+        line [0us].to![c8] ()
+    } else {
+        throw ArgumentCastError::new ([c8]::typeinfo, "");
+    }
+}
+
+/**
+ * Parse a string literal in the lexer
+ */
 prv def parseValue {T of [U], U of c32} (line : [c32])-> [c32]
 {
     line
 } 
+
+/**
+ * Parse a string literal in the lexer
+ */
+prv def parseValue {T of [U], U of c8} (line : [c32])-> [c8]
+{
+    line.to![c8] ()
+}
 
 /**
  * Verify that the struct is correctly filled, and that no mandatory arguments are missing
@@ -928,6 +950,7 @@ prv def usageValue (t : TypeInfo) -> [c32] {
     if (equals (t, bool::typeinfo)) { return usageValue!bool (); }
     if (equals (t, f64::typeinfo)) { return usageValue!f64 (); }
     if (equals (t, [c32]::typeinfo)) { return usageValue![c32] (); }
+    if (equals (t, [c8]::typeinfo)) { return usageValue![c8] (); }
     if (t.inner.len != 0us)
         return "[" ~ __pragma!trusted (usageValue (t.inner [0])) ~ "... ]";
     else
@@ -952,6 +975,13 @@ prv def if (! (is!T {U of YesNo})) usageValue {T of bool} () -> [c32] {
  * @returns: a string containing the name of the type for usage printing
  */
 prv def usageValue {T of [U], U of c32} () -> [c32] {
+    "str"
+}
+
+/**
+ * @returns: a string containing the name of the type for usage printing
+ */
+prv def usageValue {T of [U], U of c8} () -> [c32] {
     "str"
 }
 
