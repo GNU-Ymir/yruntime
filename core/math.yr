@@ -1,0 +1,72 @@
+mod core::math;
+
+import std::traits;
+
+extern (C) def sqrt (f : f64)-> f64;
+extern (C) def sqrtf (f : f32)-> f32;
+
+pub def if isIntegral!{T}() ipow {T} (base : T, exp : i32)-> T {
+    let mut pow = base;
+    let mut v : T = cast!T (1);
+    let mut expV = exp;
+
+    if (exp < cast!i32 (0)) {
+        return if (base * base != cast!T (1)) {
+            cast!T (0)
+        } else if ((exp & 1) != 0) {
+            base
+        } else {
+            cast!T (1)
+        };
+    }
+
+    while (expV > cast!i32 (0)) {
+        if (expV & 1 != 0) v *= pow;
+        pow *= pow;
+        expV = expV >> 1;
+    }
+
+    v
+}
+
+pub def if isFloating!{T}() fipow {T} (base : T, exp : i32)-> T {
+    let mut v : T = cast!T (1.0);
+    let mut expV = exp;
+    let mut pow = if (exp < 0) {1.0/base} else {base};
+
+    if (exp < 0) expV = -expV;
+
+    while (expV > cast!i32 (0)) {
+        if (expV & 1 != 0) v *= pow;
+        pow *= pow;
+        expV = expV >> 1;
+    }
+
+    v
+}
+
+pub def ffpow (base : f64, exp : f64, prec : f64 = 0.0000001)-> f64 {
+    if (exp < 0.0) return 1.0 / ffpow (base, -exp, prec-> prec);
+    if (exp >= 10.0) {
+        let r = ffpow (base, exp / 2.0, prec-> prec / 2.0);
+        return r * r;
+    }
+
+    if (exp >= 1.0) { return base * ffpow (base, exp - 1.0, prec-> prec); }
+    if (prec >= 1.0) { return sqrt (base); }
+
+    return sqrt (ffpow (base, exp * 2.0, prec-> prec * 2.0));
+}
+
+pub def ffpow (base : f32, exp : f32, prec : f32 = 0.0000001f)-> f32 {
+    if (exp < 0.0f) return 1.0f / ffpow (base, -exp, prec-> prec);
+    if (exp >= 10.0f) {
+        let r = ffpow (base, exp / 2.0f, prec-> prec / 2.0f);
+        return r * r;
+    }
+
+    if (exp >= 1.0f) { return base * ffpow (base, exp - 1.0f, prec-> prec); }
+    if (prec >= 1.0f) { return sqrtf (base); }
+
+    return sqrtf (ffpow (base, exp * 2.0f, prec-> prec * 2.0f));
+}
