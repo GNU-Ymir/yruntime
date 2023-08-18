@@ -266,11 +266,11 @@ _yrt_array_ _yrt_exc_get_stack_trace () {
         void** res = GC_malloc (trace_size * sizeof (void*));
         memcpy (res, trace, sizeof (void*) * trace_size);
         free (trace);
-	
+
         _yrt_array_ arr;
         arr.len = trace_size;
         arr.data = res;
-	
+
         return arr;
     } else {
         _yrt_array_ arr;

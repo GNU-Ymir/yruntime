@@ -19,7 +19,13 @@ pub class @abstract Exception {
 
     let trace : [&(void)];
 
-    self () with trace = _yrt_exc_get_stack_trace () {}
+    __version DEBUG_LIB {
+        self () with trace = _yrt_exc_get_stack_trace () {
+        }
+    } else {
+        self () with trace = [] {
+        }
+    }
 
     impl stream::Streamable {
         
@@ -47,7 +53,11 @@ pub class @abstract Exception {
      * @returns: the stacktrace generated when the exception was constructed.
      */
     pub def @final getStackTrace (self) -> [c8] {
-        _yrt_exc_resolve_stack_trace (self.trace)
+        __version DEBUG_LIB {
+            _yrt_exc_resolve_stack_trace (self.trace)
+        } else {
+            []
+        }
     }
 
 }
