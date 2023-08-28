@@ -100,8 +100,9 @@ pub {
      * Trait to implement for a class to be deeply copiable `dcopy`.
      */
     trait Copiable {
-        
-        prot def @{final} __coreduplication_copyInner (self, dmut packet : &(u8)) {            
+
+        @final
+        prot def __coreduplication_copyInner (self, dmut packet : &(u8)) {
             cte if (__pragma!compile ({self::super;})) {
                 cte if (is!{typeof (self::super)} {U impl Copiable}) {
                     self::super.__coreduplication_copyInner (alias packet);
@@ -109,7 +110,7 @@ pub {
                     cte assert (false, "ancestor " ~ typeof (self::super)::typeid ~ " is not copiable");
                 }
             } else { packet; }
-            
+
             cte for i in 0us .. ((__pragma!local_field_offsets (typeof (self))).len) {
                 let offset = (__pragma!local_field_offsets (typeof (self))) [i];
                 let dmut z : &(mut typeof ((__pragma!local_tupleof (self)).i)) = Runtime!{&u8, &(mut typeof ((__pragma!local_tupleof (self)).i))}::_yrt_unsafe_cast (alias (packet + offset));
@@ -121,8 +122,9 @@ pub {
                 } else {
                     z;
                 }
-            }            
+            }
         }
+
 
         /**
          * Default implementation of deep copy deeply copies all the field of the class.
