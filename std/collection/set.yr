@@ -60,7 +60,7 @@
  *    /*
  *     * Provides a way of comparing instances of X
  *     */
- *    pub def opEquals (self, o : &X)-> bool {
+ *    pub fn opEquals (self, o : &X)-> bool {
  *        self._x == o._x
  *    }
  *   
@@ -69,7 +69,7 @@
  * }
  *
  *
- * def main () {
+ * fn main () {
  *     let dmut xs = HashSet!{&X}::new ();
  *
  *     xs:.insert (X::new (12));
@@ -82,7 +82,7 @@
  * <br>
  * Make the comparison by address is still possible, as it can be implemented in the opEquals method by returning `self is other`.
  * ===
- * pub def opEquals (self, o : &X)-> bool {
+ * pub fn opEquals (self, o : &X)-> bool {
  *     self is o // true if both instances share the same address
  * }
  * ===
@@ -202,7 +202,7 @@ pub class HashSet {T} {
      * assert (x.len () == 2us);
      * ============
      */
-    pub def insert (mut self, val : T) -> void {
+    pub fn insert (mut self, val : T) -> void {
         if (self._data.len == 0us) { self:.grow (); }
         else if ((self._loaded * 100us) / (self._data.len) > self._load_factor) { self:.grow (); }
         
@@ -222,7 +222,7 @@ pub class HashSet {T} {
      * ============
      * @complexity: O (1 + n/k), with n the number of possible collision and k the number of elements in the set, in average n/k are negligeable
      */
-    pub def opContains (self, val : T) -> bool {
+    pub fn opContains (self, val : T) -> bool {
         if (self._data.len != 0us) {
             let h = cast!usize (hash (val));        
             match (self._data [h % self._data.len]) {
@@ -249,7 +249,7 @@ pub class HashSet {T} {
      * ==========
      * @complexity: O (1 + n/k), with n the number of possible collision and k the number of elements in the set, in average n/k are negligeable
      */
-    pub def remove (mut self, val : T) -> void {
+    pub fn remove (mut self, val : T) -> void {
         if self._data.len != 0us {
             let h = cast!usize (hash (val));
             match ref (self._data [h % self._data.len]) {
@@ -282,7 +282,7 @@ pub class HashSet {T} {
      * ===========
      * @complexity: O (1)
      */
-    pub def clear (mut self) {
+    pub fn clear (mut self) {
         self._data = [];
         self._loaded = 0us;
         self._size = 0us;
@@ -303,7 +303,7 @@ pub class HashSet {T} {
      * @return: an iterator on the beginning of the set
      */
 
-    pub def begin (self) -> dmut &SetIterator!T {
+    pub fn begin (self) -> dmut &SetIterator!T {
         if (self._loaded != 0us) {
             for i in 0us .. self._data.len {
                 match self._data [i] {
@@ -319,7 +319,7 @@ pub class HashSet {T} {
     /**
      * @returns: the iterator on the end of the set
      */
-    pub def end (self) -> &SetIterator!T {
+    pub fn end (self) -> &SetIterator!T {
         SetIterator!{T}::new (0us, 0us, [], self._empty)
     }
 
@@ -327,7 +327,7 @@ pub class HashSet {T} {
     /**
      * @returns: a newly allocated array containing the value of the set
      */
-    pub def opIndex (self)-> mut [mut T] {
+    pub fn opIndex (self)-> mut [mut T] {
         let mut res : [mut T] = core::duplication::allocArray!{T} (self._size);
         let mut j = 0us;
         for i in self {
@@ -341,14 +341,14 @@ pub class HashSet {T} {
     /**
      * @returns: the number of element in the set
      */
-    pub def len (self)-> usize {
+    pub fn len (self)-> usize {
         self._size
     }
 
     /**
      * @returns: true iif the set is empty
      */    
-    pub def isEmpty (self)-> bool {
+    pub fn isEmpty (self)-> bool {
         self._size == 0us
     }    
 
@@ -439,7 +439,7 @@ pub class HashSet {T} {
      *    - h: the hash of the value
      *    - val: the value to insert
      */
-    prv def insertFast (mut self, h : usize, val : T) {
+    prv fn insertFast (mut self, h : usize, val : T) {
         let mut inserted = false;
         match ref (self._data [h % self._data.len]) {
             dmut x : &SetValue!{T} => {
@@ -460,7 +460,7 @@ pub class HashSet {T} {
      * Make the table containing the value shrink
      * @complexity: O (n + m), with n the new size, and m the number of element contained in the old table and reinserted
      */
-    prv def shrink (mut self) -> void {
+    prv fn shrink (mut self) -> void {
         if (self._loaded == 0us) {
             self._data = [];
             return {}
@@ -501,7 +501,7 @@ pub class HashSet {T} {
      * otherwise the size is mutliplied by 2
      * @complexity: O (n + m), with n the new size, and m the number of element contained in the old table that are reinserted
      */
-    prv def grow (mut self) -> void {
+    prv fn grow (mut self) -> void {
         if (self._data.len == 0us) {
             self._data = core::duplication::allocArray!{&SetNode!{T}} (SetConst::DEFAULT_ALLOC_SIZE);
             for i in 0us .. self._data.len {
@@ -551,7 +551,7 @@ pub class HashSet {T} {
 class SetNode {T} {
     prot self () {}
 
-    pub def opEquals (self, _ : &SetNode!T) -> bool;
+    pub fn opEquals (self, _ : &SetNode!T) -> bool;
 
     impl Streamable;
 }
@@ -609,7 +609,7 @@ class SetValue {T} over SetNode!T {
      * @complexity: O (n), with n the length of the list
      * @returns: true if a new node has been allocated, false otherwise
      */
-    pub def insert (mut self, h : usize, val : T) -> bool {
+    pub fn insert (mut self, h : usize, val : T) -> bool {
         cte assert (__pragma!compile ({self.val == val;}), "unusable element type : (" ~ T ~ ") must be be comparable to itself (opEquals or opCmp)");
         
         if (self.val != val) {
@@ -634,7 +634,7 @@ class SetValue {T} over SetNode!T {
      *    - rm: true if a node has been removed, false otherwise
      *    - the list, with no node containing the hash h
      */
-    pub def remove (mut self, h : usize, val : T, ref mut rm : bool) -> dmut &SetNode!T {
+    pub fn remove (mut self, h : usize, val : T, ref mut rm : bool) -> dmut &SetNode!T {
         cte assert (__pragma!compile ({self.val == val;}), "unusable element type : (" ~ T ~ ") must be be comparable to itself (opEquals or opCmp)");
         
         if (self.val == val) {
@@ -655,7 +655,7 @@ class SetValue {T} over SetNode!T {
      * @returns: true if such node exists, false otherwise
      * @complexity: O (n), with n the length of the list
      */
-    pub def opContains (self, h : usize, val : T) -> bool {
+    pub fn opContains (self, h : usize, val : T) -> bool {
         cte assert (__pragma!compile ({self.val == val;}), "unusable element type : (" ~ T ~ ") must be be comparable to itself (opEquals or opCmp)");
         
         if (self.val == val) {
@@ -761,7 +761,7 @@ class SetIterator {T} {
     /**
      * Two iterators are equals, if the current nodes are equals
      */
-    pub def opEquals (self, o : &SetIterator!T) -> bool {
+    pub fn opEquals (self, o : &SetIterator!T) -> bool {
         self._currentNode == o._currentNode
     }
 
@@ -772,7 +772,7 @@ class SetIterator {T} {
      * None, it the current node is empty
      * =======     
      */
-    pub def get {0} (self) -> T {
+    pub fn get {0} (self) -> T {
         match (self._currentNode) {
             x : &SetValue!{T} =>
                 return x.val;
@@ -797,7 +797,7 @@ class SetIterator {T} {
      * }
      * ===========
      */
-    pub def next (mut self) -> void {
+    pub fn next (mut self) -> void {
         match (self._currentNode) {
             x : &SetValue!{T} => {
                 match (x.next) {

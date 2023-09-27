@@ -42,7 +42,7 @@ __version WINDOWS {
     | symbols : [ReflectSymbol]
      -> ReflectSymbolTableEntry;
     
-    extern (C) def _yrt_reflect_construct_index_table (symbol_table : ReflectSymbolTable) {
+    extern (C) fn _yrt_reflect_construct_index_table (symbol_table : ReflectSymbolTable) {
         for entry in symbol_table.entries {
             for sym in entry.symbols {
                 let name = sym.name.fromStringZ ()?;
@@ -63,7 +63,7 @@ __version LINUX {
     
     extern (C) static dmut __YRT_ELF_LOADER__ : &(&ELFLoader);
 
-    extern (C) def _yrt_reflect_update_index_table () {
+    extern (C) fn _yrt_reflect_update_index_table () {
         if (__YRT_ELF_LOADER__ is null) {
             __YRT_ELF_LOADER__ = duplication::alloc (alias ELFLoader::new ());
         }
@@ -71,7 +71,7 @@ __version LINUX {
         __pragma!trusted ((*__YRT_ELF_LOADER__):.update ());
     }
 
-    extern (C) def _yrt_reflect_update_index_table_with_elf_name (name : [c8]) {
+    extern (C) fn _yrt_reflect_update_index_table_with_elf_name (name : [c8]) {
         if (__YRT_ELF_LOADER__ is null) {
             __YRT_ELF_LOADER__ = duplication::alloc (alias ELFLoader::new ());
         }
@@ -79,7 +79,7 @@ __version LINUX {
         __pragma!trusted ((*__YRT_ELF_LOADER__):.update (name));
     }
     
-    pub extern (C) def _yrt_reflect_register_symbol (sym : ReflectSymbol) {
+    pub extern (C) fn _yrt_reflect_register_symbol (sym : ReflectSymbol) {
         if (__YRT_REFLECT_SYMBOL_TABLE__ is null) {
             __YRT_REFLECT_SYMBOL_TABLE__ = duplication::alloc (alias HashMap!{[c8], ReflectSymbol}::new ());
             __YRT_INV_REFLECT_SYMBOL_TABLE__ = duplication::alloc (alias HashMap!{usize, ReflectSymbol}::new ());
@@ -97,7 +97,7 @@ __version LINUX {
     
 }
 
-extern (C) def _yrt_reflect_find_symbol_in_indexed_table (name : [c8])-> ReflectSymbol {
+extern (C) fn _yrt_reflect_find_symbol_in_indexed_table (name : [c8])-> ReflectSymbol {
     if (__YRT_REFLECT_SYMBOL_TABLE__ is null) {
         return ReflectSymbol (ReflectSymbolType::NONE, 0us, 0us, null);
     }
@@ -112,7 +112,7 @@ extern (C) def _yrt_reflect_find_symbol_in_indexed_table (name : [c8])-> Reflect
     }
 }
 
-extern (C) def _yrt_reflect_find_symbol_in_indexed_table_from_addr (addr : usize)-> ReflectSymbol {
+extern (C) fn _yrt_reflect_find_symbol_in_indexed_table_from_addr (addr : usize)-> ReflectSymbol {
     if (__YRT_REFLECT_SYMBOL_TABLE__ is null) {
         return ReflectSymbol (ReflectSymbolType::NONE, 0us, 0us, null);
     }

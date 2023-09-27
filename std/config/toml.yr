@@ -45,7 +45,7 @@ enum
  * let cfg : &Dict = toml::parse (str);
  * ================
  */
-pub def parse (content : [c8])-> &Dict
+pub fn parse (content : [c8])-> &Dict
     throws &SyntaxError
 {
     import std::conv;
@@ -69,7 +69,7 @@ pub def parse (content : [c8])-> &Dict
  * let cfg : &Dict = toml::parse (str);
  * ================
  */
-pub def parse (content : [c32])-> &Dict
+pub fn parse (content : [c32])-> &Dict
     throws &SyntaxError
 {
     let dmut result = Dict::new ();
@@ -111,7 +111,7 @@ pub def parse (content : [c32])-> &Dict
  * 
  * ===
  */
-pub def dump (cfg : &Config, withSuper : bool = true)-> [c8] {
+pub fn dump (cfg : &Config, withSuper : bool = true)-> [c8] {
     let dmut stream = StringStream::new ();
     if (withSuper) {
         match cfg {
@@ -147,7 +147,7 @@ mod Parser {
      * @throws: 
      *    - &SyntaxError: if the format is not respected 
      */
-    pub def parseDict (dmut lex : &Lexer!{c32}, glob : bool)-> &Dict
+    pub fn parseDict (dmut lex : &Lexer!{c32}, glob : bool)-> &Dict
         throws &SyntaxError
     {
         let dmut dict = Dict::new ();
@@ -194,7 +194,7 @@ mod Parser {
      * @throws: 
      *    - &SyntaxError: if the format is not respected
      */
-    pub def parseArray (dmut lex : &Lexer!{c32}) -> &Array
+    pub fn parseArray (dmut lex : &Lexer!{c32}) -> &Array
         throws &SyntaxError
     {
         let dmut arr = Array::new ();
@@ -234,7 +234,7 @@ mod Parser {
      * @throws: 
      *    - &SyntaxError: if the format is not respected
      */
-    pub def parseInt (dmut lex : &Lexer!{c32}) -> &Config
+    pub fn parseInt (dmut lex : &Lexer!{c32}) -> &Config
         throws &SyntaxError
     {
         import std::conv;
@@ -292,7 +292,7 @@ mod Parser {
      * @throws: 
      *    - &SyntaxError: if the format is not respected
      */
-    pub def parseString (dmut lex : &Lexer!{c32})-> &Str
+    pub fn parseString (dmut lex : &Lexer!{c32})-> &Str
         throws &SyntaxError
     {
 
@@ -346,7 +346,7 @@ mod Parser {
      * ============
      * @assume: the \u is already read in the lexer
      */
-    pub def parseUnicode (dmut lex : &Lexer!{c32})-> c32
+    pub fn parseUnicode (dmut lex : &Lexer!{c32})-> c32
         throws &SyntaxError
     {
         let (next, l, c) = lex:.next ();
@@ -384,7 +384,7 @@ mod Parser {
      * }
      * ===============
      */
-    pub def parseValue (dmut lex : &Lexer!{c32})-> &Config    
+    pub fn parseValue (dmut lex : &Lexer!{c32})-> &Config
         throws &SyntaxError
     {
         let (begin, _, _) = lex:.nextNoConsume ();
@@ -407,7 +407,7 @@ mod Parser {
 
 mod Dumper {
 
-    pub def dump (dmut stream : &StringStream, cfg : &Config, global : bool = false, indent : i32 = 0) {
+    pub fn dump (dmut stream : &StringStream, cfg : &Config, global : bool = false, indent : i32 = 0) {
         import std::conv;
         
         match cfg {
@@ -434,7 +434,7 @@ mod Dumper {
         }
     }
 
-    pub def dumpArray (dmut stream : &StringStream, x : &Array, indent : i32 = 0) {
+    pub fn dumpArray (dmut stream : &StringStream, x : &Array, indent : i32 = 0) {
         stream:.write ("["s8);
         let mut z = 0;
         let mut returned = false;
@@ -473,14 +473,14 @@ mod Dumper {
     }
 
     
-    pub def dumpDict (dmut stream : &StringStream, x : &Dict, global : bool = false, indent : i32 = 0) {
+    pub fn dumpDict (dmut stream : &StringStream, x : &Dict, global : bool = false, indent : i32 = 0) {
         if (global)
             dumpGlobalDict (alias stream, x)
         else
             dumpLocalDict (alias stream, x, indent-> indent)
     }
 
-    pub def dumpSuperDict (dmut stream : &StringStream, x : &Dict) {
+    pub fn dumpSuperDict (dmut stream : &StringStream, x : &Dict) {
         let dmut superStream = StringStream::new ();
         let dmut innerStream = StringStream::new ();
         for i, j_ in x {
@@ -501,7 +501,7 @@ mod Dumper {
         stream:.write (innerStream[]);
     }
     
-    pub def dumpLocalDict (dmut stream : &StringStream, x : &Dict, indent : i32 = 0) {
+    pub fn dumpLocalDict (dmut stream : &StringStream, x : &Dict, indent : i32 = 0) {
         stream:.write ("{");
         
         let mut z = 0;
@@ -518,7 +518,7 @@ mod Dumper {
         stream:.write ("}"s8);
     }
 
-    pub def dumpGlobalDict (dmut stream : &StringStream, x : &Dict, indent : i32 = 0) {        
+    pub fn dumpGlobalDict (dmut stream : &StringStream, x : &Dict, indent : i32 = 0) {
         let mut z = 0;
         for i, j in x {
             if (z != 0) {

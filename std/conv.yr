@@ -96,35 +96,35 @@ import core::array;
 import std::traits;
 
 mod Runtime {
-    pub extern (C) def _yrt_ulong_to_double (a : usize)-> f64;
+    pub extern (C) fn _yrt_ulong_to_double (a : usize)-> f64;
     
-    pub extern (C) def _yrt_long_to_double (a : isize)-> f64;
+    pub extern (C) fn _yrt_long_to_double (a : isize)-> f64;
     
-    pub extern (C) def _yrt_uint_to_float (a : u32)-> f32;
+    pub extern (C) fn _yrt_uint_to_float (a : u32)-> f32;
     
-    pub extern (C) def _yrt_int_to_float (a : i32)-> f32;
+    pub extern (C) fn _yrt_int_to_float (a : i32)-> f32;
 
-    pub extern (C) def _yrt_double_to_ulong (a : f64)-> u64;
+    pub extern (C) fn _yrt_double_to_ulong (a : f64)-> u64;
     
-    pub extern (C) def _yrt_double_to_long (a : f64)-> i64;
+    pub extern (C) fn _yrt_double_to_long (a : f64)-> i64;
     
-    pub extern (C) def _yrt_float_to_uint (a : f32)-> u32;
+    pub extern (C) fn _yrt_float_to_uint (a : f32)-> u32;
     
-    pub extern (C) def _yrt_float_to_int (a : f32)-> i32;
+    pub extern (C) fn _yrt_float_to_int (a : f32)-> i32;
 
-    pub extern (C) def _yrt_to_utf8_array (s : [c32])-> dmut [c8];
+    pub extern (C) fn _yrt_to_utf8_array (s : [c32])-> dmut [c8];
 
-    pub extern (C) def _yrt_to_utf32_array (s : [c8])-> dmut [c32];
+    pub extern (C) fn _yrt_to_utf32_array (s : [c8])-> dmut [c32];
 
-    pub extern (C) def _yrt_double_to_s8 (s : f64, prec : u32)-> dmut [c8];
+    pub extern (C) fn _yrt_double_to_s8 (s : f64, prec : u32)-> dmut [c8];
 
-    pub extern (C) def _yrt_double_to_s8_exp (s : f64, prec : u32)-> dmut [c8];
+    pub extern (C) fn _yrt_double_to_s8_exp (s : f64, prec : u32)-> dmut [c8];
 
-    pub extern (C) def _yrt_s8_to_double (s : [c8], ref mut succ : bool)-> f64;
+    pub extern (C) fn _yrt_s8_to_double (s : [c8], ref mut succ : bool)-> f64;
 
-    pub extern (C) def _yrt_s8_to_float (s : [c8], ref mut succ : bool)-> f32;
+    pub extern (C) fn _yrt_s8_to_float (s : [c8], ref mut succ : bool)-> f32;
 
-    pub extern (C) def memcpy (_ : &void, _ : &void, _ : usize)-> void;
+    pub extern (C) fn memcpy (_ : &void, _ : &void, _ : usize)-> void;
     
 }
 
@@ -140,7 +140,7 @@ mod Runtime {
  * /*
  *  * Dummy function that verify wether the parameter is of Type &Y
  *  */
- * def enforce_Y  (a : &X) 
+ * fn enforce_Y  (a : &X)
  *     throws &std::conv::CastFailure
  * {
  *    match (a) {
@@ -154,7 +154,7 @@ mod Runtime {
  *     }
  * } 
  * 
- * def main () {
+ * fn main () {
  *     enforce_Y (Z::new ()); // this enforcing will fail
  * } catch { 
  *     // as expected it failed CastFailure (TypeInfo (..., Z), TypeInfo (..., Y))
@@ -202,7 +202,7 @@ pub {
      * assert (x == "12" && y == "879"s8);
      * ==========
      */
-    def if (isUnsigned!{F} () && isChar!{U} ()) to {T of [U], U, F} (a : F) -> dmut [U] {
+    fn if (isUnsigned!{F} () && isChar!{U} ()) to {T of [U], U, F} (a : F) -> dmut [U] {
         alias to!{T, 10us, F} (a)
     }
 
@@ -216,7 +216,7 @@ pub {
      * assert (x == "0xc" && y == "0x36f"s8);
      * ==========
      */
-    def if (isUnsigned!{F} () && isChar!{U} ()) to {T of [U], U, "x", F} (a : F) -> dmut [U] {
+    fn if (isUnsigned!{F} () && isChar!{U} ()) to {T of [U], U, "x", F} (a : F) -> dmut [U] {
         cte if is!{U}{X of c32} {
             return alias (copy "0x" ~ to!{T, 16us, F} (a));
         } else {
@@ -234,7 +234,7 @@ pub {
      * assert (x == "0b1100" && y == "0b1101101111"s8);
      * ==========
      */
-    def if (isUnsigned!{F} () && isChar!{U} ()) to {T of [U], U, "b", F} (a : F) -> dmut [U] {
+    fn if (isUnsigned!{F} () && isChar!{U} ()) to {T of [U], U, "b", F} (a : F) -> dmut [U] {
         cte if is!{U}{X of c32} {
             return alias (copy "0b" ~ to!{T, 2us, F} (a));
         } else {
@@ -251,7 +251,7 @@ pub {
      * assert (x == "0o14" && y == "0o1557"s8);
      * ==========
      */
-    def if (isUnsigned!{F} () && isChar!{U} ()) to {T of [U], U, "o", F} (a : F) -> dmut [U] {
+    fn if (isUnsigned!{F} () && isChar!{U} ()) to {T of [U], U, "o", F} (a : F) -> dmut [U] {
         cte if is!{U}{X of c32} {
             return alias (copy "0o" ~ to!{T, 8us, F} (a));
         } else {
@@ -272,7 +272,7 @@ pub {
      * assert (x == "11" && y == "2cf"s8);
      * ==========
      */
-    def if (isUnsigned!{F} () && isChar!{U} ()) to {T of [U], U, base : usize, F} (a : F) -> dmut [U] {
+    fn if (isUnsigned!{F} () && isChar!{U} ()) to {T of [U], U, base : usize, F} (a : F) -> dmut [U] {
         cte assert (36us >= base, "Maximum base is 36 < " ~ base);
         
         if (cast!usize (a) == 0u64) {
@@ -311,7 +311,7 @@ pub {
      * assert (x == "-12" && y == "-7810"s8);
      * ===========
      */
-    def if (isSigned!{F} () && isChar!{U} ()) to {T of [U], U, F} (a : F) -> dmut [U] {
+    fn if (isSigned!{F} () && isChar!{U} ()) to {T of [U], U, F} (a : F) -> dmut [U] {
         alias to!{T, 10us, F} (a)
     }
 
@@ -328,7 +328,7 @@ pub {
      * assert (x == "-15" aa y == "-9d0k"s8);
      * ===========
      */
-    def if (isSigned!{F} () && isChar!{U} ()) to {T of [U], U, base : usize, F} (a : F) -> dmut [U]
+    fn if (isSigned!{F} () && isChar!{U} ()) to {T of [U], U, base : usize, F} (a : F) -> dmut [U]
     {
         cte assert (36us >= base, "Maximum base is 36 < " ~ base);
                 
@@ -385,7 +385,7 @@ pub {
      * println (encoded.len, " ", encoded); // 59 Hello world, Καλημέρα κόσμε, コンニチハ
      * ===
      */
-    def if is!{U}{X of c8} to {T of [U], U, F of [c32]} (s : F)-> dmut [c8] {
+    fn if is!{U}{X of c8} to {T of [U], U, F of [c32]} (s : F)-> dmut [c8] {
         alias Runtime::_yrt_to_utf8_array (s)
     }
     
@@ -400,7 +400,7 @@ pub {
      * println (decoded.len, " ", decoded); // 34 Hello world, Καλημέρα κόσμε, コンニチハ
      * ===
      */
-    def if (is!{U}{X of c32} && is!{G}{X of c8}) to {T of [U], U, F of [G], G} (s : F)-> dmut [c32] {
+    fn if (is!{U}{X of c32} && is!{G}{X of c8}) to {T of [U], U, F of [G], G} (s : F)-> dmut [c32] {
         alias Runtime::_yrt_to_utf32_array (s)
     }
 
@@ -415,7 +415,7 @@ pub {
      * assert (val.to![c8] () == "😉");
      * ===
      */
-    def if (is!{U}{X of c8} && is!{G}{X of u8}) to {T of [U], U, F of [G], G} (a : F)-> dmut [c8] {
+    fn if (is!{U}{X of c8} && is!{G}{X of u8}) to {T of [U], U, F of [G], G} (a : F)-> dmut [c8] {
         let dmut res = core::duplication::allocArray!c8 (a.len);
         Runtime::memcpy (cast!{&void} (res.ptr), cast!{&void} (a.ptr), res.len);
 
@@ -433,7 +433,7 @@ pub {
      * assert (val.to![u8] () == [0xf0u8, 0x9fu8, 0x98u8, 0x89u8]);
      * ===
      */
-    def if (is!{U}{X of u8} && is!{G}{X of c8}) to {T of [U], U, F of [G], G} (s : F)-> dmut [u8] {
+    fn if (is!{U}{X of u8} && is!{G}{X of c8}) to {T of [U], U, F of [G], G} (s : F)-> dmut [u8] {
         let dmut res = core::duplication::allocArray!u8 (s.len);
         Runtime::memcpy (cast!{&void} (res.ptr), cast!{&void} (s.ptr), res.len);
 
@@ -451,7 +451,7 @@ pub {
      * assert (utf8 == "😉"s8 && utf8.len == 3us);
      * ===
      */
-    def if is!{U}{X of c8} to {T of [U], U, F of c32} (s : F) -> dmut [c8] {
+    fn if is!{U}{X of c8} to {T of [U], U, F of c32} (s : F) -> dmut [c8] {
         alias Runtime::_yrt_to_utf8_array ([s])
     }
     
@@ -462,7 +462,7 @@ pub {
      * assert (to![c32] (12.8) == "12.8")
      * ===========
      */
-    def if (isChar!{U} () && isFloating!{F} ()) to {T of [U], U, F} (a : F, prec : u32 = 6u32) -> T {
+    fn if (isChar!{U} () && isFloating!{F} ()) to {T of [U], U, F} (a : F, prec : u32 = 6u32) -> T {
         cte if is!{U}{X of c32} {
             to![c32] (Runtime::_yrt_double_to_s8 (cast!f64 (a), prec))
         } else {
@@ -482,7 +482,7 @@ pub {
      * assert (f_s == "1.2983e+01" && d_s == "8.2e+04"s8);
      * ===========
      */
-    def if (isChar!{U} () && isFloating!{F} ()) to {T of [U], U, "e", F} (a : F, prec : u32 = 6u32) -> T {
+    fn if (isChar!{U} () && isFloating!{F} ()) to {T of [U], U, "e", F} (a : F, prec : u32 = 6u32) -> T {
         cte if is!{U}{X of c32} {
             to![c32] (Runtime::_yrt_double_to_s8_exp (cast!f64 (a), prec))
         } else {
@@ -497,7 +497,7 @@ pub {
      * assert (to![c8] (false) == "false"s8)
      * ===========
      */
-    def if is!{U}{X of c8} to {T of [U], U, F of bool} (a : F)-> [c8] {
+    fn if is!{U}{X of c8} to {T of [U], U, F of bool} (a : F)-> [c8] {
         if (a)
             "true"s8
         else
@@ -511,7 +511,7 @@ pub {
      * assert (to![c32] (false) == "false")
      * ===========
      */
-    def if is!{U}{X of c32} to {T of [U], U, F of bool} (a : F)-> [c32] {
+    fn if is!{U}{X of c32} to {T of [U], U, F of bool} (a : F)-> [c32] {
         if (a)
             "true"
         else
@@ -532,7 +532,7 @@ pub {
      * assert (A::new (789).to![c8] () == "main::A(789)"s8);
      * =============
      */
-    def if is!{U}{X of c8} to {T of [U], U, F impl Streamable} (a : F)-> [c8] {
+    fn if is!{U}{X of c8} to {T of [U], U, F impl Streamable} (a : F)-> [c8] {
         let dmut stream = StringStream::new ();
         a.toStream (alias stream);
         stream []
@@ -553,7 +553,7 @@ pub {
      * assert (A::new (789).to![c32] () == "main::A(789)");
      * =============
      */
-    def if is!{U}{X of c32} to {T of [U], U, F impl Streamable} (a : F)-> [c32] {
+    fn if is!{U}{X of c32} to {T of [U], U, F impl Streamable} (a : F)-> [c32] {
         let dmut stream = StringStream::new ();
         a.toStream (alias stream);
         stream [].to![c32] ()
@@ -571,7 +571,7 @@ pub {
      * 
      * assert (A (12).to![c8] () == "main::A(12)"s8);
      */
-    def if is!{U}{X of c8} to {T of [U], U, struct S} (a : S)-> [c8] {
+    fn if is!{U}{X of c8} to {T of [U], U, struct S} (a : S)-> [c8] {
         let dmut stream = StringStream::new ();
         stream:.write (a);
         stream []
@@ -588,7 +588,7 @@ pub {
      * 
      * assert (A (12).to![c32] () == "main::A(12)");
      */
-    def if is!{U}{X of c32} to {T of [U], U, struct S} (a : S)-> [c32] {
+    fn if is!{U}{X of c32} to {T of [U], U, struct S} (a : S)-> [c32] {
         let dmut stream = StringStream::new ();
         stream:.write (a);
         stream [].to![c32] ()
@@ -605,7 +605,7 @@ pub {
      * assert (x == 12.0 && y == 879.0f);
      * ==========
      */
-    def if (isFloating!{F} () && isUnsigned!{U} ()) to {F, U} (a : U) -> F {
+    fn if (isFloating!{F} () && isUnsigned!{U} ()) to {F, U} (a : U) -> F {
         cast!F (Runtime::_yrt_ulong_to_double (cast!usize (a)))
     }
 
@@ -619,7 +619,7 @@ pub {
      * assert (x == 12.0 && y == -879.0f);
      * ==========
      */
-    def if (isFloating!{F} () && isSigned!{I} ()) to {F, I} (a : I) -> F {
+    fn if (isFloating!{F} () && isSigned!{I} ()) to {F, I} (a : I) -> F {
         cast!F (Runtime::_yrt_long_to_double (cast!isize (a)))
     }
 
@@ -633,7 +633,7 @@ pub {
      * assert (x == 12u64 && y == 89u32);
      * ==========
      */
-    def if (isFloating!{F} () && isUnsigned!{U} ()) to {U, F} (a : F) -> U {
+    fn if (isFloating!{F} () && isUnsigned!{U} ()) to {U, F} (a : F) -> U {
         cast!U (Runtime::_yrt_double_to_ulong (cast!f64 (a)))
     }
 
@@ -647,7 +647,7 @@ pub {
      * assert (x == -12u64 && y == -89u32);
      * ==========
      */
-    def if (isFloating!{F} () && isSigned!{I} ()) to {I, F} (a : F) -> I {
+    fn if (isFloating!{F} () && isSigned!{I} ()) to {I, F} (a : F) -> I {
         cast!I (Runtime::_yrt_double_to_long (cast!f64 (a)))
     }
 
@@ -665,7 +665,7 @@ pub {
      * @assume: the string is stripped, so the only possible char are [0-9]
      * @KnownBug: does not check the overflow capacity
      */
-    def if (isUnsigned!{T} () && isChar!{U} ()) to {T, F of [U], U} (str : F)-> T
+    fn if (isUnsigned!{T} () && isChar!{U} ()) to {T, F of [U], U} (str : F)-> T
         throws &CastFailure
     {
         to!{T, 10us, F} (str)
@@ -684,7 +684,7 @@ pub {
      * ===============
      * @KnownBug: does not check the overflow capacity
      */
-    def if (isUnsigned!{T} () && isChar!{U} ()) to {T, "x", F of [U], U} (str : F)-> T
+    fn if (isUnsigned!{T} () && isChar!{U} ()) to {T, "x", F of [U], U} (str : F)-> T
         throws &CastFailure
     {
         cte if is!{U}{X of c32} {
@@ -714,7 +714,7 @@ pub {
      * ===============
      * @KnownBug: does not check the overflow capacity
      */
-    def if (isUnsigned!{T} () && isChar!{U} ()) to {T, "b", F of [U], U} (str : F)-> T
+    fn if (isUnsigned!{T} () && isChar!{U} ()) to {T, "b", F of [U], U} (str : F)-> T
         throws &CastFailure
     {
         cte if is!{U}{X of c32} {
@@ -744,7 +744,7 @@ pub {
      * ===============
      * @KnownBug: does not check the overflow capacity
      */
-    def if (isUnsigned!{T} () && isChar!{U} ()) to {T, "o", F of [U], U} (str : F)-> T
+    fn if (isUnsigned!{T} () && isChar!{U} ()) to {T, "o", F of [U], U} (str : F)-> T
         throws &CastFailure
     {
         cte if is!{U}{X of c32} {
@@ -776,7 +776,7 @@ pub {
      * ===============
      * @KnownBug: does not check the overflow capacity
      */
-    def if (isUnsigned!{T} () && isChar!{U} ()) to {T, base : usize, F of [U], U} (str : F)-> T
+    fn if (isUnsigned!{T} () && isChar!{U} ()) to {T, base : usize, F of [U], U} (str : F)-> T
         throws &CastFailure
     {
         cte assert (36us >= base, "Maximum base is 36");
@@ -808,7 +808,7 @@ pub {
      * ===============
      * @KnownBug: does not check the overflow capacity
      */
-    def if (isSigned!{T} () && isChar!{U} ()) to {T, F of [U], U} (str : F)-> T
+    fn if (isSigned!{T} () && isChar!{U} ()) to {T, F of [U], U} (str : F)-> T
         throws &CastFailure
     {
         to!{T, 10us, F} (str)
@@ -827,7 +827,7 @@ pub {
      * ===============
      * @KnownBug: does not check the overflow capacity
      */
-    def if (isSigned!{T} () && isChar!{U} ()) to {T, base : usize, F of [U], U} (str : F)-> T
+    fn if (isSigned!{T} () && isChar!{U} ()) to {T, base : usize, F of [U], U} (str : F)-> T
         throws &CastFailure
     {
         cte assert (36us >= base, "Maximum base is 36");
@@ -870,7 +870,7 @@ pub {
      * assert (x == -12.89 && y == 89.12f);
      * ===============
      */
-    def if (isFloating!{T} ()) to {T, F of [U], U} (str : F)-> T
+    fn if (isFloating!{T} ()) to {T, F of [U], U} (str : F)-> T
         throws &CastFailure
     {
         let mut succ = false;
@@ -904,7 +904,7 @@ pub {
      * class C over A { /* full declaration omitted */ }
      * 
      * // A function that returns an option on type B
-     * def foo ()-> (&B)? { /* full declaration omitted */ } 
+     * fn foo ()-> (&B)? { /* full declaration omitted */ }
      * 
      * 
      * let b_opt : (&B)? = foo ();
@@ -913,7 +913,7 @@ pub {
      * let a_opt : (&A)? = b_opt.to!{(&A)?} ();
      * ================
      */
-    def to {T of I?, I, U over I} (a : U?)-> T {
+    fn to {T of I?, I, U over I} (a : U?)-> T {
         match a {
             Ok (x: _) => {
                 (cast!I (x))?
@@ -935,7 +935,7 @@ pub {
      * class C over A { /* full declaration omitted */ }
      * 
      * // A function that returns an object of type &A
-     * def foo ()-> &A { /* full declaration omitted */ }     
+     * fn foo ()-> &A { /* full declaration omitted */ }
      *
      *  
      * let a : &A = foo ();
@@ -946,7 +946,7 @@ pub {
      * // Otherwise the convertion throws an exception.
      * ==================
      */
-    def if (is!U{J over T}) to {U, T} (x : T)-> U
+    fn if (is!U{J over T}) to {U, T} (x : T)-> U
         throws &CastFailure
     {
         match x {
@@ -968,7 +968,7 @@ pub {
      * class C over A { /* full declaration omitted */ }
      * 
      * // A function that returns an object of type &A
-     * def foo ()-> dmut &A { /* full declaration omitted */ }     
+     * fn foo ()-> dmut &A { /* full declaration omitted */ }
      *
      *  
      * let dmut a : &A = foo ();
@@ -979,7 +979,7 @@ pub {
      * // Otherwise the convertion throws an exception.
      * ==================
      */
-    def if (is!U{J over T}) to {U, T} (dmut x : T)-> dmut U
+    fn if (is!U{J over T}) to {U, T} (dmut x : T)-> dmut U
         throws &CastFailure
     {
         match ref x {
@@ -999,7 +999,7 @@ pub {
      * /*
      *  The standard C function to print to stdout  
      * */
-     * extern (C) def printf (format : &c8, ...)-> void;
+     * extern (C) fn printf (format : &c8, ...)-> void;
      * 
      * // because of dcopy, now [c8] in no longer in the text but in the heap
      * // So it may not be ending with '\u{0}'.
@@ -1010,7 +1010,7 @@ pub {
      * printf (fmt.toStringZ (), 89, "test of string in text"s8.ptr);  // Printing 89 and test of string in text
      * ===
      */
-    def toStringZ (a : [c8])-> &c8 {
+    fn toStringZ (a : [c8])-> &c8 {
         let dmut res = core::duplication::allocArray!(c8)(a.len + 1us);
         core::duplication::memCopy (a, alias res);
         {
@@ -1032,7 +1032,7 @@ pub {
      *       - len: the maximum len  that can be read
      *   @returns: the length that was read
      * */
-     * extern (C) def read (fd : i32, buffer : &c8, len : u32)-> i32;
+     * extern (C) fn read (fd : i32, buffer : &c8, len : u32)-> i32;
      * 
      * // Allocate a buffer 
      * let dmut buf = ['\u{0}' ; new 255us];
@@ -1046,7 +1046,7 @@ pub {
      * assert (buf.len == cast!usize (len));
      * ===
      */
-    def fromStringZ {U of [c8]} (a : U)-> [c8] {
+    fn fromStringZ {U of [c8]} (a : U)-> [c8] {
         let mut len = 0us;
         for i in a {
             if (i == '\u{0}'c8) break {};
@@ -1068,7 +1068,7 @@ pub {
      * /*
      *    C function to get the value of a environment variable
      *  */
-     * extern (C) def getenv (len : u32)-> &c8;
+     * extern (C) fn getenv (len : u32)-> &c8;
      * 
      * // Retreive the value from C language, and transform it in Ymir string
      * let value = getenv ("HOME"s8.ptr).fromStringZ ();
@@ -1076,7 +1076,7 @@ pub {
      * println (value, " ", value.len);
      * ===
      */
-    def fromStringZ {U of &c8} (a : U)-> [c8]
+    fn fromStringZ {U of &c8} (a : U)-> [c8]
         throws &SegFault
     {
         let mut len = 0us;
@@ -1102,7 +1102,7 @@ mod inner {
      * @assume: a < 10
      * Transform a u64 into a c8
      */
-    pub def to {T of c8} (a : usize, base : usize) -> c8
+    pub fn to {T of c8} (a : usize, base : usize) -> c8
         throws &CastFailure
     {
         match a {
@@ -1131,7 +1131,7 @@ mod inner {
      * @assume: a < 10
      * Transform a u64 into a c8
      */
-    pub def to {T of c32} (a : usize, base : usize) -> c32
+    pub fn to {T of c32} (a : usize, base : usize) -> c32
         throws &CastFailure
     {
         match a {
@@ -1159,7 +1159,7 @@ mod inner {
      * Transform a c8 into a usize
      * @assume: a >= '0' and a <= '9' or a >= 'a' and a <= 'f'
      */
-    pub def to {T of usize} (a : c8, base : usize) -> T
+    pub fn to {T of usize} (a : c8, base : usize) -> T
         throws &CastFailure
     {        
         match a {
@@ -1197,7 +1197,7 @@ mod inner {
      * Transform a c32 into a usize
      * @assume: a >= '0' and a <= '9' or a >= 'a' and a <= 'f'
      */
-    pub def to {T of usize} (a : c32, base : usize) -> T
+    pub fn to {T of usize} (a : c32, base : usize) -> T
         throws &CastFailure
     {
         match a {

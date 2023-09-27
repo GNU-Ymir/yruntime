@@ -170,20 +170,20 @@ pub class @abstract Actor {
      * }
      * ===
      */
-    pub def receive (mut self, msg : &Object)-> void;
+    pub fn receive (mut self, msg : &Object)-> void;
 
     /**
      * Method to call to kill the actor
      * @info: it can be triggered by sending a poison pill to the actor for example
      */
-    prot def @final exit (mut self) {
+    prot fn @final exit (mut self) {
         self._sys:.remove (self._name);
     }
     
     /**
      * @returns: a reference to the actor 
      */
-    pub def getRef (mut self)-> dmut &ActorRef {        
+    pub fn getRef (mut self)-> dmut &ActorRef {
         return alias self._sys:.localActor (self._name);
     } catch {
         err : _ => {
@@ -196,7 +196,7 @@ pub class @abstract Actor {
     /**
      * @returns: the name of the actor
      */
-    pub def getName (self)-> [c8] {
+    pub fn getName (self)-> [c8] {
         self._name
     }    
 }
@@ -241,7 +241,7 @@ pub class ActorRef {
      * ===
      * @info: if the type of message `T` is not a class, it is packed inside `std::box::Box!{T}`.
      */
-    pub def send {T} (mut self, msg : T)-> void
+    pub fn send {T} (mut self, msg : T)-> void
         throws &TcpError
     {
         atomic self._stream {
@@ -258,7 +258,7 @@ pub class ActorRef {
     /**
      * @returns: the name of the actor ref
      */
-    pub def @final getName (self)-> [c8] {
+    pub fn @final getName (self)-> [c8] {
         self._name
     }
 
@@ -356,7 +356,7 @@ pub class @final ActorSystem {
     /**
      * @returns: the port binded by the listener of the actor system
      */
-    pub def getPort (self)-> u16 {
+    pub fn getPort (self)-> u16 {
         self._port
     }
         
@@ -368,7 +368,7 @@ pub class @final ActorSystem {
      * @info: 
      * This function is called by the constructor of an Actor, there is no need to call it by hand as it will do nothing    
      */
-    pub def register (mut self, dmut ac : &Actor) {    
+    pub fn register (mut self, dmut ac : &Actor) {
         atomic self {
             self._actors:.insert (ac.getName (), alias ac);
         }
@@ -381,7 +381,7 @@ pub class @final ActorSystem {
      * @info:
      * does nothing if there is no actor named `name`. This function is called by the method `exit` of an actor.
      */
-    pub def remove (mut self, name : [c8]) {
+    pub fn remove (mut self, name : [c8]) {
         atomic self {
             self._actors:.remove (name);
         }
@@ -395,7 +395,7 @@ pub class @final ActorSystem {
      * @throws: 
      *   - &ActorError: if there is no actor named `name` managed by the local actor system
      */
-    pub def localActor (mut self, name : [c8]) -> dmut &ActorRef
+    pub fn localActor (mut self, name : [c8]) -> dmut &ActorRef
         throws &ActorError
     {
         if (name !in self._actors) {
@@ -431,7 +431,7 @@ pub class @final ActorSystem {
      *       + if the connection to the remote actor system failed
      *       + if there is no actor named `name` in the remote system
      */
-    pub def remoteActor (mut self, name : [c8], addr : &SockAddress) -> dmut &ActorRef
+    pub fn remoteActor (mut self, name : [c8], addr : &SockAddress) -> dmut &ActorRef
         throws &ActorError
     {
         import std::conv;
@@ -473,7 +473,7 @@ pub class @final ActorSystem {
      * Close the actor system, and all the actors running.
      * @warning: This functions waits for the end of the treatment of already submitted messages. If these treatments are infinite loops, this function will never return.
      */
-    pub def terminate (mut self) {
+    pub fn terminate (mut self) {
         self._poisonPill:.rawSend (true)?;
         
         self._th.join ();
@@ -488,7 +488,7 @@ pub class @final ActorSystem {
      * Wait for the actor system to finish. 
      * @warning: This function will never return if the method `terminate` is never called. 
      */
-    pub def join (mut self)-> void {
+    pub fn join (mut self)-> void {
         self._pool:.join ();
         self._th.join ();        
     }
@@ -497,7 +497,7 @@ pub class @final ActorSystem {
      * The thread part of the actor system
      * This function run in background, accept new client connections, and client messages
      */
-    prv def run (mut self, _ : Thread) {
+    prv fn run (mut self, _ : Thread) {
         let dmut pill = {
             alias self._listener:.accept ()
         } catch {
@@ -592,7 +592,7 @@ pub class @final ActorSystem {
      *    - client: the stream on which the name of the actor will be read
      * @returns: the name of the actor that was read
      */
-    prv def receiveName (self, dmut client : &TcpStream) -> [c8]
+    prv fn receiveName (self, dmut client : &TcpStream) -> [c8]
         throws &TcpError
     {
         let dmut size  = 0us;        

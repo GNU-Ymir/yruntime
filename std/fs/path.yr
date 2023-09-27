@@ -151,7 +151,7 @@ pub class @final Path {
      * assert (path.toStr (sep-> "!"s8) == "!foo!test.txt"s8);
      * ============
      */
-    pub def toStr (self, sep : [c8] = "/"s8)-> [c8] {        
+    pub fn toStr (self, sep : [c8] = "/"s8)-> [c8] {        
         let dmut stream = StringStream::new ();        
         for i, j in self._parts {
             if j != 0us {
@@ -178,7 +178,7 @@ pub class @final Path {
      * assert (p != p2 && p == p2.push ("some/root/dir"s8));
      * ===
      */
-    pub def opEquals (self, o : &Path)-> bool {
+    pub fn opEquals (self, o : &Path)-> bool {
         self._parts[] == o._parts[]
     }
 
@@ -206,7 +206,7 @@ pub class @final Path {
      * assert (ipath.parts () == ["std"s8, "fs"s8, "path"s8, "some::dir"s8, "some::file"s8]);
      * ===========
      */
-    pub def push (self, path : [c8], sep : [c8] = __version WINDOWS { "\\"s8 } else { "/"s8 } ) -> &Path {
+    pub fn push (self, path : [c8], sep : [c8] = __version WINDOWS { "\\"s8 } else { "/"s8 } ) -> &Path {
         let dmut aux = Path::new (self._parts[]);
         {            
             let mut last = 0us;
@@ -254,7 +254,7 @@ pub class @final Path {
      * assert (ipath.parts () == ["std"s8, "fs"s8, "path"s8, "some::dir"s8, "some::file"s8]);
      * ===
      */
-    pub def push (self, path : [c32], sep : [c32] = __version WINDOWS { "\\" } else { "/" })-> &Path {
+    pub fn push (self, path : [c32], sep : [c32] = __version WINDOWS { "\\" } else { "/" })-> &Path {
         self.push (path.to![c8] (), sep-> sep.to![c8] ())
     }
     
@@ -279,7 +279,7 @@ pub class @final Path {
      * assert (path.toStr () == "/foo/bar/test.txt"s8);
      * ===========
      */
-    pub def push (self, path : &Path) -> &Path {
+    pub fn push (self, path : &Path) -> &Path {
         let dmut aux = Path::new (self._parts[]);
         for i in path._parts {
             aux._parts:.push (copy i);
@@ -309,7 +309,7 @@ pub class @final Path {
      * assert (rel.parts () == ["."s8, "some"s8, "relative"s8, "dir"s8, "test.txt"s8]);
      * ==========
      */
-    pub def parts (self)-> [[c8]] {
+    pub fn parts (self)-> [[c8]] {
         self._parts[]
     }
 
@@ -332,7 +332,7 @@ pub class @final Path {
      * assert (absFromRel.isAbsolute ()); 
      * ===
      */
-    pub def isAbsolute (self)-> bool {
+    pub fn isAbsolute (self)-> bool {
         if (self._parts.len () > 0us) {
             self._parts[0us] == ""s8
         } else {
@@ -372,7 +372,7 @@ pub class @final Path {
      * 
      * ===
      */
-    pub def isEmpty (self)-> bool {
+    pub fn isEmpty (self)-> bool {
         self._parts.len () == 0us
     }
     
@@ -398,7 +398,7 @@ pub class @final Path {
      * assert (root.parent ().toStr () == ""s8 && root.parent ().isEmpty ());
      * ===========
      */
-    pub def parent (self)-> &Path {
+    pub fn parent (self)-> &Path {
         if (self._parts.len () == 0us) {
             return self;
         } else {
@@ -431,7 +431,7 @@ pub class @final Path {
      * assert (empty.file () == ""s8);
      * =============
      */
-    pub def file (self)-> [c8] {
+    pub fn file (self)-> [c8] {
         if (self._parts.len () > 0us) {
             return self._parts[$ - 1us]
         }
@@ -465,7 +465,7 @@ pub class @final Path {
      * assert (empty.root () == ""s8);
      * =============
      */
-    pub def root (self)-> [c8] {
+    pub fn root (self)-> [c8] {
         if (self._parts.len () > 0us) {
             return self._parts [0us];
         }
@@ -505,7 +505,7 @@ pub class @final Path {
      * assert (path4.stripExtension (sep-> "::"s8).file () == "baz"s8);
      * ============
      */
-    pub def stripExtension (self, sep : [c8] = "."s8)-> &Path {
+    pub fn stripExtension (self, sep : [c8] = "."s8)-> &Path {
         if (self._parts.len () == 0us) {
             return self;
         }
@@ -558,7 +558,7 @@ pub class @final Path {
      * assert (path4.extension (sep-> "::"s8) == "txt"s8); 
      * ==============
      */
-    pub def extension (self, sep : [c8] = "."s8)-> [c8] {
+    pub fn extension (self, sep : [c8] = "."s8)-> [c8] {
         if (self._parts.len () > 0us) {
             let file = self.file ();
             if (file.len != 0us) {
@@ -596,7 +596,7 @@ pub class @final Path {
      * assert (empty.file  () == ".empty"s8);
      * ============
      */
-    pub def addExtension (self, ext : [c8], sep : [c8] = "."s8)-> &Path {
+    pub fn addExtension (self, ext : [c8], sep : [c8] = "."s8)-> &Path {
         let dmut aux = Vec!{[c8]}::new ();
         if (self._parts.len () > 0us) {
             for i in 0us .. self._parts.len () - 1us {
@@ -633,7 +633,7 @@ pub class @final Path {
      * assert (cwd.push (relativePath).toStr () == "./baz/file.txt"s8);
      * =====================
      */
-    pub def removePrefix (self, prefix : &Path)-> &Path {
+    pub fn removePrefix (self, prefix : &Path)-> &Path {
         if (self._parts.len () < prefix._parts.len ()) return self;
         
         for i in 0us .. prefix._parts.len () {
@@ -672,7 +672,7 @@ pub class @final Path {
      * assert (root.isPrefix (root) && rel.isPrefix (rel));
      * ===
      */
-    pub def isPrefix (self, subPath : &Path)-> bool {
+    pub fn isPrefix (self, subPath : &Path)-> bool {
         if (self._parts.len () > subPath._parts.len ()) return false;
         
         for i in 0us .. self._parts.len () {
@@ -716,7 +716,7 @@ pub class @final Path {
      *  assert (root.commonPrefix (cwd).isPrefix (root));
      * ===
      */
-    pub def commonPrefix (self, other : &Path)-> &Path {
+    pub fn commonPrefix (self, other : &Path)-> &Path {
         import std::algorithm::comparison;
         let min = comparison::min (self._parts.len (), other._parts.len ());
 
@@ -748,7 +748,7 @@ pub class @final Path {
      * assert (d.removeRoot ().toStr () == "to/somewhere"s8);
      * ====================
      */
-    pub def removeRoot (self)-> &Path {
+    pub fn removeRoot (self)-> &Path {
         if (self._parts.len () != 0us) {
             let dmut res = Vec!{[c8]}::new ();
             for i in 1us .. self._parts.len () {
