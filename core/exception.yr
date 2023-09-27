@@ -8,8 +8,8 @@ mod core::exception;
 import core::typeinfo;
 import std::stream;
 
-extern (C) def _yrt_exc_get_stack_trace ()-> [&(void)];
-extern (C) def _yrt_exc_resolve_stack_trace (trc : [&void])-> [c8];
+extern (C) fn _yrt_exc_get_stack_trace ()-> [&(void)];
+extern (C) fn _yrt_exc_resolve_stack_trace (trc : [&void])-> [c8];
 
 
 /**
@@ -45,14 +45,14 @@ pub class @abstract Exception {
         
     }
 
-    prot def hasTrace (self)-> bool {
+    prot fn hasTrace (self)-> bool {
         self.trace.len != 0us
     }
 
     /**
      * @returns: the stacktrace generated when the exception was constructed.
      */
-    pub def @final getStackTrace (self) -> [c8] {
+    pub fn @final getStackTrace (self) -> [c8] {
         __version DEBUG_LIB {
             _yrt_exc_resolve_stack_trace (self.trace)
         } else {
@@ -114,7 +114,7 @@ pub class SegFault over Exception {
 /**
  * Function called by the `assert` construction.
  */
-pub def abort (test : bool, msg : [c32])
+pub fn abort (test : bool, msg : [c32])
     throws &AssertError
 {
     import std::conv;
@@ -126,7 +126,7 @@ pub def abort (test : bool, msg : [c32])
 /**
  * Function called by the `assert` construction.
  */
-pub def abort (test : bool, msg : [c8])
+pub fn abort (test : bool, msg : [c8])
     throws &AssertError
 {
     if (!test)
@@ -136,7 +136,7 @@ pub def abort (test : bool, msg : [c8])
 /**
  * Function called by the `assert` construction.
  */
-pub def abort (test : bool)
+pub fn abort (test : bool)
     throws &AssertError
 {
     if (!test)
@@ -146,7 +146,7 @@ pub def abort (test : bool)
 /**
  * Function called by the runtime handler when a segfault occured.
  */
-pub extern (C) def _yrt_throw_seg_fault () -> void
+pub extern (C) fn _yrt_throw_seg_fault () -> void
     throws &SegFault
 {
     throw SegFault::new ()
@@ -155,7 +155,7 @@ pub extern (C) def _yrt_throw_seg_fault () -> void
 /**
  * Function called by the runtime handler when a runtime error occured.
  */
-pub extern (C) def _yrt_throw_runtime_abort (c : [c8]) -> void
+pub extern (C) fn _yrt_throw_runtime_abort (c : [c8]) -> void
     throws &RuntimeError
 {
     throw RuntimeError::new (c);

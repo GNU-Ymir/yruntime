@@ -116,7 +116,7 @@ pub class @final List {T} {
      * ============
      * @complexity: O (1)
      */
-    pub def push (mut self, val : T)-> void {
+    pub fn push (mut self, val : T)-> void {
         match ref self._tail {            
             dmut tail: &ListValue!{T} => {
                 let dmut n_node = ListValue!{T}::new (val, alias tail, alias tail.next);
@@ -150,7 +150,7 @@ pub class @final List {T} {
      * =============
      * @complexity: O (1)
      */
-    pub def pop (mut self) -> T
+    pub fn pop (mut self) -> T
         throws &OutOfArray
     {
         match ref self._tail {
@@ -187,7 +187,7 @@ pub class @final List {T} {
      * ==============
      * @complexity: O (1)
      */    
-    pub def pushFront (mut self, val : T) -> void {
+    pub fn pushFront (mut self, val : T) -> void {
         match ref self._head {            
             dmut head: &ListValue!{T} => {
                 let dmut n_node = ListValue!{T}::new (val, alias head.prev, alias head);
@@ -214,7 +214,7 @@ pub class @final List {T} {
      * ============
      * @complexity: O (1)
      */
-    pub def popFront (mut self) -> T
+    pub fn popFront (mut self) -> T
         throws &OutOfArray
     {
         match ref self._head {
@@ -243,7 +243,7 @@ pub class @final List {T} {
      * @returns: true if the list is empty
      * @complexity: O (1)
      */
-    pub def isEmpty (self) -> bool {
+    pub fn isEmpty (self) -> bool {
         self._len == 0us
     }
 
@@ -251,7 +251,7 @@ pub class @final List {T} {
      * Remove all the elements from the list
      * @complexity: O (1)
      */
-    pub def clear (mut self) -> void {
+    pub fn clear (mut self) -> void {
         match ref self._head {
             dmut head : &ListValue!{T} => { // To avoid useless allocations
                 self._head = alias head.prev;
@@ -265,7 +265,7 @@ pub class @final List {T} {
      * @returns: the value of the first element contained in the list, None if the list is empty
      * @complexity: O (1)
      */
-    pub def front (self) -> (T)? {
+    pub fn front (self) -> (T)? {
         match self._head {
             head: &ListValue!{T} => { return (head.value)? }
         }
@@ -276,7 +276,7 @@ pub class @final List {T} {
      * @returns: the value of the last element contained in the list, None if the list is empty
      * @complexity: O (1)
      */
-    pub def back (self) -> (T)? {
+    pub fn back (self) -> (T)? {
         match self._tail {
             tail : &ListValue!{T} => { return (tail.value)?; }
         }
@@ -298,7 +298,7 @@ pub class @final List {T} {
      * ==========
      * @complexity: O (1)
      */
-    pub def begin (self) -> dmut &ListIterator!{T} {
+    pub fn begin (self) -> dmut &ListIterator!{T} {
         return ListIterator!{T}::new (0us, self._head);
     }
 
@@ -315,7 +315,7 @@ pub class @final List {T} {
      * ============
      * @complexity: O (1)
      */
-    pub def end (self) -> &ListIterator!{T} {
+    pub fn end (self) -> &ListIterator!{T} {
         match self._tail {
             x : &ListValue!{T} => {
                 return ListIterator!{T}::new (self._len, x.next);
@@ -341,7 +341,7 @@ pub class @final List {T} {
          * assert (l != a && l == b);
          * ===
          */
-        pub def opEquals (self, o : &List!{T})-> bool {
+        pub fn opEquals (self, o : &List!{T})-> bool {
             if (self._len != o._len) return false;
 
             let mut selfC = self._head, mut oC = o._head;
@@ -370,7 +370,7 @@ pub class @final List {T} {
      * ===
      * @complexity: O (n)
      */
-    pub def opIndex (self)-> mut [mut T] {
+    pub fn opIndex (self)-> mut [mut T] {
         let mut res : [mut T] = core::duplication::allocArray!{T} (self._len);
         for i, j in self {
             res[j] = i;            
@@ -584,7 +584,7 @@ class @final ListIterator {T} {
         with _current = node, _index = i
     {}
 
-    pub def next (mut self) -> void {
+    pub fn next (mut self) -> void {
         match self._current {
             x: &ListValue!T => {
                 self._index += 1us;
@@ -593,7 +593,7 @@ class @final ListIterator {T} {
         }
     }
 
-    pub def get {0} (self) -> T {
+    pub fn get {0} (self) -> T {
         match self._current {
             x : &ListValue!{T} =>
                 return x.value; 
@@ -602,11 +602,11 @@ class @final ListIterator {T} {
         __pragma!panic ();
     }
 
-    pub def get {1} (self) -> usize {
+    pub fn get {1} (self) -> usize {
         return self._index;
     }
 
-    pub def opEquals (self, o : &ListIterator!T) -> bool {
+    pub fn opEquals (self, o : &ListIterator!T) -> bool {
         self._index == o._index
     }
     

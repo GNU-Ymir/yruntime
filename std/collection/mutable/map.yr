@@ -133,7 +133,7 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
      * println (x); // {bar=>main::A(32), foo=>main::A(12)}
      * ==========
      */
-    pub def insert (mut self, key : K, dmut val : V) -> void {        
+    pub fn insert (mut self, key : K, dmut val : V) -> void {
         if (self._data.len == 0us) { self:.grow (); }
         else if ((self._loaded * 100us) / (self._data.len) > self._load_factor) { self:.grow (); }        
         let h = cast!usize (hash (key)); 
@@ -146,7 +146,7 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
      *    - len: the size of the allocated array (number of allocated linked list)
      * @complexity: O (n) where n is the number of element in the HashMap
      */
-    pub def fit (mut self, len : usize) {
+    pub fn fit (mut self, len : usize) {
         if (len != 0us) {
             let dmut aux = core::duplication::allocArray!{&MapNode!{K, dmut V}} (len);
             // Filling the data with empty elements, to be usable, allocArray is not safe!?
@@ -199,7 +199,7 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
      * ===
      * @complexity: O (1 + n/k), with n the number of possible collision and k the number of keys, in average n/k are negligeable
      */
-    pub def find (self, key : K) -> const V?
+    pub fn find (self, key : K) -> const V?
     {
         if (self._data.len != 0us) {
             let h = cast!usize (hash (key));
@@ -234,7 +234,7 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
      * ===
      * @complexity: O (1 + n/k), with n the number of possible collision and k the number of keys, in average n/k are negligeable
      */
-    pub def find (mut self, key : K) -> dmut V?
+    pub fn find (mut self, key : K) -> dmut V?
     {
         if (self._data.len != 0us) {
             let h = cast!usize (hash (key));
@@ -260,7 +260,7 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
      * =============
      * @complexity: O (1 + n/k), with n the number of possible collision and k the number of keys, in average n/k are negligeable
      */
-    pub def opContains (self, key: K) -> bool {
+    pub fn opContains (self, key: K) -> bool {
         if (self._data.len != 0us) {
             let h = cast!usize (hash (key));        
             match (self._data [h % self._data.len]) {
@@ -287,7 +287,7 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
      * ===========
      * @complexity: O (1 + n/k + z) with n the number of possible collision, and k the number of keys, and z the time taken by resizing if the load is lower than the min load factor, in average n/k and z are negligeable
      */
-    pub def remove (mut self, key : K) -> void {
+    pub fn remove (mut self, key : K) -> void {
         if (self._data.len != 0us) {
             let h = cast!usize (hash (key));
             match ref (self._data [h % self._data.len]) {
@@ -330,7 +330,7 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
      * =============
      * @complexity: O (1 + n/k + z) with n the number of possible collision, and k the number of keys, and z the time taken by resizing if the load is higher than the load factor, in average n/k and z are negligeable
      */
-    pub def opIndex (self, k : K) -> const V
+    pub fn opIndex (self, k : K) -> const V
         throws &OutOfArray
     {
         match self.find (k) {
@@ -358,7 +358,7 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
      * =============
      * @complexity: O (1 + n/k + z) with n the number of possible collision, and k the number of keys, and z the time taken by resizing if the load is higher than the load factor, in average n/k and z are negligeable
      */
-    pub def opIndex (mut self, k : K) -> dmut V
+    pub fn opIndex (mut self, k : K) -> dmut V
         throws &OutOfArray
     {
         let dmut r = alias self:.find (k);
@@ -390,7 +390,7 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
      * =============
      * @complexity: O (1 + n/k + z) with n the number of possible collision, and k the number of keys, and z the time taken by resizing if the load is higher than the load factor, in average n/k and z are negligeable
      */
-    pub def opIndexAssign (mut self, k : K, dmut v : V) {
+    pub fn opIndexAssign (mut self, k : K, dmut v : V) {
         self:.insert (k, alias v);
     }
 
@@ -415,7 +415,7 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
      * ===
      * @complexity: O(n)
      */
-    pub def opIndex (self)-> mut [mut (K, V)] {
+    pub fn opIndex (self)-> mut [mut (K, V)] {
         let mut res : [mut (K, V)] = core::duplication::allocArray!{(K, V)} (self._size);
         let mut index = 0us;
         for i, j in self {
@@ -440,7 +440,7 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
      * =============
      * @complexity: O (1)
      */
-    pub def clear (mut self) {
+    pub fn clear (mut self) {
         self._data = [];
         self._loaded = 0us;
         self._size = 0us;
@@ -456,14 +456,14 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
      * assert (x.len () == 2us);
      * ==========
      */
-    pub def len (self) -> usize {
+    pub fn len (self) -> usize {
         self._size
     }
 
     /**
      * @returns: true if there is no element in the map
      */
-    pub def isEmpty (self)-> bool {
+    pub fn isEmpty (self)-> bool {
         self._size == 0us
     }
 
@@ -485,7 +485,7 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
      * ============
      * @return: an iterator on the beginning of the map
      */
-    pub def begin (self) -> dmut &MapIterator!{K, dmut V} {
+    pub fn begin (self) -> dmut &MapIterator!{K, dmut V} {
         if (self._loaded != 0us) {
             for i in 0us .. self._data.len {
                 match self._data [i] {
@@ -500,7 +500,7 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
     /**
      * @returns: the iterator pointing to the end of the map
      */
-    pub def end (self) -> &MapIterator!{K, dmut V} {
+    pub fn end (self) -> &MapIterator!{K, dmut V} {
         MapIterator!{K, dmut V}::new (0us, 0us, [], self._empty)
     }
     
@@ -513,7 +513,7 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
      *    - key: the key 
      *    - val: the value
      */
-    prv def insertFast (mut self, h : usize, key : K, dmut val : V) {
+    prv fn insertFast (mut self, h : usize, key : K, dmut val : V) {
         let mut inserted = false;
         match ref (self._data [h % self._data.len]) {
             dmut x : &MapValue!{K, dmut V} => {
@@ -535,7 +535,7 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
      * Make the table containing the values shrink
      * @complexity: O (n + m), with n the new size, and m the number of element contained in the old table that are reinserted
      */
-    prv def shrink (mut self) -> void {
+    prv fn shrink (mut self) -> void {
         if (self._loaded == 0us) {
             self._data = []; return {}
         }
@@ -575,7 +575,7 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
      * otherwise the size is mutliplied by 2
      * @complexity: O (n + m), with n the new size, and m the number of element contained in the old table that are reinserted
      */
-    prv def grow (mut self) -> void {
+    prv fn grow (mut self) -> void {
         if (self._data.len == 0us) {
             self._data = core::duplication::allocArray!{&MapNode!{K, dmut V}} (MapConst::DEFAULT_ALLOC_SIZE);
             for i in 0us .. self._data.len {
@@ -688,7 +688,7 @@ pub class @final HashMap {K, V of dmut Z, class Z} {
 class @abstract MapNode {K, V of dmut Z, class Z} {
     prot self () {}
     
-    pub def opEquals (self, _ : &MapNode!{K, dmut V})-> bool;
+    pub fn opEquals (self, _ : &MapNode!{K, dmut V})-> bool;
     
     impl Streamable;
 }
@@ -761,7 +761,7 @@ class @final MapValue {K, V of dmut Z, class Z} over MapNode!{K, dmut V} {
      *    - val: the value associated to the key
      * @returns: true if a new node has been allocated, false otherwise
      */
-    pub def insert (mut self, h : usize, key : K, dmut val : V) -> bool {
+    pub fn insert (mut self, h : usize, key : K, dmut val : V) -> bool {
         cte assert (__pragma!compile ({self.key == key;}), "unusable key type : (" ~ K ~ ") must be be comparable to itself (opEquals or opCmp)");
         
         if (self.key == key) {
@@ -787,7 +787,7 @@ class @final MapValue {K, V of dmut Z, class Z} over MapNode!{K, dmut V} {
      * @returns: the value in an option type, or None if there is no node containing a hash equal to h
      * @complexity: O (n), with n the length of the list
      */
-    pub def find (self, h : usize, key : K) -> const V? {
+    pub fn find (self, h : usize, key : K) -> const V? {
         cte assert (__pragma!compile ({self.key == key;}), "unusable key type : (" ~ K ~ ") must be be comparable to itself (opEquals or opCmp)");
         
         if (self.key == key) {
@@ -811,7 +811,7 @@ class @final MapValue {K, V of dmut Z, class Z} over MapNode!{K, dmut V} {
      * @returns: the value in an option type, or None if there is no node containing a hash equal to h
      * @complexity: O (n), with n the length of the list
      */
-    pub def find (mut self, h : usize, key : K) -> dmut V? {
+    pub fn find (mut self, h : usize, key : K) -> dmut V? {
         cte assert (__pragma!compile ({self.key == key;}), "unusable key type : (" ~ K ~ ") must be be comparable to itself (opEquals or opCmp)");
         
         if (self.key == key) {
@@ -837,7 +837,7 @@ class @final MapValue {K, V of dmut Z, class Z} over MapNode!{K, dmut V} {
      *    - the list, with no node containing the hash h,
      * ===========
      */
-    pub def remove (mut self, h : usize, key : K, ref mut rm : bool) -> dmut &MapNode!{K, dmut V} {
+    pub fn remove (mut self, h : usize, key : K, ref mut rm : bool) -> dmut &MapNode!{K, dmut V} {
         cte assert (__pragma!compile ({self.key == key;}), "unusable key type : (" ~ K ~ ") must be be comparable to itself (opEquals or opCmp)");
         
         if (self.key == key) {
@@ -858,7 +858,7 @@ class @final MapValue {K, V of dmut Z, class Z} over MapNode!{K, dmut V} {
      * @returns: true, if such a node was found, false otherwise
      * @complexity: O (n), with n the length of the list
      */
-    pub def opContains (self, h : usize, key : K) -> bool {
+    pub fn opContains (self, h : usize, key : K) -> bool {
         cte assert (__pragma!compile ({self.key == key;}), "unusable key type : (" ~ K ~ ") must be be comparable to itself (opEquals or opCmp)");
         
         if (self.key == key) {
@@ -961,7 +961,7 @@ pub class @final MapIterator {K, V of dmut Z, class Z} {
     /**
      * Two iterators are equals, if the current nodes are equals
      */
-    pub def opEquals (self, o : &MapIterator!{K, dmut V}) -> bool {
+    pub fn opEquals (self, o : &MapIterator!{K, dmut V}) -> bool {
         self._currentNode == o._currentNode
     }
 
@@ -972,7 +972,7 @@ pub class @final MapIterator {K, V of dmut Z, class Z} {
      * None, it the current node is empty
      * =======     
      */
-    pub def get {0} (self) -> K {
+    pub fn get {0} (self) -> K {
         match (self._currentNode) {
             x : &MapValue!{K, dmut V} =>
                 return x.key;
@@ -988,7 +988,7 @@ pub class @final MapIterator {K, V of dmut Z, class Z} {
      * None, it the current node is empty
      * =======     
      */
-    pub def get {1} (self) -> const V {
+    pub fn get {1} (self) -> const V {
         match (self._currentNode) {
             x : &MapValue!{K, dmut V} =>
                 return x.val;
@@ -1013,7 +1013,7 @@ pub class @final MapIterator {K, V of dmut Z, class Z} {
      * }
      * ===========
      */
-    pub def next (mut self) -> void {
+    pub fn next (mut self) -> void {
         match (self._currentNode) {
             x : &MapValue!{K, dmut V} => {
                 match (x.next) {

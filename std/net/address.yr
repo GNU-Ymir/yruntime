@@ -21,7 +21,7 @@
 
 mod std::net::address;
 
-extern (C) def printf (c : &c8, ...);
+extern (C) fn printf (c : &c8, ...);
 
 import core::object, core::typeinfo, core::exception;
 import std::io, std::stream;
@@ -40,12 +40,12 @@ pub class @abstract IpAddress {
     /**
      * @returns: true if the two addresses are equal
      */
-    pub def opEquals (self, ot : &IpAddress)-> bool;
+    pub fn opEquals (self, ot : &IpAddress)-> bool;
 
     /**
      * @returns: true if the address is an ipv4 address
      */
-    pub def @final isV4 (self)-> bool {
+    pub fn @final isV4 (self)-> bool {
         match self {
             Ipv4Address () => { true }
             _ => { false }
@@ -55,7 +55,7 @@ pub class @abstract IpAddress {
     /**
      * @returns: true if the address is an ipv6 address
      */
-    pub def @final isV6 (self)-> bool {
+    pub fn @final isV6 (self)-> bool {
         match self {
             Ipv6Address () => { true }
             _ => { false }
@@ -87,19 +87,19 @@ pub class @abstract SockAddress {
     /**
      * @returns: true if the two addresses are equal
      */
-    pub def opEquals (self, ot : &SockAddress)-> bool;
+    pub fn opEquals (self, ot : &SockAddress)-> bool;
 
     /**
      * @returns: the ip part of the socket address
      */
-    pub def @final ip (self)-> &IpAddress {
+    pub fn @final ip (self)-> &IpAddress {
         self._ip
     }
 
     /**
      * @returns: the port part of the socket address
      */
-    pub def @final port (self)-> u16 {
+    pub fn @final port (self)-> u16 {
         self._port
     }
     
@@ -149,14 +149,14 @@ pub class @final Ipv4Address over IpAddress {
     /**
      * @returns: true if this is a loopback address (in range 127.0.0.0/8), false otherwise
      */
-    pub def isLoopback (self)-> bool {
+    pub fn isLoopback (self)-> bool {
         self._a == 127u8
     }
 
     /**
      * @returns: true if this is an unspecified address (0.0.0.0), false otherwise
      */
-    pub def isUnspecified (self)-> bool {
+    pub fn isUnspecified (self)-> bool {
         (self._a == 0u8) && (self._b == 0u8) && (self._c == 0u8) && (self._d == 0u8)
     }
 
@@ -167,7 +167,7 @@ pub class @final Ipv4Address over IpAddress {
      *    - 172.16.0.0/12
      *    - 192.168.0.0/16
      */
-    pub def isPrivate (self)-> bool {
+    pub fn isPrivate (self)-> bool {
         (self._a == 10u8) ||
         (self._a == 172u8 && self._b > 16u8) ||
         (self._a == 192u8 && self._b == 168u8)             
@@ -198,7 +198,7 @@ pub class @final Ipv4Address over IpAddress {
     /**
      * @returns: the four part of the ip A.B.C.D in a single u32 (A << 24 | B << 16 | C << 8 | D)
      */
-    pub def toN (self)-> u32 {
+    pub fn toN (self)-> u32 {
         let mut n : u32 = 0u32;
         let dmut pack : &u8 = alias cast!(&u8) (cast!(&void) (&n));
         *pack = self._a;
@@ -215,7 +215,7 @@ pub class @final Ipv4Address over IpAddress {
     /**
      * @return: the different parts of the ip addr
      */
-    pub def opIndex (self)-> [u8 ; 4us] {
+    pub fn opIndex (self)-> [u8 ; 4us] {
         let dmut res = [0u8 ; 4us];
         res[0] = self._a;
         res[1] = self._b;
@@ -309,7 +309,7 @@ pub class @final Ipv6Address over IpAddress {
     /**
      * @returns: true if this is a loopback address `::1`.
      */
-    pub def isLoopback (self)-> bool {
+    pub fn isLoopback (self)-> bool {
         for i in 0us .. 7us {
             if (self._values[i] != 0u16) return false;
         }
@@ -320,7 +320,7 @@ pub class @final Ipv6Address over IpAddress {
     /**
      * @returns: true if this address is unspecified `::`
      */
-    pub def isUnspecified (self)-> bool {
+    pub fn isUnspecified (self)-> bool {
         for i in 0us .. 8us {
             if (self._values[i] != 0u16) return false;
         }
@@ -331,14 +331,14 @@ pub class @final Ipv6Address over IpAddress {
     /**
      * @returns: the eight segments of the ipv6 address
      */
-    pub def opIndex (self)-> [u16 ; 8u32] {
+    pub fn opIndex (self)-> [u16 ; 8u32] {
         self._values
     }
 
     /**
      * @returns: the segment of the address encoded in bytes
      */
-    pub def toN (self)-> [u8 ; 16u32] {
+    pub fn toN (self)-> [u8 ; 16u32] {
         let dmut res = [0u8 ; 16u32];
         let mut j = 0us;
         for i in 0us .. 8us {
@@ -440,7 +440,7 @@ pub class @final SockAddrV6 over SockAddress {
  * let local_ipv6 = ("[::1]:8080"s8).to!{&SockAddress} (); 
  * ===
  */
-pub def to {C of &SockAddress, T of [U], U of c8} (addr : T)-> &SockAddress
+pub fn to {C of &SockAddress, T of [U], U of c8} (addr : T)-> &SockAddress
     throws &CastFailure
 {
     if (addr.len == 0us) throw CastFailure::new (T::typeinfo, C::typeinfo);
@@ -462,7 +462,7 @@ pub def to {C of &SockAddress, T of [U], U of c8} (addr : T)-> &SockAddress
  * let remot_ip = ("192.168.122.7:8080"s8).to!{&SockAddrV4} ();
  * ===
  */
-pub def to {C of &SockAddrV4, T of [U], U of c8} (addr : T)-> &SockAddrV4
+pub fn to {C of &SockAddrV4, T of [U], U of c8} (addr : T)-> &SockAddrV4
     throws &CastFailure
 {
     import std::algorithm::searching;
@@ -500,7 +500,7 @@ pub def to {C of &SockAddrV4, T of [U], U of c8} (addr : T)-> &SockAddrV4
  * let remot_ip = ("[fe80:1::8:2]:8080"s8).to!{&SockAddrV6} ();
  * ===
  */
-pub def to {C of &SockAddrV6, T of [U], U of c8} (addr : T)-> &SockAddrV6
+pub fn to {C of &SockAddrV6, T of [U], U of c8} (addr : T)-> &SockAddrV6
     throws &CastFailure
 {
     import std::algorithm::searching;
@@ -543,7 +543,7 @@ pub def to {C of &SockAddrV6, T of [U], U of c8} (addr : T)-> &SockAddrV6
  * let remote_ipv6 = ("fe80:1::8:2"s8).to!{&IpAddress} ();
  * ===
  */
-pub def to {C of &IpAddress, T of [U], U of c8} (addr : T)-> &IpAddress
+pub fn to {C of &IpAddress, T of [U], U of c8} (addr : T)-> &IpAddress
     throws &CastFailure
 {
     import std::algorithm::searching;
@@ -570,7 +570,7 @@ pub def to {C of &IpAddress, T of [U], U of c8} (addr : T)-> &IpAddress
  * let remote = ("192.168.128.32"s8).to!{&Ipv4Address} ();
  * ===
  */
-pub def to {C of &Ipv4Address, T of [U], U} (addr : T)-> &Ipv4Address
+pub fn to {C of &Ipv4Address, T of [U], U} (addr : T)-> &Ipv4Address
     throws &CastFailure
 {
     let dmut tzer = Tokenizer::new (tokens-> ["."s8]);
@@ -626,7 +626,7 @@ pub def to {C of &Ipv4Address, T of [U], U} (addr : T)-> &Ipv4Address
  * let remote_ipv6 = ("fe80:1::8:2"s8).to!{&Ipv6Address} ();
  * ===
  */
-pub def to {C of &Ipv6Address, T of [U], U of c8} (addr : T)-> &Ipv6Address
+pub fn to {C of &Ipv6Address, T of [U], U of c8} (addr : T)-> &Ipv6Address
     throws &CastFailure
 {
     let dmut lex = Lexer::new (addr, tokens-> [":"s8, "::"s8, ":::"s8], skips-> [":"s8], comments-> []);

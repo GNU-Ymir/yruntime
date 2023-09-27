@@ -19,11 +19,11 @@ import std::time::_;
 
 __version LINUX {
 
-    extern (C) def getpid ()-> u32;
+    extern (C) fn getpid ()-> u32;
 
-    extern (C) def realpath (name : &c8, buffer : &c8)-> &c8;
+    extern (C) fn realpath (name : &c8, buffer : &c8)-> &c8;
 
-    extern (C) def _yrt_exc_panic_no_trace ();
+    extern (C) fn _yrt_exc_panic_no_trace ();
     
     aka EI_MAG0 = 0
     aka EI_MAG1 = 1
@@ -120,7 +120,7 @@ __version LINUX {
          * Update the elf loading and register the reflect symbols
          * The elf loader is able to read the dynamically loaded libraries
          */
-        pub def update (mut self) {
+        pub fn update (mut self) {
             self:.listMapFiles ();
 
             for k in self._pageMapping {
@@ -134,7 +134,7 @@ __version LINUX {
         /**
          * Update the elf loading, but for only one file
          */
-        pub def update (mut self, name : [c8]) {
+        pub fn update (mut self, name : [c8]) {
             if name !in self._readElf {
                 self:.readElf (name);
                 self._readElf:.insert (name);
@@ -144,7 +144,7 @@ __version LINUX {
         /**
          * Read an elf file and register the symbols
          */
-        def readElf (mut self, filename : [c8]) {
+        fn readElf (mut self, filename : [c8]) {
             with dmut file = File::open (Path::new (filename)) {
                 let content = file:.readBytesAll ();
                 
@@ -189,7 +189,7 @@ __version LINUX {
          *     - names: the string table 
          *     - offset: the program offset of the symbols
          */
-        def appendSymbols (mut self, syms : &Elf64_Sym, nb : usize, names : &c8) {
+        fn appendSymbols (mut self, syms : &Elf64_Sym, nb : usize, names : &c8) {
             let mut nb_func = 0, mut nb_obj = 0;
             for i in 0us .. nb {
                 let sym = (*(syms + (i * sizeof (Elf64_Sym))));
@@ -229,7 +229,7 @@ __version LINUX {
         /**
          * Read the map file
          */
-        def listMapFiles (mut self) {
+        fn listMapFiles (mut self) {
             let pid = getpid ();
             let mapFile = "/proc/"s8 ~ pid.(conv::to)![c8] () ~ "/maps"s8;
 
@@ -252,7 +252,7 @@ __version LINUX {
         /**
          * Parse a line mapping and register the elf to read
          */
-        def parseMapping (mut self, line : [c8]) {
+        fn parseMapping (mut self, line : [c8]) {
             import std::algorithm::searching;
             
             let namei = rfind (line, ' 'c8);

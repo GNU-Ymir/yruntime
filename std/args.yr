@@ -21,7 +21,7 @@
  * | output : [c32] = "" // A string, optional          
  *  -> Foo;
  *
- * def main (args : [[c8]]) {
+ * fn main (args : [[c8]]) {
  *    let x = ArgumentParser!(Foo)::new ()
  *        :.info!"help" (short-> "h", comments-> "print this help and exit", isHelp-> true)
  *        :.info!"sum" (comments-> "sum the integers (default find the max)")
@@ -120,7 +120,7 @@ import std::syntax::_;
 
 
 
-extern (C) def printf (c : &c8, ...);
+extern (C) fn printf (c : &c8, ...);
 
 /**
  * The list of tokens that can be found inside a list of arguments
@@ -207,7 +207,7 @@ pub class ArgumentParser {struct T} {
      * assert (args.foo == 1 && args.bar == 2);
      * ===================
      */
-    pub def info {long : [c32]} (mut self, short : [c32] = "", comments : [c32] = "", isHelp : bool = false) -> dmut &ArgumentParser {
+    pub fn info {long : [c32]} (mut self, short : [c32] = "", comments : [c32] = "", isHelp : bool = false) -> dmut &ArgumentParser {
         cte assert (__pragma!has_field (T, long), "Type " ~ T::typeid ~ " has no field named : '" ~ long ~ "'");
         cte if (__pragma!has_field (T, long)) {
             self._content:.insert (long, Argument (long, short, comments));
@@ -247,7 +247,7 @@ pub class ArgumentParser {struct T} {
      * assert (args.foo == 1 && args.bar == 2);
      * ===================
      */
-    pub def positional {long : [c32]} (mut self, comments : [c32] = "") -> dmut &ArgumentParser {
+    pub fn positional {long : [c32]} (mut self, comments : [c32] = "") -> dmut &ArgumentParser {
         cte assert (__pragma!has_field (T, long), "Type " ~ T::typeid ~ " has no field named : '" ~ long ~ "'");
         cte if (__pragma!has_field (T, long)) {
             cte assert (!__pragma!field_has_value (T, long), "Positional argument '" ~ long ~ "' can't have a default value");
@@ -269,7 +269,7 @@ pub class ArgumentParser {struct T} {
      *   - ArgumentError: if the parsing failed, the method diagnosis can be used to compute a readable error
      *   - HelpRequired: a argument set as 'isHelp', has been filled
      */
-    pub def parse (self, line : [[c8]])-> T
+    pub fn parse (self, line : [[c8]])-> T
         throws &ArgumentError, &HelpRequired
     {
         let dmut tokenizer = Tokenizer::new (tokens-> ["="]);
@@ -293,7 +293,7 @@ pub class ArgumentParser {struct T} {
      *   - ArgumentError: if the parsing failed, the method diagnosis can be used to compute a readable error
      *   - HelpRequired: a argument set as 'isHelp', has been filled
      */
-    pub def parse (self, line : [[c32]])-> T
+    pub fn parse (self, line : [[c32]])-> T
         throws &ArgumentError, &HelpRequired
     {
         let dmut tokenizer = Tokenizer::new (tokens-> ["="]);
@@ -318,7 +318,7 @@ pub class ArgumentParser {struct T} {
      * Missing argument 'N' of type '[int... ]'
      * ==================
      */
-    pub def diagnosis (self, err : &ArgumentError, isSub : bool = false) -> [c32] {
+    pub fn diagnosis (self, err : &ArgumentError, isSub : bool = false) -> [c32] {
         match err.subError {
             Ok (sub: &ArgumentError) => {
                 if (isSub) {
@@ -387,7 +387,7 @@ pub class ArgumentParser {struct T} {
      *
      * =================
      */
-    pub def usage (self, cmd : [c32] = "usage")-> [c32] {
+    pub fn usage (self, cmd : [c32] = "usage")-> [c32] {
         let mut ret = self.simpleUsage (cmd-> cmd) ~ "\n\n";
         let mut haspos = false, mut hasmand = false, mut hasopt = false;
         
@@ -441,7 +441,7 @@ pub class ArgumentParser {struct T} {
      * usage: [--h] [--sum] [--v] [--o str] --useless int [ int... ](N)
      * =====================
      */
-    pub def simpleUsage (self, cmd : [c32] = "usage") -> [c32] {
+    pub fn simpleUsage (self, cmd : [c32] = "usage") -> [c32] {
         let mut ret = cmd ~ " ";
         let mut mand = "", mut opt = "", mut obj = "", mut pos = "";
             
@@ -505,7 +505,7 @@ pub class ArgumentParser {struct T} {
  * let args = ArgumentParser!{MyArgs}::new ();
  * ======================
  */
-prv def parseValue {class T} (line : [[c32]], ref mut read : usize) -> T
+prv fn parseValue {class T} (line : [[c32]], ref mut read : usize) -> T
     throws &ArgumentError
 {
     {
@@ -528,7 +528,7 @@ prv def parseValue {class T} (line : [[c32]], ref mut read : usize) -> T
  * assert (optionName ("test") == ("test", false));
  * ==================
  */
-prv def optionName (value : [c32])-> ([c32], bool) {
+prv fn optionName (value : [c32])-> ([c32], bool) {
     if (value.len > 2us) {
         if value [0us .. 2us] == ArgsTokens::DHYPHEN { return (value [2us .. $], true); }
         if value [0us .. 1us] == ArgsTokens::SHYPHEN { return (value [1us .. $], true); }
@@ -548,7 +548,7 @@ prv def optionName (value : [c32])-> ([c32], bool) {
  *   - helps: the list of arguments that throw HelpRequired
  *   - positional: the list of positional arguments
  */
-prv def parseValueMain {struct T} (line : [[c32]], cuts : &HashMap!{[c32], Argument}, helps: &HashSet![c32], positional : &Vec![c32]) -> T
+prv fn parseValueMain {struct T} (line : [[c32]], cuts : &HashMap!{[c32], Argument}, helps: &HashSet![c32], positional : &Vec![c32]) -> T
     throws &ArgumentError, &HelpRequired
 {
     let dmut res = alias ([0u8 ; sizeof (T)]);
@@ -612,7 +612,7 @@ prv def parseValueMain {struct T} (line : [[c32]], cuts : &HashMap!{[c32], Argum
 /**
  * Parse a sub struct value
  */
-prv def parseValue {struct T} (line : [[c32]], ref mut read : usize) -> T
+prv fn parseValue {struct T} (line : [[c32]], ref mut read : usize) -> T
     throws &ArgumentError, &AssertError
 {
     let dmut used = HashSet!{[c32]}::new ();
@@ -639,7 +639,7 @@ prv def parseValue {struct T} (line : [[c32]], ref mut read : usize) -> T
 /**
  * Parse the field of a struct
  */
-prv def parseField {struct T} (line : [[c32]], name : [c32], dmut init : [u8], used : bool)-> [[c32]]
+prv fn parseField {struct T} (line : [[c32]], name : [c32], dmut init : [u8], used : bool)-> [[c32]]
     throws &ArgumentError
 {        
     cte for i in 0us .. (__pragma!field_names (T)).len {
@@ -691,7 +691,7 @@ prv def parseField {struct T} (line : [[c32]], name : [c32], dmut init : [u8], u
  * Parse an array value in the lexer
  * @info: the returned array can be empty
  */
-prv def parseValue {T of [U], U} (line : [[c32]], ref mut read : usize)-> T
+prv fn parseValue {T of [U], U} (line : [[c32]], ref mut read : usize)-> T
     throws &ArgumentCastError
 {
 
@@ -718,7 +718,7 @@ prv def parseValue {T of [U], U} (line : [[c32]], ref mut read : usize)-> T
  * @throws: 
  *    - &ArgumentError: if the next word in the lexer does not contains a int value
  */
-prv def parseValue {T of i64} (line : [[c32]], ref mut read : usize) -> i64
+prv fn parseValue {T of i64} (line : [[c32]], ref mut read : usize) -> i64
     throws &ArgumentCastError, &AssertError
 {
     read += 1us;
@@ -734,7 +734,7 @@ prv def parseValue {T of i64} (line : [[c32]], ref mut read : usize) -> i64
  * @throws: 
  *    - &ArgumentError: if the next word in the lexer does not contains a int value
  */
-prv def parseValue {T of i32} (line : [[c32]], ref mut read : usize) -> i32
+prv fn parseValue {T of i32} (line : [[c32]], ref mut read : usize) -> i32
     throws &ArgumentCastError, &AssertError
 {
     read += 1us;
@@ -750,7 +750,7 @@ prv def parseValue {T of i32} (line : [[c32]], ref mut read : usize) -> i32
  * @throws: 
  *    - &ArgumentError: if the string does not contain a int value (nor a hexa decimal value)
  */
-prv def parseValue {T of i32} (txt: [c32]) -> i32
+prv fn parseValue {T of i32} (txt: [c32]) -> i32
     throws &ArgumentCastError
 {
     cast!i32 (parseValue!i64 (txt))
@@ -761,7 +761,7 @@ prv def parseValue {T of i32} (txt: [c32]) -> i32
  * @throws: 
  *    - &ArgumentError: if the string does not contain a int value (nor a hexa decimal value)
  */
-prv def parseValue {T of i64} (txt: [c32]) -> i64
+prv fn parseValue {T of i64} (txt: [c32]) -> i64
     throws &ArgumentCastError
 {
     if (txt == "") {
@@ -785,7 +785,7 @@ prv def parseValue {T of i64} (txt: [c32]) -> i64
 /**
  * @returns: YesNo::YES
  */
-prv def parseValue {T of YesNo} (_ : [[c32]], ref mut read : usize)-> YesNo {
+prv fn parseValue {T of YesNo} (_ : [[c32]], ref mut read : usize)-> YesNo {
     read;
     YesNo::YES
 }
@@ -795,7 +795,7 @@ prv def parseValue {T of YesNo} (_ : [[c32]], ref mut read : usize)-> YesNo {
  * @throws: 
  *    - &ArgumentError: if neither "true" or "false" is found in the next word of the lexer
  */
-prv def if (!is!T {U of YesNo}) parseValue {T of bool} (line : [[c32]], ref mut read : usize) -> bool
+prv fn if (!is!T {U of YesNo}) parseValue {T of bool} (line : [[c32]], ref mut read : usize) -> bool
     throws &ArgumentCastError, &AssertError
 {
     read += 1us;
@@ -811,7 +811,7 @@ prv def if (!is!T {U of YesNo}) parseValue {T of bool} (line : [[c32]], ref mut 
  * @throws: 
  *    - &ArgumentError: if the string is neither equal to "true" or "false" 
  */
-prv def if (!is!T {U of YesNo}) parseValue {T of bool} (txt: [c32]) -> bool
+prv fn if (!is!T {U of YesNo}) parseValue {T of bool} (txt: [c32]) -> bool
     throws &ArgumentCastError
 {
     match txt {
@@ -828,7 +828,7 @@ prv def if (!is!T {U of YesNo}) parseValue {T of bool} (txt: [c32]) -> bool
  * @throws: 
  *    - &ArgumentError: if the next word in the lexer does not contains a float value
  */
-prv def parseValue {T of f64} (line : [[c32]], ref mut read : usize) -> f64
+prv fn parseValue {T of f64} (line : [[c32]], ref mut read : usize) -> f64
     throws &ArgumentCastError, &AssertError
 {
     read += 1us;
@@ -844,7 +844,7 @@ prv def parseValue {T of f64} (line : [[c32]], ref mut read : usize) -> f64
  * @throws: 
  *    - &ArgumentError: if string does not contain a float value
  */
-prv def parseValue {T of f64} (txt: [c32]) -> f64
+prv fn parseValue {T of f64} (txt: [c32]) -> f64
     throws &ArgumentCastError
 {
     if (txt == "") {
@@ -866,7 +866,7 @@ prv def parseValue {T of f64} (txt: [c32]) -> f64
  * @throws : 
  *    - &ArgumentError: if the reading of the string failed
  */
-prv def parseValue {T of [U], U of c32} (line : [[c32]], ref mut read : usize)-> [c32]
+prv fn parseValue {T of [U], U of c32} (line : [[c32]], ref mut read : usize)-> [c32]
     throws &ArgumentCastError
 {
     read += 1us;
@@ -882,7 +882,7 @@ prv def parseValue {T of [U], U of c32} (line : [[c32]], ref mut read : usize)->
  * @throws : 
  *    - &ArgumentError: if the reading of the string failed
  */
-prv def parseValue {T of [U], U of c8} (line : [[c32]], ref mut read : usize)-> [c8]
+prv fn parseValue {T of [U], U of c8} (line : [[c32]], ref mut read : usize)-> [c8]
     throws &ArgumentCastError
 {
     read += 1us;
@@ -896,7 +896,7 @@ prv def parseValue {T of [U], U of c8} (line : [[c32]], ref mut read : usize)-> 
 /**
  * Parse a string literal in the lexer
  */
-prv def parseValue {T of [U], U of c32} (line : [c32])-> [c32]
+prv fn parseValue {T of [U], U of c32} (line : [c32])-> [c32]
 {
     line
 } 
@@ -904,7 +904,7 @@ prv def parseValue {T of [U], U of c32} (line : [c32])-> [c32]
 /**
  * Parse a string literal in the lexer
  */
-prv def parseValue {T of [U], U of c8} (line : [c32])-> [c8]
+prv fn parseValue {T of [U], U of c8} (line : [c32])-> [c8]
 {
     line.to![c8] ()
 }
@@ -912,7 +912,7 @@ prv def parseValue {T of [U], U of c8} (line : [c32])-> [c8]
 /**
  * Verify that the struct is correctly filled, and that no mandatory arguments are missing
  */
-prv def verifyInit {struct T} (used : &HashSet![c32], dmut init : [u8])
+prv fn verifyInit {struct T} (used : &HashSet![c32], dmut init : [u8])
     throws &ArgumentError
 {
     __pragma!fake_throw (&ArgumentError); // if the struct is empty
@@ -944,7 +944,7 @@ prv def verifyInit {struct T} (used : &HashSet![c32], dmut init : [u8])
 /**
  * @returns: a string containing the name of the type for usage printing
  */
-prv def usageValue (t : TypeInfo) -> [c32] {
+prv fn usageValue (t : TypeInfo) -> [c32] {
     if (equals (t, i64::typeinfo)) { return usageValue!i64 (); }
     if (equals (t, i32::typeinfo)) { return usageValue!i32 (); }
     if (equals (t, bool::typeinfo)) { return usageValue!bool (); }
@@ -960,46 +960,46 @@ prv def usageValue (t : TypeInfo) -> [c32] {
 /**
  * @returns: a string containing the name of the type for usage printing
  */
-prv def if (is!T {U of i32} || is!T {U of i64}) usageValue {T} () -> [c32] {
+prv fn if (is!T {U of i32} || is!T {U of i64}) usageValue {T} () -> [c32] {
     "int"
 }
 
 /**
  * @returns: a string containing the name of the type for usage printing
  */
-prv def if (! (is!T {U of YesNo})) usageValue {T of bool} () -> [c32] {
+prv fn if (! (is!T {U of YesNo})) usageValue {T of bool} () -> [c32] {
     "bool"
 }
 
 /**
  * @returns: a string containing the name of the type for usage printing
  */
-prv def usageValue {T of [U], U of c32} () -> [c32] {
+prv fn usageValue {T of [U], U of c32} () -> [c32] {
     "str"
 }
 
 /**
  * @returns: a string containing the name of the type for usage printing
  */
-prv def usageValue {T of [U], U of c8} () -> [c32] {
+prv fn usageValue {T of [U], U of c8} () -> [c32] {
     "str"
 }
 
 /**
  * @returns: a string containing the name of the type for usage printing
  */
-prv def usageValue {T of f64} () -> [c32] {
+prv fn usageValue {T of f64} () -> [c32] {
     "float"
 }
 
 /**
  * @returns: a string containing the name of the type for usage printing
  */
-prv def usageValue {T of [U], U} () -> [c32] {
+prv fn usageValue {T of [U], U} () -> [c32] {
     "[ " ~ usageValue!U () ~ "... ]"
 }
 
-prv def usageValue {struct T} () -> [c32] {
+prv fn usageValue {struct T} () -> [c32] {
     let mut mand = "", mut opt = "", mut obj = "", mut pos = "";
     
     cte for i in 0us .. (__pragma!field_names (T)).len {
@@ -1027,11 +1027,11 @@ prv def usageValue {struct T} () -> [c32] {
     opt ~ mand ~ obj ~ pos
 }
 
-prv def usageValue {class T} () -> [c32] {
+prv fn usageValue {class T} () -> [c32] {
     ""
 }
 
-prv def usageValue {U of YesNo} () -> [c32] {
+prv fn usageValue {U of YesNo} () -> [c32] {
     ""
 }
 

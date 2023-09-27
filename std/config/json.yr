@@ -62,7 +62,7 @@ pub macro json {
         }
     }
 
-    def dict ("{" a=(dictEntry) b=("," inner=dictEntry)* "}") skips (" " | "\n" | "\t" | "\r") {
+    fn dict ("{" a=(dictEntry) b=("," inner=dictEntry)* "}") skips (" " | "\n" | "\t" | "\r") {
         {
             import std::config::data;
             let dmut d_#{__index} = Dict::new ();
@@ -79,14 +79,14 @@ pub macro json {
         }
     }
 
-    def emptyDict ("{" "}") skips (" " | "\n" | "\t" | "\r") {
+    fn emptyDict ("{" "}") skips (" " | "\n" | "\t" | "\r") {
         {
             import std::config::data;
             Dict::new ()
         }
     }
 
-    def array ("[" a=(array | dict | value) b=("," inner=(array | dict | value))* "]") skips (" " | "\n" | "\t" | "\r") {
+    fn array ("[" a=(array | dict | value) b=("," inner=(array | dict | value))* "]") skips (" " | "\n" | "\t" | "\r") {
         {
             import std::config::data;
             let dmut array_#{__index} = Array::new ();
@@ -98,7 +98,7 @@ pub macro json {
         }
     }
     
-    def dictEntry (key=__str ":" value=(array | dict | value)) skips (" " | "\n" | "\t" | "\r") {
+    fn dictEntry (key=__str ":" value=(array | dict | value)) skips (" " | "\n" | "\t" | "\r") {
         {
             import std::config::data, std::conv;
             
@@ -110,7 +110,7 @@ pub macro json {
         }
     }
 
-    def value (a=__expr) skips (" " | "\n" | "\t" | "\r") {
+    fn value (a=__expr) skips (" " | "\n" | "\t" | "\r") {
         {
             import std::config::_;
         
@@ -147,7 +147,7 @@ enum
  * let config = json::parse (str);
  * ==============
  */
-pub def parse (content : [c8])-> &Dict
+pub fn parse (content : [c8])-> &Dict
     throws &SyntaxError
 {
     import std::conv;
@@ -167,7 +167,7 @@ pub def parse (content : [c8])-> &Dict
  * let config = json::parse (str);
  * ==============
  */
-pub def parse (content : [c32])-> &Dict
+pub fn parse (content : [c32])-> &Dict
     throws &SyntaxError
 {
     let dmut lex = Lexer!{c32}::new (content, tokens-> JsonTokens::members);
@@ -190,7 +190,7 @@ pub def parse (content : [c32])-> &Dict
  * println (json::dump (config));
  * ===
  */
-pub def dump (cfg : &Config)-> [c8] {
+pub fn dump (cfg : &Config)-> [c8] {
     let dmut stream = StringStream::new ();
     Dumper::dump (alias stream, cfg);
     stream[]
@@ -212,7 +212,7 @@ mod Parser {
      * @throws: 
      *    - &SyntaxError: if the format is not respected 
      */
-    pub def parseDict (dmut lex : &Lexer!{c32})-> &Dict
+    pub fn parseDict (dmut lex : &Lexer!{c32})-> &Dict
         throws &SyntaxError
     {
         let dmut dict = Dict::new ();
@@ -245,7 +245,7 @@ mod Parser {
      * Parse an identifier
      * @info: identifier and string are the same, but this function does not return a &Str
      */
-    pub def parseIdentifier (dmut lex : &Lexer!{c32})-> [c32]
+    pub fn parseIdentifier (dmut lex : &Lexer!{c32})-> [c32]
         throws &SyntaxError 
     {
         import std::stream, std::conv;
@@ -302,7 +302,7 @@ mod Parser {
      * @throws: 
      *    - &SyntaxError: if the format is not respected
      */
-    pub def parseString (dmut lex : &Lexer!{c32})-> &Str
+    pub fn parseString (dmut lex : &Lexer!{c32})-> &Str
         throws &SyntaxError
     {
         Str::new (parseIdentifier (alias lex))
@@ -318,7 +318,7 @@ mod Parser {
      * ============
      * @assume: the \u is already read in the lexer
      */
-    pub def parseUnicode (dmut lex : &Lexer!{c32})-> c32
+    pub fn parseUnicode (dmut lex : &Lexer!{c32})-> c32
         throws &SyntaxError
     {
         let (next, l, c) = lex:.next ();
@@ -355,7 +355,7 @@ mod Parser {
      * }
      * ===============
      */
-    pub def parseValue (dmut lex : &Lexer!{c32})-> &Config    
+    pub fn parseValue (dmut lex : &Lexer!{c32})-> &Config
         throws &SyntaxError
     {
         let (begin, _, _) = lex:.nextNoConsume ();
@@ -388,7 +388,7 @@ mod Parser {
      * @throws: 
      *    - &SyntaxError: if the format is not respected
      */
-    pub def parseInt (dmut lex : &Lexer!{c32}) -> &Config
+    pub fn parseInt (dmut lex : &Lexer!{c32}) -> &Config
         throws &SyntaxError
     {
         import std::conv;
@@ -421,7 +421,7 @@ mod Parser {
      * @throws: 
      *    - &SyntaxError: if the format is not respected
      */
-    pub def parseArray (dmut lex : &Lexer!{c32}) -> &Array
+    pub fn parseArray (dmut lex : &Lexer!{c32}) -> &Array
         throws &SyntaxError
     {
         let dmut arr = Array::new ();
@@ -455,7 +455,7 @@ mod Parser {
 
 mod Dumper {
 
-    pub def dump (dmut stream : &StringStream, cfg : &Config, indent : i32 = 0) {
+    pub fn dump (dmut stream : &StringStream, cfg : &Config, indent : i32 = 0) {
         match cfg {
             x : &Dict => {
                 Dumper::dumpDict (alias stream, x, indent-> indent)
@@ -479,7 +479,7 @@ mod Dumper {
         }
     }
 
-    pub def dumpArray (dmut stream : &StringStream, x : &Array, indent : i32 = 0) {
+    pub fn dumpArray (dmut stream : &StringStream, x : &Array, indent : i32 = 0) {
         stream:.write ("["s8);
         let mut z = 0;
         let mut returned = false;
@@ -517,7 +517,7 @@ mod Dumper {
         stream:.write ("]"s8);
     }
 
-    pub def dumpDict (dmut stream : &StringStream, d : &Dict, indent : i32 = 0) {
+    pub fn dumpDict (dmut stream : &StringStream, d : &Dict, indent : i32 = 0) {
         stream:.write ("{"s8);
         
         if (d.len () != 0us) {

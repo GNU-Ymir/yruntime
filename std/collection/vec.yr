@@ -160,7 +160,7 @@ pub class @final Vec {T} {
      * ===============
      * @complexity: O (n), with n = self._len when reallocation is necessary, but O(1) in average when the capacity of the vector is big enough.
      */
-    pub def push (mut self, val : T) -> void {
+    pub fn push (mut self, val : T) -> void {
         if (self._data.len == self._len) {
             self:.grow ();
         }
@@ -187,7 +187,7 @@ pub class @final Vec {T} {
      * ======================
      * @complexity: O (n), with n = self._len when reallocation is necessary, but O(1) in average when the vector does not need fit to avoid memory waste.
      */
-    pub def pop (mut self) -> T
+    pub fn pop (mut self) -> T
         throws &OutOfArray
     {
         if (self._len == 0us) {
@@ -216,7 +216,7 @@ pub class @final Vec {T} {
      * ======================
      * @complexity: O (n), with n = self._len when reallocation is necessary, but O(1) in average when the vector does not need fit to avoid memory waste.
      */
-    pub def pop (mut self, nb : u64) 
+    pub fn pop (mut self, nb : u64)
     {
         if (self._len > cast!usize (nb)) self._len -= cast!usize (nb);
         else self._len = 0us;
@@ -239,7 +239,7 @@ pub class @final Vec {T} {
      * ======================
      * @complexity: O (n), with n = self._len, but O (n - i) in average, as shifting is necessary for every elements after `i`.
      */
-    pub def remove (mut self, i : u64)
+    pub fn remove (mut self, i : u64)
     {
         if (self._len <= cast!usize (i)) return {}
         for j in cast!usize (i) .. self._len {
@@ -271,7 +271,7 @@ pub class @final Vec {T} {
      * ==============
      * @complexity: O (n), with n = self._len
      */
-    pub def fit (mut self) {
+    pub fn fit (mut self) {
         let mut aux : [mut T] = core::duplication::allocArray!T (self._len);
         core::duplication::memCopy!T (self._data, alias aux);
         self._data = alias aux;
@@ -303,7 +303,7 @@ pub class @final Vec {T} {
      * =============
      * @complexity: O (n), with n = self._len
      */
-    pub def reserve (mut self, size : usize) {
+    pub fn reserve (mut self, size : usize) {
         if (self._data.len >= size) return {}
         let mut aux : [mut T] = core::duplication::allocArray!T (size);
         core::duplication::memCopy!T (self._data, alias aux);
@@ -325,7 +325,7 @@ pub class @final Vec {T} {
      * =============
      * @Complexity: O (1)
      */
-    pub def clear (mut self) {
+    pub fn clear (mut self) {
         self._len = 0us;
         self._data = [];
     }
@@ -355,7 +355,7 @@ pub class @final Vec {T} {
          * ============
          * @complexity: O (self.len ())
          */
-        pub def opEquals (self, o : &Vec!{T}) -> bool {
+        pub fn opEquals (self, o : &Vec!{T}) -> bool {
             if (self._len != o._len) return false;
             for i in 0us .. self._len {
                 if (self._data [i] != o._data [i]) return false;
@@ -378,7 +378,7 @@ pub class @final Vec {T} {
          * ============
          * @complexity: O (self.len ())
          */
-        pub def opEquals (self, o : [T]) -> bool {
+        pub fn opEquals (self, o : [T]) -> bool {
             if (self._len != o.len) return false;
             for i in 0us .. self._len {
                 if (self._data [i] != o [i]) return false;                
@@ -402,7 +402,7 @@ pub class @final Vec {T} {
      * ==========
      * @complexity: O (1)
      */
-    pub def opIndex (self) -> [T] {
+    pub fn opIndex (self) -> [T] {
         self._data [0us .. self._len]
     }
 
@@ -414,7 +414,7 @@ pub class @final Vec {T} {
      * assert (v[1us .. $ - 1us] == [2, 3]);
      * ===
      */
-    pub def opIndex (self, r : ..usize)-> [T] {
+    pub fn opIndex (self, r : ..usize)-> [T] {
         self._data [r.fst .. r.scd]
     }
 
@@ -436,7 +436,7 @@ pub class @final Vec {T} {
      * ===========
      * @complexity: O (1)
      */
-    pub def if (isIntegral!{I} ()) opIndexAssign {I} (mut self, i : I, val : T) {
+    pub fn if (isIntegral!{I} ()) opIndexAssign {I} (mut self, i : I, val : T) {
         self._data [i] = val;
     }
 
@@ -456,14 +456,14 @@ pub class @final Vec {T} {
      * ================
      * @complexity: O (1)
      */
-    pub def if (isIntegral!{I} ()) opIndex {I} (self, i : I)-> T {
+    pub fn if (isIntegral!{I} ()) opIndex {I} (self, i : I)-> T {
         return self._data [i];
     }
     
     /**
      * @return: the number of element the vector can store without reallocation.
      */
-    pub def capacity (self) -> usize {
+    pub fn capacity (self) -> usize {
         self._data.len
     }
 
@@ -477,7 +477,7 @@ pub class @final Vec {T} {
      * }
      * ==========
      */
-    pub def begin (self)-> dmut &VecIterator!T {
+    pub fn begin (self)-> dmut &VecIterator!T {
         return VecIterator::new (0us, self._len, self._data);
     }
 
@@ -491,7 +491,7 @@ pub class @final Vec {T} {
      * }
      * ==========
      */
-    pub def end (self) -> &VecIterator!T {
+    pub fn end (self) -> &VecIterator!T {
         return VecIterator::new (self._len, self._len, self._data);
     }
 
@@ -584,7 +584,7 @@ pub class @final Vec {T} {
      * Change the size of the capacity to write other elements
      * @complexity: O (n), with n = self._len
      */
-    prv def grow (mut self) {
+    prv fn grow (mut self) {
         if (self._data.len == 0us) { // empty
             self._data = alias core::duplication::allocArray!T (VecConst::DEFAULT_ALLOC_SIZE);
         }  else {
@@ -645,28 +645,28 @@ pub class @final VecIterator {T} {
      * Compare two iterators.
      * Iterators are equals if they points to the same index.
      */
-    pub def opEquals (self, o : &VecIterator!T) -> bool {
+    pub fn opEquals (self, o : &VecIterator!T) -> bool {
         self._index == o._index 
     }
 
     /**
      * Move the iterator to the next element in the vector.
      */
-    pub def next (mut self) {
+    pub fn next (mut self) {
         self._index += 1us;
     }
 
     /**
      * @returns: the value pointed by the iterator
      */
-    pub def get {0} (self) -> T {
+    pub fn get {0} (self) -> T {
         __pragma!trusted ({ self._data [self._index] })
     }
     
     /**
      * @returns: the index in the vector, to which the iterator is pointing.
      */
-    pub def get {1} (self) -> usize {
+    pub fn get {1} (self) -> usize {
         self._index
     }
     

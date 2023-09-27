@@ -35,25 +35,25 @@ __version LINUX {
     
     import etc::runtime::gc;
 
-    extern (C) def getpgid ()-> i32;
-    extern (C) def dup2 (stream : i32, type : u32)-> i32;
-    extern (C) def _yrt_print_error (format : &(c8), ...);
-    extern (C) def fork ()-> u32;
-    extern (C) def execvp (cmd : &c8, args : &(&c8))-> i32;
-    extern (C) def _yrt_exit (i : i32);
-    extern (C) def waitpid (pid : u32, dmut status : &i32, ig : i32);
-    extern (C) def kill (pid : u32, sig : i32)-> i32;
-    extern (C) def chdir (path : &c8)-> i32;
-    extern (C) def printf (c : &c8, ...);
+    extern (C) fn getpgid ()-> i32;
+    extern (C) fn dup2 (stream : i32, type : u32)-> i32;
+    extern (C) fn _yrt_print_error (format : &(c8), ...);
+    extern (C) fn fork ()-> u32;
+    extern (C) fn execvp (cmd : &c8, args : &(&c8))-> i32;
+    extern (C) fn _yrt_exit (i : i32);
+    extern (C) fn waitpid (pid : u32, dmut status : &i32, ig : i32);
+    extern (C) fn kill (pid : u32, sig : i32)-> i32;
+    extern (C) fn chdir (path : &c8)-> i32;
+    extern (C) fn printf (c : &c8, ...);
 
     mod allocMod {T} {
-        pub extern (C) def malloc (size : u32)-> dmut T;
+        pub extern (C) fn malloc (size : u32)-> dmut T;
     }
 
 
-    extern (C) def memcpy (_ : &c8, _ : &c8, size : usize)-> void;
-    extern (C) def free (a : &void);
-    extern (C) def GC_is_disabled()-> i32;
+    extern (C) fn memcpy (_ : &c8, _ : &c8, size : usize)-> void;
+    extern (C) fn free (a : &void);
+    extern (C) fn GC_is_disabled()-> i32;
 
     /**
      * SubProcess class running a command or a program in a given directory. 
@@ -112,7 +112,7 @@ __version LINUX {
             with self (path.toStr (), args, cwd-> cwd, redirectStdout -> redirectStdout, redirectStdin-> redirectStdin, redirectStderr-> redirectStderr)
         {}
         
-        prv def run (mut self) {
+        prv fn run (mut self) {
             _yrt_disable_GC ();
             self.pid = fork (); // if nothing is written in the fork process the pages are not copied
             // Thus fork is lightweight
@@ -139,7 +139,7 @@ __version LINUX {
             }
         }
 
-        prv def child (mut self) {
+        prv fn child (mut self) {
             self._stderr:.opipe ().setNonBlocking ();
             self._stdout:.opipe ().setNonBlocking ();    
 
@@ -206,7 +206,7 @@ __version LINUX {
          * }  
          * ===
          */
-        pub def stdin (mut self) -> dmut &OPipe {
+        pub fn stdin (mut self) -> dmut &OPipe {
             alias self._stdin:.opipe ()
         }
 
@@ -220,7 +220,7 @@ __version LINUX {
          * }  
          * ===
          */
-        pub def stdout (mut self)-> dmut &IPipe {
+        pub fn stdout (mut self)-> dmut &IPipe {
             alias (self._stdout:.ipipe ())
         }
 
@@ -234,7 +234,7 @@ __version LINUX {
          * }  
          * ===
          */
-        pub def stderr (mut self)-> dmut &IPipe  {
+        pub fn stderr (mut self)-> dmut &IPipe  {
             alias (self._stderr:.ipipe ())
         }
 
@@ -243,7 +243,7 @@ __version LINUX {
          * @info: 
          * this function return immediately
          */
-        pub def isFinished (self)-> bool {
+        pub fn isFinished (self)-> bool {
             waitpid (self.pid, null, 1);
             if (kill (self.pid, 0) == -1) return true;
 
@@ -254,7 +254,7 @@ __version LINUX {
          * Wait for the end of the subprocess
          * @returns: the return code of the subprocess
          */
-        pub def wait (mut self)-> i32 {
+        pub fn wait (mut self)-> i32 {
             let mut status = 0i32;
             self._stdin:.dispose ();
             waitpid (self.pid, alias &status, 0);
@@ -284,13 +284,13 @@ __version WINDOWS {
     
     import etc::c::files;
 
-    extern (C) def CreateProcessA (appName : &c8, cmdLine : &c8, processAttr : &void, threadAttr : &void, inheritHandle : i32, creationFlags : i32, env : &void, currentDir : &c8, startupInfo : &STARTUPINFO, processInfo : &PROCESS_INFORMATION)-> i32;
+    extern (C) fn CreateProcessA (appName : &c8, cmdLine : &c8, processAttr : &void, threadAttr : &void, inheritHandle : i32, creationFlags : i32, env : &void, currentDir : &c8, startupInfo : &STARTUPINFO, processInfo : &PROCESS_INFORMATION)-> i32;
 
-    extern (C) def SetHandleInformation (handle : &void, flag : i32, value : i32)-> i32;
+    extern (C) fn SetHandleInformation (handle : &void, flag : i32, value : i32)-> i32;
     
-    extern (C) def WaitForSingleObject (handle : &void, timeout : i32)-> i32;
+    extern (C) fn WaitForSingleObject (handle : &void, timeout : i32)-> i32;
 
-    extern (C) def GetExitCodeProcess (handle : &void, status : &i32)-> i32;
+    extern (C) fn GetExitCodeProcess (handle : &void, status : &i32)-> i32;
 
 
     struct
@@ -345,11 +345,11 @@ __version WINDOWS {
 
         pub self run (path : &Path, args : [[c8]], cwd : &Path = Path::new (".")) with self (path.toStr (), args, cwd-> cwd) {}
         
-        prv def run (mut self) {
+        prv fn run (mut self) {
             self:.createChild ();               
         }
 
-        prv def createChild (mut self) {
+        prv fn createChild (mut self) {
             let dmut stream = StringStream::new ();
             stream:.write (self.cmd, " ");
             for i, a in self.args {
@@ -377,19 +377,19 @@ __version WINDOWS {
             self._stderr:.opipe ():.dispose ();
         }
 
-        pub def stdin (mut self) -> dmut &OPipe {
+        pub fn stdin (mut self) -> dmut &OPipe {
             alias self._stdin:.opipe ()
         }
         
-        pub def stdout (mut self)-> dmut &IPipe {
+        pub fn stdout (mut self)-> dmut &IPipe {
             alias (self._stdout:.ipipe ())
         }
 
-        pub def stderr (mut self)-> dmut &IPipe  {
+        pub fn stderr (mut self)-> dmut &IPipe  {
             alias (self._stderr:.ipipe ())
         }
 
-        pub def isFinished (self)-> bool {
+        pub fn isFinished (self)-> bool {
             let mut status = 0i32;
 
             
@@ -399,7 +399,7 @@ __version WINDOWS {
             return true;            
         }
         
-        pub def wait (mut self)-> i32 {
+        pub fn wait (mut self)-> i32 {
             let mut status = 0i32;
             self._stdin:.dispose ();
             
@@ -448,21 +448,21 @@ __version LINUX {
          * @params : 
          *     - msg: the data to write in the pipe
          */
-        pub def write (mut self, msg : [c8]) {
+        pub fn write (mut self, msg : [c8]) {
             write (self._pipe, msg.ptr, msg.len);
         }
 
         /**
          * @returns: the file descriptor of the pipe
          */
-        pub def getHandle (self)-> i32 {
+        pub fn getHandle (self)-> i32 {
             self._pipe
         }
 
         /**
          * Set the pipe to non blocking meaning that from now on, we can write in the pipe without waiting the read on the other end
          */
-        pub def setNonBlocking (mut self) {
+        pub fn setNonBlocking (mut self) {
             let err_flags = fcntl(self._pipe, FileFlags::F_GETFL, 0u32);
             fcntl(self._pipe, FileFlags::F_SETFL, err_flags | O_NONBLOCK);
         }    
@@ -498,7 +498,7 @@ __version LINUX {
          * Read raw data from the pipe
          * @returns: all the data that were in the pipe
          */
-        pub def read (mut self) -> [c8] {
+        pub fn read (mut self) -> [c8] {
             let dmut ret = Vec!(c8)::new ();
             loop {
                 let mut c = '\u{0}'c8;
@@ -517,7 +517,7 @@ __version LINUX {
          *    - len: the number of bytes to read 
          * @returns: some of the data that were in the pipe
          */
-        pub def readSome (mut self, len : u32 = 1u32)-> [c8] {
+        pub fn readSome (mut self, len : u32 = 1u32)-> [c8] {
             let dmut buf = ['\u{0}'c8 ; new len];
             let n = read (self._pipe, alias buf.ptr, (sizeof c8 * buf.len));
             if (n != 0is && n != -1) {
@@ -530,14 +530,14 @@ __version LINUX {
         /**
          * @returns: the file handle of the pipe
          */
-        pub def getHandle (self)-> i32 {
+        pub fn getHandle (self)-> i32 {
             self._pipe
         }
 
         /**
          * Change the behaviour of the pipe. From now on, the read function will return immediately even if nothing was read
          */
-        pub def setNonBlocking (mut self) {
+        pub fn setNonBlocking (mut self) {
             let err_flags = fcntl(self._pipe, FileFlags::F_GETFL, 0u32);
             fcntl(self._pipe, FileFlags::F_SETFL, err_flags | O_NONBLOCK);
         }
@@ -569,11 +569,11 @@ __version LINUX {
             with _read = IPipe::new (pipes [0]), _write = OPipe::new (pipes [1])
         {}
 
-        pub def opipe (mut self)-> dmut &OPipe {
+        pub fn opipe (mut self)-> dmut &OPipe {
             alias self._write
         }
 
-        pub def ipipe (mut self)-> dmut &IPipe {
+        pub fn ipipe (mut self)-> dmut &IPipe {
             alias self._read
         }
 
@@ -585,7 +585,7 @@ __version LINUX {
         }        
     }
 
-    prv def createPipes ()-> [i32; 2u32] {
+    prv fn createPipes ()-> [i32; 2u32] {
         let dmut ret = [0i32; 2u32];
         etc::c::files::pipe (alias (ret).ptr);
         return ret;
@@ -602,17 +602,17 @@ __version WINDOWS {
         pub self (pipe : &void) with _pipe = pipe
         {}
         
-        pub def write (mut self, msg : [c8]) {
+        pub fn write (mut self, msg : [c8]) {
             WriteFile (self._pipe, msg.ptr, cast!i32 (msg.len), null, null);
         }
 
-        pub def setNonBlocking (self) {
+        pub fn setNonBlocking (self) {
             if (SetHandleInformation (self._pipe, 1, 0) != 1) {
                 __pragma!panic ();
             }
         }
 
-        pub def getHandle (mut self) -> &void {
+        pub fn getHandle (mut self) -> &void {
             self._pipe
         }
         
@@ -641,17 +641,17 @@ __version WINDOWS {
         {}
 
         
-        pub def setNonBlocking (self) {
+        pub fn setNonBlocking (self) {
             if (SetHandleInformation (self._pipe, 1, 0) != 1) {
                 __pragma!panic ();
             }
         }
 
-        pub def getHandle (mut self) -> &void {
+        pub fn getHandle (mut self) -> &void {
             self._pipe
         }
         
-        pub def read (mut self)-> [c8] {
+        pub fn read (mut self)-> [c8] {
             let dmut res = Vec!{c8}::new ();
             loop {
                 let mut c = '\u{0}'c8;
@@ -667,7 +667,7 @@ __version WINDOWS {
             return res[];
         }
 
-        pub def readSome (mut self, len : u32 = 1u32)-> [c8] {
+        pub fn readSome (mut self, len : u32 = 1u32)-> [c8] {
             let dmut buf = ['\u{0}'c8 ; new len];
             let mut n = 0i32;
             ReadFile (self._pipe, alias buf.ptr, cast!i32 (sizeof c8 * buf.len), alias &n, null);
@@ -706,11 +706,11 @@ __version WINDOWS {
         {}
 
 
-        pub def opipe (mut self)-> dmut &OPipe {
+        pub fn opipe (mut self)-> dmut &OPipe {
             alias self._opipe
         }
 
-        pub def ipipe (mut self)-> dmut &IPipe {
+        pub fn ipipe (mut self)-> dmut &IPipe {
             alias self._ipipe
         }
 
@@ -729,10 +729,10 @@ __version WINDOWS {
     | bInheritHandle : i32 = 1
      -> SECURITY_ATTRIBUTES;
     
-    extern (C) def CreatePipe (mut readP : &(mut &void), mut writeP : &(mut &void), saAttr : &SECURITY_ATTRIBUTES, ig : i32)-> i32;
-    extern (C) def SetHandleInformation (pipe : &void, flag : i32, ig : i32)-> i32;
+    extern (C) fn CreatePipe (mut readP : &(mut &void), mut writeP : &(mut &void), saAttr : &SECURITY_ATTRIBUTES, ig : i32)-> i32;
+    extern (C) fn SetHandleInformation (pipe : &void, flag : i32, ig : i32)-> i32;
 
-    def createPipes () -> (&void, &void) {
+    fn createPipes () -> (&void, &void) {
         let mut writeP : &void = null;
         let mut readP : &void = null;
 

@@ -37,14 +37,14 @@
  *    impl Packable;
  * }
  * 
- * def foo () -> [u8] {
+ * fn foo () -> [u8] {
  *     let x = X::new ([1, 2, 3]);
  * 
  *     // Transform the instance x into a packet of bytes
  *     x.pack ()   
  * }
  * 
- * def main () {
+ * fn main () {
  *     // This byte packet contains an instance of X
  *     let packet : [u8] = foo ();
  * 
@@ -92,7 +92,7 @@ pub trait Packable {
      * Basically this function create a flattened version of the class that can be send over a socket
      * This packet contains all the necessary information to recreate a perfect copy of the object 
      */
-    pub def pack (self)-> [u8] {                
+    pub fn pack (self)-> [u8] {
         cte if (__pragma!compile ({self::super;})) {
         }
         
@@ -117,7 +117,7 @@ pub trait Packable {
      * @params: 
      *     - packet: the vector to fill with object data
      */
-    pub def pack (self, dmut packet : &Vec!u8) {                        
+    pub fn pack (self, dmut packet : &Vec!u8) {
         let name = (__pragma!mangle (typeof (self))).to![c8] ();
         internal_pack::pack![c8] (alias packet, name);
         
@@ -139,7 +139,7 @@ pub trait Packable {
      * @returns: 
      *    - the number of bytes read inside the packet
      */
-    pub def __stdnetwork__unpackContent (mut self, packet : [u8]) -> usize
+    pub fn __stdnetwork__unpackContent (mut self, packet : [u8]) -> usize
         throws &UnpackError
     {
         cte if (typeof (__pragma!local_tupleof (self))::arity != 0u32) {
@@ -184,7 +184,7 @@ pub trait Packable {
      * @params: 
      *    - packet: the vector to fill with the content of the object
      */
-    prot def __stdnetwork__packContent (self, dmut packet : &Vec!u8)  {
+    prot fn __stdnetwork__packContent (self, dmut packet : &Vec!u8)  {
         cte if (typeof (__pragma!local_tupleof (self))::arity == 0u32) {
             packet;
         } else {
@@ -208,7 +208,7 @@ pub trait Packable {
  *      + the packet is no valid (some data are missing)
  *      + the packet refers to a type that does not exist in the current process (cf. std::reflect)
  */
-pub def unpack (mut packet : [u8])-> dmut &Object
+pub fn unpack (mut packet : [u8])-> dmut &Object
     throws &UnpackError
 {
     let dmut name : [c8] = [];
@@ -232,30 +232,30 @@ pub def unpack (mut packet : [u8])-> dmut &Object
 
 mod internal_pack {
 
-    pub def pack {T of [U], U} (dmut packet : &Vec!u8, data : T) {
+    pub fn pack {T of [U], U} (dmut packet : &Vec!u8, data : T) {
         pack!usize (alias packet, data.len);
         for i in data {
             pack!U (alias packet, i);
         }
     }
 
-    pub def pack {T impl Packable} (dmut packet : &Vec!u8, data : T) {
+    pub fn pack {T impl Packable} (dmut packet : &Vec!u8, data : T) {
         data.pack (alias packet);
     }
     
-    pub def pack {struct T} (dmut pack : &Vec!u8, data : T) {
+    pub fn pack {struct T} (dmut pack : &Vec!u8, data : T) {
         for i in __pragma!tupleof (data) {
             internal_pack::pack (alias pack, i);
         }        
     }
 
-    pub def pack {T of (U,), U...} (dmut pack : &Vec!u8, data : T) {
+    pub fn pack {T of (U,), U...} (dmut pack : &Vec!u8, data : T) {
         for i in data {
             internal_pack::pack (alias pack, i);
         }
     }
     
-    pub def pack {T} (dmut packet : &Vec!u8, data : T) {
+    pub fn pack {T} (dmut packet : &Vec!u8, data : T) {
         cte if (is!(T) {class U}) {
             cte assert (false, "Can't pack type " ~ T ~ " that does not implement packable");
         }
@@ -271,7 +271,7 @@ mod internal_pack {
 
 mod internal_unpack {
 
-    pub def unpack {T} (dmut u8_ptr : &u8, packet : [u8]) -> (usize, usize)
+    pub fn unpack {T} (dmut u8_ptr : &u8, packet : [u8]) -> (usize, usize)
         throws &UnpackError
     {        
         for i in 0us .. sizeof (T) {
@@ -286,7 +286,7 @@ mod internal_unpack {
     }
     
     
-    pub def unpack {T of [U], U} (dmut c_ptr : &(u8), packet : [u8])-> (usize, usize)
+    pub fn unpack {T of [U], U} (dmut c_ptr : &(u8), packet : [u8])-> (usize, usize)
         throws &UnpackError
     {
         let mut len : usize = 0us;
@@ -313,7 +313,7 @@ mod internal_unpack {
         };        
     }
        
-    pub def unpack {T impl Packable} (dmut c_ptr : &u8, packet : [u8])-> (usize, usize)
+    pub fn unpack {T impl Packable} (dmut c_ptr : &u8, packet : [u8])-> (usize, usize)
         throws &UnpackError
     {
         let dmut name : [c8] = [];
@@ -339,7 +339,7 @@ mod internal_unpack {
         }        
     }
 
-    pub def unpack {struct T} (dmut c_ptr : &u8, packet : [u8]) -> (usize, usize)
+    pub fn unpack {struct T} (dmut c_ptr : &u8, packet : [u8]) -> (usize, usize)
         throws &UnpackError
     {
         let mut packOffset = 0us;
@@ -357,7 +357,7 @@ mod internal_unpack {
         }
     }
 
-    pub def unpack {T of (U,), U...} (dmut c_ptr : &u8, packet : [u8]) -> (usize, usize)
+    pub fn unpack {T of (U,), U...} (dmut c_ptr : &u8, packet : [u8]) -> (usize, usize)
         throws &UnpackError
     {
         let mut packOffset = 0us;
@@ -383,7 +383,7 @@ mod internal_reflect {
      * Additional reflection function for easying packaging
      * This function is totally unsafe to use outside package, because it will create a class without calling its constructor
      */
-    pub def totallyUnsafeFactoryDontDoThat (name : [c32]) -> dmut &Object
+    pub fn totallyUnsafeFactoryDontDoThat (name : [c32]) -> dmut &Object
         throws &RuntimeError
     {
         let dmut ret = _yrt_reflect_create_class_from_name_no_construct_utf32 (name);
@@ -394,14 +394,14 @@ mod internal_reflect {
      * Additional reflection function for easying packaging
      * This function is totally unsafe to use outside package, because it will create a class without calling its constructor
      */
-    pub def totallyUnsafeFactoryDontDoThat (name : [c8]) -> dmut &Object
+    pub fn totallyUnsafeFactoryDontDoThat (name : [c8]) -> dmut &Object
         throws &RuntimeError
     {
         let dmut ret = _yrt_reflect_create_class_from_name_no_construct (name);
         alias ret
     }
 
-    pub def callImplMutable {T, class S, F...} (dmut s : S, s_name : [c8], name : [c8], params : F) -> T
+    pub fn callImplMutable {T, class S, F...} (dmut s : S, s_name : [c8], name : [c8], params : F) -> T
     throws &RuntimeError
 {
     {
@@ -431,7 +431,7 @@ mod Runtime {F, T} {
      * This is unsafe but we can argue that if a class has successfuly produced a packet 
      * Then the packet contains a valid class that can be copied as it is
      */
-    pub extern (C) def _yrt_unsafe_cast (x : F)-> dmut T;
+    pub extern (C) fn _yrt_unsafe_cast (x : F)-> dmut T;
 
         /**
      * Runtime unsafe cast of a pointer to another 
@@ -439,6 +439,6 @@ mod Runtime {F, T} {
      * This is unsafe but we can argue that if a class has successfuly produced a packet 
      * Then the packet contains a valid class that can be copied as it is
      */
-    pub extern (C) def _yrt_unsafe_cast (ref x : F)-> dmut T;
+    pub extern (C) fn _yrt_unsafe_cast (ref x : F)-> dmut T;
 
 }

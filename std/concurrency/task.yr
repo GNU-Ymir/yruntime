@@ -10,7 +10,7 @@
  * import std::conv; // for to
  * import std::concurrency::task;
  * 
- * def computePi (prec : i32)-> f64 {
+ * fn computePi (prec : i32)-> f64 {
  *    let mut res = 0.0;
  *    let n = prec.to!f64 ();
  *    for i in 0 .. prec {
@@ -19,7 +19,7 @@
  *    res     
  * }
 
- * def main () {
+ * fn main () {
  *     let dmut pool = TaskPool::new (2u64); // Creating a task pool with at most two threads
  *   
  *     // Only two threads are spawned to perform 1_000_000 jobs
@@ -116,7 +116,7 @@ pub class @final TaskPool {
      * pool:.join ();
      * =============
      */
-    pub def submit (mut self, task : &Task) -> void {
+    pub fn submit (mut self, task : &Task) -> void {
         self._jobs:.send (task);
         self:.removeExitedThreads ();
         let jobLen = cast!u64 (self._jobs.len ()) + 1u64;
@@ -137,7 +137,7 @@ pub class @final TaskPool {
      * @info: the task will be executed in the future when a thread is available.
      * @example:
      * ===
-     * def foo () {
+     * fn foo () {
      *     println ("Function pointer task");
      * }
      * 
@@ -154,7 +154,7 @@ pub class @final TaskPool {
      * pool:.join ();
      * ===
      */     
-    pub def submit (mut self, task : (fn ()-> void)) {
+    pub fn submit (mut self, task : (fn ()-> void)) {
         self:.submit (FnTask::new (task))
     }
 
@@ -170,7 +170,7 @@ pub class @final TaskPool {
      * 
      *    pub self () {}
      *    
-     *    pub def foo (mut self) {
+     *    pub fn foo (mut self) {
      *        println ("Method task ", self.i);
      *        self.i += 1;
      *    }
@@ -190,7 +190,7 @@ pub class @final TaskPool {
      * pool:.join ();
      * ===
      */
-    pub def submit (mut self, task : (dg ()-> void)) {
+    pub fn submit (mut self, task : (dg ()-> void)) {
         self:.submit (DgTask::new (task))
     }
 
@@ -209,7 +209,7 @@ pub class @final TaskPool {
      * pool:.join (); // wait the completion of heavy_function_3
      * =============
      */
-    pub def join (mut self) -> void {
+    pub fn join (mut self) -> void {
         for _, th in self._runningThreads {
             th.join ()            
         }
@@ -223,7 +223,7 @@ pub class @final TaskPool {
          * Remove all submitted tasks from the task queue
          * @warning: wait the end of the already running tasks, if one of them is an infinite loop this function will never quit
          */
-        pub def cancel (mut self)-> void {
+        pub fn cancel (mut self)-> void {
             self._jobs:.clear ();
                         
             for _, th in self._runningThreads {
@@ -241,7 +241,7 @@ pub class @final TaskPool {
      * assert (pool.getNbThreads () == 2u64); 
      * ===============
      */
-    pub def getNbThreads (self) -> u64 {
+    pub fn getNbThreads (self) -> u64 {
         self._nbThreads
     }
     
@@ -251,7 +251,7 @@ pub class @final TaskPool {
      *    - nb: the number of thread to spawn
      *    - id: the id of the first thread  
      */
-    prv def spawnThreads (mut self, nb : u64, id : u64) {
+    prv fn spawnThreads (mut self, nb : u64, id : u64) {
         for i in 0u64 .. nb {            
             let th = spawnNoPipe (move |th| => {
                 let mut nb_skips = 0us;
@@ -285,7 +285,7 @@ pub class @final TaskPool {
     /**
      * Remove all the threads that have exited because there were no task to execute
      */
-    prv def removeExitedThreads (mut self) {
+    prv fn removeExitedThreads (mut self) {
         loop {
             match self._exited:.receive () {
                 Ok (x : usize) => {
@@ -340,7 +340,7 @@ pub class @abstract Task {
     /**
      * Method called by a task pool thread when the task is executed
      */
-    pub def execute (self, id : u64);
+    pub fn execute (self, id : u64);
 
 }
 
