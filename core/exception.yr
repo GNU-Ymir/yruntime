@@ -148,10 +148,14 @@ pub fn abort (test : bool)
 /**
  * Function called by the runtime handler when a segfault occured.
  */
-pub extern (C) fn _yrt_throw_seg_fault () -> void
-    throws &SegFault
-{
-    throw SegFault::new ()
+pub extern (C) fn _yrt_panic_seg_fault () -> void {
+    __version DEBUG_LIB {
+        import std::conv, etc::c::stdio;
+        let s = SegFault::new ();
+        let trace = s.getStackTrace ();
+        fprintf (stderr, "Segmentation fault intercepted : %s", toStringZ (trace.ptr));
+        exit (-1);
+    }
 }
 
 /**

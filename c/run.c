@@ -26,17 +26,11 @@ void _yrt_exit (int i) {
 
 void bt_sighandler(int sig
 #ifdef __linux__
-		   , struct sigcontext ctx
+                   , struct sigcontext ctx
 #endif
     )
-{    
-    static int second = 0;
-    if (second == 1) {
-	char * c = NULL;
-	*c = 'i';
-    }
-    second = 1;
-    _yrt_throw_seg_fault ();    
+{
+    _yrt_panic_seg_fault ();
 }
 
 void installHandler () {
@@ -56,8 +50,8 @@ void installHandler () {
 void _yrt_force_debug (int act) {
     if (act == 0) __YRT_DEBUG__ = __YRT_FORCE_DEBUG__;
     else {
-	__YRT_FORCE_DEBUG__ = __YRT_DEBUG__;
-	__YRT_DEBUG__ = 1;
+        __YRT_FORCE_DEBUG__ = __YRT_DEBUG__;
+        __YRT_DEBUG__ = 1;
     }
 }
 
@@ -67,10 +61,10 @@ _yrt_array_ _yrt_create_args_array (int len, char ** argv) {
     arr.len = (unsigned long) len;
 
     for (int i = 0 ; i < len ; i++) {
-	_yrt_array_ inner;
-	inner.data = argv[i];
-	inner.len = strlen (argv [i]);
-	((_yrt_array_*) arr.data)[i] = inner;
+        _yrt_array_ inner;
+        inner.data = argv[i];
+        inner.len = strlen (argv [i]);
+        ((_yrt_array_*) arr.data)[i] = inner;
     }
 
     __MAIN_ARGS__ = arr;    
