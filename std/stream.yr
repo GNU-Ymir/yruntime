@@ -76,8 +76,8 @@ mod DcopyMap {
     pub extern (C) fn _yrt_dcopy_map_is_started ()-> bool;
     pub extern (C) fn _yrt_purge_dcopy_map ();
     
-    pub extern (C) fn _yrt_find_dcopy_map (_ : &void)-> dmut &void;
-    pub extern (C) fn _yrt_insert_dcopy_map (_ : &void, _ : &void);
+    pub extern (C) fn _yrt_find_dcopy_map (_ : *(void))-> dmut *(void);
+    pub extern (C) fn _yrt_insert_dcopy_map (_ : *(void), _ : *(void));
 }
 
 
@@ -167,10 +167,10 @@ pub trait Streamable {
     pub fn toStream (self, dmut stream: &StringStream)-> void {
         let started = DcopyMap::_yrt_dcopy_map_is_started ();
         {
-            let dmut res = DcopyMap::_yrt_find_dcopy_map (Runtime!{typeof self, &void}::_yrt_unsafe_cast (self));
+            let dmut res = DcopyMap::_yrt_find_dcopy_map (Runtime!{typeof self, *(void)}::_yrt_unsafe_cast (self));
             stream:.write (typeof (self)::typeid):.write ("("s8);
             if (res is null) {
-                DcopyMap::_yrt_insert_dcopy_map (Runtime!{typeof self, &void}::_yrt_unsafe_cast (self), Runtime!{typeof self, &void}::_yrt_unsafe_cast (self));
+                DcopyMap::_yrt_insert_dcopy_map (Runtime!{typeof self, *(void)}::_yrt_unsafe_cast (self), Runtime!{typeof self, *(void)}::_yrt_unsafe_cast (self));
                 self.__stream__streamContent (alias stream);
             } else {
                 stream:.write ("..."s8);
@@ -301,12 +301,12 @@ pub class StringStream {
      * 
      * let dmut stream = StringStream::new ();
      * 
-     * // Every pointer can be casted to &void, but it has to be written explicitely
-     * stream:.write (cast!{&void} (i));
+     * // Every pointer can be casted to *(void), but it has to be written explicitely
+     * stream:.write (cast!{*(void)} (i));
      * ===
      */
-    pub fn write (mut self, c : &(void))-> dmut &StringStream {
-        let val = Runtime!{&void, usize}::_yrt_unsafe_cast (c);
+    pub fn write (mut self, c : *(void))-> dmut &StringStream {
+        let val = Runtime!{*(void), usize}::_yrt_unsafe_cast (c);
         import std::conv;
         self:.write (val.to!{[c8], "x"} ());
         alias self
