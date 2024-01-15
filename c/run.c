@@ -2,7 +2,6 @@
 #include "ymemory.h"
 #include "except.h"
 #include "demangle.h"
-#include "reflect.h"
 #include "stacktrace.h"
 #include <gc/gc_disclaim.h>
 
@@ -30,7 +29,9 @@ void bt_sighandler(int sig
 #endif
     )
 {
-    _yrt_panic_seg_fault ();
+    fprintf (stderr, "Segfault\n");
+    exit (-1);
+    // _yrt_panic_seg_fault ();
 }
 
 void installHandler () {

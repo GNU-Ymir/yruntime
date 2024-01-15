@@ -1,13 +1,26 @@
- echo | gyc -E -Wp,-v - &> files
-Y_INCLUDE_PATH=$( grep -A1 "<...>" files | tail -n -1)/ymir/
- echo $Y_INCLUDE_PATH
- sudo rm -rf $Y_INCLUDE_PATH
-sudo mkdir -p $Y_INCLUDE_PATH/core/
-sudo mkdir -p $Y_INCLUDE_PATH/std/
-sudo mkdir -p $Y_INCLUDE_PATH/etc/
+cores=$(find midgard/core | grep [.]yr$)
+std=$(find midgard/std | grep [.]yr$)
+etc=$(find midgard/etc | grep [.]yr$)
 
-sudo cp -r core/ $Y_INCLUDE_PATH
-sudo cp -r std/ $Y_INCLUDE_PATH
-sudo cp -r etc/ $Y_INCLUDE_PATH
- rm files
 
+rm -rf /usr/include/ymir
+mkdir -p /usr/include/ymir/core
+mkdir -p /usr/include/ymir/etc
+mkdir -p /usr/include/ymir/std
+
+for i in $etc
+do
+    cp $i /usr/include/ymir/etc/
+done
+
+for i in $cores
+do
+    cp $i /usr/include/ymir/core/
+done
+
+for i in $std
+do
+    cp $i /usr/include/ymir/std
+done
+
+cp midgard/*.yr /usr/include/ymir/

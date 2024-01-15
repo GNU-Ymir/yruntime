@@ -1,6 +1,5 @@
 #include "stacktrace.h"
 #include "demangle.h"
-#include "reflect.h"
 
 #include <getopt.h>
 #include <string.h>
@@ -197,49 +196,49 @@ _yrt_array_ _yrt_exc_resolve_stack_trace (_yrt_array_ syms) {
             _ystring file;
             _ystring func;
             int line;
-            struct ReflectSymbol sym;
-            sym.name = NULL;
+            /* struct ReflectSymbol sym; */
+            /* sym.name = NULL; */
 
-            if (succ != NULL) {
-                _yrt_c8_array_ resolvedC8 = {.len = strlen (resolved), .data = resolved };
-                sym = _yrt_reflect_find_symbol_from_addr_with_elf_name (((void**) syms.data) [i], resolvedC8);
-            }
+            /* if (succ != NULL) { */
+            /*     _yrt_c8_array_ resolvedC8 = {.len = strlen (resolved), .data = resolved }; */
+            /*     sym = _yrt_reflect_find_symbol_from_addr_with_elf_name (((void**) syms.data) [i], resolvedC8); */
+            /* } */
 
-            if (sym.name != NULL) {
-                _yrt_resolve_address (resolved, ((void**) syms.data) [i], &file, &line);
-                func = str_create (sym.name);
-		
-                if (file.data != NULL) {
-                    ret = str_concat_c_str (ret, "\n╞═ bt ╕ #");
-                    ret = str_concat (ret, str_from_int (i - 1));
-                } else {
-                    ret = str_concat_c_str (ret, "\n╞═ bt ═ #");
-                    ret = str_concat (ret, str_from_int (i - 1));
-                }
+            /* if (sym.name != NULL) { */
+            /*     _yrt_resolve_address (resolved, ((void**) syms.data) [i], &file, &line); */
+            /*     func = str_create (sym.name); */
 
-                int need_break = 0;
-                if (func.data != NULL) {
-                    _ystring name = _yrt_demangle_symbol (func.data, func.len);
-                    ret = str_concat_c_str (ret, " in function \e[33m");
-                    ret = str_concat (ret, name);
-                    ret = str_concat_c_str (ret, "\e[0m");
-                    need_break = (strcmp (name.data, "main (...)") == 0);
-                }
-		
-                if (file.data != NULL) {
-                    ret = str_concat_c_str (ret, "\n│     ╘═> \e[32m");
-                    ret = str_concat_c_str (ret, file.data);
-                    ret = str_concat_c_str (ret, "\e[0m:");
-                    ret = str_concat (ret, str_from_int (line));
-                }
-                if (need_break) break;
-            } else {
-                ret = str_concat_c_str (ret, "\n╞═ bt ╕ #");
-                ret = str_concat (ret, str_from_int (i - 1));
-                ret = str_concat_c_str (ret, " in ??\n│     ╘═> \e[32m");
-                ret = str_concat_c_str (ret, filename);
-                ret = str_concat_c_str (ret, "\e[0m");
-            }
+            /*     if (file.data != NULL) { */
+            /*         ret = str_concat_c_str (ret, "\n╞═ bt ╕ #"); */
+            /*         ret = str_concat (ret, str_from_int (i - 1)); */
+            /*     } else { */
+            /*         ret = str_concat_c_str (ret, "\n╞═ bt ═ #"); */
+            /*         ret = str_concat (ret, str_from_int (i - 1)); */
+            /*     } */
+
+            /*     int need_break = 0; */
+            /*     if (func.data != NULL) { */
+            /*         _ystring name = _yrt_demangle_symbol (func.data, func.len); */
+            /*         ret = str_concat_c_str (ret, " in function \e[33m"); */
+            /*         ret = str_concat (ret, name); */
+            /*         ret = str_concat_c_str (ret, "\e[0m"); */
+            /*         need_break = (strcmp (name.data, "main (...)") == 0); */
+            /*     } */
+
+            /*     if (file.data != NULL) { */
+            /*         ret = str_concat_c_str (ret, "\n│     ╘═> \e[32m"); */
+            /*         ret = str_concat_c_str (ret, file.data); */
+            /*         ret = str_concat_c_str (ret, "\e[0m:"); */
+            /*         ret = str_concat (ret, str_from_int (line)); */
+            /*     } */
+            /*     if (need_break) break; */
+            /* } else { */
+            ret = str_concat_c_str (ret, "\n╞═ bt ╕ #");
+            ret = str_concat (ret, str_from_int (i - 1));
+            ret = str_concat_c_str (ret, " in ??\n│     ╘═> \e[32m");
+            ret = str_concat_c_str (ret, filename);
+            ret = str_concat_c_str (ret, "\e[0m");
+            //}
 	    
         }
         ret = str_concat_c_str (ret, "\n╰\0");
@@ -316,24 +315,24 @@ _yrt_array_ _yrt_exc_resolve_stack_trace (_yrt_array_ syms) {
             ret = str_concat (ret, str_from_int (i - 1));
 	    
             void* ptr = ((void**) syms.data)[i];
-            struct ReflectSymbol sym = _yrt_reflect_find_symbol_from_addr (ptr);
-	    
-            if (sym.ptr != NULL) {
-                _ystring name = _yrt_demangle_symbol (sym.name, strlen (sym.name));
-                ret = str_concat_c_str (ret, " in function \e[33m");
-                ret = str_concat (ret, name);
-                ret = str_concat_c_str (ret, "\e[0m");
-                if (sym.locFile != NULL) {
-                    ret = str_concat_c_str (ret, "\n|     |=> \e[32m");
-                    ret = str_concat_c_str (ret, sym.locFile);
-                    ret = str_concat_c_str (ret, "\e[0m:");
-                    ret = str_concat (ret, str_from_int (sym.locLine));
-                }
-		
-                if (strcmp (name.data, "main (...)") == 0) break;
-            } else {
-                ret = str_concat_c_str (ret, " in function \e[33m:??\e[0m");
-            }
+            /* struct ReflectSymbol sym = _yrt_reflect_find_symbol_from_addr (ptr); */
+
+            /* if (sym.ptr != NULL) { */
+            /*     _ystring name = _yrt_demangle_symbol (sym.name, strlen (sym.name)); */
+            /*     ret = str_concat_c_str (ret, " in function \e[33m"); */
+            /*     ret = str_concat (ret, name); */
+            /*     ret = str_concat_c_str (ret, "\e[0m"); */
+            /*     if (sym.locFile != NULL) { */
+            /*         ret = str_concat_c_str (ret, "\n|     |=> \e[32m"); */
+            /*         ret = str_concat_c_str (ret, sym.locFile); */
+            /*         ret = str_concat_c_str (ret, "\e[0m:"); */
+            /*         ret = str_concat (ret, str_from_int (sym.locLine)); */
+            /*     } */
+
+            /*     if (strcmp (name.data, "main (...)") == 0) break; */
+            /* } else { */
+            ret = str_concat_c_str (ret, " in function \e[33m:??\e[0m");
+            // }
         }
 
         ret = str_concat_c_str (ret, "\n[\0");

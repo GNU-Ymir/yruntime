@@ -1,7 +1,7 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.1)
 PROJECT(Midgard C)
-SET(CMAKE_YMIR_COMPILER "gyc")	
-set(CMAKE_YMIR_COMPILE_OBJECT "${CMAKE_YMIR_COMPILER} ${CMAKE_YMIR_FLAGS} <FLAGS> -I<INCLUDES> -c <SOURCE> -o <OBJECT>")
+SET(CMAKE_YMIR_COMPILER "/home/emile/ymir/bootstrap/gyc/gcc-install/bin/gyc")
+set(CMAKE_YMIR_COMPILE_OBJECT "${CMAKE_YMIR_COMPILER} ${CMAKE_YMIR_FLAGS} <FLAGS>  -c <SOURCE> -o <OBJECT>")
 set(CMAKE_YMIR_CREATE_STATIC_LIBRARY "<CMAKE_AR> rc <TARGET> <LINK_FLAGS> <OBJECTS>")
 
 IF (WIN32) 
@@ -15,23 +15,9 @@ set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -fPIC")
 
 FILE (
   GLOB_RECURSE
-  SRC_CORE
-  core/*.yr
+  SRC_LIB
+  midgard/__lib__.yr
   )
-
-FILE (
-  GLOB_RECURSE
-  SRC_STD
-  std/*.yr
-  )
-
-
-FILE (
-  GLOB_RECURSE
-  SRC_ETC
-  etc/*.yr
-  )
-
 
 FILE (
   GLOB_RECURSE
@@ -44,7 +30,6 @@ FILE (
   SRC_STD_C
   std/*.c
   )
-
 
 FILE (
   GLOB_RECURSE
@@ -65,37 +50,29 @@ FILE (
   )
 
 
-SET_SOURCE_FILES_PROPERTIES(${SRC_CORE} ${SRC_STD} ${SRC_ETC} ${SRC_UNITTEST_YR} overview.yr PROPERTIES LANGUAGE YMIR)
+SET_SOURCE_FILES_PROPERTIES(${SRC_LIB} ${SRC_UNITTEST_YR} PROPERTIES LANGUAGE YMIR)
 
-add_library (gymidgard-release STATIC ${SRC_CORE} ${SRC_STD} ${SRC_ETC} ${SRC_CORE_C} ${SRC_STD_C} ${SRC_RUNTIME} overview.yr)
-
-add_library (gymidgard-debug STATIC ${SRC_CORE} ${SRC_STD} ${SRC_ETC} ${SRC_CORE_C} ${SRC_STD_C} ${SRC_RUNTIME} overview.yr)
+add_library (gymidgard-release STATIC ${SRC_LIB} ${SRC_CORE_C} ${SRC_STD_C} ${SRC_RUNTIME})
+add_library (gymidgard-debug STATIC ${SRC_LIB} ${SRC_CORE_C} ${SRC_STD_C} ${SRC_RUNTIME})
 target_compile_options (gymidgard-debug PRIVATE -fversion=DEBUG_LIB)
 
-add_library (gymidgard-tests STATIC ${SRC_UNITTEST} ${SRC_UNITTEST_YR})
+add_custom_command(TARGET gymidgard-release
+  PRE_BUILD
+  COMMAND ${CMAKE_COMMAND} -E touch_nocreate ${CMAKE_CURRENT_SOURCE_DIR}/midgard/__lib__.yr)
+
+add_custom_command(TARGET gymidgard-debug
+  PRE_BUILD
+  COMMAND ${CMAKE_COMMAND} -E touch_nocreate ${CMAKE_CURRENT_SOURCE_DIR}/midgard/__lib__.yr)
+
+
+# add_library (gymidgard-tests STATIC ${SRC_UNITTEST} ${SRC_UNITTEST_YR})
 
 IF(UNIX) 
     install (TARGETS gymidgard-debug DESTINATION /usr/lib/)
     install (TARGETS gymidgard-release DESTINATION /usr/lib/)
-    install (TARGETS gymidgard-tests DESTINATION /usr/lib/)
+    # install (TARGETS gymidgard-tests DESTINATION /usr/lib/)
 ELSE(UNIX)
     install (TARGETS gymidgard-debug DESTINATION /mingw64/lib/)
     install (TARGETS gymidgard-release DESTINATION /mingw64/lib/)
-    install (TARGETS gymidgard-tests DESTINATION /mingw64/lib/)
+    # install (TARGETS gymidgard-tests DESTINATION /mingw64/lib/)
 ENDIF(UNIX)
-
-include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-
-
-
-
-
-
-
-
-
-
-
-
-
-

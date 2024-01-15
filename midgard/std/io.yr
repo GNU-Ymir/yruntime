@@ -1,0 +1,184 @@
+mod io;
+
+
+extern (C) fn printf (c : *c8, ...);
+extern (C) fn _yrt_putwchar (c : c32);
+extern (C) fn putchar (c : c8);
+
+extern (C) fn _yrt_printf32 (f : f32);
+extern (C) fn _yrt_printf64 (f : f64);
+
+
+pub fn print (c : [c8]) {
+    for i in 0us .. c.len {
+        putchar (c [i]);
+    }
+}
+
+pub fn print (c : c8) -> void {
+    putchar (c)
+}
+
+pub fn print (c : c32) -> void {
+    _yrt_putwchar (c)
+}
+
+pub fn print (s : [c32]) -> void {
+    for i in 0us .. s.len {
+        _yrt_putwchar (s [i]);
+    }
+}
+
+pub fn print (i : isize) -> void {
+    printf ("%lld"s8.ptr, i);
+}
+
+pub fn print (i : usize) -> void {
+    printf ("%lld"s8.ptr, i);
+}
+
+/**
+ * Print a i64 to stdout.
+ */
+pub fn print (i : i64) -> void {
+    printf ("%lld"s8.ptr, i);
+}
+
+pub fn print (i : i32) -> void {
+    printf ("%d"s8.ptr, i);
+}
+
+pub fn print (i : i16) -> void {
+    printf ("%hd"s8.ptr, i);
+}
+
+pub fn print (i : i8) -> void {
+    printf ("%hhx"s8.ptr, i);
+}
+
+pub fn print (i : u64) -> void {
+    printf ("%llu"s8.ptr, i);
+}
+
+pub fn print (i : u32) -> void {
+    printf ("%u"s8.ptr, i);
+}
+
+pub fn print (i : u16) -> void {
+    printf ("%hu"s8.ptr, i);
+}
+
+pub fn print (i : u8) -> void {
+    printf ("%hhx"s8.ptr, i)
+}
+
+pub fn print (i : *(void))-> void {
+    printf ("%x"s8.ptr, i);
+}
+
+pub fn print (f : f64) -> void {
+    _yrt_printf64 (f);
+}
+
+pub fn print (f : f32) -> void {
+    _yrt_printf32 (f);
+}
+
+pub fn print (b : bool) -> void {
+    if (b)
+        printf ("true"s8.ptr);
+    else
+        printf ("false"s8.ptr);
+}
+
+pub fn print {T of [U], U} (a : T) -> void {
+    putchar ('['c8);
+    for i in 0us .. a.len {
+        if i != 0us {
+            putchar (','c8);
+            putchar (' 'c8);
+        }
+
+        print (a [i]);
+    }
+    putchar (']'c8);
+}
+
+pub fn print {T of [U;N], U, N : usize} (a : T) -> void {
+    print ('['c8);
+    for i in 0_u64 .. cast!u64 (N) {
+        if i != 0_u64 {
+            putchar (','c8);
+            putchar (' 'c8);
+        }
+
+        print (a [i]);
+    }
+    print (']'c8);
+}
+
+
+pub fn print {T} (a : T?) -> void {
+    cte if (!is!{T}{U of void}) {
+        match a {
+            Ok  (x:_)   => print ("Ok(", x, ")");
+            Err (msg:_) => print ("Err(", msg, ")");
+            Err ()      => print ("Err()");
+        }
+    } else {
+        match a {
+            Ok  ()   => print ("Ok()");
+            Err (msg:_) => print ("Err(", msg, ")");
+            Err ()      => print ("Err()");
+        }
+    }
+}
+
+
+pub fn print  {F, T...} (a : F, b : T) {
+    print (a);
+    print (expand b);
+}
+
+/**
+ * Print an element of type tuple to stdout
+ * @params:
+ *    - a: a tuple of arbitrary arity
+ */
+pub fn print {T of (U,), U...} (a : T) {
+    print ('(');
+    let mut j = 0;
+    for i in a {
+        if j != 0 {
+            print (',');
+        }
+        print (i);
+        j += 1;
+    }
+    if (j == 1) print (',');
+    print (')');
+}
+
+pub fn print (_ : ()) {
+    print ('('c8,')'c8);
+}
+
+fn print () {}
+
+pub fn println {F, T...} (a : F, b : T) {
+    print (a);
+    print (expand b);
+    putchar ('\n'c8);
+}
+
+pub fn println {T} (a : T) {
+    print (a);
+    putchar ('\n'c8);
+}
+
+/**
+ * Print a return line to stdout.
+ */
+pub fn println () {
+    putchar ('\n'c8);
+}

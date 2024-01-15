@@ -27,7 +27,7 @@ _yrt_array_ _yrt_dup_slice (_yrt_array_ arr, unsigned long size) {
 _yrt_array_ _yrt_alloc_array (void* data, unsigned long size, unsigned long len) {
     char* x = (char*) GC_malloc (len * size);
     for (unsigned long i = 0 ; i < len ; i++) {
-	memcpy (x + (i*size), data, size);
+        memcpy (x + (i*size), data, size);
     }
 
     _yrt_array_ ret;

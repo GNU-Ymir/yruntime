@@ -1,0 +1,169 @@
+/**
+ * This module defines common math functions on native types
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+mod math;
+
+mod internal {
+    pub extern (C) fn truncf (f : f32)-> f32;
+    pub extern (C) fn trunc (f : f64)-> f64;
+    pub extern (C) fn truncl (f : f80)-> f80;
+    pub extern (C) fn truncl (f : fsize)-> fsize;
+
+    pub extern (C) fn sqrt (f : f64)-> f64;
+    pub extern (C) fn sqrtf (f : f32)-> f32;
+    pub extern (C) fn sqrtl (f : f80)-> f80;
+    pub extern (C) fn sqrtl (f : fsize)-> fsize;
+}
+
+/**
+ * Truncate a floating point number to the floor integral value for positive numbers,
+ * and to the ceil integral value for negative numbers
+ * @example:
+ * ========
+ * assert (trunc (12.9f) == 12.f);
+ * assert (trunc (-12.9f) == -12.f);
+ * ========
+ * */
+pub fn trunc {T} (a : T)-> T {
+    cte if is!{T} {U of f32} { internal::truncf (a) }
+    else cte if is!{T} {U of f64} { internal::trunc (a) }
+    else { internal::truncl (a) }
+}
+
+/**
+ * Square root of a any floating point number type
+ * @example:
+ * ======
+ * sqrt (12.9f);
+ * sqrt (12.9d);
+ * sqrt (12.9l);
+ * sqrt (12.9r);
+ * ======
+ * */
+pub fn sqrt {T} (a : T)-> T {
+    cte if is!{T} {U of f32} { internal::sqrtf (a) }
+    else cte if is!{T} {U of f64} { internal::sqrt (a) }
+    else { internal::sqrtl (a) }
+}
+
+/**
+ * Compute the power of base over exp
+ * @example:
+ * ======
+ * let i = 12 ^^ 9; // rewritten into ipow!i32 (12, 9)
+ * ======
+ * */
+pub fn if isIntegral!{T}() ipow {T} (base : T, exp : i32)-> T {
+    let mut pow = base;
+    let mut v : T = cast!T (1);
+    let mut expV = exp;
+
+    if (exp < cast!i32 (0)) {
+        return if (base * base != cast!T (1)) {
+            cast!T (0)
+        } else if ((exp & 1) != 0) {
+            base
+        } else {
+            cast!T (1)
+        };
+    }
+
+    while (expV > cast!i32 (0)) {
+        if (expV & 1 != 0) v *= pow;
+        pow *= pow;
+        expV = expV >> 1;
+    }
+
+    v
+}
+
+/**
+ * Compute the power of base over exp
+ * @example:
+ * ======
+ * let f = 12.9f ^^ 9; // rewritten into fipow!f32 (12.9f, 9)
+ * ======
+ * */
+pub fn if isFloating!{T}() fipow {T} (base : T, exp : i32)-> T {
+    let mut v : T = cast!T (1.0);
+    let mut expV = exp;
+    let mut pow = if (exp < 0) {1.0/base} else {base};
+
+    if (exp < 0) expV = -expV;
+
+    while (expV > cast!i32 (0)) {
+        if (expV & 1 != 0) v *= pow;
+        pow *= pow;
+        expV = expV >> 1;
+    }
+
+    v
+}
+
+/**
+ * Compute the power of base over exp
+ * @example:
+ * ======
+ * let f = 12.9 ^^ 0.3; // rewritten into ffpow!f64 (12.9, 0.3)
+ * ======
+ * */
+pub fn ffpow {T} (base : T, exp : T, prec : f64 = 0.0000001)-> T {
+    if (exp < cast!T (0.0)) return cast!T (1.0) / ffpow!T (base, -exp, prec-> prec);
+    if (exp >= cast!T (10.0)) {
+        let r = ffpow!T (base, exp / cast!T (2.0), prec-> prec / 2.0);
+        return r * r;
+    }
+
+    if (exp >= cast!T (1.0)) { return base * ffpow!T (base, exp - cast!T (1.0), prec-> prec); }
+    if (prec >= 1.0) { return sqrt!T (base); }
+
+    return sqrt!T (ffpow!T (base, exp * cast!T (2.0), prec-> prec * 2.0));
+}
+
+/**
+ * Compute the modulo value of two floating point values
+ * @example:
+ * ========
+ * let f = 12.9 % 0.3; // rewritten into ffmod!f64 (12.9, 0.3)
+ * ========
+ * */
+pub fn ffmod {T} (a : T, b : T)-> T {
+    a - trunc!{T} (a / b) * b
+}
+
+/**
+ * Absolute value of 'a'
+ * @example:
+ * ======
+ * 10. == fabs (-10.)
+ * ======
+ * */
+@inline
+pub fn fabs {T} (a : T)-> T {
+    if (a < cast!T (0.0)) {
+        -a
+    } else {
+        a
+    }
+}
+
+/**
+ * Compare two float values
+ * @example:
+ * ======
+ * 10. <=> (10. + (f64::epsilon / 2.))
+ * ======
+ * */
+@inline
+pub fn fcmp {T} (a : T, b : T)-> bool {
+    if (fabs (a - b) <= T::epsilon) {
+        true
+    } else if (a != a && b != b) {
+        true
+    } else {
+        false
+    }
+}
