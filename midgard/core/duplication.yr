@@ -1,2 +1,18 @@
 mod duplication;
 
+
+mod YRUNTIME {T} {
+    pub extern (C) fn _yrt_new_array (size : usize, len : usize)-> dmut T;
+}
+
+
+pub fn deepCopySlice {T of [U], U} (a : T)-> dmut T {
+    if (a.len == 0us) return [];
+    let dmut res = YRUNTIME!{T}::_yrt_new_array (sizeof (U), a.len);
+
+    for i, ti in a {
+        res [i] = dcopy ti;
+    }
+
+    return alias res;
+}
