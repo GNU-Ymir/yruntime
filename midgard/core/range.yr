@@ -10,12 +10,12 @@ mod range;
  * Create a range with a different step
  * @example:
  * ===
- * for i in (0 .. 10).step_by (2) {
+ * for i in (0 .. 10).stepBy (2) {
  *     println (i); // 0 2 4 8
  * }
  * ===
  */
-pub fn step_by {T, U} (x : ..T, s : U)-> ..T {
+pub fn stepBy {T, U} (x : ..T, s : U)-> ..T {
     // cte assert (is!{typeof (x.step)}{J of U});
     //
     let mut z = x;
@@ -28,6 +28,33 @@ pub fn step_by {T, U} (x : ..T, s : U)-> ..T {
     }
 
     return z;
+}
+
+/**
+ * Count the number of elements in the range
+ * */
+pub fn countNbIterations {T, U} (fst : T, scd : T, step : U, contains : bool)-> usize {
+    let (stepU, fstU, scdU, mut subU) = if (step < 0) {
+        let fstU = cast!usize (scd);
+        let scdU = cast!usize (fst);
+        (cast!usize (-step), fstU, scdU, scdU - fstU)
+    } else {
+        let fstU = cast!usize (fst);
+        let scdU = cast!usize (scd);
+        (cast!usize (step), fstU, scdU, scdU - fstU)
+    };
+
+    let nbAll = subU / stepU;
+
+    // Overflow
+    if (nbAll == usize::max) return nbAll;
+    if (contains) return nbAll + 1us;
+
+    // recompute, because is it not necessarily == scd since the division might trunc the value
+    let last = (nbAll * stepU) + fstU;
+    if (last != scdU) return nbAll + 1us;
+
+    nbAll
 }
 
 /**
