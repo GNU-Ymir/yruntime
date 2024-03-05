@@ -52,27 +52,27 @@ FILE (
 
 SET_SOURCE_FILES_PROPERTIES(${SRC_LIB} ${SRC_UNITTEST_YR} PROPERTIES LANGUAGE YMIR)
 
-add_library (gymidgard-release STATIC ${SRC_LIB} ${SRC_CORE_C} ${SRC_STD_C} ${SRC_RUNTIME})
-add_library (gymidgard-debug STATIC ${SRC_LIB} ${SRC_CORE_C} ${SRC_STD_C} ${SRC_RUNTIME})
-target_compile_options (gymidgard-debug PRIVATE -fversion=DEBUG_LIB)
+add_library (gymidgard-bootstrap-release STATIC ${SRC_LIB} ${SRC_CORE_C} ${SRC_STD_C} ${SRC_RUNTIME})
+add_library (gymidgard-bootstrap-debug STATIC ${SRC_LIB} ${SRC_CORE_C} ${SRC_STD_C} ${SRC_RUNTIME})
+target_compile_options (gymidgard-bootstrap-debug PRIVATE -fversion=DEBUG_LIB)
 
-add_custom_command(TARGET gymidgard-release
+add_custom_command(TARGET gymidgard-bootstrap-release
   PRE_BUILD
   COMMAND ${CMAKE_COMMAND} -E touch_nocreate ${CMAKE_CURRENT_SOURCE_DIR}/midgard/__lib__.yr)
 
-add_custom_command(TARGET gymidgard-debug
+add_custom_command(TARGET gymidgard-bootstrap-debug
   PRE_BUILD
   COMMAND ${CMAKE_COMMAND} -E touch_nocreate ${CMAKE_CURRENT_SOURCE_DIR}/midgard/__lib__.yr)
 
 
-# add_library (gymidgard-tests STATIC ${SRC_UNITTEST} ${SRC_UNITTEST_YR})
+# add_library (gymidgard-bootstrap-tests STATIC ${SRC_UNITTEST} ${SRC_UNITTEST_YR})
 
 IF(UNIX) 
-    install (TARGETS gymidgard-debug DESTINATION /usr/lib/)
-    install (TARGETS gymidgard-release DESTINATION /usr/lib/)
-    # install (TARGETS gymidgard-tests DESTINATION /usr/lib/)
+    install (TARGETS gymidgard-bootstrap-debug DESTINATION /usr/lib/)
+    install (TARGETS gymidgard-bootstrap-release DESTINATION /usr/lib/)
+    # install (TARGETS gymidgard-bootstrap-tests DESTINATION /usr/lib/)
 ELSE(UNIX)
-    install (TARGETS gymidgard-debug DESTINATION /mingw64/lib/)
-    install (TARGETS gymidgard-release DESTINATION /mingw64/lib/)
-    # install (TARGETS gymidgard-tests DESTINATION /mingw64/lib/)
+    install (TARGETS gymidgard-bootstrap-debug DESTINATION /mingw64/lib/)
+    install (TARGETS gymidgard-bootstrap-release DESTINATION /mingw64/lib/)
+    # install (TARGETS gymidgard-bootstrap-tests DESTINATION /mingw64/lib/)
 ENDIF(UNIX)
