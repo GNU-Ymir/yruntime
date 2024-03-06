@@ -48,15 +48,15 @@ unsigned int _yrt_exc_size_of_encoded_value (unsigned char encoding) {
 
     switch (encoding & 0x07) {
     case DW_EH_PE_absptr :
-	return sizeof (void*);
+        return sizeof (void*);
     case DW_EH_PE_udata2 :
-	return 2;
+        return 2;
     case DW_EH_PE_udata4 :
-	return 4;
+        return 4;
     case DW_EH_PE_udata8 :
-	return 8;
+        return 8;
     default :
-	_yrt_exc_terminate ("reading encoded", __LINE__);	
+        _yrt_exc_terminate ("reading encoded", __LINE__);
     }
 }
 
@@ -68,15 +68,15 @@ _Unwind_Ptr _yrt_exc_base_of_encoded_value (unsigned char encoding, struct _Unwi
     case DW_EH_PE_absptr:
     case DW_EH_PE_pcrel:
     case DW_EH_PE_aligned:
-	return 0;
+        return 0;
     case DW_EH_PE_textrel:
-	return _Unwind_GetTextRelBase (context);
+        return _Unwind_GetTextRelBase (context);
     case DW_EH_PE_datarel:
-	return _Unwind_GetDataRelBase (context);
+        return _Unwind_GetDataRelBase (context);
     case DW_EH_PE_funcrel:
-	return _Unwind_GetRegionStart (context);
+        return _Unwind_GetRegionStart (context);
     default :
-	_yrt_exc_terminate ("reading encoded", __LINE__);
+        _yrt_exc_terminate ("reading encoded", __LINE__);
     }
 }
 
@@ -87,11 +87,11 @@ _Unwind_Internal_Ptr _yrt_exc_read_uleb128 (const char** pref) {
     const char*p = *pref;
     
     while (1) {
-	unsigned char b = *p++;
+        unsigned char b = *p++;
 	
-	result |= (_Unwind_Internal_Ptr) (b & 0x7F) << shift;
-	if ((b & 0x80) == 0) break;
-	shift += 7;	
+        result |= (_Unwind_Internal_Ptr) (b & 0x7F) << shift;
+        if ((b & 0x80) == 0) break;
+        shift += 7;
     }
 
     *pref = p;
@@ -106,15 +106,15 @@ _Unwind_Internal_Ptr _yrt_exc_read_sleb128 (const char** pref) {
     const char*p = *pref;
     
     while (1) {
-	b = *p++;
+        b = *p++;
 
-	result |= (_Unwind_Internal_Ptr) (b & 0x7F) << shift;
-	shift += 7;
-	if ((b & 0x80) == 0) break;
+        result |= (_Unwind_Internal_Ptr) (b & 0x7F) << shift;
+        shift += 7;
+        if ((b & 0x80) == 0) break;
     }
 
     if (shift < sizeof (_Unwind_Internal_Ptr) * 8 && (b & 0x40)) {
-	result |= -((_Unwind_Internal_Ptr)1 << shift);
+        result |= -((_Unwind_Internal_Ptr)1 << shift);
     }
     
     *pref = p;
@@ -133,63 +133,63 @@ _Unwind_Ptr _yrt_exc_read_encoded_value_with_base (unsigned char encoding, _Unwi
     _Unwind_Internal_Ptr result;
 
     if (encoding == DW_EH_PE_aligned) {
-	_Unwind_Internal_Ptr a = (_Unwind_Internal_Ptr) p;
-	a = (a + sizeof (void*) - 1) & (sizeof (void*));
-	result = *(_Unwind_Internal_Ptr*) a;
-	*p = (const char*) (a + sizeof (void*));
+        _Unwind_Internal_Ptr a = (_Unwind_Internal_Ptr) p;
+        a = (a + sizeof (void*) - 1) & (sizeof (void*));
+        result = *(_Unwind_Internal_Ptr*) a;
+        *p = (const char*) (a + sizeof (void*));
     } else {
-	switch (encoding & 0x0f) {
-	case DW_EH_PE_uleb128 :
-	    result = (_Unwind_Internal_Ptr) (_yrt_exc_read_uleb128 (p));
-	    break;
+        switch (encoding & 0x0f) {
+        case DW_EH_PE_uleb128 :
+            result = (_Unwind_Internal_Ptr) (_yrt_exc_read_uleb128 (p));
+            break;
 	    
-	case DW_EH_PE_sleb128 :
-	    result = (_Unwind_Internal_Ptr) (_yrt_exc_read_sleb128 (p));
-	    break;
+        case DW_EH_PE_sleb128 :
+            result = (_Unwind_Internal_Ptr) (_yrt_exc_read_sleb128 (p));
+            break;
 
-	case DW_EH_PE_udata2 :
-	case DW_EH_PE_sdata2 :
-	{
-	    unsigned short x;
-	    _yrt_exc_read_unaligned (p, &x, sizeof (unsigned short));
-	    result = (_Unwind_Internal_Ptr) (x);	
-	    break;
-	}
-	case DW_EH_PE_udata4 :
-	case DW_EH_PE_sdata4 :
-	{
-	    unsigned int x;
-	    _yrt_exc_read_unaligned (p, &x, sizeof (unsigned int));
-	    result = (_Unwind_Internal_Ptr) (x);
-	    break;
-	}
-	case DW_EH_PE_udata8 :
-	case DW_EH_PE_sdata8 :
-	{
-	    unsigned long long x;
-	    _yrt_exc_read_unaligned (p, &x, sizeof (unsigned long long));
-	    result = (_Unwind_Internal_Ptr) (x);
-	    break;
-	}
-	case DW_EH_PE_absptr :
-	{
-	    size_t x;
-	    _yrt_exc_read_unaligned (p, &x, sizeof (size_t));
-	    result = (_Unwind_Internal_Ptr) (x);
-	    break;
-	}
-	default :
-	    _yrt_exc_terminate ("reading encoded", __LINE__);
-	}
+        case DW_EH_PE_udata2 :
+        case DW_EH_PE_sdata2 :
+        {
+            unsigned short x;
+            _yrt_exc_read_unaligned (p, &x, sizeof (unsigned short));
+            result = (_Unwind_Internal_Ptr) (x);
+            break;
+        }
+        case DW_EH_PE_udata4 :
+        case DW_EH_PE_sdata4 :
+        {
+            unsigned int x;
+            _yrt_exc_read_unaligned (p, &x, sizeof (unsigned int));
+            result = (_Unwind_Internal_Ptr) (x);
+            break;
+        }
+        case DW_EH_PE_udata8 :
+        case DW_EH_PE_sdata8 :
+        {
+            unsigned long long x;
+            _yrt_exc_read_unaligned (p, &x, sizeof (unsigned long long));
+            result = (_Unwind_Internal_Ptr) (x);
+            break;
+        }
+        case DW_EH_PE_absptr :
+        {
+            size_t x;
+            _yrt_exc_read_unaligned (p, &x, sizeof (size_t));
+            result = (_Unwind_Internal_Ptr) (x);
+            break;
+        }
+        default :
+            _yrt_exc_terminate ("reading encoded", __LINE__);
+        }
     }
 
     if (result != 0) {
-	if ((encoding & 0x70) == DW_EH_PE_pcrel) result += (_Unwind_Internal_Ptr) psave;
-	else result += base;
+        if ((encoding & 0x70) == DW_EH_PE_pcrel) result += (_Unwind_Internal_Ptr) psave;
+        else result += base;
 
-	if (encoding & DW_EH_PE_indirect) {
-	    result = *(_Unwind_Ptr*)result;
-	}
+        if (encoding & DW_EH_PE_indirect) {
+            result = *(_Unwind_Ptr*)result;
+        }
     }
 
     return result;
@@ -203,36 +203,36 @@ _Unwind_Ptr _yrt_exc_read_encoded_value (struct _Unwind_Context* context, unsign
 
 
 int _yrt_exc_action_table_lookup (_Unwind_Action actions,
-				  struct _Unwind_Exception* unwindHeader,
-				  const char* actionRecord,
-				  _Unwind_Ptr TTypeBase,
-				  const char* TType,
-				  unsigned char TTypeEncoding,
-				  unsigned char * saw_handler,
-				  unsigned char * saw_cleanup)
+                                  struct _Unwind_Exception* unwindHeader,
+                                  const char* actionRecord,
+                                  _Unwind_Ptr TTypeBase,
+                                  const char* TType,
+                                  unsigned char TTypeEncoding,
+                                  unsigned char * saw_handler,
+                                  unsigned char * saw_cleanup)
 {
     while (1) {
-	const char* ap = actionRecord;
-	_Unwind_Internal_Ptr ARFilter = _yrt_exc_read_sleb128 (&ap);
-	const char* apn = ap;
-	_Unwind_Internal_Ptr ARDisp = _yrt_exc_read_sleb128 (&ap);
+        const char* ap = actionRecord;
+        _Unwind_Internal_Ptr ARFilter = _yrt_exc_read_sleb128 (&ap);
+        const char* apn = ap;
+        _Unwind_Internal_Ptr ARDisp = _yrt_exc_read_sleb128 (&ap);
 
-	if (ARFilter == 0) {
-	    *saw_cleanup = 1;
-	} else if (actions & _UA_FORCE_UNWIND) {}
-	else if (ARFilter > 0) {
-	    size_t encodedSize = _yrt_exc_size_of_encoded_value (TTypeEncoding);
+        if (ARFilter == 0) {
+            *saw_cleanup = 1;
+        } else if (actions & _UA_FORCE_UNWIND) {}
+        else if (ARFilter > 0) {
+            size_t encodedSize = _yrt_exc_size_of_encoded_value (TTypeEncoding);
 
-	    const char* tp = TType - ARFilter * encodedSize;
+            const char* tp = TType - ARFilter * encodedSize;
 
-	    _Unwind_Ptr entry = _yrt_exc_read_encoded_value_with_base (TTypeEncoding, TTypeBase, &tp);
-	    *saw_handler = 1;
+            _Unwind_Ptr entry = _yrt_exc_read_encoded_value_with_base (TTypeEncoding, TTypeBase, &tp);
+            *saw_handler = 1;
 
-	    return ARFilter;
-	} else break;	
+            return ARFilter;
+        } else break;
     
-	if (ARDisp == 0) break;
-	actionRecord = apn + ARDisp;
+        if (ARDisp == 0) break;
+        actionRecord = apn + ARDisp;
     }
 
     return 0;
@@ -240,12 +240,12 @@ int _yrt_exc_action_table_lookup (_Unwind_Action actions,
 
 
 _Unwind_Reason_Code _yrt_exc_scan_lsda (const char* lsda,
-					_Unwind_Action actions,
-					struct _Unwind_Exception* unwindHeader,
-					struct _Unwind_Context* context,
-					_Unwind_Word cfa,
-					_Unwind_Ptr* landingPad,
-					int* handler)
+                                        _Unwind_Action actions,
+                                        struct _Unwind_Exception* unwindHeader,
+                                        struct _Unwind_Context* context,
+                                        _Unwind_Word cfa,
+                                        _Unwind_Ptr* landingPad,
+                                        int* handler)
 {
     if (lsda == NULL) return _URC_CONTINUE_UNWIND;
 
@@ -256,15 +256,15 @@ _Unwind_Reason_Code _yrt_exc_scan_lsda (const char* lsda,
     _Unwind_Ptr LPStart = 0;
     
     if (LPStartEncoding != DW_EH_PE_omit) {
-	LPStart = _yrt_exc_read_encoded_value (context, LPStartEncoding, &p);
+        LPStart = _yrt_exc_read_encoded_value (context, LPStartEncoding, &p);
     } else LPStart = start;
 
     unsigned char TTypeEncoding = *p++;
     const unsigned char* TType = NULL;
 
     if (TTypeEncoding != DW_EH_PE_omit) {
-	_Unwind_Internal_Ptr TTBase = _yrt_exc_read_uleb128 (&p);
-	TType = p + TTBase;
+        _Unwind_Internal_Ptr TTBase = _yrt_exc_read_uleb128 (&p);
+        TType = p + TTBase;
     }
 
     unsigned char CSEncoding = *p++;
@@ -282,39 +282,39 @@ _Unwind_Reason_Code _yrt_exc_scan_lsda (const char* lsda,
     const unsigned char * actionRecord = NULL;
     
     while (p < actionTable) {
-	_Unwind_Internal_Ptr CSStart = _yrt_exc_read_encoded_value (NULL, CSEncoding, &p);
-	_Unwind_Internal_Ptr CSLen = _yrt_exc_read_encoded_value (NULL, CSEncoding, &p);
-	_Unwind_Internal_Ptr CSLandingPad = _yrt_exc_read_encoded_value (NULL, CSEncoding, &p);
-	_Unwind_Internal_Ptr CSAction = _yrt_exc_read_uleb128 (&p);
+        _Unwind_Internal_Ptr CSStart = _yrt_exc_read_encoded_value (NULL, CSEncoding, &p);
+        _Unwind_Internal_Ptr CSLen = _yrt_exc_read_encoded_value (NULL, CSEncoding, &p);
+        _Unwind_Internal_Ptr CSLandingPad = _yrt_exc_read_encoded_value (NULL, CSEncoding, &p);
+        _Unwind_Internal_Ptr CSAction = _yrt_exc_read_uleb128 (&p);
 
-	if (ip < start + CSStart) {
-	    p = actionTable;
-	} else if (ip < start + CSStart + CSLen) {
-	    if (CSLandingPad) *landingPad = LPStart + CSLandingPad;
-	    if (CSAction) actionRecord = actionTable + CSAction - 1;
-	    break;	    
-	}
+        if (ip < start + CSStart) {
+            p = actionTable;
+        } else if (ip < start + CSStart + CSLen) {
+            if (CSLandingPad) *landingPad = LPStart + CSLandingPad;
+            if (CSAction) actionRecord = actionTable + CSAction - 1;
+            break;
+        }
     }
 
     if (landingPad == 0) {
     } else if (actionRecord == NULL) {
-	saw_cleanup = 1;
+        saw_cleanup = 1;
     } else {
-	*handler = _yrt_exc_action_table_lookup (actions, unwindHeader, actionRecord,
-						 TTypeBase, TType, TTypeEncoding,
-						 &saw_handler, &saw_cleanup);
+        *handler = _yrt_exc_action_table_lookup (actions, unwindHeader, actionRecord,
+                                                 TTypeBase, TType, TTypeEncoding,
+                                                 &saw_handler, &saw_cleanup);
     }
 
     if (!saw_cleanup && !saw_handler) {
-	return _URC_CONTINUE_UNWIND;
+        return _URC_CONTINUE_UNWIND;
     }
 
     if (actions & _UA_SEARCH_PHASE) {
-	if (!saw_handler) return _URC_CONTINUE_UNWIND;
+        if (!saw_handler) return _URC_CONTINUE_UNWIND;
 
-	_yrt_exc_save (unwindHeader, *handler, lsda, *landingPad, cfa);
+        _yrt_exc_save (unwindHeader, *handler, lsda, *landingPad, cfa);
 
-	return _URC_HANDLER_FOUND;
+        return _URC_HANDLER_FOUND;
     }
 
     return 0;    
@@ -324,9 +324,9 @@ _Unwind_Reason_Code _yrt_exc_scan_lsda (const char* lsda,
 
 
 _Unwind_Reason_Code _yrt_exc_personality (_Unwind_Action actions,
-					  _Unwind_Exception_Class excClass,
-					  struct _Unwind_Exception* unwindHeader,
-					  struct _Unwind_Context* context)
+                                          _Unwind_Exception_Class excClass,
+                                          struct _Unwind_Exception* unwindHeader,
+                                          struct _Unwind_Context* context)
 {    
     const char* lsda = NULL;
     _Unwind_Ptr landingPad = 0;
@@ -335,25 +335,25 @@ _Unwind_Reason_Code _yrt_exc_personality (_Unwind_Action actions,
 
 
     if (actions == (_UA_CLEANUP_PHASE | _UA_HANDLER_FRAME)) {
-	_yrt_exc_restore (unwindHeader, &handler, &lsda, &landingPad, &cfa);
-	if (landingPad == 0) {
-	    _yrt_exc_terminate ("unwind error", __LINE__);
-	}
+        _yrt_exc_restore (unwindHeader, &handler, &lsda, &landingPad, &cfa);
+        if (landingPad == 0) {
+            _yrt_exc_terminate ("unwind error", __LINE__);
+        }
     } else {
-	lsda = _Unwind_GetLanguageSpecificData (context);
-	cfa = _Unwind_GetCFA (context);
+        lsda = _Unwind_GetLanguageSpecificData (context);
+        cfa = _Unwind_GetCFA (context);
 	
-	char result = _yrt_exc_scan_lsda (lsda, actions, unwindHeader, context, cfa, &landingPad, &handler);
+        char result = _yrt_exc_scan_lsda (lsda, actions, unwindHeader, context, cfa, &landingPad, &handler);
 	
-	if (result) return result;	
+        if (result) return result;
     }
 
     if (landingPad == 0) {
-	return _URC_CONTINUE_UNWIND;
+        return _URC_CONTINUE_UNWIND;
     }
     
     _Unwind_SetGR (context, __builtin_eh_return_data_regno (0),
-		   (_Unwind_Ptr) unwindHeader);
+                   (_Unwind_Ptr) unwindHeader);
     _Unwind_SetGR (context, __builtin_eh_return_data_regno (1), handler);
     _Unwind_SetIP (context, landingPad);
     
@@ -362,14 +362,14 @@ _Unwind_Reason_Code _yrt_exc_personality (_Unwind_Action actions,
 
 
 _Unwind_Reason_Code __gyc_personality_v0 (int iversion,
-					  _Unwind_Action actions,
-					  _Unwind_Exception_Class excClass,
-					  struct _Unwind_Exception* unwindHeader,
-					  struct _Unwind_Context* context)
+                                          _Unwind_Action actions,
+                                          _Unwind_Exception_Class excClass,
+                                          struct _Unwind_Exception* unwindHeader,
+                                          struct _Unwind_Context* context)
 {
 
     if (iversion != 1) {
-	return _URC_FATAL_PHASE1_ERROR;
+        return _URC_FATAL_PHASE1_ERROR;
     }
 
     return _yrt_exc_personality (actions, excClass, unwindHeader, context);
@@ -378,9 +378,9 @@ _Unwind_Reason_Code __gyc_personality_v0 (int iversion,
 #ifdef _WIN32
 
 EXCEPTION_DISPOSITION __gyc_personality_seh0 (void* ms_exc, void* this_frame,
-                                                           void* ms_orig_context, void* ms_disp)
-    {
-        return _GCC_specific_handler(ms_exc, this_frame, ms_orig_context,
-                                     ms_disp, &__gyc_personality_v0);
-    }
+                                              void* ms_orig_context, void* ms_disp)
+{
+    return _GCC_specific_handler(ms_exc, this_frame, ms_orig_context,
+                                 ms_disp, &__gyc_personality_v0);
+}
 #endif
