@@ -198,12 +198,12 @@ void _yrt_exc_panic_exception (_yrt_exception_header_* eh)
         fprintf (stderr, "%s\n", (char*) trace.data);
     }
 
-    exit (-1);
+    abort ();
 }
 
 void _yrt_exc_panic_no_trace () {
     fprintf (stderr, "Panic during stacktrace !");
-    exit (-1);
+    abort ();
 }
 
 void _yrt_exc_panic (const char* file, const char * function, unsigned int line) {
@@ -214,7 +214,7 @@ void _yrt_exc_panic (const char* file, const char * function, unsigned int line)
         fprintf (stderr, "%s\n", (char*) trace.data);
     }
 
-    exit (-1);
+    abort ();
 }
 
 

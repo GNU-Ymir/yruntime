@@ -9,12 +9,11 @@ _yrt_array_ _yrt_get_current_dir () {
     char cwd [PATH_MAX];
     _yrt_array_ arr;    
     if (getcwd(cwd, sizeof(cwd)) != NULL) {
-	arr.data = cwd;
-	arr.len = strlen (cwd);
-	arr = _yrt_dup_slice (arr, sizeof (char));
-   } else {
-	arr.data = NULL;
-	arr.len = 0;
-   }
+        arr.len = strlen (cwd);
+        arr.data = _yrt_dup_slice ((uint8_t*) cwd,  arr.len, sizeof (char));
+    } else {
+        arr.data = NULL;
+        arr.len = 0;
+    }
     return arr;
 }

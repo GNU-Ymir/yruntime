@@ -14,17 +14,15 @@ struct _yrt_dcopy_map_node {
  * Make a copy of the slice
  * @info: allocation made with the gc
  */
-_yrt_array_ _yrt_dup_slice (_yrt_array_, unsigned long);
+uint8_t* _yrt_dup_slice (uint8_t * addr, uint64_t len, uint64_t size);
+
 
 /**
- * Allocate a new array with the GC
- * @params: 
- *    - data: the data to put inside the allocated array (replicated at each index)
- *    - size: the size of each element in the array
- *    - len: the len of the array
- * @return: an allocated array with copied data inside it
+ * Make a copy of the slice
+ * @info: allocation made with the gc
  */
-_yrt_array_ _yrt_alloc_array (void* data, unsigned long size, unsigned long len);
+uint8_t* _yrt_alloc_array (uint8_t * addr, uint64_t len, uint64_t size);
+
 
 /**
  * Allocate a raw segment of memory with the GC
@@ -33,7 +31,7 @@ _yrt_array_ _yrt_alloc_array (void* data, unsigned long size, unsigned long len)
  *    - len: the number of index (alloc size == len * size)
  * @return: the allocate block (GC)
  */
-void* _yrt_new_block (unsigned long size, unsigned long len);
+uint8_t* _yrt_new_block (uint64_t size, uint64_t len);
 
 /**
  * Allocate a raw segment of memory with the GC
@@ -42,7 +40,7 @@ void* _yrt_new_block (unsigned long size, unsigned long len);
  *    - len: the number of index (alloc size == len * size)
  * @return: the allocate block (GC) in a slice 
  */
-_yrt_array_ _yrt_new_array (unsigned long size, unsigned long len);
+_yrt_array_ _yrt_new_array (uint64_t size, uint64_t len);
 
 /**
  * Make a copy of a raw segment of data into another raw segment of data allocated with GC
@@ -51,7 +49,7 @@ _yrt_array_ _yrt_new_array (unsigned long size, unsigned long len);
  *    - len: the size of the data to copy
  * @return: the allocated block containing *data
  */
-void* _yrt_dupl_any (void * data, unsigned long len);
+uint8_t* _yrt_dupl_any (uint8_t* data, uint64_t len);
 
 /**
  * Allocate a segment a memory that will be used to store a class
