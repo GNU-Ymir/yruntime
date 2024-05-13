@@ -23,6 +23,10 @@ uint8_t* _yrt_dup_slice (uint8_t * addr, uint64_t len, uint64_t size) {
     return x;
 }
 
+uint8_t* _yrt_alloc_array_no_set (uint64_t len, uint64_t size) {
+    uint8_t* x = (uint8_t*) GC_malloc (len * size);
+    return x;
+}
 
 uint8_t* _yrt_alloc_array (uint8_t * addr, uint64_t len, uint64_t size) {
     uint8_t* x = (uint8_t*) GC_malloc (len * size);
