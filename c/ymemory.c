@@ -196,5 +196,12 @@ void _yrt_dcopy_map_grow () {
     _yrt_dcopy_head.to = to_res;
 }
 
+void* _yrt_call_lazy (struct _yrt_lazy_value * value) {
+    if (!value-> set) {
+        value-> data = GC_malloc (value-> size);
+        value-> closure.func (value-> closure.closure, value-> data);
+        value-> set = 1;
+    }
 
-
+    return value-> data;
+}

@@ -10,6 +10,19 @@ struct _yrt_dcopy_map_node {
     void** to;
 };
 
+
+struct _yrt_lazy_closure {
+    void * closure;
+    void (*func) (void* closure, void*ret);
+};
+
+struct _yrt_lazy_value {
+    unsigned char set;
+    void* data;
+    uint32_t size;
+    struct _yrt_lazy_closure closure;
+};
+
 /**
  * Make a copy of the slice
  * @info: allocation made with the gc
@@ -90,5 +103,10 @@ void _yrt_insert_dcopy_map (void* data, void* value);
 
 
 void _yrt_dcopy_map_grow ();
+
+/**
+ * Check if the lazy value is set, if not construct it
+ */
+void* _yrt_call_lazy (struct _yrt_lazy_value * value);
 
 #endif
