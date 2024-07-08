@@ -10,7 +10,7 @@
  * import std::io;
  * import std::concurrency::signal;
  * 
- * def foo (x : i32, y : i32) {
+ * fn foo (x : i32, y : i32) {
  *     println ("Foo called with ", x, " ", y);
  * }
  * 
@@ -67,7 +67,7 @@ pub class Signal {T...} {
      *    - f: the function to connect 
      * @complexity: O (1)
      */
-    pub def connect (mut self, f : fn (T)-> void) {
+    pub fn connect (mut self, f : fn (T)-> void) {
         self._foos:.push (f);
     }
 
@@ -77,7 +77,7 @@ pub class Signal {T...} {
      *    - f: the closure to connect
      * @complexity: O (1)
      */
-    pub def connect (mut self, f : dg (T)-> void) {
+    pub fn connect (mut self, f : dg (T)-> void) {
         self._degs:.push (f);
     }
 
@@ -88,7 +88,7 @@ pub class Signal {T...} {
      *    - f: the closure to disconnect
      * @complexity: O (n), with n the number of closure connected to the signal
      */
-    pub def disconnect (mut self, f : dg (T)-> void) {
+    pub fn disconnect (mut self, f : dg (T)-> void) {
         let dmut res = Vec!{dg (T)-> void}::new ();
         for i in self._degs {
             if (i !is f) res:.push (i);
@@ -104,7 +104,7 @@ pub class Signal {T...} {
      *    - f: the function to disconnect
      * @complexity: O (n), with n the number of functions connected to the signal
      */
-    pub def disconnect (mut self, f : fn (T)-> void) {
+    pub fn disconnect (mut self, f : fn (T)-> void) {
         let dmut res = Vec!{fn (T)-> void}::new ();
         for i in self._foos {
             if (i !is f) res:.push (i);
@@ -116,7 +116,7 @@ pub class Signal {T...} {
     /**
      * @returns: true iif the signal is connected to nothing
      */
-    pub def isEmpty (self) -> bool {
+    pub fn isEmpty (self) -> bool {
         self._foos.len () == 0us && self._degs.len () == 0us
     }
 
@@ -127,7 +127,7 @@ pub class Signal {T...} {
      * @params: 
      *    - values: the list of parameters to pass to the connected functions and closures
      */
-    pub def emit (self, values : T) {
+    pub fn emit (self, values : T) {
         import std::concurrency::future;
         
         let dmut futures = Vec!{&Future!{void}}::new ();
@@ -151,7 +151,7 @@ pub class Signal {T...} {
      * @params: 
      *    - values: the list of parameters to pass to the connected functions and closures
      */
-    pub def emitNoWait (self, values : T) {
+    pub fn emitNoWait (self, values : T) {
         import std::concurrency::future;
         
         let dmut futures = Vec!{&Future!{void}}::new ();
@@ -172,7 +172,7 @@ pub class Signal {T...} {
      * @params:
      *    - values: the list of parameters to pass to the connected functions and closures.
      */
-    pub def emitSync (self, values : T) {
+    pub fn emitSync (self, values : T) {
         for i in self._foos {
             i (expand values);
         }
@@ -212,7 +212,7 @@ pub class Signal {T of void} {
      *    - f: the function to connect 
      * @complexity: O (1)
      */
-    pub def connect (mut self, f : fn ()-> void) {
+    pub fn connect (mut self, f : fn ()-> void) {
         self._foos:.push (f);
     }
 
@@ -222,7 +222,7 @@ pub class Signal {T of void} {
      *    - f: the closure to connect
      * @complexity: O (1)
      */
-    pub def connect (mut self, f : dg ()-> void) {
+    pub fn connect (mut self, f : dg ()-> void) {
         self._degs:.push (f);
     }
 
@@ -233,7 +233,7 @@ pub class Signal {T of void} {
      *    - f: the closure to disconnect
      * @complexity: O (n), with n the number of closure connected to the signal
      */
-    pub def disconnect (mut self, f : dg ()-> void) {
+    pub fn disconnect (mut self, f : dg ()-> void) {
         let dmut res = Vec!{dg ()-> void}::new ();
         for i in self._degs {
             if (i !is f) res:.push (i);
@@ -249,7 +249,7 @@ pub class Signal {T of void} {
      *    - f: the function to disconnect
      * @complexity: O (n), with n the number of functions connected to the signal
      */
-    pub def disconnect (mut self, f : fn ()-> void) {
+    pub fn disconnect (mut self, f : fn ()-> void) {
         let dmut res = Vec!{fn ()-> void}::new ();
         for i in self._foos {
             if (i !is f) res:.push (i);
@@ -261,7 +261,7 @@ pub class Signal {T of void} {
     /**
      * @returns: true iif the signal is connected to nothing
      */
-    pub def isEmpty (self) -> bool {
+    pub fn isEmpty (self) -> bool {
         self._foos.len () == 0us && self._degs.len () == 0us
     }
 
@@ -270,7 +270,7 @@ pub class Signal {T of void} {
      * @info: functions and closures are called using future, meaning they are running asynchronusly. All submitted futures are waited before the method `emit` returns.
      * @warning: the task pool used by the emitted future is the standard task pool of future (cf. `std::concurrency::future`), thus if there is an infinite task running in that task pool (or just one of the connected functions is infinite) this method may never return.
      */
-    pub def emit (self) {
+    pub fn emit (self) {
         import std::concurrency::future;
         
         let dmut futures = Vec!{&Future!{void}}::new ();
@@ -292,7 +292,7 @@ pub class Signal {T of void} {
      * Emit the signal (calling all the connected functions and closure)
      * @info: functions and closures are called using future, meaning they are running asynchronusly. This method returns immediately without waiting the end of the submitted futures.
      */
-    pub def emitNoWait (self) {
+    pub fn emitNoWait (self) {
         import std::concurrency::future;
         
         let dmut futures = Vec!{&Future!{void}}::new ();
@@ -311,7 +311,7 @@ pub class Signal {T of void} {
      * @info: run the slots in the current threads with no guarantee on calling order.
      * @warning: if one of the connected function is infinite this method may never return, and some connected slots may never be called.
      */
-    pub def emitSync (self) {
+    pub fn emitSync (self) {
         for i in self._foos {
             i ();
         }

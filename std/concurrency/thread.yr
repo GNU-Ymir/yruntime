@@ -78,7 +78,7 @@ import etc::runtime::thread;
  * import std::io;
  * import std::concurrency::thread;
  *
- * def thread_func (th : Thread) -> void {
+ * fn thread_func (th : Thread) -> void {
  *     let msg = th.pipe.read ();
  *     match msg {
  *         Box!{i32}(value-> x : _) => {
@@ -88,7 +88,7 @@ import etc::runtime::thread;
  *     }
  * }
 
- * def main () {
+ * fn main () {
  *     let th = spawn (&thread_func);
  *     th.pipe.write (23);
  *     match th.pipe.read () {
@@ -98,7 +98,7 @@ import etc::runtime::thread;
  * }
  * ============
  */
-pub def spawn (func : fn (Thread) -> void) -> Thread {
+pub fn spawn (func : fn (Thread) -> void) -> Thread {
     let dmut th = internal::FnThreadLauncher::new (func, true);    
     Runtime!(&internal::FnThreadLauncher)::_yrt_thread_create (alias &(th.th_content.id), null, &internal::thread_fn_main, th);
     th.th_content
@@ -131,7 +131,7 @@ pub def spawn (func : fn (Thread) -> void) -> Thread {
  * th.join ();
  * ==========
  */
-pub def spawn (func : dg (Thread)-> void)-> Thread {
+pub fn spawn (func : dg (Thread)-> void)-> Thread {
     let dmut th = internal::DgThreadLauncher::new (func, true);
     Runtime!(&internal::DgThreadLauncher)::_yrt_thread_create (alias &(th.th_content.id), null, &internal::thread_dg_main, th);
     th.th_content
@@ -145,7 +145,7 @@ pub def spawn (func : dg (Thread)-> void)-> Thread {
  *    - func: the function to run in the thread
  * @returns: the spawned thread.
  */
-pub def spawnNoPipe (func : fn (Thread)-> void)-> Thread {
+pub fn spawnNoPipe (func : fn (Thread)-> void)-> Thread {
     let dmut th = internal::FnThreadLauncher::new (func, false);
     Runtime!(&internal::FnThreadLauncher)::_yrt_thread_create (alias &(th.th_content.id), null, &internal::thread_fn_main, th);
     th.th_content
@@ -159,7 +159,7 @@ pub def spawnNoPipe (func : fn (Thread)-> void)-> Thread {
  *    - func: the delegate to run in the thread
  * @returns: the spawned thread.
  */
-pub def spawnNoPipe (func : dg (Thread)-> void)-> Thread {
+pub fn spawnNoPipe (func : dg (Thread)-> void)-> Thread {
     let dmut th = internal::DgThreadLauncher::new (func, false);
     Runtime!(&internal::DgThreadLauncher)::_yrt_thread_create (alias &(th.th_content.id), null, &internal::thread_dg_main, th);
     th.th_content
@@ -184,7 +184,7 @@ pub def spawnNoPipe (func : dg (Thread)-> void)-> Thread {
  * println ("Printed a million times already !");
  * =============
  */
-pub def join (th : Thread) -> void {
+pub fn join (th : Thread) -> void {
     _yrt_thread_join (th.id, null);
 }
 
@@ -194,7 +194,7 @@ pub struct
  -> Thread;
 
 mod Runtime {class T} {
-    pub extern (C) def _yrt_thread_create (dmut id : &usize, attr : &void, func : fn (T)-> void, data : T)-> i32;
+    pub extern (C) fn _yrt_thread_create (dmut id : &usize, attr : &void, func : fn (T)-> void, data : T)-> i32;
 }
 
 mod internal { 
@@ -205,7 +205,7 @@ mod internal {
      * reason, this function is a proxy that perform a sort of closure
      * on the thread
      */
-    pub def thread_fn_main (actor : &FnThreadLauncher) -> void {
+    pub fn thread_fn_main (actor : &FnThreadLauncher) -> void {
         actor.func (actor.th_content);
     }
 
@@ -232,7 +232,7 @@ mod internal {
      * reason, this function is a proxy that perform a sort of closure
      * on the thread
      */
-    pub def thread_dg_main (actor : &DgThreadLauncher) -> void {
+    pub fn thread_dg_main (actor : &DgThreadLauncher) -> void {
         actor.func (actor.th_content);
     }
 

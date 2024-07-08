@@ -26,7 +26,7 @@ import etc::runtime::errno;
 import etc::c::dirent;
 import core::exception;
 
-extern (C) def printf (c : &c8, ...);
+extern (C) fn printf (c : &c8, ...);
 
 
 /**
@@ -68,7 +68,7 @@ pub class DirEntry over FsEntry {
      * /*
      *  * Verify that a directory contains a file named fName (recursively)
      * */
-     * def exists (fName : [c8], dir : &DirEntry)-> bool
+     * fn exists (fName : [c8], dir : &DirEntry)-> bool
      *    throws &FsError
      * {
      *    for e in dir {
@@ -88,14 +88,14 @@ pub class DirEntry over FsEntry {
      * exists ("foo"s8, fs::sys::readDir (Path::new ("./some/dir"s8)));
      * ===
      */
-    pub def begin (self)-> dmut &DirIterator {
+    pub fn begin (self)-> dmut &DirIterator {
         DirIterator::new (opendir (self.path.toStr ().toStringZ ()), self.path)
     }
 
     /**
      * @returns: the iterator to the end of the directory, to know when to stop the iteration.
      */
-    pub def end (self)-> &DirIterator {
+    pub fn end (self)-> &DirIterator {
         DirIterator::new (null, self.path)
     }
     
@@ -175,7 +175,7 @@ __version LINUX {
          *   - FsError: if the link is invalid
          * @warning: links can point to pathes that do not really exist. This is due to linux filesystem.
          */
-        pub def follow (self)-> &Path
+        pub fn follow (self)-> &Path
             throws &FsError
         {
             let dmut path : [c8] = ['\u{0}'c8 ; 256u32];
@@ -219,14 +219,14 @@ class @final DirIterator {
     /**
      * @returns: true if the iterators point to the same entry
      */
-    pub def opEquals (self, o : &DirIterator) -> bool {
+    pub fn opEquals (self, o : &DirIterator) -> bool {
         self._dir is o._dir
     }
 
     /**
      * Advance the iterator to the next element.
      */
-    pub def next (mut self)  {
+    pub fn next (mut self)  {
         if (self._dir !is null) {
             self._curr = readdir (self._dir);
             if (self._curr is null) {
@@ -257,7 +257,7 @@ class @final DirIterator {
      * @returns: the entry being pointed by the iterator.
      * @warning: panic if the iterator is invalid
      */
-    pub def get {0} (self)-> &FsEntry {
+    pub fn get {0} (self)-> &FsEntry {
         __pragma!trusted ({
             let c = *self._curr;            
             let path = self._root.push (c.d_name.fromStringZ![c8] ());

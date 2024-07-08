@@ -10,9 +10,9 @@ import core::exception;
 import core::object;
 
 mod allocMod {T} {
-    pub extern (C) def _yrt_new_array (_ : usize, _ : usize)-> dmut [T];
-    pub extern (C) def _yrt_new_block (_ : usize, _ : usize)-> dmut &(T);
-    pub extern (C) def memcpy (_ : &(T),  _ : &T, _ : usize)-> void;
+    pub extern (C) fn _yrt_new_array (_ : usize, _ : usize)-> dmut [T];
+    pub extern (C) fn _yrt_new_block (_ : usize, _ : usize)-> dmut &(T);
+    pub extern (C) fn memcpy (_ : &(T),  _ : &T, _ : usize)-> void;
 }
 
 mod Runtime {F, T} {
@@ -23,7 +23,7 @@ mod Runtime {F, T} {
      * This is unsafe but we can argue that if a class has successfuly produced a packet 
      * Then the packet contains a valid class that can be copied as it is
      */
-    pub extern (C) def _yrt_unsafe_cast (x : F)-> dmut T;
+    pub extern (C) fn _yrt_unsafe_cast (x : F)-> dmut T;
 
         /**
      * Runtime unsafe cast of a pointer to another 
@@ -31,28 +31,28 @@ mod Runtime {F, T} {
      * This is unsafe but we can argue that if a class has successfuly produced a packet 
      * Then the packet contains a valid class that can be copied as it is
      */
-    pub extern (C) def _yrt_unsafe_cast (ref x : F)-> dmut T;
+    pub extern (C) fn _yrt_unsafe_cast (ref x : F)-> dmut T;
 
     /**
      * Allocate a class from the vtable
      */
-    pub extern (C) def _yrt_alloc_class (vtable : &void)-> dmut &u8;
+    pub extern (C) fn _yrt_alloc_class (vtable : &void)-> dmut &u8;
 
 }
 
 mod DcopyMap {
-    pub extern (C) def _yrt_dcopy_map_is_started ()-> bool;
-    pub extern (C) def _yrt_purge_dcopy_map ();
+    pub extern (C) fn _yrt_dcopy_map_is_started ()-> bool;
+    pub extern (C) fn _yrt_purge_dcopy_map ();
     
-    pub extern (C) def _yrt_find_dcopy_map (_ : &void)-> dmut &void;
-    pub extern (C) def _yrt_insert_dcopy_map (_ : &void, _ : &void);
+    pub extern (C) fn _yrt_find_dcopy_map (_ : &void)-> dmut &void;
+    pub extern (C) fn _yrt_insert_dcopy_map (_ : &void, _ : &void);
 }
 
 
 /**
  * Allocate memory on the heap for that can contain the type `T`.
  */
-pub def alloc {T} (a : T) -> mut & (mut T) {
+pub fn alloc {T} (a : T) -> mut & (mut T) {
     let mut x : mut &(mut T) = alias allocMod!{T}::_yrt_new_block (sizeof T, 1us);        
     *x = a;
     return alias x;
@@ -63,7 +63,7 @@ pub def alloc {T} (a : T) -> mut & (mut T) {
 /**
  * Allocate memory on the heap for that can contain the type `T`.
  */
-pub def alloc {T} (dmut a : T) -> dmut &(T) {
+pub fn alloc {T} (dmut a : T) -> dmut &(T) {
     let dmut x = alias allocMod!{T}::_yrt_new_block (sizeof T, 1us);        
     *x = alias a;
     return alias x;
@@ -74,14 +74,14 @@ pub def alloc {T} (dmut a : T) -> dmut &(T) {
 /**
  * Allocate memory on the heap that can contains `len` elements of type `T`.
  */
-pub def allocBlock {T} (len : usize) -> dmut &T {
+pub fn allocBlock {T} (len : usize) -> dmut &T {
     alias allocMod!{T}::_yrt_new_block (sizeof T, len)
 }
 
 /**
  * Allocate a slice on the heap that can contain `len` elements of type `T`.
  */
-pub def allocArray {T} (len : usize) -> dmut [T] {
+pub fn allocArray {T} (len : usize) -> dmut [T] {
     alias allocMod!{T}::_yrt_new_array (sizeof T, len)
 }
 
@@ -89,7 +89,7 @@ pub def allocArray {T} (len : usize) -> dmut [T] {
  * Copy the second array inside the first one, without reallocation
  * Copy only what can be copied (max (to.len, fr.len))
  */
-pub def memCopy {T} (fr : [T], mut to : [mut T]) {
+pub fn memCopy {T} (fr : [T], mut to : [mut T]) {
     let len = if (to.len < fr.len) { to.len } else { fr.len }
     allocMod!{T}::memcpy (to.ptr, fr.ptr, cast!usize (len) * sizeof (T));
 }
@@ -101,7 +101,7 @@ pub {
      */
     trait Copiable {
         
-        prot def @{final} __coreduplication_copyInner (self, dmut packet : &(u8)) {            
+        prot fn @{final} __coreduplication_copyInner (self, dmut packet : &(u8)) {
             cte if (__pragma!compile ({self::super;})) {
                 cte if (is!{typeof (self::super)} {U impl Copiable}) {
                     self::super.__coreduplication_copyInner (alias packet);
@@ -141,7 +141,7 @@ pub {
          *         self._i = self._i ~ [self]; // Make sure it contains a reference to itself
          *     }
 
-         *     pub def verifRecurse (self) {
+         *     pub fn verifRecurse (self) {
          *         __pragma!trusted ({
          *             assert (self is self._i[0]); // make sure it still contains a reference to itself
          *         });
@@ -152,7 +152,7 @@ pub {
          * }
          *
          *
-         * def main () {
+         * fn main () {
          *    let a = A::new ();
          *    let b = dcopy a; 
          *
@@ -168,7 +168,7 @@ pub {
          * }
          * ===
          */            
-        pub def deepCopy (self)-> dmut &Object {
+        pub fn deepCopy (self)-> dmut &Object {
             let started = DcopyMap::_yrt_dcopy_map_is_started ();
             {                
                 let dmut res = DcopyMap::_yrt_find_dcopy_map (Runtime!{typeof self, &void}::_yrt_unsafe_cast (self));
@@ -200,7 +200,7 @@ pub {
      * Function called by the compiler when `dcopy` construction is used.
      * If it is prefered to use the keyword `dcopy`, there is no problem to call this function directly as `dcopy` is just a syntax rewrite.
      */
-    def deepCopy {T} (a : T)-> dmut T {
+    fn deepCopy {T} (a : T)-> dmut T {
         cte if (is!{T}{class U}) {
             cte assert (false, "Class " ~ T::typeid ~ " does not implement Copiable");
         } else cte if (is!{T}{U of &V, V}) {
@@ -234,10 +234,10 @@ pub {
 
 
 mod Runtime {
-    pub extern (C) def _yrt_unsafe_cast (len : usize, x : &void)-> dmut [c8];
+    pub extern (C) fn _yrt_unsafe_cast (len : usize, x : &void)-> dmut [c8];
 }
 
-def deepCopySlice {T of [U], U} (a : T) -> dmut [dmut U] {
+fn deepCopySlice {T of [U], U} (a : T) -> dmut [dmut U] {
     let started = DcopyMap::_yrt_dcopy_map_is_started ();
     {
         let dmut x : dmut [U] = alias allocArray!U (a.len);

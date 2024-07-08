@@ -20,7 +20,7 @@
  * import std::conv; // for to
  * import std::concurrency::future;
  *
- * def computePi (prec : i32)-> f64 {
+ * fn computePi (prec : i32)-> f64 {
  *     let mut res = 0.0;
  *     let n = prec.to!f64 ();
  *     for i in 0 .. prec {
@@ -29,14 +29,14 @@
  *     res     
  * }
  *
- * def foo ()-> &Future!i32 {
+ * fn foo ()-> &Future!i32 {
  *     future (|| {
  *         println ("1 : ", computePi (i32::max / 100));
  *         42
  *     })
  * }
  *
- * def main () throws &AssertError {
+ * fn main () throws &AssertError {
  *     let x = foo ();
  *     println ("2 : ", computePi (i32::max / 1000));
  *     assert (x.wait () == 42);
@@ -72,7 +72,7 @@ extern (C) static dmut __YRT_TASK_POOL__ : &(&TaskPool);
  * assert (f.wait () == 42);
  * ===========
  */
-pub def future {T} (func : fn ()-> T) -> &Future!T {
+pub fn future {T} (func : fn ()-> T) -> &Future!T {
     let dmut fut = internal::FnFuture::new (func);
     let dmut pool = internal::getTaskPool ();
     pool:.submit (&(fut:.execute));
@@ -94,7 +94,7 @@ pub def future {T} (func : fn ()-> T) -> &Future!T {
  * assert (f.wait () == 42);
  * ===========
  */
-pub def future {T} (func : dg ()-> T) -> &Future!T {
+pub fn future {T} (func : dg ()-> T) -> &Future!T {
     let dmut fut = internal::DgFuture::new (func);
     let dmut pool = internal::getTaskPool ();
     pool:.submit (&(fut:.execute));
@@ -117,7 +117,7 @@ pub def future {T} (func : dg ()-> T) -> &Future!T {
  * assert (f.wait () == 42);
  * ===========
  */
-pub def future {T} (dmut pool : &TaskPool, func : fn ()-> T) -> &Future!T {
+pub fn future {T} (dmut pool : &TaskPool, func : fn ()-> T) -> &Future!T {
     let dmut fut = internal::FnFuture::new (func);
     pool:.submit (&(fut:.execute));
     fut
@@ -139,7 +139,7 @@ pub def future {T} (dmut pool : &TaskPool, func : fn ()-> T) -> &Future!T {
  * assert (f.wait () == 42);
  * ===========
  */
-pub def future {T} (dmut pool : &TaskPool, func : dg ()-> T) -> &Future!T {
+pub fn future {T} (dmut pool : &TaskPool, func : dg ()-> T) -> &Future!T {
     let dmut fut = internal::DgFuture::new (func);
     pool:.submit (&(fut:.execute));
     fut
@@ -165,7 +165,7 @@ pub def future {T} (dmut pool : &TaskPool, func : dg ()-> T) -> &Future!T {
  * ===
  * @warning: all future submitted before the change of the task pool are executed by the old task pool. However, this will not break them.
  */
-pub def setFutureTaskPool (dmut pool : &TaskPool) -> void {
+pub fn setFutureTaskPool (dmut pool : &TaskPool) -> void {
     if (__YRT_TASK_POOL__ is null) __YRT_TASK_POOL__ = duplication::alloc (alias pool);
     else {
         *__YRT_TASK_POOL__ = alias pool;
@@ -220,7 +220,7 @@ pub class @abstract Future {T} {
          * =============
          * @warning: if the future is an infinite loop, this function will never return
          */
-        pub def @final wait (self)-> T {
+        pub fn @final wait (self)-> T {
             self._mutex.lock ();
             if (!self._finalized) 
                 self._cond.wait (self._mutex);
@@ -253,7 +253,7 @@ pub class @abstract Future {T} {
          * =============
          * @warning: if the future is an infinite loop, this function will never return
          */
-        pub def @final wait (self) {
+        pub fn @final wait (self) {
             self._mutex.lock ();
             if (!self._finalized) 
                 self._cond.wait (self._mutex);
@@ -276,14 +276,14 @@ pub class @abstract Future {T} {
      * assert (f.wait () == 42); // this will not really waits the future is already finished
      * ============
      */
-    pub def @final isFinished (self) -> bool {
+    pub fn @final isFinished (self) -> bool {
         self._finalized
     }
     
     /**
      * Emit the signal (thread condition), to inform that the future value is computed 
      */
-    prot def @final signal (mut self) {
+    prot fn @final signal (mut self) {
         self._mutex.lock ();
         self._finalized = true;
         self._cond.signal ();
@@ -294,7 +294,7 @@ pub class @abstract Future {T} {
      * Execute the future in the current thread
      * @info: internal function, that should be called by a TaskPool only
      */
-    pub def execute (mut self);
+    pub fn execute (mut self);
     
 }
 
@@ -314,7 +314,7 @@ mod internal {
      * assert (pool.getNbThreads () == max (get_nprocs () - 1, 1));
      * ==============
      */
-    pub def getTaskPool () -> dmut &TaskPool {
+    pub fn getTaskPool () -> dmut &TaskPool {
         if (__YRT_TASK_POOL__ is null) __YRT_TASK_POOL__ = duplication::alloc (alias TaskPool::new ());
         
         return alias *__YRT_TASK_POOL__;        

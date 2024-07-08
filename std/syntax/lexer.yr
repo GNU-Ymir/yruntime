@@ -33,7 +33,7 @@
  * | COMA = ","
  * -> Tokens;
  *
- * aka content = str#{
+ * def content = str#{
  *    
  *    // Some line comment above
  *    (x, y) => {
@@ -54,7 +54,7 @@
  *    
  * };
  *
- * def main ()
+ * fn main ()
  * {
  *     // Creating a lexer to split the content into tokens
  *     // Define the comments as '//' to line return, and '/*' to '*/'
@@ -180,7 +180,7 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Lexer {T} {
      * @info: the content inside the lexer is the content that wasn't splitted yet. Getting the content can be useful when to restore the cursor position, cf self.setContent ().
      * @complexity: O (1), no copy is made, the content is just a slice
      */
-    pub def getContent (self)-> [T] {
+    pub fn getContent (self)-> [T] {
         self._content
     }
 
@@ -199,7 +199,7 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Lexer {T} {
      *  * Try to read x + y
      *  * @returns: true if succeeded, false otherwise
      *  */
-     * def tryReadingAdd (dmut lex : &Lexer!c32)-> bool {
+     * fn tryReadingAdd (dmut lex : &Lexer!c32)-> bool {
      *     let (x, _, _) = lex:.next ();
      *     let (add, _, _) = lex:.next ();
      *     let (y, _, _) = lex:.next ();
@@ -228,21 +228,21 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Lexer {T} {
      * assert (str == "x");
      * ===
      */
-    pub def setContent (mut self, content : [T]) {
+    pub fn setContent (mut self, content : [T]) {
         self._content = content;
     }
 
     /**
      * @returns: the line location of the cursor
      */
-    pub def getLine (self)-> u64 {
+    pub fn getLine (self)-> u64 {
         self._line
     }
 
     /**
      * @returns: the column location of the cursor
      */
-    pub def getColumn (self)-> u64 {
+    pub fn getColumn (self)-> u64 {
         self._col
     }
 
@@ -253,7 +253,7 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Lexer {T} {
      *    - ._1: the line of the beginning of the word (0 if no word was read, EOF)
      *    - ._2: the col of the beginning of the word (0 if no word was ref, EOF)
      */
-    pub def next (mut self) -> ([T], u64, u64) {
+    pub fn next (mut self) -> ([T], u64, u64) {
         loop {
             let (wd, isSkip, isComment) = self._tzer.nextWithFlags (self._content);
             if (wd != 0u64) {
@@ -290,7 +290,7 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Lexer {T} {
      *    - ._1: the line of the beginning of the word (0 if the lexer is EOF)
      *    - ._2: the col of the beginning of the word (0 if the lexer is EOF)
      */
-    pub def nextChar (mut self)-> ([T], u64, u64) {
+    pub fn nextChar (mut self)-> ([T], u64, u64) {
         let wd = 1u64;
         if (wd != 0u64) {
             let ret = self._content [0u64..wd];
@@ -325,7 +325,7 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Lexer {T} {
      *    - ._1: the line of the beginning of the word (0 if no word)
      *    - ._2: the col of the beginning of the word (0 if no word)
      */
-    pub def nextNoConsume (self) -> ([T], u64, u64) {
+    pub fn nextNoConsume (self) -> ([T], u64, u64) {
         let mut aux_content = self._content;
         let mut pos: (mut u64, mut u64) = (self._line, self._col);
         
@@ -392,7 +392,7 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Lexer {T} {
      * lex:.doSkip (true); // future skippable tokens are skiped
      * ===
      */
-    pub def doSkip (mut self, d : bool) -> void {
+    pub fn doSkip (mut self, d : bool) -> void {
         self._doSkip = d;
     }
 
@@ -432,7 +432,7 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Lexer {T} {
      * lex:.doComments (true); // future comments will be ignored
      * ===
      */
-    pub def doComments (mut self, d : bool) -> void {
+    pub fn doComments (mut self, d : bool) -> void {
         self._doComments = d;
     }
 
@@ -443,7 +443,7 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Lexer {T} {
      *   - end: the token that stop the reading 
      * @returns: a slice of content, where the first line has been removed
      */
-    prv def skipComments (self, buf : [T], end : [T], ref mut line : u64, ref mut col : u64)-> mut [T] {
+    prv fn skipComments (self, buf : [T], end : [T], ref mut line : u64, ref mut col : u64)-> mut [T] {
         let mut content = buf;
         {
             loop {
@@ -476,7 +476,7 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Lexer {T} {
      *   - ._0: the new line number
      *   - ._1: the new column number
      */
-    prv def countNbLine (self, word : [T], line : u64, col : u64) -> (u64, u64) {
+    prv fn countNbLine (self, word : [T], line : u64, col : u64) -> (u64, u64) {
         cte if (is!T{U of c8}) {
             if (word == "\n"s8) {
                 (line + 1u64, 1u64)
@@ -503,7 +503,7 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Lexer {T} {
      * assert (lex:.next ()._0 == "")
      * ======================
      */
-    pub def clear (mut self)-> [T] {
+    pub fn clear (mut self)-> [T] {
         let ret = self._content;
         self._content = [];
         ret
@@ -512,7 +512,7 @@ pub class if (is!T {U of c8} || is!T {U of c32}) @final Lexer {T} {
     /**
      * @returns: true iif the lexer reached the end of the text to split.
      */
-    pub def isEof (self)-> bool {
+    pub fn isEof (self)-> bool {
         self._content.len == 0us
     }
     

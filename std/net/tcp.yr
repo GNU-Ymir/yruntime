@@ -27,7 +27,7 @@
  * ===============
  * import std::net::tcp;
  * 
- * def greets_client (client : &TcpStream) 
+ * fn greets_client (client : &TcpStream)
  *     throws &TcpError
  * {
  *    // Communicate with the client
@@ -131,7 +131,7 @@ import std::io, std::stream, std::traits;
 import std::net::address;
 import std::net::packet;
 
-extern (C) def printf (c : &c8, ...);
+extern (C) fn printf (c : &c8, ...);
 
 /**
  * The types of error that can occur when listening, or connecting to a TCP socket
@@ -277,7 +277,7 @@ pub class @final TcpListener {
      * @returns: the TcpStream used to communicate with the connected client.
      * @example: 
      * =============
-     * pub def greets_client (dmut client : &TcpStream) {
+     * pub fn greets_client (dmut client : &TcpStream) {
      *    // Communicate with the client
      *    client:.rawSend ("Hello !!"s8);
      * }
@@ -290,7 +290,7 @@ pub class @final TcpListener {
      * }
      * =============
      */
-    pub def accept (mut self) -> dmut &TcpStream
+    pub fn accept (mut self) -> dmut &TcpStream
         throws &TcpError
     {
         match self._addr {
@@ -326,21 +326,21 @@ pub class @final TcpListener {
      * @returns: the file descriptor of the socket
      * @warning: closing this socket will make the listener close, this should not be done outside the listener
      */
-    pub def getFd (self)-> i32 {
+    pub fn getFd (self)-> i32 {
         self._sockfd
     }
     
     /**
      * @returns: the port on which the listener is listening
      */
-    pub def getPort (self)-> u16 {
+    pub fn getPort (self)-> u16 {
         self._port
     }
 
     /**
      * Bind the tcp listener to an ipv4 address.
      */
-    prv def bindV4 (mut self, ip : &SockAddrV4)
+    prv fn bindV4 (mut self, ip : &SockAddrV4)
         throws &TcpError
     {
         self._sockfd = etc::c::socket::socket (AddressFamily::AF_INET, SocketType::SOCK_STREAM, 0);
@@ -378,7 +378,7 @@ pub class @final TcpListener {
     /**
      * Bind the tcp listener to an ipv6 address.
      */
-    prv def bindV6 (mut self, ip : &SockAddrV6)
+    prv fn bindV6 (mut self, ip : &SockAddrV6)
         throws &TcpError
     {
         self._sockfd = etc::c::socket::socket (AddressFamily::AF_INET6, SocketType::SOCK_STREAM, 0);
@@ -417,7 +417,7 @@ pub class @final TcpListener {
     /**
      * Read a sockaddr_in structure and create the associated SockAddress
      */
-    prv def createAddr (self, s_addr : sockaddr_in) -> &SockAddress
+    prv fn createAddr (self, s_addr : sockaddr_in) -> &SockAddress
         throws &TcpError
     {
         match s_addr.sin_family {
@@ -443,7 +443,7 @@ pub class @final TcpListener {
     /**
      * Read a sockaddr_in structure and create the associated SockAddress
      */
-    prv def createAddr (self, s_addr : sockaddr_in6) -> &SockAddress
+    prv fn createAddr (self, s_addr : sockaddr_in6) -> &SockAddress
         throws &TcpError
     {
         match s_addr.sin6_family {
@@ -492,7 +492,7 @@ pub class @final TcpListener {
  * It can be acquired directly by construction, or using a TcpListener when accepting clients.
  * @example: 
  * ===============
- * pub def greets_client (client : &TcpStream) {
+ * pub fn greets_client (client : &TcpStream) {
  *    // Communicate with the client
  *    client:.rawSend ("Hello !!"s8);
  * }
@@ -617,14 +617,14 @@ pub class TcpStream {
     /**
      * @returns: the address to which the stream is connected
      */
-    pub def getAddr (self)-> &SockAddress {
+    pub fn getAddr (self)-> &SockAddress {
         self._addr
     }
     
     /**
      * @returns: the file descriptor of the socket. 
      */
-    pub def getFd (self)-> i32 {
+    pub fn getFd (self)-> i32 {
         self._sockfd
     }
     
@@ -637,7 +637,7 @@ pub class TcpStream {
      *    - &TcpError: if the sending failed (stream closed)
      * 
      */
-    pub def rawSend {T of [U], U} (mut self, a : T) -> void
+    pub fn rawSend {T of [U], U} (mut self, a : T) -> void
         throws &TcpError
     {
         if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
@@ -663,7 +663,7 @@ pub class TcpStream {
      * @throws:
      *    - &TcpError: if the sending failed (stream closed)
      */
-    pub def if (isIntegral!{T} () || is!{T}{U of bool}) rawSend {T} (mut self, a : T)-> void
+    pub fn if (isIntegral!{T} () || is!{T}{U of bool}) rawSend {T} (mut self, a : T)-> void
         throws &TcpError
     {
         if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
@@ -688,7 +688,7 @@ pub class TcpStream {
      * @throws:
      *    - &TcpError: if the sending failed (stream closed)
      */
-    pub def rawReceive {U} (mut self, nb : usize) -> dmut [U]
+    pub fn rawReceive {U} (mut self, nb : usize) -> dmut [U]
         throws &TcpError
     {
         if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
@@ -716,7 +716,7 @@ pub class TcpStream {
      * @throws:
      *    - &TcpError: if the sending failed (stream closed)
      */
-    pub def rawReceive {U} (mut self, dmut elem : &U) -> void
+    pub fn rawReceive {U} (mut self, dmut elem : &U) -> void
         throws &TcpError
     {
         if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
@@ -739,7 +739,7 @@ pub class TcpStream {
      * @throws:
      *    - &TcpError: if the sending failed (stream closed)
      */
-    pub def send {T impl std::net::packet::Packable} (mut self, a : T) -> void
+    pub fn send {T impl std::net::packet::Packable} (mut self, a : T) -> void
         throws &TcpError
     {
         if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
@@ -759,7 +759,7 @@ pub class TcpStream {
      *    - &TcpError: if the reception failed (stream closed)
      *    - &UnpackError: a packet was received but was invalid (e.g. refering to an unkwnown class for example).
      */
-    pub def receive (mut self)-> dmut &Object
+    pub fn receive (mut self)-> dmut &Object
         throws &UnpackError, &TcpError
     {
         if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
@@ -778,7 +778,7 @@ pub class TcpStream {
      * @throws:
      *    - &TcpError: if the sending failed (stream closed)
      */
-    pub def sendPacket (mut self, packet : [u8])
+    pub fn sendPacket (mut self, packet : [u8])
         throws &TcpError
     {
         if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
@@ -792,7 +792,7 @@ pub class TcpStream {
      * @returns: a packet of data
      * @cf: std::network::packet
      */
-    pub def receivePacket (mut self)-> [u8]
+    pub fn receivePacket (mut self)-> [u8]
         throws &TcpError
     {
         if (self._sockfd == 0) throw TcpError::new (TcpErrorCode::SOCKET_CLOSED, "");
@@ -808,12 +808,12 @@ pub class TcpStream {
      * @returns: true if the socket can still read, false otherwise
      * @warning: to work properly something has to be sent from the other side of the socket, this is a blocking function
      */
-    pub def isAliveRead (self)-> bool {
+    pub fn isAliveRead (self)-> bool {
         let mut c = '\u{0}'c8;
         recv (self._sockfd, cast!(&void) (&c), 1u32, cast!i32 (SocketFlag::MSG_PEEK)) == 1
     }
     
-    prv def connectV4 (mut self, addr : &SockAddrV4)
+    prv fn connectV4 (mut self, addr : &SockAddrV4)
         throws &TcpError
     {
         self._sockfd = etc::c::socket::socket (AddressFamily::AF_INET, SocketType::SOCK_STREAM, 0);
@@ -838,7 +838,7 @@ pub class TcpStream {
         }
     }
 
-    prv def connectV6 (mut self, addr : &SockAddrV6)
+    prv fn connectV6 (mut self, addr : &SockAddrV6)
         throws &TcpError
     {
         self._sockfd = etc::c::socket::socket (AddressFamily::AF_INET6, SocketType::SOCK_STREAM, 0);
@@ -866,7 +866,7 @@ pub class TcpStream {
         }
     }
 
-    prv def toBigEndian (self, a : [u16 ; 8u32])-> [u8 ; 16u32] {
+    prv fn toBigEndian (self, a : [u16 ; 8u32])-> [u8 ; 16u32] {
         let dmut res = [0u8 ; 16u32];
         let mut j = 0us;
         for i in 0us .. 8us {
@@ -909,14 +909,14 @@ __version WINDOWS {
     | data : [u8 ; 408u32] = [0u8 ; 408u32]
      -> WSADATA;
 
-    extern (C) def WSAStartup (version : u16, data : &WSADATA);
-    extern (C) def WSACleanup ();
+    extern (C) fn WSAStartup (version : u16, data : &WSADATA);
+    extern (C) fn WSACleanup ();
 
     
     /**
      * Windows socket lib need to be initialized
      */
-    def initSocketDll () {
+    fn initSocketDll () {
         atomic {
             if (__init__ == 0u32) {
                 let WSAData = WSADATA ();
@@ -930,7 +930,7 @@ __version WINDOWS {
     /**
      * It also needs to be cleaned up (when the last socket use is disposed)
      */
-    def cleanSocketDll () {
+    fn cleanSocketDll () {
         atomic {
             __init__ -= 1u32;
             if (__init__ == 0u32) {

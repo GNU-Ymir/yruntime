@@ -152,7 +152,7 @@ pub trait Serializable {
     /**
      * @info: Virtual, but planned to implement a standard serialization.
      */
-    pub def serialize (self)-> &Config;
+    pub fn serialize (self)-> &Config;
 }
 
 /**
@@ -189,7 +189,7 @@ pub trait Serializable {
  * println (pack); // Package(Foo(package name, 1.0.0))
  * ============
  */
-pub def to {struct T} (cfg : &Config)-> mut T
+pub fn to {struct T} (cfg : &Config)-> mut T
     throws &ConfigError
 {
     match cfg {
@@ -232,7 +232,7 @@ pub def to {struct T} (cfg : &Config)-> mut T
  * assert (c.i == 98i64);
  * ===========================
  */
-pub def to {class T} (cfg : &Config)-> T
+pub fn to {class T} (cfg : &Config)-> T
     throws &ConfigError
 {
     {
@@ -259,7 +259,7 @@ pub def to {class T} (cfg : &Config)-> T
  * assert (i.to!i32 () == 12);
  * =============
  */
-pub def if isIntegral!{T} () to {T, C of &Config} (cfg : C)-> T
+pub fn if isIntegral!{T} () to {T, C of &Config} (cfg : C)-> T
     throws &ConfigError
 {
     match cfg {
@@ -286,7 +286,7 @@ pub def if isIntegral!{T} () to {T, C of &Config} (cfg : C)-> T
  * @throws: 
  *   - &ConfigError: if the cast cannot be made
  */
-pub def if (isFloating!{T} ()) to {T, C of &Config} (cfg : C)-> T
+pub fn if (isFloating!{T} ()) to {T, C of &Config} (cfg : C)-> T
     throws &ConfigError
 {
     match cfg {
@@ -308,7 +308,7 @@ pub def if (isFloating!{T} ()) to {T, C of &Config} (cfg : C)-> T
  * assert (i.to!{[c32]} () == "foo");
  * =============
  */
-pub def if is!{U}{X of c32} to {T of [U], U, C of &Config} (cfg : C)-> T
+pub fn if is!{U}{X of c32} to {T of [U], U, C of &Config} (cfg : C)-> T
     throws &ConfigError
 {
     match cfg {
@@ -331,7 +331,7 @@ pub def if is!{U}{X of c32} to {T of [U], U, C of &Config} (cfg : C)-> T
  * assert (i.to![c8] () == "foo"s8);
  * =============
  */
-pub def if is!{U}{X of c8} to {T of [U], U, C of &Config} (cfg : C)-> T
+pub fn if is!{U}{X of c8} to {T of [U], U, C of &Config} (cfg : C)-> T
     throws &ConfigError
 {
     import std::conv;
@@ -354,7 +354,7 @@ pub def if is!{U}{X of c8} to {T of [U], U, C of &Config} (cfg : C)-> T
  * assert (i.to!bool () == false);
  * =============
  */
-pub def if is!{T}{X of bool} to {T, C of &Config} (cfg : C)-> T
+pub fn if is!{T}{X of bool} to {T, C of &Config} (cfg : C)-> T
     throws &ConfigError
 {
     match cfg {
@@ -387,7 +387,7 @@ pub def if is!{T}{X of bool} to {T, C of &Config} (cfg : C)-> T
  * assert (j.to!{[[i32]]} () == [[1, 2], [9, 10]]);
  * =============
  */
-pub def to {T of [U], U, C of &Config} (cfg : C)-> T
+pub fn to {T of [U], U, C of &Config} (cfg : C)-> T
     throws &ConfigError
 {
     import std::collection::vec, std::conv;
@@ -420,7 +420,7 @@ pub def to {T of [U], U, C of &Config} (cfg : C)-> T
  * @returns: the converted slice.
  * @info: just a template specialization
  */
-pub def to {T of [U], U, C of &Array} (cfg : C)-> T
+pub fn to {T of [U], U, C of &Array} (cfg : C)-> T
     throws &ConfigError
 {
     return CfgToConfig::fromArray!(T) (cfg);
@@ -438,7 +438,7 @@ mod CfgToConfig {
      *   - &ConfigError: if the configuration does not contains every field of the struct
      * @info: if the configuration contains more information they are ignored
      */
-    pub def fromDict {struct T} (dict : &Dict)-> mut T
+    pub fn fromDict {struct T} (dict : &Dict)-> mut T
         throws &ConfigError
     {
         __pragma!fake_throw (&ConfigError); // if the struct is empty
@@ -495,7 +495,7 @@ mod CfgToConfig {
      * @throws: 
      *   - &ConfigError: if the configuration casting failed
      */
-    pub def fromArray {T of [U], U} (cfg : &Array) -> T
+    pub fn fromArray {T of [U], U} (cfg : &Array) -> T
         throws &ConfigError
     {
         import std::collection::vec;
@@ -535,7 +535,7 @@ mod CfgToConfig {
  * let cfg = a.to!{&Config} ();
  * ===================
  */
-pub def if is!{C}{X of &Config} to {class C, class T} (value : T)-> &Config {
+pub fn if is!{C}{X of &Config} to {class C, class T} (value : T)-> &Config {
     cte if (is!{T}{U impl Serializable}) {
         value.serialize ()
     } else {
@@ -554,7 +554,7 @@ pub def if is!{C}{X of &Config} to {class C, class T} (value : T)-> &Config {
  * let cfg : &Config = i.to!{&Config} ();
  * ============
  */
-pub def if (is!{C}{X of &Config} && isIntegral!{T} ()) to {class C, T} (value : T)-> &Config {
+pub fn if (is!{C}{X of &Config} && isIntegral!{T} ()) to {class C, T} (value : T)-> &Config {
     Int::new (cast!i64 (value))
 }
 
@@ -571,7 +571,7 @@ pub def if (is!{C}{X of &Config} && isIntegral!{T} ()) to {class C, T} (value : 
  * let cfg : &Config = b.to!{&Config} ();
  * ============
  */
-pub def if (is!{C}{X of &Config} && is!{T}{X of bool}) to {class C, T} (value : T)-> &Config {
+pub fn if (is!{C}{X of &Config} && is!{T}{X of bool}) to {class C, T} (value : T)-> &Config {
     Bool::new (value)
 }
 
@@ -586,7 +586,7 @@ pub def if (is!{C}{X of &Config} && is!{T}{X of bool}) to {class C, T} (value : 
  * let cfg : &Config = f.to!{&Config} ();
  * ============
  */
-pub def if (is!{C}{X of &Config} && isFloating!{T} ()) to {class C, T} (value : T)-> &Config {
+pub fn if (is!{C}{X of &Config} && isFloating!{T} ()) to {class C, T} (value : T)-> &Config {
     Float::new (cast!f64 (value))
 }
 
@@ -601,7 +601,7 @@ pub def if (is!{C}{X of &Config} && isFloating!{T} ()) to {class C, T} (value : 
  * let cfg : &Config = str.to!{&Config} ();
  * ============
  */
-pub def if (is!{C}{X of &Config} && isChar!{U} ()) to {class C, T of [U], U} (value : T)-> &Config {
+pub fn if (is!{C}{X of &Config} && isChar!{U} ()) to {class C, T of [U], U} (value : T)-> &Config {
     cte if is!{U}{X of c32} {
         Str::new (value)
     } else {
@@ -621,7 +621,7 @@ pub def if (is!{C}{X of &Config} && isChar!{U} ()) to {class C, T of [U], U} (va
  * let cfg : &Config = str.to!{&Config} ();
  * ============
  */
-pub def if is!{C}{X of &Config} to {class C, T of [U], U of c8} (value : T)-> &Config {
+pub fn if is!{C}{X of &Config} to {class C, T of [U], U of c8} (value : T)-> &Config {
     import std::conv;
     Str::new (value.to![c32] ())
 }
@@ -637,7 +637,7 @@ pub def if is!{C}{X of &Config} to {class C, T of [U], U of c8} (value : T)-> &C
  * let cfg : &Config = slc.to!{&Config} ();
  * ============
  */
-pub def if is!{C}{X of &Config} to {class C, T of [U], U} (value : T)-> &Config {
+pub fn if is!{C}{X of &Config} to {class C, T of [U], U} (value : T)-> &Config {
     let dmut arr = Array::new ();
     for i in value {
         arr:.push (to!{&Config} (i));
@@ -663,7 +663,7 @@ pub def if is!{C}{X of &Config} to {class C, T of [U], U} (value : T)-> &Config 
  * let cfg : &Config = st.to!{&Config} ();
  * ===============
  */
-pub def if is!{C}{X of &Config} to {class C, struct T} (value : T)-> &Config {
+pub fn if is!{C}{X of &Config} to {class C, struct T} (value : T)-> &Config {
     let dmut res = Dict::new ();
     cte for i in 0u32 .. (typeof (__pragma!tupleof (value))::arity) {
         let name = (__pragma!field_names (T))[i];

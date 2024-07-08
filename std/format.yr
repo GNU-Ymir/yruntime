@@ -119,7 +119,7 @@ pub class FormatError over Exception {
  * =================
  * 
  */
-pub def format {T...} (str : [c8], a : T)-> [c8]
+pub fn format {T...} (str : [c8], a : T)-> [c8]
     throws &FormatError
 {
     let dmut stream = StringStream::new ();
@@ -133,7 +133,7 @@ pub def format {T...} (str : [c8], a : T)-> [c8]
 
 mod inner {
 
-    pub def format {T of (U,), U...} (str : [c8], a : T, dmut stream : &StringStream)
+    pub fn format {T of (U,), U...} (str : [c8], a : T, dmut stream : &StringStream)
         throws &FormatError
     {
         let mut i = 0us, mut current = 0us;
@@ -183,7 +183,7 @@ mod inner {
         }
     }
 
-    prv def specialFormat {T} (str : [c8], a : T, dmut stream : &StringStream, index : usize, explicitIndex : bool = false, globalIndex : usize) -> (usize, usize)
+    prv fn specialFormat {T} (str : [c8], a : T, dmut stream : &StringStream, index : usize, explicitIndex : bool = false, globalIndex : usize) -> (usize, usize)
         throws &FormatError
     {
         let mut current = 0us; // 0 = align, 1 = sign, 2 = '#', 3 = width, 4 = precision, 5 = type
@@ -258,7 +258,7 @@ mod inner {
         (i, m_index)
     }
 
-    prv def formatValue {T} (a : T, dmut stream : &StringStream, index : usize, globalIndex : usize)
+    prv fn formatValue {T} (a : T, dmut stream : &StringStream, index : usize, globalIndex : usize)
         throws &FormatError
     {
         if (index >= T::arity) { throw FormatError::new (globalIndex, "No argument "s8 ~ index.to![c8] ()); }
@@ -273,7 +273,7 @@ mod inner {
 
     }
 
-    prv def formatValue {T} (a : T, dmut stream : &StringStream, fill : c8, align : c8, sign : c8, type : c8, width : u32, starWidth : bool, prec : u32, starPrec : bool, index : usize, i : usize)
+    prv fn formatValue {T} (a : T, dmut stream : &StringStream, fill : c8, align : c8, sign : c8, type : c8, width : u32, starWidth : bool, prec : u32, starPrec : bool, index : usize, i : usize)
         throws &FormatError
     {
         if (index >= T::arity) { throw FormatError::new (i, "No argument "s8 ~ index.to![c8] ()); }
@@ -341,7 +341,7 @@ mod inner {
         }
     }
 
-    prv def convertValue {T} (value : T, sign : c8, type : c8, prec : u32) -> [c8]
+    prv fn convertValue {T} (value : T, sign : c8, type : c8, prec : u32) -> [c8]
         throws &AssertError
     {
         cte if isFloating!{T} () {
@@ -384,7 +384,7 @@ mod inner {
         }
     }
 
-    prv def getInt (str : [c8])-> (u32, usize)
+    prv fn getInt (str : [c8])-> (u32, usize)
         throws &CastFailure
     {
         for i in 0us .. str.len {
