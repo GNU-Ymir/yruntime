@@ -65,14 +65,15 @@ add_custom_command(TARGET gymidgard-bootstrap-debug
   COMMAND ${CMAKE_COMMAND} -E touch_nocreate ${CMAKE_CURRENT_SOURCE_DIR}/midgard/__lib__.yr)
 
 
-# add_library (gymidgard-bootstrap-tests STATIC ${SRC_UNITTEST} ${SRC_UNITTEST_YR})
-
+add_library (gymidgard-bootstrap-tests STATIC ${SRC_UNITTEST} ${SRC_UNITTEST_YR})
+target_compile_options (gymidgard-bootstrap-tests PRIVATE -I ${CMAKE_CURRENT_SOURCE_DIR}/midgard/__lib__.yr)
+target_link_libraries (gymidgard-bootstrap-tests gymidgard-bootstrap-release)
 IF(UNIX) 
     install (TARGETS gymidgard-bootstrap-debug DESTINATION /usr/lib/)
     install (TARGETS gymidgard-bootstrap-release DESTINATION /usr/lib/)
-    # install (TARGETS gymidgard-bootstrap-tests DESTINATION /usr/lib/)
+    install (TARGETS gymidgard-bootstrap-tests DESTINATION /usr/lib/)
 ELSE(UNIX)
     install (TARGETS gymidgard-bootstrap-debug DESTINATION /mingw64/lib/)
     install (TARGETS gymidgard-bootstrap-release DESTINATION /mingw64/lib/)
-    # install (TARGETS gymidgard-bootstrap-tests DESTINATION /mingw64/lib/)
+    install (TARGETS gymidgard-bootstrap-tests DESTINATION /mingw64/lib/)
 ENDIF(UNIX)

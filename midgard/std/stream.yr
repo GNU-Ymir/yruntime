@@ -1,0 +1,41 @@
+in stream;
+
+mod Runtime {F, T} {
+    pub extern (C) fn _yrt_unsafe_cast (x : F)-> dmut T;
+}
+
+
+pub trait Streamable {
+
+        /**
+     * Print the content of the class on stdout
+     * @returns: true if something has been printed, false otherwise
+     */
+    prot fn __stream__streamContent (self, dmut stream : &StringStream) -> bool {
+        stream;
+        // cte if (__pragma!compile ({self::super.__stream__streamContent (alias stream);})) {
+        //     let printed = self::super.__stream__streamContent (alias stream);
+        //     if (typeof (__pragma!local_tupleof (self))::arity != 0u32 && printed)
+        //         stream:.write (", "s8);
+        // }
+
+        cte for i in 0 .. typeof (self)::field_infos.len {
+            cte if (i != 0) stream:.write (", ");
+            cte let name = cte {typeof (self)::field_infos [i].name};
+            cte if (__pragma!compile ({stream:.write (__pragma!field (self, name));})) {
+                stream:.write (__pragma!field (self, name));
+            } else {
+                stream:.write ((typeof (__pragma!field (self, name)))::typeid);
+            }
+        }
+
+        return cte (typeof (self)::field_infos.len != 0);
+    }
+
+    pub fn toStream (self, dmut stream : &StringStream)-> void {
+        stream:.write (typeof (self)::typeid, "(");
+        self.__stream__streamContent (alias stream);
+        stream:.write (")");
+    }
+
+}

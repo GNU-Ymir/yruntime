@@ -1,14 +1,38 @@
+
+#include <limits.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+
 #include <gc/gc.h>
 #include "../c/yarray.h"
 
-extern int _yrt_get_test_code ();
 
-extern int _yrt_test_main ();
+_yrt_array_ _yrt_create_args_array (int len, char ** argv);/*  { */
+/*     _yrt_array_ arr; */
+/*     arr.data = GC_malloc (sizeof (_yrt_array_) * len); */
+/*     arr.len = (unsigned long) len; */
 
-extern _yrt_array_ _yrt_create_args_array (int len, char ** argv);
+/*     for (int i = 0 ; i < len ; i++) { */
+/*         _yrt_array_ inner; */
+/*         inner.data = argv[i]; */
+/*         inner.len = strlen (argv [i]); */
+/*         ((_yrt_array_*) arr.data)[i] = inner; */
+/*     } */
 
-void** __YRT_TEST_RT_MAP__ = 0;
+/*     /\* __MAIN_ARGS__ = arr; *\/ */
+/*     return arr; */
+/* } */
 
-int main (int argc, char** argv) {
-    return _yrt_test_main (_yrt_create_args_array (argc, argv));   
+int _yrt_run_unittests_impl ();
+
+void _yrt_register_unittest (char * func, void (*ptr) ()) {
+  printf ("%s\n", func);
+}
+
+int _yrt_run_unittests (int argc, char ** argv) {
+  return _yrt_run_unittests_impl (_yrt_create_args_array (argc, argv));
 }
