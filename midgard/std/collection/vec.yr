@@ -364,8 +364,8 @@ pub class Vec {T} {
      * }
      * ==========
      */
-    pub fn end (self) -> &VecIterator!T {
-        return VecIterator!{T}::new (self._len, self._len, self._data);
+    pub fn end (self) -> usize {
+        self._len
     }
 
     // impl std::collection::seq::Seq!{T} {
@@ -518,28 +518,36 @@ pub class VecIterator {T} {
      * Compare two iterators.
      * Iterators are equals if they points to the same index.
      */
-    pub fn opEquals (self, o : &VecIterator!T) -> bool {
-        self._index == o._index
+    pub fn opEquals (self, end : usize) -> bool {
+        self._index == end
     }
 
     /**
      * Move the iterator to the next element in the vector.
      */
-    pub fn next (mut self) {
+    pub fn next (mut self)-> dmut &VecIterator!{T} {
         self._index += 1us;
+        alias self
     }
 
     /**
      * @returns: the value pointed by the iterator
      */
-    pub fn get {0} (self) -> T {
-        __pragma!trusted ({ self._data [self._index] })
+    pub fn get {0, 1} (self) -> T {
+        self._data [self._index]
+    }
+
+    /**
+     * @returns: the value pointed by the iterator
+     */
+    pub fn get {1, 2} (self) -> T {
+        self._data [self._index]
     }
 
     /**
      * @returns: the index in the vector, to which the iterator is pointing.
      */
-    pub fn get {1} (self) -> usize {
+    pub fn get {0, 2} (self) -> usize {
         self._index
     }
 

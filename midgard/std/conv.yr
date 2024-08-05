@@ -1,0 +1,37 @@
+in conv;
+
+pub fn toStringZ (a : [c8])-> *c8 {
+    let dmut res = core::duplication::allocArray!(c8)(a.len + 1us);
+    core::duplication::memCopy (a, alias res);
+    {
+        res [$-1us] = '\u{0}'c8;
+    }
+    res.ptr
+}
+
+
+pub fn fromStringZ {U of [c8]} (a : U)-> [c8] {
+    let mut len = 0us;
+    for i in a {
+        if (i == '\u{0}'c8) break {};
+        else len += 1us;
+    }
+
+    a [0us .. len]
+}
+
+@unsafe
+pub fn fromStringZ {U of *c8} (a : U)-> [c8] {
+    let mut len = 0us;
+    loop {
+        if (*(a + len) == '\u{0}'c8) break {};
+        else len += 1us;
+    }
+
+    let dmut res = core::duplication::allocArray!(c8)(len);
+    for i in 0us .. len {
+        res [i] = *(a + i);
+    }
+
+    res
+}
