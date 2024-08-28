@@ -1,0 +1,179 @@
+in map;
+
+mod nodes;
+use std::collection::map::nodes;
+
+/**
+ * The number or allocated node at initialization
+ */
+prv enum : usize
+| DEFAULT_ALLOC_SIZE = 10us
+ -> MapConst;
+
+
+@final
+pub class HashMap {K, V} {
+    cte assert (__pragma!compile ({std::hash::hash!K;}) || __pragma!compile (std::hash::hash (K::init)), "unusable key type : K = (" ~ K::typeid ~ ") must be hashable");
+    cte assert (__pragma!operator ("==", K, K), "unusable key type : (" ~ K::typeid ~ ") must be be comparable to itself (opEquals or opCmp)");
+
+    // The dict containing the chained list
+    let dmut _data : [(&MapValue!{K, V})?] = [];
+
+    // The number of used entries in _data
+    let mut _loaded : usize = 0;
+
+    // The number of elements in the map
+    let mut _size : usize = 0;
+
+    // The % of charge after which a grow is triggered
+    let _loadFactor = 75us;
+
+    // The % of charge before which is shrink is triggered
+    let _minFoadFactor = 50us;
+
+    /**
+     * Create a new empty hash map, with a default loaded factor of 0.75 , and a minimum load factor or 0.5
+     * Does not allocate memory until first insertion
+     * <br>
+     * @info:
+     * load factors are used to detemine the size of the allocation:
+     *    - default load factor, increase the size of the allocation when more than 75% of the allocation is used
+     *    - minimum load factor, decrease the size of the allocation when less than 50% of the allocation is used
+     * When loads are too low, the linked list at every index will increase in size and find and insert time will increase
+     * When loads are too high, the allocation will be too big and memory wasted
+     * @params:
+     *    - len: the size of the table reserved to avoid reallocation when inserting
+     */
+    pub self (len : usize = 0us) {
+        if (len != 0us) {
+            self._data = copy [none ; len];
+        }
+    }
+
+    /**
+     * Insert a new element inside the map
+     * If the key is already found (hash (key)), then the value is updated
+     * @params:
+     *    - key: the key
+     *    - val: the value
+     * @example:
+     * ==========
+     * let dmut x = HashMap!{[c32], i32}::new ();
+     * x:.insert ("foo", 12);
+     * x:.insert ("bar", 32);
+     * assert (x ["foo"] == 12 && x ["bar"] == 32);
+     * x:.insert ("test", 24);
+     * assert (x ["test"] == 24);
+     * ==========
+     * @complexity: O (1 + n/k + z) with n the number of possible collision, and k the number of keys, and z the time taken by resizing if the load is higher than the load factor, in average n/k and z are negligeable
+     */
+    pub fn insert (mut self, key : K, val : V) {
+        if self._data.len == 0us {
+            self:.fit (MapConst::DEFAULT_ALLOC_SIZE);
+        } else if ((self._loaded * 100us) / self._data.len) > self._loadFactor {
+            self:.fit (self._data.len * 2us)
+        }
+
+        let h = std::hash::hash (key);
+        self:.insertFast (h, key, val);
+    }
+
+    pub fn find (self, key : K)-> V? {
+        if (self._data.len != 0us) {
+            let h = std::hash::hash (key);
+            if let Ok (x) = self._data [h % cast!u64 ($)] {
+                return x.find (key);
+            }
+        }
+
+        none
+    }
+
+    pub fn opContains (self, key : K)-> bool {
+        if (self._data.len != 0us) {
+            let h = std::hash::hash (key);
+            if let Ok (x) = self._data [h % cast!u64 ($)] {
+                return x.opContains (key);
+            }
+        }
+
+        false
+    }
+
+    pub fn remove (mut self, key : K) {
+        if (self._data.len != 0us) {
+            let h = std::hash::hash (key);
+            if let Ok (ref dmut x) = ref self._data [h % cast!u64 ($)] {
+                let mut removed = false;
+                let dmut res = x:.remove (key, ref removed);
+                self._data [h % cast!u64 ($)] = alias res;
+
+                if removed { self._size -= 1us; }
+                if let Err () = res {
+                    self._loaded -= 1us;
+                    if (self._loaded * 100us) / self._data.len < self._minFoadFactor {
+                        if (self._loaded == 0us) {
+                            self:.fit (0us);
+                        } else {
+                            self:.fit (self._data.len / 2us);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn fit (mut self, len : usize) {
+        if (len == 0us) {
+            self._data = [];
+        } else {
+            let dmut aux : [(&MapValue!{K, V})?] = copy [none ; len];
+
+            let old = self._data;
+            self._data = alias aux;
+            self._loaded = 0us;
+            self._size = 0us;
+
+            for i in 0us .. old.len {
+                let mut current = old [i];
+                while let Ok (x) = current {
+                    self:.insertFast (x.h, x.key, x.val);
+                    current = x.next;
+                }
+            }
+        }
+    }
+
+
+    pub fn opIndex (self, key : K)-> V
+        throws core::exception::OutOfArray
+    {
+        if (self._data.len != 0us) {
+            let h = std::hash::hash (key);
+            if let Ok (x) = self._data [h % cast!u64 ($)] {
+                if let Ok (z) = x.find (key) {
+                    return z;
+                }
+            }
+        }
+
+        throw copy core::exception::OutOfArray ();
+    }
+
+
+    prv fn insertFast (mut self, h : u64, key : K, val : V) {
+        let inserted = if let Ok (ref dmut x) = ref self._data [h % cast!u64 ($)] {
+            x:.insert (key, val)
+        } else {
+            self._data [h % cast!{u64} ($)] = (copy MapValue!{K, V} (h, key, val, none))?;
+            self._loaded += 1us;
+            true
+        };
+
+        if inserted {
+            self._size += 1us;
+        }
+    }
+
+
+}

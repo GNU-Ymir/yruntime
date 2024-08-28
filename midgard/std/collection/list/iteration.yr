@@ -1,41 +1,29 @@
 in iteration;
 use std::collection::list::nodes;
 
-@final
-pub class ListIterator {T} {
+pub record ListIterator {T} {
 
-    let mut _current : &ListNode!T;
+    let mut _current : (&ListNode!T)?;
 
     let mut _index : usize;
 
-    pub self (i : usize, node : &ListNode!T)
-        with _current = node, _index = i
+    pub self (i : usize, node : (&ListNode!T)?)
+        with _current = node
+        , _index = i
     {}
-
-    pub fn next (mut self) -> dmut &ListIterator!{T} {
-        match self._current {
-            x: &ListValue!T => {
-                self._index += 1us;
-                self._current = x.next;
-            }
-        }
-
-        alias self
-    }
 
     pub fn get {0, 1} (self) -> T {
         match self._current {
-            x : &ListValue!{T} =>
+            Ok (x) =>
                 return x.value;
         }
 
         panic;
     }
 
-
     pub fn get {1, 2} (self) -> T {
         match self._current {
-            x : &ListValue!{T} =>
+            Ok (x) =>
                 return x.value;
         }
 
@@ -48,6 +36,17 @@ pub class ListIterator {T} {
 
     pub fn opEquals (self, o : usize) -> bool {
         self._index == o
+    }
+
+    impl core::iterate::Iterable {
+        pub over next (mut self) {
+            match self._current {
+                Ok (x) => {
+                    self._index += 1us;
+                    self._current = x.next;
+                }
+            }
+        }
     }
 
 }
