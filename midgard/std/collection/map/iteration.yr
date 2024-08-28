@@ -1,0 +1,116 @@
+in iteration;
+
+use std::collection::map::nodes;
+
+
+/**
+ * Record used to iterate over a map
+ * @example:
+ * ==========
+ * let x = hmap#{"a" => 1, "b" => 2};
+ * for k, v in x {
+ *     assert (x [k] == v);
+ * }
+ * ==========
+ * */
+pub record MapIterator {K, V} {
+
+    let _data : [(&MapValue!{K, V})?];
+
+    let mut _index : usize;
+
+    let mut _fullIndex : usize;
+
+    let mut _branch : usize;
+
+    let mut _currentNode : (&MapValue!{K, V})? = none;
+
+    /**
+     * @params:
+     *    - i: the index in the table of this iterator
+     *    - branch: the index in the branch at iterator i
+     *    - data: the table of data
+     *    - current: the current traversed node in the branch (data [i][branch])
+     * */
+    pub self (i : usize, branch : usize, data : [(&MapValue!{K, V})?], current : (&MapValue!{K, V})?)
+        with _data = data
+        , _index = i
+        , _branch = branch
+        , _currentNode = current
+        , _fullIndex = 0
+    {}
+
+    /**
+     * @returns: true if the iterator is equal to end
+     * */
+    pub fn opEquals (self, end : usize)-> bool {
+        self._fullIndex == end
+    }
+
+    /**
+     * @returns: the key at the current index
+     *  */
+    pub fn get {0, 1} (self) -> K {
+        if let Ok (x) = self._currentNode {
+            x.key
+        } else {
+            panic;
+        }
+    }
+
+    /**
+     * @returns: the key at the current index
+     *  */
+    pub fn get {0, 2} (self) -> K {
+        if let Ok (x) = self._currentNode {
+            x.key
+        } else {
+            panic;
+        }
+    }
+
+    /**
+     * @returns: the value at the current index
+     *  */
+    pub fn get {1, 2} (self) -> V {
+        if let Ok (x) = self._currentNode {
+            x.val
+        } else {
+            panic;
+        }
+    }
+
+    impl core::iterate::Iterable {
+
+        pub over next (mut self) {
+            if let Ok (x) = self._currentNode {
+                if let Ok () = x.next {
+                    self._branch += 1;
+                    self._currentNode = x.next;
+                    self._fullIndex += 1;
+                    return;
+                }
+            }
+
+            if self._index + 1 < self._data.len {
+                for j in (self._index + 1) .. self._data.len {
+                    if let Ok () = self._data [j] {
+                        self._branch = 0us;
+                        self._index = j;
+                        self._currentNode = self._data [j];
+                        self._fullIndex += 1;
+                        return;
+                    }
+                }
+
+                self._fullIndex += 1;
+            }
+
+            self._currentNode = none;
+        }
+
+
+    }
+
+
+}
