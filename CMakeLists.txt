@@ -12,11 +12,16 @@ ENDIF()
 
 set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -fPIC")
 
-
 FILE (
   GLOB_RECURSE
   SRC_LIB
   midgard/__lib__.yr
+  )
+
+FILE (
+  GLOB_RECURSE
+  SRC_TESTS
+  tests/__lib__.yr
   )
 
 FILE (
@@ -50,20 +55,21 @@ FILE (
   )
 
 
-SET_SOURCE_FILES_PROPERTIES(${SRC_LIB} ${SRC_UNITTEST_YR} PROPERTIES LANGUAGE YMIR)
+SET_SOURCE_FILES_PROPERTIES(${SRC_LIB} ${SRC_UNITTEST_YR} ${SRC_TESTS} PROPERTIES LANGUAGE YMIR)
 
 add_library (gymidgard-bootstrap-release STATIC ${SRC_LIB} ${SRC_CORE_C} ${SRC_STD_C} ${SRC_RUNTIME})
 add_library (gymidgard-bootstrap-debug STATIC ${SRC_LIB} ${SRC_CORE_C} ${SRC_STD_C} ${SRC_RUNTIME})
 target_compile_options (gymidgard-bootstrap-debug PRIVATE -fversion=DEBUG_LIB)
 
+
 add_custom_command(TARGET gymidgard-bootstrap-release
   PRE_BUILD
   COMMAND ${CMAKE_COMMAND} -E touch_nocreate ${CMAKE_CURRENT_SOURCE_DIR}/midgard/__lib__.yr)
 
+
 add_custom_command(TARGET gymidgard-bootstrap-debug
   PRE_BUILD
   COMMAND ${CMAKE_COMMAND} -E touch_nocreate ${CMAKE_CURRENT_SOURCE_DIR}/midgard/__lib__.yr)
-
 
 add_library (gymidgard-bootstrap-tests STATIC ${SRC_UNITTEST} ${SRC_UNITTEST_YR})
 target_compile_options (gymidgard-bootstrap-tests PRIVATE -I ${CMAKE_CURRENT_SOURCE_DIR}/midgard/__lib__.yr)
@@ -77,3 +83,13 @@ ELSE(UNIX)
     install (TARGETS gymidgard-bootstrap-release DESTINATION /mingw64/lib/)
     install (TARGETS gymidgard-bootstrap-tests DESTINATION /mingw64/lib/)
 ENDIF(UNIX)
+
+add_library (midgard_tests STATIC ${SRC_LIB})
+add_custom_command(TARGET midgard_tests
+  PRE_BUILD
+  COMMAND ${CMAKE_COMMAND} -E touch_nocreate ${CMAKE_CURRENT_SOURCE_DIR}/tests/__lib__.yr
+  COMMAND ${CMAKE_YMIR_COMPILER} ${CMAKE_CURRENT_SOURCE_DIR}/tests/__lib__.yr -o ${CMAKE_CURRENT_BINARY_DIR}/midgard_tests -funittest -nomidgardlib -nostdinc -I ${CMAKE_CURRENT_SOURCE_DIR}/midgard -lgymidgard-bootstrap-debug -lgc -lgymidgard-bootstrap-tests)
+
+add_custom_command(TARGET midgard_tests
+  POST_BUILD
+  COMMAND rm libmidgard_tests.a)

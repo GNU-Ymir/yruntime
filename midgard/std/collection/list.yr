@@ -8,9 +8,9 @@ use std::collection::list::nodes;
 @final
 pub class List {T} {
 
-    let dmut _head : &ListNode!{T} = Empty!{T}::new ();
+    let dmut _head : (&ListNode!{T})? = none;
 
-    let dmut _tail : &ListNode!{T} = Empty!{T}::new ();
+    let dmut _tail : (&ListNode!{T})? = none;
 
     let mut _len : usize = 0us;
 
@@ -26,7 +26,7 @@ pub class List {T} {
     pub self () {}
 
 
-    prv self (dmut head : &ListNode!{T}, dmut tail : &ListNode!{T}, len : usize)
+    prv self (dmut head : (&ListNode!{T})?, dmut tail : (&ListNode!{T})?, len : usize)
         with _head = alias head
         , _tail = alias tail
         , _len = len
@@ -46,12 +46,12 @@ pub class List {T} {
      * @complexity: O (1)
      */
     pub fn push (mut self, val : T)-> void {
-        if let dmut tail : ListValue!{T} = alias self._tail {
-            let dmut n_node = ListValue!{T}::new (val, alias tail, alias tail.next);
+        if let Ok (dmut tail) = alias self._tail {
+            let dmut n_node = (copy ListNode!{T} (val, alias tail, alias tail.next))?;
             tail.next = alias n_node;
             self._tail = alias n_node;
         } else {
-            self._head = ListValue!{T}::new (val, alias self._tail, alias self._head);
+            self._head = (copy ListNode!{T} (val, alias self._tail, alias self._head))?;
             self._tail = alias self._head;
         }
 
@@ -80,9 +80,9 @@ pub class List {T} {
     pub fn pop (mut self) -> T
         throws core::exception::OutOfArray
     {
-        if let dmut tail : &ListValue!{T} = alias self._tail {
+        if let Ok (dmut tail) = alias self._tail {
             let ret = tail.value;
-            if let dmut prev : &ListValue!{T} = alias tail.prev {
+            if let Ok (dmut prev) = alias tail.prev {
                 prev.next = alias tail.next;
                 self._tail = alias prev;
             } else {
@@ -93,10 +93,9 @@ pub class List {T} {
             self._len -= 1us;
             return ret;
         } else {
-            throw OutOfArray::new ();
+            throw copy OutOfArray ();
         }
     }
-
 
     /**
      * Push an element at the beginning of the list
@@ -111,12 +110,12 @@ pub class List {T} {
      * @complexity: O (1)
      */
     pub fn pushFront (mut self, val : T) -> void {
-        if let dmut head: &ListValue!{T} = alias self._head {
-            let dmut n_node = ListValue!{T}::new (val, alias head.prev, alias head);
+        if let Ok (dmut head) = alias self._head {
+            let dmut n_node = (copy ListNode!{T} (val, alias head.prev, alias head))?;
             head.prev = alias n_node;
             self._head = alias n_node;
         } else {
-            self._head = ListValue!{T}::new (val, alias self._tail, alias self._head);
+            self._head = (copy ListNode!{T} (val, alias self._tail, alias self._head))?;
             self._tail = alias self._head;
         }
 
@@ -138,9 +137,9 @@ pub class List {T} {
     pub fn popFront (mut self) -> T
         throws core::exception::OutOfArray
     {
-        if let dmut head : &ListValue!{T} = alias self._head {
+        if let Ok (dmut head) = alias self._head {
             let ret = head.value;
-            if let dmut next : &ListValue!{T} = alias head.next {
+            if let Ok (dmut next) = alias head.next {
                 next.prev = alias head.prev;
                 self._head = alias next;
             } else {
@@ -169,10 +168,8 @@ pub class List {T} {
      * @complexity: O (1)
      */
     pub fn clear (mut self) -> void {
-        if let dmut head : &ListValue!{T} = alias self._head { // To avoid useless allocations
-            self._head = alias head.prev;
-            self._tail = alias self._tail;
-        }
+        self._head = none;
+        self._tail = none;
     }
 
     /**
@@ -180,7 +177,7 @@ pub class List {T} {
      * @complexity: O (1)
      */
     pub fn front (self) -> (T)? {
-        if let ListValue!{T} (value-> v) = self._head {
+        if let Ok (ListNode!{T} (value-> v)) = self._head {
             return (v)?;
         }
 
@@ -192,7 +189,7 @@ pub class List {T} {
      * @complexity: O (1)
      */
     pub fn back (self) -> (T)? {
-        if let ListValue!{T} (value-> v) = self._tail {
+        if let Ok (ListNode!{T} (value-> v)) = self._tail {
             return (v)?;
         }
 
@@ -214,8 +211,8 @@ pub class List {T} {
      * ==========
      * @complexity: O (1)
      */
-    pub fn begin (self) -> dmut &ListIterator!{T} {
-        return ListIterator!{T}::new (0us, self._head);
+    pub fn begin (self) -> ListIterator!{T} {
+        ListIterator!{T} (0us, self._head)
     }
 
     /**
@@ -256,12 +253,12 @@ pub class List {T} {
             let mut selfC = self._head, mut oC = o._head;
             loop {
                 match (selfC, oC) {
-                    (h : &ListValue!{T}, oh : &ListValue!{T}) => {
+                    (Ok (h), Ok (oh)) => {
                         if (h.value != oh.value) { return false; }
                         selfC = h.next;
                         oC = oh.next;
                     }
-                    (_ : &Empty!{T}, _ : &Empty!{T}) => { return true; }
+                    (Err (), Err ()) => { return true; }
                     _ => { break {} }
                 }
             }

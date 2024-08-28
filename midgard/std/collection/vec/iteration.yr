@@ -1,0 +1,70 @@
+in iteration;
+
+/**
+ * Class used to iter on a vector
+ * @example:
+ * ============
+ * let x = vec#[1, 2, 3];
+ * for val, index in x {
+ *     assert (x [index] == val);
+ * } catch {
+ *    _ : &AssertError => { } // neither this is
+ * }
+ * ============
+ */
+pub record VecIterator {T} {
+
+    let mut _index : usize;
+
+    let _data : [T];
+
+    /**
+     * @params:
+     *    - index: the index in the array to point (can be equal to len, to point to nothing)
+     *    - len: the length of the vector
+     *    - data: the data contained in the vector
+     */
+    pub self (index : usize, data : [T])
+        with _index = index,
+             _data = data
+    {}
+
+    /**
+     * Compare two iterators.
+     * Iterators are equals if they points to the same index.
+     */
+    pub fn opEquals (self, end : usize) -> bool {
+        self._index == end
+    }
+
+    /**
+     * @returns: the value pointed by the iterator
+     */
+    pub fn get {0, 1} (self) -> T {
+        self._data [self._index]
+    }
+
+    /**
+     * @returns: the value pointed by the iterator
+     */
+    pub fn get {1, 2} (self) -> T {
+        self._data [self._index]
+    }
+
+    /**
+     * @returns: the index in the vector, to which the iterator is pointing.
+     */
+    pub fn get {0, 2} (self) -> usize {
+        self._index
+    }
+
+
+    impl core::iterate::Iterable {
+
+        pub over next (mut self) {
+            self._index += 1us;
+        }
+
+    }
+
+}

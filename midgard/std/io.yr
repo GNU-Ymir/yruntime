@@ -121,15 +121,15 @@ pub fn print {T of [U;N], U, N : usize} (a : T) -> void {
 pub fn print {T} (a : T?) -> void {
     cte if (!is!{T}{U of void}) {
         match a {
-            Ok  (x:_)   => print ("Ok(", x, ")");
-            Err (msg:_) => print ("Err(", msg, ")");
+            Ok  (x)   => print ("Ok(", x, ")");
+            Err (msg)      => print ("Err(", msg.__typeinfo__.name, ")");
             Err ()      => print ("Err()");
         }
     } else {
         match a {
             Ok  ()   => print ("Ok()");
-            Err (msg:_) => print ("Err(", msg, ")");
-            Err ()      => print ("Err()");
+            Err (msg)      => print ("Err(", msg.__typeinfo__.name, ")");
+            Err () => print ("Err ()");
         }
     }
 }
@@ -169,7 +169,16 @@ pub fn print (_ : ()) {
     print ('('c8,')'c8);
 }
 
-pub fn print {struct T} (a : T) {
+pub fn print {record T} (a : T) {
+    print (T::typeid, '(');
+    for i, j in (expand a,) {
+        cte if (i != 0) print (", ");
+        print (j);
+    }
+    print (')');
+}
+
+pub fn print {entity T} (ref a : T) {
     print (T::typeid, '(');
     for i, j in (expand a,) {
         cte if (i != 0) print (", ");
