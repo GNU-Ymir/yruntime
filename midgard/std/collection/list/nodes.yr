@@ -4,28 +4,47 @@ in nodes;
  * Encode a node of the linked list, containing a value
  */
 @final
-pub class ListNode {T} {
+pub class ListNode {T, mutable : bool} {
 
     /// The reference to the previous node
-    pub let dmut prev : (&ListNode!{T})?;
+    pub let dmut prev : (&ListNode!{T, mutable})?;
 
     /// The reference to the next node
-    pub let dmut next : (&ListNode!{T})?;
+    pub let dmut next : (&ListNode!{T, mutable})?;
 
-    /// The value contained in the node
-    pub let value : T;
+    cte if mutable {
+        /// The value contained in the node
+        pub let dmut value : T;
 
-    /**
-     * Create a new node of the list
-     * @params:
-     *    - val: the value to store
-     *    - prev: the reference to the previous node in the list
-     *    - next: the reference to the next node in the list
-     */
-    pub self (val : T, dmut prev : (&ListNode!T)?, dmut next : (&ListNode!T)?)
-        with prev = alias prev
-        , next = alias next
-        , value = val
-    {}
+        /**
+         * Create a new node of the list
+         * @params:
+         *    - val: the value to store
+         *    - prev: the reference to the previous node in the list
+         *    - next: the reference to the next node in the list
+         */
+        pub self (dmut val : T, dmut prev : (&ListNode!{T, mutable})?, dmut next : (&ListNode!{T, mutable})?)
+            with prev = alias prev
+            , next = alias next
+            , value = alias val
+        {}
+
+    } else {
+        /// The value contained in the node
+        pub let value : T;
+
+        /**
+         * Create a new node of the list
+         * @params:
+         *    - val: the value to store
+         *    - prev: the reference to the previous node in the list
+         *    - next: the reference to the next node in the list
+         */
+        pub self (val : T, dmut prev : (&ListNode!{T, mutable})?, dmut next : (&ListNode!{T, mutable})?)
+            with prev = alias prev
+            , next = alias next
+            , value = val
+        {}
+    }
 
 }
