@@ -7,10 +7,10 @@ set(CMAKE_YMIR_CREATE_STATIC_LIBRARY "<CMAKE_AR> rc <TARGET> <LINK_FLAGS> <OBJEC
 IF (WIN32) 
   set(CMAKE_YMIR_FLAGS "${CMAKE_C_FLAGS} -O3 -fPIC -nostdinc -nomidgardlib -fdoc -fno-reflect")
 ELSE()
-  set(CMAKE_YMIR_FLAGS "${CMAKE_C_FLAGS} -O3 -fPIC -nostdinc -nomidgardlib -fdoc")
+  set(CMAKE_YMIR_FLAGS "${CMAKE_C_FLAGS} -fPIC -nostdinc -nomidgardlib -fdoc -g")
 ENDIF()
 
-set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -fPIC")
+set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS}  -fPIC -g")
 
 FILE (
   GLOB_RECURSE
