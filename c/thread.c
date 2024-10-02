@@ -21,7 +21,7 @@
 void** __YRT_TASK_POOL__ = 0;
 
 _yrt_mutex_t __monitor_mutex__ = PTHREAD_MUTEX_INITIALIZER;
-_yrt_mutex_t __global_mutex__ = PTHREAD_MUTEX_INITIALIZER;
+_yrt_mutex_t __global_atom__ = PTHREAD_MUTEX_INITIALIZER;
 
 #ifdef _WIN32
 void * _yrt_read_pipe (void * stream, unsigned long long size) {
@@ -133,11 +133,11 @@ _yrt_mutex_t * _yrt_ensure_monitor (void* object) {
 }
 
 void _yrt_lock_global () {
-    pthread_mutex_lock (&__global_mutex__);
+    pthread_mutex_lock (&__global_atom__);
 }
 
 void _yrt_unlock_global () {
-    pthread_mutex_unlock (&__global_mutex__);
+    pthread_mutex_unlock (&__global_atom__);
 }
 
 void _yrt_atomic_monitor_enter (void* object) {
