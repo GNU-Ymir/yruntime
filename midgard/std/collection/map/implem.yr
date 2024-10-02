@@ -1,0 +1,558 @@
+in implem;
+
+mod nodes;
+mod iteration;
+
+use std::collection::map::nodes;
+use std::collection::map::iteration;
+
+/**
+ * The number or allocated node at initialization
+ */
+prv enum : usize
+| DEFAULT_ALLOC_SIZE = 10us
+ -> MapConst;
+
+@abstract
+pub class IHashMap {K, V, innerMutable : bool} {
+    cte assert (__pragma!compile ({std::hash::hash!K;}) || __pragma!compile (std::hash::hash (K::init)), "unusable key type : K = (" ~ K::typeid ~ ") must be hashable");
+    cte assert (__pragma!operator ("==", K, K), "unusable key type : (" ~ K::typeid ~ ") must be be comparable to itself (opEquals or opCmp)");
+
+    // The dict containing the chained list
+    let dmut _data : [(&MapValue!{K, V, innerMutable})?] = [];
+
+    // The number of used entries in _data
+    let mut _loaded : usize = 0;
+
+    // The number of elements in the map
+    let mut _size : usize = 0;
+
+    // The % of charge after which a grow is triggered
+    let _loadFactor = 75us;
+
+    // The % of charge before which is shrink is triggered
+    let _minFoadFactor = 50us;
+
+    /**
+     * Create a new empty hash map, with a default loaded factor of 0.75 , and a minimum load factor or 0.5
+     * Does not allocate memory until first insertion
+     * <br>
+     * @info:
+     * load factors are used to detemine the size of the allocation:
+     *    - default load factor, increase the size of the allocation when more than 75% of the allocation is used
+     *    - minimum load factor, decrease the size of the allocation when less than 50% of the allocation is used
+     * When loads are too low, the linked list at every index will increase in size and find and insert time will increase
+     * When loads are too high, the allocation will be too big and memory wasted
+     * @params:
+     *    - len: the size of the table reserved to avoid reallocation when inserting
+     */
+    pub self (len : usize = 0us) {
+        if (len != 0us) {
+            self._data = copy [none ; len];
+        }
+    }
+
+    /*!
+     * =======================================================================
+     * =======================================================================
+     * ================              INSERT/REMOVE             ===============
+     * =======================================================================
+     * =======================================================================
+     */
+
+    cte if innerMutable {
+        pub fn insert (mut self, key : K, dmut val : V) {
+            if self._data.len == 0us {
+                self:.fit (MapConst::DEFAULT_ALLOC_SIZE);
+            } else if ((self._loaded * 100us) / self._data.len) > self._loadFactor {
+                self:.fit (self._data.len * 2us)
+            }
+
+            let h = std::hash::hash (key);
+            self:.insertFast (h, key, alias val);
+        }
+    } else {
+        /**
+         * Insert a new element inside the map
+         * If the key is already found (hash (key)), then the value is updated
+         * @params:
+         *    - key: the key
+         *    - val: the value
+         * @example:
+         * ==========
+         * let dmut x = copy HashMap!{[c32], i32} ();
+         * x:.insert ("foo", 12);
+         * x:.insert ("bar", 32);
+         * assert (x ["foo"] == 12 && x ["bar"] == 32);
+         * x:.insert ("test", 24);
+         * assert (x ["test"] == 24);
+         * ==========
+         * @complexity: O (1 + n/k + z) with n the number of possible collision, and k the number of keys, and z the time taken by resizing if the load is higher than the load factor, in average n/k and z are negligeable
+         */
+        pub fn insert (mut self, key : K, val : V) {
+            if self._data.len == 0us {
+                self:.fit (MapConst::DEFAULT_ALLOC_SIZE);
+            } else if ((self._loaded * 100us) / self._data.len) > self._loadFactor {
+                self:.fit (self._data.len * 2us)
+            }
+
+            let h = std::hash::hash (key);
+            self:.insertFast (h, key, val);
+        }
+    }
+
+    /**
+     * * Find the element whose key is `key`
+     * @params:
+     *    - key: the key to find
+     * @returns: The value in an option, or an empty option if there is no element with key `key` in the map
+     * @complexity: O (1 + n/k), with n the number of possible collision and k the number of keys, in average n/k are negligeable
+     * */
+    pub fn find (self, key : K)-> V? {
+        if (self._data.len != 0us) {
+            let h = std::hash::hash (key);
+            if let Ok (x) = self._data [h % cast!u64 ($)] {
+                return x.find (key);
+            }
+        }
+
+        none
+    }
+
+    /**
+     * Search the key in the map,
+     * @returns: true if found, false otherwise
+     * @example:
+     * =============
+     * let dmut x = copy HashMap!{[c32], i32} ();
+     * x:.insert ("foo", 32);
+     * assert ("foo" in x);
+     * =============
+     * @complexity: O (1 + n/k), with n the number of possible collision and k the number of keys, in average n/k are negligeable
+     * */
+    pub fn opContains (self, key : K)-> bool {
+        if (self._data.len != 0us) {
+            let h = std::hash::hash (key);
+            if let Ok (x) = self._data [h % cast!u64 ($)] {
+                return x.opContains (key);
+            }
+        }
+
+        false
+    }
+
+    /**
+     * Remove the key in the map
+     * If the key was not present, do nothing
+     * @params:
+     *    - key: the key to remove
+     * @example:
+     * ===========
+     * let dmut x = copy HashMap!{[c32], i32} ();
+     * x:.insert ("foo", 12);
+     * x:.remove ("foo");
+     *
+     * match x["foo"]? {
+     *      Ok () => assert (false); //
+     * }
+     * x:.remove ("bar"); // does nothing
+     * ===========
+     * @complexity: O (1 + n/k + z) with n the number of possible collision, and k the number of keys, and z the time taken by resizing if the load is lower than the min load factor, in average n/k and z are negligeable
+     */
+    pub fn remove (mut self, key : K) {
+        if (self._data.len != 0us) {
+            let h = std::hash::hash (key);
+            if let Ok (ref dmut x) = ref self._data [h % cast!u64 ($)] {
+                let mut removed = false;
+                let dmut res = x:.remove (key, ref removed);
+                self._data [h % cast!u64 ($)] = alias res;
+
+                if removed { self._size -= 1us; }
+                if let Err () = res {
+                    self._loaded -= 1us;
+                    if (self._loaded * 100us) / self._data.len < self._minFoadFactor {
+                        if (self._loaded == 0us) {
+                            self:.fit (0us);
+                        } else {
+                            self:.fit (self._data.len / 2us);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+
+        /*!
+     * =======================================================================
+     * =======================================================================
+     * ==================              EQUALITY             ==================
+     * =======================================================================
+     * =======================================================================
+     */
+
+    /**
+     * This block is activated only if K and V are comparable types
+     */
+    cte if ((__pragma!operator ("==", K, K)) && __pragma!operator ("==", V, V)) {
+
+        /**
+         * Compare two hashmaps
+         * @complexity: O (self.len)
+         * */
+        pub fn opEquals (self, o : &IHashMap!{K, V, innerMutable})-> bool {
+            if (self._size != o._size) return false;
+            {
+                for k, v in self {
+                    if k !in o { return false; }
+                    if v != o [k] { return false; }
+                }
+            } catch {
+                _ => return false;
+            }
+
+            true
+        }
+
+    }
+
+    /*!
+     * =======================================================================
+     * =======================================================================
+     * ==================              INDEXING             ==================
+     * =======================================================================
+     * =======================================================================
+     */
+
+    /**
+     * Find an element using key `k` as key.
+     * @params:
+     *    - k: the key to find
+     * @throws:
+     *   - &OutOfArray: if the key was not found
+     * @returns: the value associated to the key `k`
+     * @example:
+     * =============
+     * let dmut x = copy HashMap!{[c32], i32} ();
+     * x:.insert ("foo", 12);
+     * assert (x ["foo"] == 12);
+     * match x["bar"] ? {
+     *      Ok () => assert (false);
+     * }
+     * =============
+     * @complexity: O (1 + n/k), with n the number of possible collision and k the number of keys, in average n/k are negligeable
+     */
+    pub fn opIndex (self, key : K)-> V
+        throws core::exception::OutOfArray
+    {
+        if (self._data.len != 0us) {
+            let h = std::hash::hash (key);
+            if let Ok (x) = self._data [h % cast!u64 ($)] {
+                if let Ok (z) = x.find (key) {
+                    return z;
+                }
+            }
+        }
+
+        throw copy core::exception::OutOfArray ();
+    }
+
+    cte if innerMutable {
+
+        /**
+         * Find an element using key `k` as key.
+         * @params:
+         *    - k: the key to find
+         * @throws:
+         *   - &OutOfArray: if the key was not found
+         * @returns: the value associated to the key `k`
+         * @example:
+         * =============
+         * let dmut x = copy HashMap!{[c32], i32} ();
+         * x:.insert ("foo", 12);
+         * assert (x ["foo"] == 12);
+         * match x["bar"] ? {
+         *      Ok () => assert (false);
+         * }
+         * =============
+         * @complexity: O (1 + n/k), with n the number of possible collision and k the number of keys, in average n/k are negligeable
+         */
+        pub fn opIndex (mut self, key : K)-> dmut V
+            throws core::exception::OutOfArray
+        {
+            if (self._data.len != 0us) {
+                let h = std::hash::hash (key);
+                if let Ok (dmut x) = alias self._data [h % cast!u64 ($)] {
+                    if let Ok (dmut z) = alias x:.find (key) {
+                        return alias z;
+                    }
+                }
+            }
+
+            throw copy core::exception::OutOfArray ();
+        }
+
+        /**
+         * Insert or update the value associated to the key `k`
+         * @params:
+         *    - k: the key to insert
+         *    - v: the value to associate to the key k
+         *
+         * @example:
+         * =============
+         * let dmut x = copy HashMap!{[c32], i32} ();
+         * x:["foo"] = 12;
+         * x:["foo"] = 24;
+         * assert (x ["foo"] == 24);
+         * =============
+         * @complexity: O (1 + n/k + z) with n the number of possible collision, and k the number of keys, and z the time taken by resizing if the load is higher than the load factor, in average n/k and z are negligeable
+         * */
+        pub fn opIndexAssign (mut self, k : K, dmut v : V) {
+            self:.insert (k, alias v)
+        }
+    } else {
+        /**
+         * Insert or update the value associated to the key `k`
+         * @params:
+         *    - k: the key to insert
+         *    - v: the value to associate to the key k
+         *
+         * @example:
+         * =============
+         * let dmut x = copy HashMap!{[c32], i32} ();
+         * x:["foo"] = 12;
+         * x:["foo"] = 24;
+         * assert (x ["foo"] == 24);
+         * =============
+         * @complexity: O (1 + n/k + z) with n the number of possible collision, and k the number of keys, and z the time taken by resizing if the load is higher than the load factor, in average n/k and z are negligeable
+         * */
+        pub fn opIndexAssign (mut self, k : K, v : V) {
+            self:.insert (k, v)
+        }
+    }
+
+
+    /**
+     * Transform the map into a slice, where each element is a tuple of (key, value)
+     * @example:
+     * ===
+     * let x = hmap#{"foo"=> 12, "bar"=> 134, "baz"=> 89};
+     *
+     * println (x[]); // ("baz",89), ("bar",134), ("foo",12)
+     * ===
+     * @complexity: O(n)
+     */
+    pub fn opIndex (self)-> mut [mut (K, V)] {
+        let mut res : [mut (K, V)] = alias core::duplication::allocArray!{(K, V)} (self._size);
+        let mut index = 0us;
+        for i, j in self {
+            res [index] = (i, j);
+            index += 1us;
+        }
+
+        alias res
+    }
+
+    /*!
+     * =======================================================================
+     * =======================================================================
+     * ==================              CLEARING             ==================
+     * =======================================================================
+     * =======================================================================
+     */
+
+
+    cte if innerMutable {
+        /**
+         * Change the size of the allocation
+         * @params:
+         *    - len: the size of the allocated array (number of allocated linked list)
+         * @complexity: O (n) where n is the number of element in the HashMap
+         */
+        pub fn fit (mut self, len : usize) {
+            if (len == 0us) {
+                self._data = [];
+            } else {
+                let dmut aux : [(&MapValue!{K, V, innerMutable})?] = copy [none ; len];
+
+                let dmut old = alias self._data;
+                self._data = alias aux;
+                self._loaded = 0us;
+                self._size = 0us;
+
+                for i in 0us .. old.len {
+                    let dmut current = alias old [i];
+                    while let Ok (dmut x) = alias current {
+                        self:.insertFast (x.h, x.key, alias x.val);
+                        current = alias x.next;
+                    }
+                }
+            }
+        }
+    } else {
+        /**
+         * Change the size of the allocation
+         * @params:
+         *    - len: the size of the allocated array (number of allocated linked list)
+         * @complexity: O (n) where n is the number of element in the HashMap
+         */
+        pub fn fit (mut self, len : usize) {
+            if (len == 0us) {
+                self._data = [];
+            } else {
+                let dmut aux : [(&MapValue!{K, V, innerMutable})?] = copy [none ; len];
+
+                let old = self._data;
+                self._data = alias aux;
+                self._loaded = 0us;
+                self._size = 0us;
+
+                for i in 0us .. old.len {
+                    let mut current = old [i];
+                    while let Ok (x) = current {
+                        self:.insertFast (x.h, x.key, x.val);
+                        current = x.next;
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Remove all the entries contained in the map
+     * @example:
+     * =============
+     * let dmut x = copy HashMap!{[c32], i32} ();
+     * x:.insert ("foo", 34);
+     * x:.insert ("bar", 45);
+     * x:.clear ();
+     * assert (x.isEmpty ());
+     * =============
+     * @complexity: O (1)
+     */
+    pub fn clear (mut self) {
+        self._data = [];
+        self._loaded = 0;
+        self._size = 0;
+    }
+
+    /*!
+     * =======================================================================
+     * =======================================================================
+     * ===================              GETTERS             ==================
+     * =======================================================================
+     * =======================================================================
+     */
+
+    /**
+     * The number of element contained in the map
+     * @example:
+     * ==========
+     * let dmut x = copy HashMap!{[c32], i32} ()
+     * x:.insert ("foo", 34);
+     * x:.insert ("bar", 45);
+     * assert (x.len () == 2us);
+     * ==========
+     * @complexity: O (1)
+     */
+    @field
+    pub fn len (self) -> usize {
+        self._size
+    }
+
+    /**
+     * @returns: true if there is no element in the map
+     */
+    pub fn isEmpty (self)-> bool {
+        self._size == 0us
+    }
+
+    /*!
+     * =======================================================================
+     * =======================================================================
+     * ==================              ITERATION             =================
+     * =======================================================================
+     * =======================================================================
+     */
+
+    /**
+     * @returns: an iterator to the beginning of the map
+     * */
+    pub fn begin (self)-> MapIterator!{K, V, innerMutable} {
+        if self._loaded != 0 {
+            for i in 0 .. self._data.len {
+                if let Ok () = self._data [i] {
+                    return MapIterator!{K, V, innerMutable} (i, 0, self._data, self._data [i]);
+                }
+            }
+        }
+
+        MapIterator!{K, V, innerMutable} (0, 0, [], none)
+    }
+
+    /**
+     * @returns: a element of comparison for the iterator to check if end was reached
+     * */
+    pub fn end (self)-> usize {
+        self._size
+    }
+
+    /*!
+     * =======================================================================
+     * =======================================================================
+     * ==================              PRIVATE             ===================
+     * =======================================================================
+     * =======================================================================
+     */
+
+
+    cte if innerMutable {
+        prv fn insertFast (mut self, h : u64, key : K, dmut val : V) {
+            let inserted = if let Ok (ref dmut x) = ref self._data [h % cast!u64 ($)] {
+                x:.insert (key, alias val)
+            } else {
+                self._data [h % cast!{u64} ($)] = (copy MapValue!{K, V, innerMutable} (h, key, alias val, none))?;
+                self._loaded += 1us;
+                true
+            };
+
+            if inserted {
+                self._size += 1us;
+            }
+        }
+    } else {
+        /**
+         * Insert an element in the hash map, without making the table grow
+         * @assume: the table is able to contain the value to insert
+         * @params:
+         *    - h: the hash value of the key (== hash (key))
+         *    - key: the key
+         *    - val: the value
+         */
+        prv fn insertFast (mut self, h : u64, key : K, val : V) {
+            let inserted = if let Ok (ref dmut x) = ref self._data [h % cast!u64 ($)] {
+                x:.insert (key, val)
+            } else {
+                self._data [h % cast!{u64} ($)] = (copy MapValue!{K, V, innerMutable} (h, key, val, none))?;
+                self._loaded += 1us;
+                true
+            };
+
+            if inserted {
+                self._size += 1us;
+            }
+        }
+    }
+
+    /*!
+     * =======================================================================
+     * =======================================================================
+     * ===============              IMPLEMENTATIONS             ==============
+     * =======================================================================
+     * =======================================================================
+     */
+
+    impl std::hash::Hashable;
+
+
+}
