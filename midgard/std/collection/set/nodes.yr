@@ -1,0 +1,58 @@
+in nodes;
+
+/**
+ * A map value is a linked list storing all the values with the same modulo hash
+ * */
+@final
+pub class SetValue {K} {
+
+    cte assert (__pragma!operator ("==", K, K), "unusable key type : (" ~ K::typeid ~ ") must be be comparable to itself (opEquals or opCmp)");
+
+    // The following node in the list
+    pub let dmut next : (&SetValue!{K})?;
+
+    // The hash of the key
+    pub let h : u64;
+
+    // The key stored in the node
+    pub let key : K;
+
+    pub self (h : u64, key : K, dmut next : (&SetValue!{K})?)
+        with next = alias next
+        , key = key
+        , h = h
+    {}
+
+    pub fn insert (mut self, key : K)-> bool {
+        if (self.key == key) {
+            false
+        } else if let Ok (ref dmut n) = ref self.next {
+            n:.insert (key)
+        } else {
+            self.next = (copy SetValue!{K} (self.h, key, none))?;
+            true
+        }
+    }
+
+    pub fn remove (mut self, key : K, ref mut rm : bool)-> dmut (&SetValue!{K})? {
+        if self.key == key {
+            rm = true;
+            return alias self.next;
+        } else if let Ok (ref dmut n) = ref self.next {
+            self.next = n:.remove (key, ref rm);
+        }
+
+        alias (self)?
+    }
+
+    pub fn opContains (self, key : K)-> bool {
+        if (self.key == key) {
+            true
+        } else if let Ok (n) = self.next {
+            n.opContains (key)
+        } else {
+            false
+        }
+    }
+
+}
