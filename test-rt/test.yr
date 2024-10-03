@@ -1,7 +1,38 @@
 in test;
 use std::io;
+use std::collection::map;
+use core::exception;
+
+
+lazy dmut __UNITTEST_MAP__ = copy HashMap!{[c8], fn ()-> void} ();
+
+prv extern (C) fn _yrt_register_unittest_impl (name : [c8], func : fn ()-> void) {
+    __UNITTEST_MAP__:.insert (name, func);
+}
+
+
+fn fake_throw (b : bool)
+    throws AssertError
+{
+    assert (b);
+}
 
 prv extern (C) fn _yrt_run_unittests_impl  (args : [[c8]]) -> i32 {
-    println (args);
+    args;
+    for z, f in __UNITTEST_MAP__ {
+        {
+            println ("[RUN] : ", z);
+            println ("====================================");
+            fake_throw (true);
+            f ();
+            println ("====================================");
+            println ("[SUCCESS] : ", z);
+        } catch {
+            _ => {
+                println ("====================================");
+                println ("[FAILURE] : ", z);
+            }
+        }
+    }
     0
 }

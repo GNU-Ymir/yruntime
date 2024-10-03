@@ -206,3 +206,8 @@ void* _yrt_call_lazy (struct _yrt_lazy_value * value) {
 
     return value-> data;
 }
+
+
+uint64_t _yrt_ptr_to_u64 (void* value) {
+    return (uint64_t) (value);
+}

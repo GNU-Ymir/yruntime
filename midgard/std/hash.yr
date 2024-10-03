@@ -1,5 +1,8 @@
 in hash;
 
+mod Runtime {T} {
+    pub extern (C) fn _yrt_ptr_to_u64 (a : T)-> u64;
+}
 
 pub trait Hashable {
 
@@ -236,7 +239,23 @@ pub fn hash {T of [U ; N], U, N : usize} (a : T)-> u64 {
  * @complexity: O (1)
  */
 pub fn hash {T} (x : *T) -> u64 {
-    Runtime::_yrt_ptr_to_u64 (x)
+    Runtime!{*T}::_yrt_ptr_to_u64 (x)
+}
+
+/**
+ * Transform a pointer into a u64.
+ * @complexity: O (1)
+ */
+pub fn hash {Z, T...} (x : fn (T)-> Z) -> u64 {
+    Runtime!{fn(T)-> Z}::_yrt_ptr_to_u64 (x)
+}
+
+/**
+ * Transform a pointer into a u64.
+ * @complexity: O (1)
+ */
+pub fn hash {Z} (x : fn ()-> Z) -> u64 {
+    Runtime!{fn()-> Z}::_yrt_ptr_to_u64 (x)
 }
 
 /**
@@ -250,6 +269,7 @@ pub fn hash {T} (a : (T)?)-> u64 {
         0
     }
 }
+
 
 /**
  * Transform a class that implement the trait Hashable into a u64

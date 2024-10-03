@@ -88,7 +88,7 @@ add_library (midgard_tests STATIC ${SRC_LIB})
 add_custom_command(TARGET midgard_tests
   PRE_BUILD
   COMMAND ${CMAKE_COMMAND} -E touch_nocreate ${CMAKE_CURRENT_SOURCE_DIR}/tests/__lib__.yr
-  COMMAND ${CMAKE_YMIR_COMPILER} ${CMAKE_CURRENT_SOURCE_DIR}/tests/__lib__.yr -o ${CMAKE_CURRENT_BINARY_DIR}/midgard_tests -funittest -nomidgardlib -nostdinc -I ${CMAKE_CURRENT_SOURCE_DIR}/midgard -lgymidgard-bootstrap-debug -lgc -lgymidgard-bootstrap-tests)
+  COMMAND ${CMAKE_YMIR_COMPILER} ${CMAKE_CURRENT_SOURCE_DIR}/tests/__lib__.yr -o ${CMAKE_CURRENT_BINARY_DIR}/midgard_tests -funittest -nomidgardlib -nostdinc -I ${CMAKE_CURRENT_SOURCE_DIR}/midgard -lgymidgard-bootstrap-debug -lgc -lgymidgard-bootstrap-tests -lgymidgard-bootstrap-debug)
 
 add_custom_command(TARGET midgard_tests
   POST_BUILD

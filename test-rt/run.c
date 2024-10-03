@@ -11,26 +11,17 @@
 #include "../c/yarray.h"
 
 
-_yrt_array_ _yrt_create_args_array (int len, char ** argv);/*  { */
-/*     _yrt_array_ arr; */
-/*     arr.data = GC_malloc (sizeof (_yrt_array_) * len); */
-/*     arr.len = (unsigned long) len; */
-
-/*     for (int i = 0 ; i < len ; i++) { */
-/*         _yrt_array_ inner; */
-/*         inner.data = argv[i]; */
-/*         inner.len = strlen (argv [i]); */
-/*         ((_yrt_array_*) arr.data)[i] = inner; */
-/*     } */
-
-/*     /\* __MAIN_ARGS__ = arr; *\/ */
-/*     return arr; */
-/* } */
-
+_yrt_array_ _yrt_create_args_array (int len, char ** argv);
 int _yrt_run_unittests_impl ();
+void _yrt_register_unittest_impl (_yrt_array_ name, void (*ptr) ());
 
 void _yrt_register_unittest (char * func, void (*ptr) ()) {
-  printf ("%s\n", func);
+  _yrt_array_ arr;
+  arr.len = strlen (func) + 1;
+  arr.data = GC_malloc (arr.len);
+  memcpy (arr.data, func, arr.len - 1);
+
+  _yrt_register_unittest_impl (arr, ptr);
 }
 
 int _yrt_run_unittests (int argc, char ** argv) {
