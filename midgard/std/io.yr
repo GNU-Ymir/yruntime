@@ -169,6 +169,21 @@ pub fn print (_ : ()) {
     print ('('c8,')'c8);
 }
 
+pub fn print {class T} (a : T) {
+    cte if is!{T}{X impl std::stream::Streamable} {
+        let dmut stream = copy std::stream::StringStream ();
+        a.toStream (alias stream);
+        print (stream[]);
+    } else {
+        print (T::typeid, '(');
+        for i, j in (expand a,) {
+            cte if (i != 0) print (", ");
+            print (j);
+        }
+        print (')');
+    }
+}
+
 pub fn print {record T} (a : T) {
     print (T::typeid, '(');
     for i, j in (expand a,) {

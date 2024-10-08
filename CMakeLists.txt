@@ -72,7 +72,7 @@ add_custom_command(TARGET gymidgard-bootstrap-debug
   COMMAND ${CMAKE_COMMAND} -E touch_nocreate ${CMAKE_CURRENT_SOURCE_DIR}/midgard/__lib__.yr)
 
 add_library (gymidgard-bootstrap-tests STATIC ${SRC_UNITTEST} ${SRC_UNITTEST_YR})
-target_compile_options (gymidgard-bootstrap-tests PRIVATE -I ${CMAKE_CURRENT_SOURCE_DIR}/midgard/__lib__.yr)
+target_compile_options (gymidgard-bootstrap-tests PRIVATE -I ${CMAKE_CURRENT_SOURCE_DIR}/midgard/__lib__.yr -fversion=DEBUG_LIB)
 target_link_libraries (gymidgard-bootstrap-tests gymidgard-bootstrap-release)
 IF(UNIX) 
     install (TARGETS gymidgard-bootstrap-debug DESTINATION /usr/lib/)
@@ -85,10 +85,11 @@ ELSE(UNIX)
 ENDIF(UNIX)
 
 add_library (midgard_tests STATIC ${SRC_LIB})
+add_dependencies (midgard_tests gymidgard-bootstrap-debug gymidgard-bootstrap-tests)
 add_custom_command(TARGET midgard_tests
   PRE_BUILD
   COMMAND ${CMAKE_COMMAND} -E touch_nocreate ${CMAKE_CURRENT_SOURCE_DIR}/tests/__lib__.yr
-  COMMAND ${CMAKE_YMIR_COMPILER} ${CMAKE_CURRENT_SOURCE_DIR}/tests/__lib__.yr -o ${CMAKE_CURRENT_BINARY_DIR}/midgard_tests -funittest -nomidgardlib -nostdinc -I ${CMAKE_CURRENT_SOURCE_DIR}/midgard -lgymidgard-bootstrap-debug -lgc -lgymidgard-bootstrap-tests -lgymidgard-bootstrap-debug)
+  COMMAND ${CMAKE_YMIR_COMPILER} ${CMAKE_CURRENT_SOURCE_DIR}/tests/__lib__.yr -fversion=DEBUG_LIB -g -o ${CMAKE_CURRENT_BINARY_DIR}/midgard_tests -funittest -nostdinc -nomidgardlib -I ${CMAKE_CURRENT_SOURCE_DIR}/midgard -lgc  ${CMAKE_CURRENT_BINARY_DIR}/libgymidgard-bootstrap-debug.a ${CMAKE_CURRENT_BINARY_DIR}/libgymidgard-bootstrap-tests.a  ${CMAKE_CURRENT_BINARY_DIR}/libgymidgard-bootstrap-debug.a)
 
 add_custom_command(TARGET midgard_tests
   POST_BUILD

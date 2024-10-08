@@ -1,37 +1,1218 @@
+/**
+ * This modules implement a set of functions named `to` that can be
+ * used to convert data from a type to another. For example, the
+ * function `to` can be used to transform a data to a string `to![c8]
+ * (value)`. All the function for conversion are called `to`, with
+ * some exceptions such as `toStringZ` that transform a Ymir string
+ * into a null terminated string that can be used in a C program, and
+ * `fromStringZ` that transform a C string into a string usable in
+ * Ymir. This module mainly contains conversion functions from or to
+ * string data, other module of the std provides conversion function
+ * to other kind of data types such as <code class="hljs"><a href="./std_config_conv.html">std::config::conv</a></code>.
+ * It is recommanded to use the name `to` when creating conversion
+ * functions, in order to keep the same standard everywhere.
+ *
+ *  @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @example:
+ * ===
+  *
+ * class A {
+ *      let i : i32;
+ *
+ *      pub self (i : i32) with i = i {}
+ *
+ *      impl Streamable;
+ * }
+ *
+ * let str_i = (89).to![c8] (); // transform a int into a [c8]
+ * let str_f = (128.983f).to![c32] (); // transform a float into a [c32]
+ *
+ * // float conversion is not quite exact due to float encoding
+ * // but the prec parameter allows the adjust the precision
+ * // By the default the prec is set to 6
+ * let str_f2 =  (128.983f).to![c32] (prec-> 12u32); // with 12 number after the decimal point
+ *
+ * println (str_i); // 89
+ * println (str_f); // 128.983
+ * println (str_f2); // 128.983001708984
+ *
+ * let str_hex = (7686u32).to!{[c8], "x"} (); // using hexadecimal form
+ * let str_bit = (87192u32).to!{[c8], "b"} (); // using binary form
+ * let str_oc = (234u32).to!{[c8], "o"} (); // using octal form
+ * let str_19 = (10943).to!{[c8], 19us} (); // using arbitrary base
+ * let str_d_sci = (18293.0).to!{[c32], "e"} (prec-> 2u32); // using scientific notation, default precision is 6
+ *
+ * println (str_hex); // "0x1e06"
+ * println (str_bit); // "0b10101010010011000"
+ * println (str_oc);  // "0o352"
+ * println (str_19); // 1b5i, maximum base is 36 (10 digits + 26 letters)
+ * println (str_d_sci); // 1.83e+04
+ *
+ * let float_s = "78.9872".to!f32 ()?; // transform a string into a f32
+ * let i_s = "1452".to!i32 ()?; // transform a string into a i32
+ * let h_s = "0xff".to!{u32, "x"} ()?; // transform a string from hex form to u32
+ * let o_s = "0o128".to!{u32, "o"} ()?; // transform a string from octal form to u32
+ * let b_s = "0b101101".to!{u32, "b"} ()?; // transform a string from binary form to u32
+ * let arb_s = "189bz".to!{i32, 36us} ()?; // using arbitrary base (maximum being 36)
+ *
+ * // conversion from string might fail and throw CastFailure
+ * println (float_s); // Ok (78.987198), float conversion is not quite exact due to float encoding system
+ * println (i_s); // Ok (1452)
+ * println (h_s); // Ok (255)
+ * println (o_s); // Ok (88)
+ * println (b_s); // Ok (45)
+ * println (arb_s); // Ok (2064959)
+ *
+ * let f_i = (898172.0989178f).to!i32 (); // float to int
+ * let i_f = f_i.to!f32 (); // int to float
+ *
+ * println (f_i); // 898172
+ * println (i_f); // 898172.000000
+ *
+ * let str_a = A::new (76).to![c8] (); // streamable class are convertible to string [c8] and [c32]
+ * println (str_a); // A(76)
+ *
+ * let decoded = ("Hello world, Καλημέρα κόσμε, コンニチハ"s8).to![c32] (); // convert utf8 to utf32
+ * let encoded = decoded.to![c8] (); // convert utf32 into utf8
+ *
+ * println (decoded.len, " ", decoded); // 34 Hello world, Καλημέρα κόσμε, コンニチハ
+ * println (encoded.len, " ", encoded); // 59 Hello world, Καλημέρα κόσμε, コンニチハ
+ * ===
+ */
+
 in conv;
 
-pub fn toStringZ (a : [c8])-> *c8 {
-    let dmut res = core::duplication::allocArray!(c8)(a.len + 1us);
-    core::duplication::memCopy (a, alias res);
+use std::{io, stream, traits};
+use core::{typeinfo, exception, duplication, array};
+
+mod Runtime {
+    pub extern (C) fn _yrt_ulong_to_double (a : usize)-> f64;
+
+    pub extern (C) fn _yrt_long_to_double (a : isize)-> f64;
+
+    pub extern (C) fn _yrt_uint_to_float (a : u32)-> f32;
+
+    pub extern (C) fn _yrt_int_to_float (a : i32)-> f32;
+
+    pub extern (C) fn _yrt_double_to_ulong (a : f64)-> u64;
+
+    pub extern (C) fn _yrt_double_to_long (a : f64)-> i64;
+
+    pub extern (C) fn _yrt_float_to_uint (a : f32)-> u32;
+
+    pub extern (C) fn _yrt_float_to_int (a : f32)-> i32;
+
+    pub extern (C) fn _yrt_to_utf8_array (s : [c32])-> dmut [c8];
+
+    pub extern (C) fn _yrt_to_utf32_array (s : [c8])-> dmut [c32];
+
+    pub extern (C) fn _yrt_double_to_s8 (s : f64, prec : u32)-> dmut [c8];
+
+    pub extern (C) fn _yrt_double_to_s8_exp (s : f64, prec : u32)-> dmut [c8];
+
+    pub extern (C) fn _yrt_s8_to_double (s : [c8], ref mut succ : bool)-> f64;
+
+    pub extern (C) fn _yrt_s8_to_float (s : [c8], ref mut succ : bool)-> f32;
+
+    pub extern (C) fn memcpy (_ : *void, _ : *void, _ : usize)-> void;
+
+}
+
+
+/**
+ * Exception thrown when a conversion fails. This class contains two fields giving the information of the cast that was tried.
+ * @example :
+ * ===============
+ * class @abstract X { /* full definition omitted */ }
+ * class Y over X { /* full definition omitted */ }
+ * class Z over X { /* full definition omitted */ }
+ *
+ * /*
+ *  * Dummy function that verify wether the parameter is of Type &Y
+ *  */
+ * fn enforce_Y  (a : &X)
+ *     throws std::conv::CastFailure
+ * {
+ *    match (a) {
+ *        _ : &Y => { // Indeed it is
+ *             println ("Success");
+ *        }
+ *        _ => { // it is not a &Y
+ *          // conversion from typeof (a) to &Y failed.
+ *          throw copy CastFailure (a::typeinfo, Y::typeinfo);
+ *        }
+ *     }
+ * }
+ *
+ * fn main () {
+ *     enforce_Y (Z::new ()); // this enforcing will fail
+ * } catch {
+ *     // as expected it failed CastFailure (TypeInfo (..., Z), TypeInfo (..., Y))
+ *     x : &CastFailure => println (x);
+ * }
+ * ===============
+ */
+pub class CastFailure over core::exception::Exception {
+
+    // the type that is transformed
+    pub let from : TypeInfo;
+
+    // the type to which the transformation was tried
+    pub let to : TypeInfo;
+
+    /**
+     * @params:
+     *    - from: the type that is transformed
+     *    - to: the type to which the transformation was tried
+     */
+    pub self (from : TypeInfo, to : TypeInfo) with from = from, to = to {}
+
+    impl stream::Streamable {
+
+        /**
+         * Just print the error to stdout
+         */
+        pub over toStream (self, dmut stream : &StringStream) {
+            self.__super.toStream (alias stream);
+        }
+
+    }
+
+}
+
+pub {
+
+    /**
+     * Transform a unsigned int into a string.
+     * @example:
+     * ==========
+     * let x = to![c32] (12u32);
+     * let y = (879us).to![c8] ();
+     *
+     * assert (x == "12"s32 && y == "879");
+     * ==========
+     */
+    fn if (isUnsigned!{F} () && isChar!{U} ()) to {T of [U], U, F} (a : F) -> dmut [U] {
+        alias to!{T, 10us, F} (a)
+    }
+
+    /**
+     * Transform a unsigned int into a string, using hexadecimal form.
+     * @example:
+     * ==========
+     * let x = to!{[c32], "x"} (12u32);
+     * let y = (879us).to!{[c8], "x"} ();
+     *
+     * assert (x == "0xc" && y == "0x36f"s8);
+     * ==========
+     */
+    fn if (isUnsigned!{F} () && isChar!{U} ()) to {T of [U], U, "x", F} (a : F) -> dmut [U] {
+        cte if is!{U}{X of c32} {
+            return alias (copy "0x" ~ to!{T, 16us, F} (a));
+        } else {
+            return alias (copy "0x"s8 ~ to!{T, 16us, F} (a));
+        }
+    }
+
+    /**
+     * Transform a unsigned int into a string, using binary format.
+     * @example:
+     * ==========
+     * let x = to!{[c32], "b"} (12u32);
+     * let y = (879us).to!{[c8], "b"} ();
+     *
+     * assert (x == "0b1100" && y == "0b1101101111"s8);
+     * ==========
+     */
+    fn if (isUnsigned!{F} () && isChar!{U} ()) to {T of [U], U, "b", F} (a : F) -> dmut [U] {
+        cte if is!{U}{X of c32} {
+            return alias (copy "0b" ~ to!{T, 2us, F} (a));
+        } else {
+            return alias (copy "0b"s8 ~ to!{T, 2us, F} (a));
+        }
+    }
+
+    /**
+     * Transform a unsigned int into a string, using octal format.
+     * @example:
+     * ==========
+     * let x = to!{[c32], "o"} (12u32);
+     * let y = (879us).to!{[c8], "o"} ();
+     * assert (x == "0o14" && y == "0o1557"s8);
+     * ==========
+     */
+    fn if (isUnsigned!{F} () && isChar!{U} ()) to {T of [U], U, "o", F} (a : F) -> dmut [U] {
+        cte if is!{U}{X of c32} {
+            return alias (copy "0o" ~ to!{T, 8us, F} (a));
+        } else {
+            return alias (copy "0o"s8 ~ to!{T, 8us, F} (a));
+        }
+    }
+
+    /**
+     * Transform a unsigned int into a string, using the base `base`.
+     * @template:
+     *    - base: the base to use when converting the int to string.
+     * @cteassert `(base <= 36)`
+     * @example:
+     * ==========
+     * let x = to!{[c32], 11us} (12u32);
+     * let y = (879us).to!{[c8], 18us} ();
+     *
+     * assert (x == "11" && y == "2cf"s8);
+     * ==========
+     */
+    fn if (isUnsigned!{F} () && isChar!{U} ()) to {T of [U], U, base : usize, F} (a : F) -> dmut [U] {
+        cte assert (36us >= base, "Maximum base is 36 < " ~ base);
+
+        if (cast!usize (a) == 0u64) {
+            cte if is!{U}{X of c32} {
+                return copy "0"s32;
+            } else return copy "0"s8;
+        }
+
+        let mut n = cast!usize (a);
+        let mut len = 0us;
+        while n > 0us {
+            len += 1us;
+            n /= base;
+        }
+
+        let dmut res = core::duplication::allocArray!(U)(len);
+        let mut j = 1us;
+        for i in len .. 0us {
+            res [i - 1us] = inner::to!U ((cast!usize (a) / j) % base, base);
+            j *= base;
+        } catch {
+            _  => { panic }
+
+        }
+
+        alias res
+    }
+
+    /**
+     * Transform a signed int into a string, using base 10.
+     * @example:
+     * ===========
+     * let x = to![c32] (-12);
+     * let y = (-7810).to![c8] ();
+     *
+     * assert (x == "-12" && y == "-7810"s8);
+     * ===========
+     */
+    fn if (isSigned!{F} () && isChar!{U} ()) to {T of [U], U, F} (a : F) -> dmut [U] {
+        alias to!{T, 10us, F} (a)
+    }
+
+    /**
+     * Transform a signed int into a string, using base `base`.
+     * @template:
+     *    - base: the base to use when converting the int to string.
+     * @cteassert `(base <= 36)`
+     * @example:
+     * ===========
+     * let x = to!{[c32], 7us} (-12);
+     * let y = (-89102).to!{[c8], 21us} ();
+     *
+     * assert (x == "-15" aa y == "-9d0k"s8);
+     * ===========
+     */
+    fn if (isSigned!{F} () && isChar!{U} ()) to {T of [U], U, base : usize, F} (a : F) -> dmut [U]
     {
-        res [$-1us] = '\u{0}'c8;
+        cte assert (36us >= base, "Maximum base is 36 < " ~ base);
+
+        if (cast!isize (a) == 0i64)  {
+            cte if is!{U}{X of c32} {
+                return copy "0";
+            } else return copy "0"s8;
+        }
+
+        let (mut n, mut len, sign) = if (cast!isize (a) < 0is) {
+            (cast!isize (- a), 0us, true)
+        } else { (cast!isize (a), 0us, false) }
+
+        while n > 0is {
+            len += 1us;
+            n /= cast!isize (base);
+        }
+
+        let mut j = 1is;
+        if (!sign) {
+            let dmut res = core::duplication::allocArray!(U)(len);
+            for i in len .. 0us {
+                res [i - 1us] = inner::to!U (cast!usize ((cast!isize (a) / j) % cast!isize (base)), base);
+                j *= cast!isize (base);
+            } catch {
+                _  => { panic; }
+            }
+            return alias res;
+        } else {
+            let dmut res = core::duplication::allocArray!(U)(len + 1us);
+            {
+                for i in len .. 0us {
+                    res [i] = inner::to!U (cast!usize ((cast!isize (-a) / j) % cast!isize (base)), base);
+                    j *= cast!isize (base);
+                }
+                cte if is!{U}{X of c32} {
+                    res [0] = '-';
+                } else res [0] = '-'c8;
+            } catch {
+                _ => { panic }
+            }
+            return alias res;
+        }
     }
-    res.ptr
+
+    /**
+     * Transfrom a utf32 encoded string into a utf8 string
+     * @params :
+     *   - s: a string in utf32
+     * @example:
+     * ===
+     * let encoded = ("Hello world, Καλημέρα κόσμε, コンニチハ").to![c8] (); // convert utf8 to utf32
+     *
+     * println (encoded.len, " ", encoded); // 59 Hello world, Καλημέρα κόσμε, コンニチハ
+     * ===
+     */
+    fn if is!{U}{X of c8} to {T of [U], U, F of [c32]} (s : F)-> dmut [c8] {
+        alias Runtime::_yrt_to_utf8_array (s)
+    }
+
+    /**
+     * Transfrom a utf8 encoded string into a utf32 string
+     * @params :
+     *   - s: a string in utf8
+     * @example:
+     * ===
+     * let decoded = ("Hello world, Καλημέρα κόσμε, コンニチハ"s8).to![c32] (); // convert utf8 to utf32
+     *
+     * println (decoded.len, " ", decoded); // 34 Hello world, Καλημέρα κόσμε, コンニチハ
+     * ===
+     */
+    fn if (is!{U}{X of c32} && is!{G}{X of c8}) to {T of [U], U, F of [G], G} (s : F)-> dmut [c32] {
+        alias Runtime::_yrt_to_utf32_array (s)
+    }
+
+    /**
+     * Transform a slice of [u8] to an utf8 string.
+     * @params:
+     *    - a: a slice containing u8 values
+     * @example:
+     * ===
+     * let val = [0xf0u8, 0x9fu8, 0x98u8, 0x89u8];
+     *
+     * assert (val.to![c8] () == "😉");
+     * ===
+     */
+    fn if (is!{U}{X of c8} && is!{G}{X of u8}) to {T of [U], U, F of [G], G} (a : F)-> dmut [c8] {
+        let dmut res = core::duplication::allocArray!c8 (a.len);
+        Runtime::memcpy (cast!{*void} (res.ptr), cast!{*void} (a.ptr), res.len);
+
+        alias res
+    }
+
+    /**
+     * Transform a utf8 string into a slice of [u8].
+     * @params:
+     *    - s: an utf8 string
+     * @example:
+     * ===
+     * let val = "😉"s8;
+     *
+     * assert (val.to![u8] () == [0xf0u8, 0x9fu8, 0x98u8, 0x89u8]);
+     * ===
+     */
+    fn if (is!{U}{X of u8} && is!{G}{X of c8}) to {T of [U], U, F of [G], G} (s : F)-> dmut [u8] {
+        let dmut res = core::duplication::allocArray!u8 (s.len);
+        Runtime::memcpy (cast!{*void} (res.ptr), cast!{*void} (s.ptr), res.len);
+
+        alias res
+    }
+
+    /**
+     * Transfrom a utf32 encoded char into a utf8 string
+     * @params :
+     *   - s: a char in utf32
+     * @example:
+     * ===
+     * let utf8 = ('😉').to![c8] ();
+     *
+     * assert (utf8 == "😉"s8 && utf8.len == 3us);
+     * ===
+     */
+    fn if is!{U}{X of c8} to {T of [U], U, F of c32} (s : F) -> dmut [c8] {
+        alias Runtime::_yrt_to_utf8_array ([s])
+    }
+
+    /**
+     * Transform a float into a string
+     * @example:
+     * ===========
+     * assert (to![c32] (12.8) == "12.8")
+     * ===========
+     */
+    fn if (isChar!{U} () && isFloating!{F} ()) to {T of [U], U, F} (a : F, prec : u32 = 6u32) -> T {
+        cte if is!{U}{X of c32} {
+            to![c32] (Runtime::_yrt_double_to_s8 (cast!f64 (a), prec))
+        } else {
+            Runtime::_yrt_double_to_s8 (cast!f64 (a), prec)
+        }
+    }
+
+    /**
+     * Transform a float into a string, using scientific notation.
+     * @params:
+     *     - prec: the number of digits after the decimal point.
+     * @example:
+     * ===========
+     * let f_s = (12.9834982f).to!{[c32], "e"} (prec-> 4u32);
+     * let d_s = (81792.983).to!{[c8], "e"} (prec-> 1u32);
+     *
+     * assert (f_s == "1.2983e+01" && d_s == "8.2e+04"s8);
+     * ===========
+     */
+    fn if (isChar!{U} () && isFloating!{F} ()) to {T of [U], U, "e", F} (a : F, prec : u32 = 6u32) -> T {
+        cte if is!{U}{X of c32} {
+            to![c32] (Runtime::_yrt_double_to_s8_exp (cast!f64 (a), prec))
+        } else {
+            Runtime::_yrt_double_to_s8_exp (cast!f64 (a), prec)
+        }
+    }
+
+    /**
+     * Convert a bool into a string.
+     * @example:
+     * ===========
+     * assert (to![c8] (false) == "false"s8)
+     * ===========
+     */
+    fn if is!{U}{X of c8} to {T of [U], U, F of bool} (a : F)-> [c8] {
+        if (a)
+            "true"s8
+        else
+            "false"s8
+    }
+
+    /**
+     * Convert a bool into a string
+     * @example:
+     * ===========
+     * assert (to![c32] (false) == "false")
+     * ===========
+     */
+    fn if is!{U}{X of c32} to {T of [U], U, F of bool} (a : F)-> [c32] {
+        if (a)
+            "true"
+        else
+            "false"
+    }
+
+    /**
+     * Transform a class that implement Streamable into a [c8].
+     * @example:
+     * =============
+     * mod main;
+     * class A {
+     *     let i : i32;
+     *     pub self (i : i32) with i = i {}
+     *     impl Streamable;
+     * }
+     *
+     * assert (A::new (789).to![c8] () == "main::A(789)"s8);
+     * =============
+     */
+    fn if is!{U}{X of c8} to {T of [U], U, F impl Streamable} (a : F)-> [c8] {
+        let dmut stream = StringStream::new ();
+        a.toStream (alias stream);
+        stream []
+    }
+
+
+    /**
+     * Transform a class that implement Streamable into a [c32].
+     * @example:
+     * =============
+     * mod main;
+     * class A {
+     *     let i : i32;
+     *     pub self (i : i32) with i = i {}
+     *     impl Streamable;
+     * }
+     *
+     * assert (A::new (789).to![c32] () == "main::A(789)");
+     * =============
+     */
+    fn if is!{U}{X of c32} to {T of [U], U, F impl Streamable} (a : F)-> [c32] {
+        let dmut stream = StringStream::new ();
+        a.toStream (alias stream);
+        stream [].to![c32] ()
+    }
+
+
+    /**
+     * Transform a struct into a [c8].
+     * @example:
+     * =============
+     * mod main;
+     * struct
+     * | x : i32
+     * -> A;
+     *
+     * assert (A (12).to![c8] () == "main::A(12)"s8);
+     */
+    fn if is!{U}{X of c8} to {T of [U], U, record S} (a : S)-> [c8] {
+        let dmut stream = StringStream::new ();
+        stream:.write (a);
+        stream []
+    }
+
+    /**
+     * Transform a struct into a [c32].
+     * @example:
+     * =============
+     * mod main;
+     * struct
+     * | x : i32
+     * -> A;
+     *
+     * assert (A (12).to![c32] () == "main::A(12)");
+     */
+    fn if is!{U}{X of c32} to {T of [U], U, record S} (a : S)-> [c32] {
+        let dmut stream = StringStream::new ();
+        stream:.write (a);
+        stream [].to![c32] ()
+    }
+
+
+    /**
+     * Transform a unsigned integer into a float.
+     * @example:
+     * ==========
+     * let x = to!f64 (12u64);
+     * let y = (879u32).to!f32 ();
+     *
+     * assert (x == 12.0 && y == 879.0f);
+     * ==========
+     */
+    fn if (isFloating!{F} () && isUnsigned!{U} ()) to {F, U} (a : U) -> F {
+        cast!F (Runtime::_yrt_ulong_to_double (cast!usize (a)))
+    }
+
+    /**
+     * Transform a signed into a float.
+     * @example:
+     * ==========
+     * let x = to!f64 (12i64);
+     * let y = (-879).to!f32 ();
+     *
+     * assert (x == 12.0 && y == -879.0f);
+     * ==========
+     */
+    fn if (isFloating!{F} () && isSigned!{I} ()) to {F, I} (a : I) -> F {
+        cast!F (Runtime::_yrt_long_to_double (cast!isize (a)))
+    }
+
+    /**
+     * Transform a float into a unsigned integer.
+     * @example:
+     * ==========
+     * let x = to!u64 (12.0);
+     * let y = (89.8712f).to!u32 ();
+     *
+     * assert (x == 12u64 && y == 89u32);
+     * ==========
+     */
+    fn if (isFloating!{F} () && isUnsigned!{U} ()) to {U, F} (a : F) -> U {
+        cast!U (Runtime::_yrt_double_to_ulong (cast!f64 (a)))
+    }
+
+    /**
+     * Transform a float into a signed integer.
+     * @example:
+     * ==========
+     * let x = to!i64 (-12.0);
+     * let y = (-89.8712f).to!i32 ();
+     *
+     * assert (x == -12u64 && y == -89u32);
+     * ==========
+     */
+    fn if (isFloating!{F} () && isSigned!{I} ()) to {I, F} (a : F) -> I {
+        cast!I (Runtime::_yrt_double_to_long (cast!f64 (a)))
+    }
+
+    /**
+     * Transform a string into a unsigned int.
+     * @throws:
+     *    - &CastFailure: if the string does not contain a valid u32 literal
+     * @example:
+     * ===============
+     * let x = ("12").to!u64 ();
+     * let y = ("87"s8).to!u32 ();
+     *
+     * assert (x == 12u64 && y == 87u32);
+     * ===============
+     * @assume: the string is stripped, so the only possible char are [0-9]
+     * @KnownBug: does not check the overflow capacity
+     */
+    fn if (isUnsigned!{T} () && isChar!{U} ()) to {T, F of [U], U} (str : F)-> T
+        throws CastFailure
+    {
+        to!{T, 10us, F} (str)
+    }
+
+    /**
+     * Transform an hexadecimal string into a unsigned integer.
+     * @throws:
+     *    - &CastFailure: if the string does not contain a valid literal
+     * @example:
+     * ===============
+     * let x = ("0xff").to!{u64, "x"} ();
+     * let y = ("0x14E"s8).to!{u32, "x"} ();
+     *
+     * assert (x == 255u64 && y == 334u32);
+     * ===============
+     * @KnownBug: does not check the overflow capacity
+     */
+    fn if (isUnsigned!{T} () && isChar!{U} ()) to {T, "x", F of [U], U} (str : F)-> T
+        throws CastFailure
+    {
+        cte if is!{U}{X of c32} {
+            if (str.len < 2us || str [0us] != '0' || str [1us] != 'x') {
+                throw copy CastFailure (T::typeinfo, [U]::typeinfo);
+            }
+        } else {
+            if (str.len < 2us || (str [0us] != '0'c8) || (str [1us] != 'x'c8)) {
+                throw copy CastFailure (T::typeinfo, [U]::typeinfo);
+            }
+        }
+
+        to!{T, 16us, F} (str[2us .. $])
+    }
+
+
+    /**
+     * Transform a binary string into a unsigned integer.
+     * @throws:
+     *    - &CastFailure: if the string does not contain a valid literal
+     * @example:
+     * ===============
+     * let x = ("0b1001").to!{u64, "b"} ();
+     * let y = ("0b1011"s8).to!{u32, "b"} ();
+     *
+     * assert (x == 5u64 && y == 11u32);
+     * ===============
+     * @KnownBug: does not check the overflow capacity
+     */
+    fn if (isUnsigned!{T} () && isChar!{U} ()) to {T, "b", F of [U], U} (str : F)-> T
+        throws CastFailure
+    {
+        cte if is!{U}{X of c32} {
+            if (str.len < 2us || str [0us] != '0' || str [1us] != 'b') {
+                throw copy CastFailure (T::typeinfo, [U]::typeinfo);
+            }
+        } else {
+            if (str.len < 2us || str [0us] != '0'c8 || str [1us] != 'b'c8) {
+                throw copy CastFailure (T::typeinfo, [U]::typeinfo);
+            }
+        }
+
+        to!{T, 2us, F} (str[2us .. $])
+    }
+
+
+    /**
+     * Transform an octal string into a unsigned integer
+     * @throws:
+     *    - &CastFailure: if the string does not contain a valid literal
+     * @example:
+     * ===============
+     * let x = ("0o7777").to!{u64, "o"} ();
+     * let y = ("0o1234"s8).to!{u32, "o"} ();
+     *
+     * assert (x == 4095u64 && y == 668u32);
+     * ===============
+     * @KnownBug: does not check the overflow capacity
+     */
+    fn if (isUnsigned!{T} () && isChar!{U} ()) to {T, "o", F of [U], U} (str : F)-> T
+        throws CastFailure
+    {
+        cte if is!{U}{X of c32} {
+            if (str.len < 2us || str [0us] != '0' || str [1us] != 'o') {
+                throw copy CastFailure (T::typeinfo, [U]::typeinfo);
+            }
+        } else {
+            if (str.len < 2us || str [0us] != '0'c8 || str [1us] != 'o'c8) {
+                throw copy CastFailure (T::typeinfo, [U]::typeinfo);
+            }
+        }
+
+        to!{T, 8us, F} (str[2us .. $])
+    }
+
+
+    /**
+     * Transform a string into a unsigned integer form an arbitrary base `base`.
+     * @throws:
+     *    - &CastFailure: if the string does not contain a valid literal
+     * @cteassert: `(base <= 36)`
+     * @example:
+     * ===============
+     * let a = ("12").to!{u64, 10us} ();
+     * assert (a == 12u64);
+     *
+     * let x = ("1ku3"s8).to!{u64, 31us} ();
+     * assert (x == 49944u64);
+     * ===============
+     * @KnownBug: does not check the overflow capacity
+     */
+    fn if (isUnsigned!{T} () && isChar!{U} ()) to {T, base : usize, F of [U], U} (str : F)-> T
+        throws CastFailure
+    {
+        cte assert (36us >= base, "Maximum base is 36");
+
+        let mut j = 1us;
+        let mut res = 0us;
+        for i in str.len .. 0us {
+            res = res + (j * inner::to!usize (str [i - 1us], base));
+            j *= base;
+        } catch {
+            _ : &CastFailure => {
+                throw copy CastFailure (T::typeinfo, [U]::typeinfo);
+            }
+        }
+
+        cast!T (res)
+    }
+
+    /**
+     * Transform a string into a signed integer.
+     * @throws:
+     *    - &CastFailure: if the string does not contain a valid i64 literal
+     * @example:
+     * ===============
+     * let x = ("-12").to!i64 ();
+     * let y = ("89"s8).to!i32 ();
+     *
+     * assert (x == -12i64 && y == 89);
+     * ===============
+     * @KnownBug: does not check the overflow capacity
+     */
+    fn if (isSigned!{T} () && isChar!{U} ()) to {T, F of [U], U} (str : F)-> T
+        throws CastFailure
+    {
+        to!{T, 10us, F} (str)
+    }
+
+    /**
+     * Transform a string into a signed integer
+     * @throws:
+     *    - &CastFailure: if the string does not contain a valid i64 literal
+     * @example:
+     * ===============
+     * let x = ("-12").to!{i64, 10us} ();
+     * let y = ("-1ku3"s8).to!{i32, 31us} ();
+     *
+     * assert (x == -12i64 && y == -49944);
+     * ===============
+     * @KnownBug: does not check the overflow capacity
+     */
+    fn if (isSigned!{T} () && isChar!{U} ()) to {T, base : usize, F of [U], U} (str : F)-> T
+        throws CastFailure
+    {
+        cte assert (36us >= base, "Maximum base is 36");
+
+        let mut j = 1us;
+        let mut res = 0is;
+        for i in str.len .. 0us {
+            cte if is!{U} {X of c32} {
+                if (i == 1us && str [i - 1us] == '-') {
+                    res = -res;
+                } else {
+                    res = res + cast!isize ((j * inner::to!usize (str [i - 1us], base)));
+                }
+            } else {
+                if (i == 1us && str [i - 1us] == '-'c8) {
+                    res = -res;
+                } else {
+                    res = res + cast!isize ((j * inner::to!usize (str [i - 1us], base)));
+                }
+            }
+            j *= base;
+        } catch {
+            x : &CastFailure => {
+                throw x;
+            }
+        }
+
+        cast!T (res)
+    }
+
+    /**
+     * Transform a string into a float.
+     * @throws:
+     *    - &CastFailure: if the string does not contain a valid f64 literal
+     * @example:
+     * ===============
+     * let x = ("-12.89").to!f64 ();
+     * let y = ("89.12"s8).to!f32 ();
+     *
+     * assert (x == -12.89 && y == 89.12f);
+     * ===============
+     */
+    fn if (isFloating!{T} ()) to {T, F of [U], U} (str : F)-> T
+        throws CastFailure
+    {
+        let mut succ = false;
+        let res = cte if is!{T} {V of f32} {
+            cte if is!{U}{X of c8} {
+                Runtime::_yrt_s8_to_float (str, ref succ)
+            } else {
+                Runtime::_yrt_s8_to_float (str.to![c8] (), ref succ)
+            }
+        } else {
+            cte if is!{U}{X of c8} {
+                Runtime::_yrt_s8_to_double (str, ref succ)
+            } else {
+                Runtime::_yrt_s8_to_double (str.to![c8] (), ref succ)
+            }
+        }
+
+        if !succ {
+            throw copy CastFailure (T::typeinfo, [U]::typeinfo);
+        }
+
+        res
+    }
+
+    /**
+     * Transform a U? into a T?, where U is an heir class of T.
+     * @example:
+     * ================
+     * class @abstract A { /* full declaration omitted */ }
+     * class B over A { /* full declaration omitted */ }
+     * class C over A { /* full declaration omitted */ }
+     *
+     * // A function that returns an option on type B
+     * fn foo ()-> (&B)? { /* full declaration omitted */ }
+     *
+     *
+     * let b_opt : (&B)? = foo ();
+     *
+     * // Transform the option on B to an option on type A
+     * let a_opt : (&A)? = b_opt.to!{(&A)?} ();
+     * ================
+     */
+    fn to {T of I?, I, U over I} (a : U?)-> T {
+        match a {
+            Ok (x: _) => {
+                (cast!I (x))?
+            }
+            _ => {
+                (T)::__err__
+            }
+        }
+    }
+
+    /**
+     * Unwrap an instance of class into an instance of an heir class.
+     * @throws:
+     *    - &CastFailure: if the value that was held by `x` was not of type `U`.
+     * @example
+     * ==================
+     * class @abstract A { /* full declaration omitted */ }
+     * class B over A { /* full declaration omitted */ }
+     * class C over A { /* full declaration omitted */ }
+     *
+     * // A function that returns an object of type &A
+     * fn foo ()-> &A { /* full declaration omitted */ }
+     *
+     *
+     * let a : &A = foo ();
+     *
+     * // Transform the type &A into a &B, assuming variable a was actually holding a value of type &B
+     * let b : &B = a.to!{&B} ();
+     *
+     * // Otherwise the convertion throws an exception.
+     * ==================
+     */
+    fn if (is!U{J over T}) to {U, T} (x : T)-> U
+        throws CastFailure
+    {
+        match x {
+            z : U => return z;
+            _ => {
+                throw copy CastFailure (x::typeinfo, U::typeinfo);
+            }
+        }
+    }
+
+    /**
+     * Unwrap an instance of class into an instance of an heir class.
+     * @throws:
+     *    - &CastFailure: if the value that was held by `x` was not of type `U`.
+     * @example
+     * ==================
+     * class @abstract A { /* full declaration omitted */ }
+     * class B over A { /* full declaration omitted */ }
+     * class C over A { /* full declaration omitted */ }
+     *
+     * // A function that returns an object of type &A
+     * fn foo ()-> dmut &A { /* full declaration omitted */ }
+     *
+     *
+     * let dmut a : &A = foo ();
+     *
+     * // Transform the type &A into a &B, assuming variable a was actually holding a value of type &B
+     * let dmut b : &B = a:.to!{&B} ();
+     *
+     * // Otherwise the convertion throws an exception.
+     * ==================
+     */
+    fn if (is!U{J over T}) to {U, T} (dmut x : T)-> dmut U
+        throws CastFailure
+    {
+        match ref x {
+            dmut z : U => return alias z;
+            _ => {
+                throw copy CastFailure (x::typeinfo, U::typeinfo);
+            }
+        }
+    }
+
+
+    /**
+     * Create a zero terminated string from a [c8].
+     * This function is useful when sending string to C programs. In Ymir there is not guarantee that string are ending with the character null.
+     * @example:
+     * ===
+     * /*
+     *  The standard C function to print to stdout
+     * */
+     * extern (C) fn printf (format : *c8, ...)-> void;
+     *
+     * // because of dcopy, now [c8] in no longer in the text but in the heap
+     * // So it may not be ending with '\u{0}'.
+     * let dmut fmt = dcopy "Printing %d and %s\n"s8;
+     *
+     * // the string "test of ..." in located in the text, so it is ending with `\u{0}`
+     * // No need to convert it
+     * printf (fmt.toStringZ (), 89, "test of string in text"s8.ptr);  // Printing 89 and test of string in text
+     * ===
+     */
+    fn toStringZ (a : [c8])-> *c8 {
+        let dmut res = core::duplication::allocArray!(c8)(a.len + 1us);
+        core::duplication::memCopy (a, alias res);
+        {
+            res [$-1us] = '\u{0}'c8;
+        }
+        res.ptr
+    }
+
+    /**
+     * @params:
+     *    - a: a null terminated string whose len might be wrong
+     * @returns: a slice of a where the len is correctly set
+     * @example:
+     * ===
+     * /*
+     *   C function to read in a file
+     *   @params:
+     *       - buffer: the buffer to fill
+     *       - len: the maximum len  that can be read
+     *   @returns: the length that was read
+     * */
+     * extern (C) fn read (fd : i32, buffer : *c8, len : u32)-> i32;
+     *
+     * // Allocate a buffer
+     * let dmut buf = ['\u{0}' ; new 255us];
+     *
+     * // Read in the buffer
+     * let len = read (fd, buf.ptr, cast!u32 (buf.len));
+     *
+     * // slicing the buffer to the first occurence of `\u{0}`;
+     * buf = fromStringZ (buf);
+     *
+     * assert (buf.len == cast!usize (len));
+     * ===
+     */
+    fn fromStringZ {U of [c8]} (a : U)-> [c8] {
+        let mut len = 0us;
+        for i in a {
+            if (i == '\u{0}'c8) break {};
+            else len += 1us;
+        }
+        a [0us .. len]
+    }
+
+    /**
+     * Transform a null terminated string acquired from C program into a Ymir string.
+     * @params:
+     *     - a: a null terminated string
+     * @returns: a slice of a where the len is correctly set
+     * @warning: this function is critical, it can throw SegFault, but it can also throw nothing but that does not necessarily mean it worked correctly. It is better to verify beforehand that the string that is passed to the function is correctly set.
+     * @example:
+     * ===
+     * /*
+     *    C function to get the value of a environment variable
+     *  */
+     * extern (C) fn getenv (len : u32)-> *c8;
+     *
+     * // Retreive the value from C language, and transform it in Ymir string
+     * let value = getenv ("HOME"s8.ptr).fromStringZ ();
+     *
+     * println (value, " ", value.len);
+     * ===
+     */
+    @unsafe
+    fn fromStringZ {U of *c8} (a : U)-> [c8] {
+        let mut len = 0us;
+        loop {
+            if (*(a + len) == '\u{0}'c8) break {};
+            else len += 1us;
+        }
+
+        let dmut res = core::duplication::allocArray!(c8)(len);
+        for i in 0us .. len {
+            res [i] = *(a + i);
+        }
+
+        res
+    }
+
 }
 
+mod inner {
 
-pub fn fromStringZ {U of [c8]} (a : U)-> [c8] {
-    let mut len = 0us;
-    for i in a {
-        if (i == '\u{0}'c8) break {};
-        else len += 1us;
+    /**
+     * @assume: a < 10
+     * Transform a u64 into a c8
+     */
+    pub fn to {T of c8} (a : usize, base : usize) -> c8
+        throws CastFailure
+    {
+        match a {
+            0us => { return '0'; }
+            1us => { return '1'; }
+            2us => { if base < 3us { throw copy CastFailure (u64::typeinfo, T::typeinfo); } return '2'; }
+            3us => { if base < 4us { throw copy CastFailure (u64::typeinfo, T::typeinfo); } return '3'; }
+            4us => { if base < 5us { throw copy CastFailure (u64::typeinfo, T::typeinfo); } return '4'; }
+            5us => { if base < 6us { throw copy CastFailure (u64::typeinfo, T::typeinfo); } return '5'; }
+            6us => { if base < 7us { throw copy CastFailure (u64::typeinfo, T::typeinfo); } return '6'; }
+            7us => { if base < 8us { throw copy CastFailure (u64::typeinfo, T::typeinfo); } return '7'; }
+            8us => { if base < 9us { throw copy CastFailure (u64::typeinfo, T::typeinfo); } return '8'; }
+            9us => { if base < 10us { throw copy CastFailure (u64::typeinfo, T::typeinfo); } return '9'; }
+            _ => {
+                if (a < 10us || a > 36us || base <= a) {
+                    throw copy CastFailure (u64::typeinfo, T::typeinfo);
+                }
+
+                return cast!c8 (cast!u8 ('a') + cast!u8 (a - 10us));
+            }
+        }
     }
 
-    a [0us .. len]
-}
-
-@unsafe
-pub fn fromStringZ {U of *c8} (a : U)-> [c8] {
-    let mut len = 0us;
-    loop {
-        if (*(a + len) == '\u{0}'c8) break {};
-        else len += 1us;
+    /**
+     * @assume: a < 10
+     * Transform a u64 into a c8
+     */
+    pub fn to {T of c32} (a : usize, base : usize) -> c32
+        throws CastFailure
+    {
+        match a {
+            0us => { return '0'; }
+            1us => { return '1'; }
+            2us => { if base < 3us { throw copy CastFailure (u64::typeinfo, T::typeinfo); } return '2'; }
+            3us => { if base < 4us { throw copy CastFailure (u64::typeinfo, T::typeinfo); } return '3'; }
+            4us => { if base < 5us { throw copy CastFailure (u64::typeinfo, T::typeinfo); } return '4'; }
+            5us => { if base < 6us { throw copy CastFailure (u64::typeinfo, T::typeinfo); } return '5'; }
+            6us => { if base < 7us { throw copy CastFailure (u64::typeinfo, T::typeinfo); } return '6'; }
+            7us => { if base < 8us { throw copy CastFailure (u64::typeinfo, T::typeinfo); } return '7'; }
+            8us => { if base < 9us { throw copy CastFailure (u64::typeinfo, T::typeinfo); } return '8'; }
+            9us => { if base < 10us { throw copy CastFailure (u64::typeinfo, T::typeinfo); } return '9'; }
+            _ => {
+                if (a >= 10us && a <= 36us && base > a) {
+                    return cast!c32 (cast!u32 (cast!u8 ('a') + cast!u8 (a - 10us)));
+                } else {
+                    throw copy CastFailure (u64::typeinfo, T::typeinfo);
+                }
+            }
+        }
     }
 
-    let dmut res = core::duplication::allocArray!(c8)(len);
-    for i in 0us .. len {
-        res [i] = *(a + i);
+    /**
+     * Transform a c8 into a usize
+     * @assume: a >= '0' and a <= '9' or a >= 'a' and a <= 'f'
+     */
+    pub fn to {T of usize} (a : c8, base : usize) -> T
+        throws CastFailure
+    {
+        match a {
+            '0'c8 => { return 0us; }
+            '1'c8 => { return 1us; }
+            '2'c8 => { return 2us; }
+            '3'c8 => { return 3us; }
+            '4'c8 => { return 4us; }
+            '5'c8 => { return 5us; }
+            '6'c8 => { return 6us; }
+            '7'c8 => { return 7us; }
+            '8'c8 => { return 8us; }
+            '9'c8 => { return 9us; }
+            _ => {
+                let ret = if (a >= 'a'c8 && a <= 'z'c8) {
+                    cast!usize (cast!u8 (a) - cast!u8 ('a'c8)) + 10us
+                } else if (a >= 'A'c8 && a <= 'Z'c8) {
+                    cast!usize (cast!u8 (a) - cast!u8 ('A'c8)) + 10us
+                } else {
+                    throw copy CastFailure (c8::typeinfo, usize::typeinfo);
+                };
+
+                if (base > ret) {
+                    return ret;
+                }
+
+                throw copy CastFailure (c8::typeinfo, usize::typeinfo);
+            }
+
+        }
     }
 
-    res
+
+    /**
+     * Transform a c32 into a usize
+     * @assume: a >= '0' and a <= '9' or a >= 'a' and a <= 'f'
+     */
+    pub fn to {T of usize} (a : c32, base : usize) -> T
+        throws CastFailure
+    {
+        match a {
+            '0' => { return 0us; }
+            '1' => { return 1us; }
+            '2' => { return 2us; }
+            '3' => { return 3us; }
+            '4' => { return 4us; }
+            '5' => { return 5us; }
+            '6' => { return 6us; }
+            '7' => { return 7us; }
+            '8' => { return 8us; }
+            '9' => { return 9us; }
+            _ => {
+                let ret = if (a >= 'a' && a <= 'z') {
+                    cast!usize (cast!u8 (a) - cast!u8 ('a'c8)) + 10us
+                } else if (a >= 'A' && a <= 'Z') {
+                    cast!usize (cast!u8 (a) - cast!u8 ('A'c8)) + 10us
+                } else {
+                    throw copy CastFailure (c32::typeinfo, usize::typeinfo);
+                }
+
+                if (base > ret) {
+                    return ret;
+                }
+
+                throw copy CastFailure (c32::typeinfo, usize::typeinfo);
+            }
+        }
+    }
 }

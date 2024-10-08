@@ -19,23 +19,23 @@ pub class Exception {
         }
     }
 
-    // impl stream::Streamable {
+    impl std::stream::Streamable {
 
-    //     prot over __stream__streamContent (self, dmut _ : &StringStream) -> bool {
-    //         false
-    //     }
+        // prot over __stream__streamContent (self, dmut _ : &std::stream::StringStream) -> bool {
+        //     false
+        // }
 
-    //     pub over toStream (self, dmut stream : &StringStream)-> void {
-    //         stream:.write (self::typeinfo.name):.write(" ("s8);
-    //         self.__stream__streamContent (alias stream);
-    //         stream:.write (')'c8);
-    //         if (self.trace.len != 0us) {
-    //             stream:.write (":\n"s8);
-    //             stream:.write (self.getStackTrace ());
-    //         }
-    //     }
+        pub over toStream (self, dmut stream : &std::stream::StringStream)-> void {
+            stream:.write (self.__typeid__, " (");
+            self.__stream__streamContent (alias stream);
+            stream:.write (')');
+            if (self.trace.len != 0us) {
+                stream:.write (":\n"s8);
+                stream:.write (self.getStackTrace ());
+            }
+        }
 
-    // }
+    }
 
     prot fn hasTrace (self)-> bool {
         self.trace.len != 0us
@@ -68,36 +68,17 @@ pub class AssertError over Exception {
      */
     pub self (msg : [c8]) with msg = msg {}
 
-    // impl stream::Streamable {
-    //     pub over toStream (self, dmut stream : &StringStream) {
-    //         self::super.toStream (alias stream);
-    //     }
-    // }
-}
-
-@final
-pub class CastFailure over Exception {
-
-    let _from : core::typeinfo::TypeInfo;
-    let _to : core::typeinfo::TypeInfo;
-
-
-    pub self (from : core::typeinfo::TypeInfo, to : core::typeinfo::TypeInfo)
-        with _from = from
-        , _to = to
-    {}
-
-
-    @field
-    pub fn from (self)-> core::typeinfo::TypeInfo {
-        self._from
+    impl std::stream::Streamable {
+        pub over toStream (self, dmut stream : &std::stream::StringStream) {
+            stream:.write (self.__typeid__, " (");
+            self.__stream__streamContent (alias stream);
+            stream:.write (')');
+            if (self.trace.len != 0us) {
+                stream:.write (":\n"s8);
+                stream:.write (self.getStackTrace ());
+            }
+        }
     }
-
-    @field
-    pub fn to (self)-> core::typeinfo::TypeInfo {
-        self._to
-    }
-
 }
 
 @abstract

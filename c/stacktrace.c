@@ -173,7 +173,7 @@ int _yrt_resolve_address (const char * filename, void* addr, _ystring * file, in
 }
 
 _yrt_array_ _yrt_exc_resolve_stack_trace (_yrt_array_ syms) {
-    if (__YRT_DEBUG__ == 1 || __YRT_FORCE_DEBUG__ == 1) {	
+    if (__YRT_DEBUG__ == 1 || __YRT_FORCE_DEBUG__ == 1) {
         char **messages = (char **)NULL;
         messages = backtrace_symbols(syms.data, (int) syms.len);
         /* skip first stack frame (points here) */

@@ -1,52 +1,348 @@
 in stream;
 
+use std::collection::{set, vec, list};
+
 mod Runtime {F, T} {
     pub extern (C) fn _yrt_unsafe_cast (x : F)-> dmut T;
 }
 
+lazy dmut __PRINT_SET__ = copy HashSet!{*void} ();
 
 pub trait Streamable {
 
-        /**
+    /**
      * Print the content of the class on stdout
      * @returns: true if something has been printed, false otherwise
      */
     prot fn __stream__streamContent (self, dmut stream : &StringStream) -> bool {
         stream;
-        // cte if (__pragma!compile ({self::super.__stream__streamContent (alias stream);})) {
-        //     let printed = self::super.__stream__streamContent (alias stream);
-        //     if (typeof (__pragma!local_tupleof (self))::arity != 0u32 && printed)
-        //         stream:.write (", "s8);
-        // }
+        cte if (__pragma!compile ({self::super.__stream__streamContent (alias stream);})) {
+            let printed = self::super.__stream__streamContent (alias stream);
+            cte if (typeof (self)::field_infos.len != 0u32 && printed) {
+                stream:.write (", "s8);
+            }
+        }
 
         cte for i in 0 .. typeof (self)::field_infos.len {
             cte if (i != 0) stream:.write (", ");
-            cte let name = cte {typeof (self)::field_infos [i].name};
+            let name = cte {typeof (self)::field_infos [i].name};
             cte if (__pragma!compile ({stream:.write (__pragma!field (self, name));})) {
-                stream:.write (__pragma!field (self, name));
+                stream:.write (".", name, " = ", __pragma!field (self, name));
             } else {
-                stream:.write ((typeof (__pragma!field (self, name)))::typeid);
+                stream:.write (".", name, " : ", (typeof (__pragma!field (self, name)))::typeid);
             }
         }
 
         return cte (typeof (self)::field_infos.len != 0);
     }
 
+    /**
+     * Print the class name and content into the stream.
+     * This default implementation prints the typename followed by the value of the fields between parentheses. If a recursive field is detected only `(...)` is written for the field values.
+     * @params:
+     *     - stream: the stream in which the class instance will be written
+     */
     pub fn toStream (self, dmut stream : &StringStream)-> void {
+        let vd = Runtime!{typeof (self), *void}::_yrt_unsafe_cast (self);
         stream:.write (typeof (self)::typeid, "(");
-        self.__stream__streamContent (alias stream);
+        if vd !in __PRINT_SET__ {
+            __PRINT_SET__:.insert (vd);
+            self.__stream__streamContent (alias stream);
+            __PRINT_SET__:.remove (vd);
+        } else {
+            stream:.write ("...");
+        }
+
         stream:.write (")");
     }
 
 }
 
 
-// @final
-// pub class StringStream {
+@final
+pub class StringStream {
 
-//     let dmut _content : [c8] = [];
+    let dmut _content = copy Vec!{c8} ();
+
+    let dmut _entabing = copy List!{[c8]} ();
+
+    let mut _willEntab = false;
+
+    /**
+     * Create an empty stringstream
+     */
+    pub self () {}
+
+    /**
+     * Stores a list of entabing string, and write them at the beginning of each new line.
+     * @params:
+     *    - txt: the text to write at the beginning of every new line.
+     * @example:
+     * ==================
+     * let dmut str = StringStream::new ();
+     *
+     * str:.write ("Array {\n");
+     * str:.entabing (); // write "\t" at the beginning of new line from now on
+     * for i in 0 .. 10 {
+     *     str:.write (i, "\n"); // writes \t i \n
+     * }
+     *
+     * str:.detabing ();
+     * str:.write ("}");
+     * ==================
+     */
+    pub fn entabing (mut self, txt : [c8] = "\t"s8) {
+        self._entabing:.push (txt);
+    }
+
+    /**
+     * Stop the current entabing (if there is any, does nothing otherwise).
+     */
+    pub fn detabing (mut self) {
+        self._entabing:.pop ()?;
+    }
+
+    /**
+     * Write a c8 into the stream.
+     * @params:
+     *     - c: the c8 to append at the end of the stream.
+     */
+    pub fn write (mut self, c : c8) -> dmut &StringStream {
+        if self._willEntab {
+            for j in self._entabing {
+                for z in j {
+                    self._content:.push (z);
+                }
+            }
+            self._willEntab = false;
+        }
+
+        self._content:.push (c);
+        if (c == '\n'c8) {
+            self._willEntab = true;
+        }
+        alias self
+    }
+
+    /**
+     * Write a string in utf8 into the stream.
+     * @params:
+     *     - c: the string to append at the end of the stream.
+     */
+    pub fn write {T of [U], U of c8} (mut self, c : T) -> dmut &StringStream {
+        for i in c {
+            if self._willEntab {
+                for j in self._entabing {
+                    for z in j {
+                        self._content:.push (z);
+                    }
+                }
+                self._willEntab = false;
+            }
+            if i != '\u{0}'c8 {
+                self._content:.push (i);
+            }
+            if (i == '\n'c8) {
+                self._willEntab = true;
+            }
+        };
+        alias self
+    }
+
+    /**
+     * Write a element in the stream
+     * @info: the element must be convertible to a [c8] using `std::conv` module.
+     * @params:
+     *    - c: the element to write that is neither a struct nor a class
+     */
+    pub fn if (!is!T {record U} && !is!T {class U}) write {T} (mut self, c : T) -> dmut &StringStream {
+        self:.write (std::conv::to!{[c8]} (c));
+        alias self
+    }
+
+    /**
+     * Write a pointer in the stream.
+     * @params:
+     *    - c: the pointer whose address to write in the stream.
+     * @example:
+     * ===
+     * let j = 123;
+     * let i = &j;
+     *
+     * let dmut stream = StringStream::new ();
+     *
+     * // Every pointer can be casted to *void, but it has to be written explicitely
+     * stream:.write (cast!{*void} (i));
+     * ===
+     */
+    pub fn write (mut self, c : *(void))-> dmut &StringStream {
+        let val = Runtime!{*void, usize}::_yrt_unsafe_cast (c);
+        self:.write (std::conv::to!{[c8], "x"} (val));
+        alias self
+    }
+
+    /**
+     * Assert error, the class must impl Streamable.
+     * @info: This method does not compile, it is here to give a proper error message.
+     * @params:
+     *    - c: a class that does not implement Streamable.
+     */
+    pub fn write {class T} (mut self, c : T) -> dmut &StringStream {
+        cte assert (false, "class " ~ T::typeid ~ " does not impl Streamable");
+    }
+
+    /**
+     * Write an object that implement the trait `Streamable` in the stream.
+     * @params:
+     *    - c: a class instance that implements the trait `Streamable`.
+     */
+    pub fn write {T impl Streamable} (mut self, c : T) -> dmut &StringStream {
+        c.toStream (alias self);
+        alias self
+    }
+
+    /**
+     * Write a string in utf32 at the end of the stream.
+     * @params:
+     *     - c: an utf32 string
+     */
+    pub fn write {T of [U], U of c32} (mut self, c : T) -> dmut &StringStream {
+        alias self:.write (c.to![c8] ())
+    }
+
+    /**
+     * Write a slice into the stream.
+     * @params:
+     *    - c: a slice of anything (that is streamable)
+     */
+    pub fn if !isChar!{U} () write {T of [U], U} (mut self, c : T) -> dmut &StringStream {
+        let mut j = 0us;
+        self:.write ('['c8);
+        for i in c {
+            if (j != 0us) {
+                self:.write (", "s8);
+            }
+            j += 1us;
+            self:.write (i);
+        }
+        self:.write (']'c8);
+        alias self
+    }
+
+    /**
+     * Write multiple element into the stream.
+     */
+    pub fn write {F, T...} (mut self, f : F, r : T) -> dmut &StringStream {
+        self:.write (f);
+        cte if (is!T {Z of (U,), U...}) {
+            for i in r
+                self:.write (i);
+        } else {
+            self:.write (r);
+        }
+        alias self
+    }
+
+    /**
+     * Write multiple element into the stream, and add a line return afterwards.
+     */
+    pub fn writeln {F, T...} (mut self, f : F, r : T) -> dmut &StringStream {
+        self:.write (f);
+        cte if (is!T {Z of (U,), U...}) {
+            for i in r
+                self:.write (i);
+        } else {
+            self:.write (r);
+        }
+        self:.write ("\n");
+        alias self
+    }
+
+    /**
+     * Write an element in the stream and add a line return afterwards.
+     */
+    pub fn writeln {F} (mut self, f : F)-> dmut &StringStream {
+        self:.write (f);
+        self:.write ("\n");
+        alias self
+    }
+
+    /**
+     * Append a line return at the end of the stream.
+     */
+    pub fn writeln (mut self)-> dmut &StringStream {
+        self:.write ("\n");
+        alias self
+    }
+
+    /**
+     * Write a tuple into the stream.
+     * @params:
+     *    - a: a tuple of streamable values.
+     */
+    pub fn write {T of (U,), U...} (mut self, a : T) -> dmut &StringStream {
+        self:.write ('('c8);
+        let mut j = 0;
+        for i in a {
+            if j != 0 {
+                self:.write (','c8);
+            }
+            self:.write (i);
+            j += 1;
+        }
+        if (j == 1) self:.write (','c8);
+        self:.write (')'c8);
+        alias self
+    }
+
+    /**
+     * Write an option type into the stream.
+     * @params:
+     *     - a: an option of a streamable value.
+     */
+    pub fn write {T} (mut self, a : T?) -> dmut &StringStream {
+        match a {
+            Ok  (x:_)   => self:.write ("Ok("s8, x, ')'c8);
+            Err (msg:_) => self:.write ("Err("s8, msg, ')'c8);
+            Err ()      => self:.write ("Err()"s8);
+        }
+        alias self
+    }
+
+    /**
+     * @returns: the content of the stream, in a utf8 string.
+     * @complexity: O(1)
+     */
+    pub fn opIndex (self) -> [c8] {
+        self._content []
+    }
+
+    /**
+     * Clear the content of the stream.
+     * @example:
+     * ===
+     *
+     * let dmut stream = StringStream::new ();
+     * stream:.write ("Some content");
+     * stream:.clear ();
+     *
+     * assert (stream[] == ""s8);
+     * ===
+     */
+    pub fn clear (mut self) {
+        self._content:.clear ();
+    }
+
+    impl std::stream::Streamable {
+
+        /**
+         * Write the content of the stream inside another stream.
+         */
+        pub over toStream (self, dmut stream: &StringStream) {
+            stream:.write (self[]);
+        }
+
+    }
 
 
-//     // let dmut _entabing = List!{[c8]}::new ();
-
-// }
+}
