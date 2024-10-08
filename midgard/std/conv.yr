@@ -74,7 +74,7 @@
  * let str_a = A::new (76).to![c8] (); // streamable class are convertible to string [c8] and [c32]
  * println (str_a); // A(76)
  *
- * let decoded = ("Hello world, Καλημέρα κόσμε, コンニチハ"s8).to![c32] (); // convert utf8 to utf32
+ * let decoded = ("Hello world, Καλημέρα κόσμε, コンニチハ").to![c32] (); // convert utf8 to utf32
  * let encoded = decoded.to![c8] (); // convert utf32 into utf8
  *
  * println (decoded.len, " ", decoded); // 34 Hello world, Καλημέρα κόσμε, コンニチハ
@@ -205,14 +205,14 @@ pub {
      * let x = to!{[c32], "x"} (12u32);
      * let y = (879us).to!{[c8], "x"} ();
      *
-     * assert (x == "0xc" && y == "0x36f"s8);
+     * assert (x == "0xc" && y == "0x36f");
      * ==========
      */
     fn if (isUnsigned!{F} () && isChar!{U} ()) to {T of [U], U, "x", F} (a : F) -> dmut [U] {
         cte if is!{U}{X of c32} {
             return alias (copy "0x" ~ to!{T, 16us, F} (a));
         } else {
-            return alias (copy "0x"s8 ~ to!{T, 16us, F} (a));
+            return alias (copy "0x" ~ to!{T, 16us, F} (a));
         }
     }
 
@@ -223,14 +223,14 @@ pub {
      * let x = to!{[c32], "b"} (12u32);
      * let y = (879us).to!{[c8], "b"} ();
      *
-     * assert (x == "0b1100" && y == "0b1101101111"s8);
+     * assert (x == "0b1100" && y == "0b1101101111");
      * ==========
      */
     fn if (isUnsigned!{F} () && isChar!{U} ()) to {T of [U], U, "b", F} (a : F) -> dmut [U] {
         cte if is!{U}{X of c32} {
             return alias (copy "0b" ~ to!{T, 2us, F} (a));
         } else {
-            return alias (copy "0b"s8 ~ to!{T, 2us, F} (a));
+            return alias (copy "0b" ~ to!{T, 2us, F} (a));
         }
     }
 
@@ -240,14 +240,14 @@ pub {
      * ==========
      * let x = to!{[c32], "o"} (12u32);
      * let y = (879us).to!{[c8], "o"} ();
-     * assert (x == "0o14" && y == "0o1557"s8);
+     * assert (x == "0o14" && y == "0o1557");
      * ==========
      */
     fn if (isUnsigned!{F} () && isChar!{U} ()) to {T of [U], U, "o", F} (a : F) -> dmut [U] {
         cte if is!{U}{X of c32} {
             return alias (copy "0o" ~ to!{T, 8us, F} (a));
         } else {
-            return alias (copy "0o"s8 ~ to!{T, 8us, F} (a));
+            return alias (copy "0o" ~ to!{T, 8us, F} (a));
         }
     }
 
@@ -261,7 +261,7 @@ pub {
      * let x = to!{[c32], 11us} (12u32);
      * let y = (879us).to!{[c8], 18us} ();
      *
-     * assert (x == "11" && y == "2cf"s8);
+     * assert (x == "11" && y == "2cf");
      * ==========
      */
     fn if (isUnsigned!{F} () && isChar!{U} ()) to {T of [U], U, base : usize, F} (a : F) -> dmut [U] {
@@ -270,7 +270,7 @@ pub {
         if (cast!usize (a) == 0u64) {
             cte if is!{U}{X of c32} {
                 return copy "0"s32;
-            } else return copy "0"s8;
+            } else return copy "0";
         }
 
         let mut n = cast!usize (a);
@@ -300,11 +300,64 @@ pub {
      * let x = to![c32] (-12);
      * let y = (-7810).to![c8] ();
      *
-     * assert (x == "-12" && y == "-7810"s8);
+     * assert (x == "-12" && y == "-7810");
      * ===========
      */
     fn if (isSigned!{F} () && isChar!{U} ()) to {T of [U], U, F} (a : F) -> dmut [U] {
         alias to!{T, 10us, F} (a)
+    }
+
+    /**
+     * Transform a signed int into a string, using hexadecimal form.
+     * @example:
+     * ==========
+     * let x = to!{[c32], "x"} (12);
+     * let y = (879is).to!{[c8], "x"} ();
+     *
+     * assert (x == "0xc" && y == "0x36f");
+     * ==========
+     */
+    fn if (isSigned!{F} () && isChar!{U} ()) to {T of [U], U, "x", F} (a : F) -> dmut [U] {
+        cte if is!{U}{X of c32} {
+            return alias (copy "0x" ~ to!{T, 16us, F} (a));
+        } else {
+            return alias (copy "0x" ~ to!{T, 16us, F} (a));
+        }
+    }
+
+    /**
+     * Transform a signed int into a string, using binary format.
+     * @example:
+     * ==========
+     * let x = to!{[c32], "b"} (12);
+     * let y = (879is).to!{[c8], "b"} ();
+     *
+     * assert (x == "0b1100" && y == "0b1101101111");
+     * ==========
+     */
+    fn if (isSigned!{F} () && isChar!{U} ()) to {T of [U], U, "b", F} (a : F) -> dmut [U] {
+        cte if is!{U}{X of c32} {
+            return alias (copy "0b" ~ to!{T, 2us, F} (a));
+        } else {
+            return alias (copy "0b" ~ to!{T, 2us, F} (a));
+        }
+    }
+
+    /**
+     * Transform a signed int into a string, using octal format.
+     * @example:
+     * ==========
+     * let x = to!{[c32], "o"} (12);
+     * let y = (879is).to!{[c8], "o"} ();
+     * assert (x == "0o14" && y == "0o1557");
+     * ==========
+     */
+    fn if (isSigned!{F} () && isChar!{U} ()) to {T of [U], U, "o", F} (a : F) -> dmut [U] {
+        cte if is!{U}{X of c32} {
+            return alias (copy "0o" ~ to!{T, 8us, F} (a));
+        } else {
+            return alias (copy "0o" ~ to!{T, 8us, F} (a));
+        }
     }
 
     /**
@@ -317,7 +370,7 @@ pub {
      * let x = to!{[c32], 7us} (-12);
      * let y = (-89102).to!{[c8], 21us} ();
      *
-     * assert (x == "-15" aa y == "-9d0k"s8);
+     * assert (x == "-15" aa y == "-9d0k");
      * ===========
      */
     fn if (isSigned!{F} () && isChar!{U} ()) to {T of [U], U, base : usize, F} (a : F) -> dmut [U]
@@ -326,8 +379,8 @@ pub {
 
         if (cast!isize (a) == 0i64)  {
             cte if is!{U}{X of c32} {
-                return copy "0";
-            } else return copy "0"s8;
+                return copy "0"s32;
+            } else return copy "0";
         }
 
         let (mut n, mut len, sign) = if (cast!isize (a) < 0is) {
@@ -357,8 +410,8 @@ pub {
                     j *= cast!isize (base);
                 }
                 cte if is!{U}{X of c32} {
-                    res [0] = '-';
-                } else res [0] = '-'c8;
+                    res [0] = '-'c32;
+                } else res [0] = '-';
             } catch {
                 _ => { panic }
             }
@@ -387,7 +440,7 @@ pub {
      *   - s: a string in utf8
      * @example:
      * ===
-     * let decoded = ("Hello world, Καλημέρα κόσμε, コンニチハ"s8).to![c32] (); // convert utf8 to utf32
+     * let decoded = ("Hello world, Καλημέρα κόσμε, コンニチハ").to![c32] (); // convert utf8 to utf32
      *
      * println (decoded.len, " ", decoded); // 34 Hello world, Καλημέρα κόσμε, コンニチハ
      * ===
@@ -420,7 +473,7 @@ pub {
      *    - s: an utf8 string
      * @example:
      * ===
-     * let val = "😉"s8;
+     * let val = "😉";
      *
      * assert (val.to![u8] () == [0xf0u8, 0x9fu8, 0x98u8, 0x89u8]);
      * ===
@@ -440,7 +493,7 @@ pub {
      * ===
      * let utf8 = ('😉').to![c8] ();
      *
-     * assert (utf8 == "😉"s8 && utf8.len == 3us);
+     * assert (utf8 == "😉" && utf8.len == 3us);
      * ===
      */
     fn if is!{U}{X of c8} to {T of [U], U, F of c32} (s : F) -> dmut [c8] {
@@ -471,7 +524,7 @@ pub {
      * let f_s = (12.9834982f).to!{[c32], "e"} (prec-> 4u32);
      * let d_s = (81792.983).to!{[c8], "e"} (prec-> 1u32);
      *
-     * assert (f_s == "1.2983e+01" && d_s == "8.2e+04"s8);
+     * assert (f_s == "1.2983e+01" && d_s == "8.2e+04");
      * ===========
      */
     fn if (isChar!{U} () && isFloating!{F} ()) to {T of [U], U, "e", F} (a : F, prec : u32 = 6u32) -> T {
@@ -486,14 +539,14 @@ pub {
      * Convert a bool into a string.
      * @example:
      * ===========
-     * assert (to![c8] (false) == "false"s8)
+     * assert (to![c8] (false) == "false")
      * ===========
      */
     fn if is!{U}{X of c8} to {T of [U], U, F of bool} (a : F)-> [c8] {
         if (a)
-            "true"s8
+            "true"
         else
-            "false"s8
+            "false"
     }
 
     /**
@@ -521,7 +574,7 @@ pub {
      *     impl Streamable;
      * }
      *
-     * assert (A::new (789).to![c8] () == "main::A(789)"s8);
+     * assert (A::new (789).to![c8] () == "main::A(789)");
      * =============
      */
     fn if is!{U}{X of c8} to {T of [U], U, F impl Streamable} (a : F)-> [c8] {
@@ -561,7 +614,7 @@ pub {
      * | x : i32
      * -> A;
      *
-     * assert (A (12).to![c8] () == "main::A(12)"s8);
+     * assert (A (12).to![c8] () == "main::A(12)");
      */
     fn if is!{U}{X of c8} to {T of [U], U, record S} (a : S)-> [c8] {
         let dmut stream = StringStream::new ();
@@ -650,7 +703,7 @@ pub {
      * @example:
      * ===============
      * let x = ("12").to!u64 ();
-     * let y = ("87"s8).to!u32 ();
+     * let y = ("87").to!u32 ();
      *
      * assert (x == 12u64 && y == 87u32);
      * ===============
@@ -670,7 +723,7 @@ pub {
      * @example:
      * ===============
      * let x = ("0xff").to!{u64, "x"} ();
-     * let y = ("0x14E"s8).to!{u32, "x"} ();
+     * let y = ("0x14E").to!{u32, "x"} ();
      *
      * assert (x == 255u64 && y == 334u32);
      * ===============
@@ -700,7 +753,7 @@ pub {
      * @example:
      * ===============
      * let x = ("0b1001").to!{u64, "b"} ();
-     * let y = ("0b1011"s8).to!{u32, "b"} ();
+     * let y = ("0b1011").to!{u32, "b"} ();
      *
      * assert (x == 5u64 && y == 11u32);
      * ===============
@@ -730,7 +783,7 @@ pub {
      * @example:
      * ===============
      * let x = ("0o7777").to!{u64, "o"} ();
-     * let y = ("0o1234"s8).to!{u32, "o"} ();
+     * let y = ("0o1234").to!{u32, "o"} ();
      *
      * assert (x == 4095u64 && y == 668u32);
      * ===============
@@ -763,7 +816,7 @@ pub {
      * let a = ("12").to!{u64, 10us} ();
      * assert (a == 12u64);
      *
-     * let x = ("1ku3"s8).to!{u64, 31us} ();
+     * let x = ("1ku3").to!{u64, 31us} ();
      * assert (x == 49944u64);
      * ===============
      * @KnownBug: does not check the overflow capacity
@@ -794,7 +847,7 @@ pub {
      * @example:
      * ===============
      * let x = ("-12").to!i64 ();
-     * let y = ("89"s8).to!i32 ();
+     * let y = ("89").to!i32 ();
      *
      * assert (x == -12i64 && y == 89);
      * ===============
@@ -813,7 +866,7 @@ pub {
      * @example:
      * ===============
      * let x = ("-12").to!{i64, 10us} ();
-     * let y = ("-1ku3"s8).to!{i32, 31us} ();
+     * let y = ("-1ku3").to!{i32, 31us} ();
      *
      * assert (x == -12i64 && y == -49944);
      * ===============
@@ -857,7 +910,7 @@ pub {
      * @example:
      * ===============
      * let x = ("-12.89").to!f64 ();
-     * let y = ("89.12"s8).to!f32 ();
+     * let y = ("89.12").to!f32 ();
      *
      * assert (x == -12.89 && y == 89.12f);
      * ===============
@@ -995,11 +1048,11 @@ pub {
      *
      * // because of dcopy, now [c8] in no longer in the text but in the heap
      * // So it may not be ending with '\u{0}'.
-     * let dmut fmt = dcopy "Printing %d and %s\n"s8;
+     * let dmut fmt = dcopy "Printing %d and %s\n";
      *
      * // the string "test of ..." in located in the text, so it is ending with `\u{0}`
      * // No need to convert it
-     * printf (fmt.toStringZ (), 89, "test of string in text"s8.ptr);  // Printing 89 and test of string in text
+     * printf (fmt.toStringZ (), 89, "test of string in text".ptr);  // Printing 89 and test of string in text
      * ===
      */
     fn toStringZ (a : [c8])-> *c8 {
@@ -1061,7 +1114,7 @@ pub {
      * extern (C) fn getenv (len : u32)-> *c8;
      *
      * // Retreive the value from C language, and transform it in Ymir string
-     * let value = getenv ("HOME"s8.ptr).fromStringZ ();
+     * let value = getenv ("HOME".ptr).fromStringZ ();
      *
      * println (value, " ", value.len);
      * ===
