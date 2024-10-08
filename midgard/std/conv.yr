@@ -318,10 +318,19 @@ pub {
      * ==========
      */
     fn if (isSigned!{F} () && isChar!{U} ()) to {T of [U], U, "x", F} (a : F) -> dmut [U] {
-        cte if is!{U}{X of c32} {
-            return alias (copy "0x" ~ to!{T, 16us, F} (a));
+        let dmut res = to!{T, 16us, F} (a);
+        if (res.len > 0 && res [0] == '-') {
+            cte if is!{U}{X of c32} {
+                return copy "-0x"s32 ~ res [1 .. $];
+            } else {
+                return copy "-0x" ~ res [1 .. $];
+            }
         } else {
-            return alias (copy "0x" ~ to!{T, 16us, F} (a));
+            cte if is!{U}{X of c32} {
+                return copy "0x"s32 ~ res;
+            } else {
+                return copy "0x" ~ res;
+            }
         }
     }
 
@@ -336,10 +345,19 @@ pub {
      * ==========
      */
     fn if (isSigned!{F} () && isChar!{U} ()) to {T of [U], U, "b", F} (a : F) -> dmut [U] {
-        cte if is!{U}{X of c32} {
-            return alias (copy "0b" ~ to!{T, 2us, F} (a));
+        let dmut res = to!{T, 2us, F} (a);
+        if (res.len > 0 && res [0] == '-') {
+            cte if is!{U}{X of c32} {
+                return copy "-0b"s32 ~ res [1 .. $];
+            } else {
+                return copy "-0b" ~ res [1 .. $];
+            }
         } else {
-            return alias (copy "0b" ~ to!{T, 2us, F} (a));
+            cte if is!{U}{X of c32} {
+                return copy "0b"s32 ~ res;
+            } else {
+                return copy "0b" ~ res;
+            }
         }
     }
 
@@ -353,10 +371,19 @@ pub {
      * ==========
      */
     fn if (isSigned!{F} () && isChar!{U} ()) to {T of [U], U, "o", F} (a : F) -> dmut [U] {
-        cte if is!{U}{X of c32} {
-            return alias (copy "0o" ~ to!{T, 8us, F} (a));
+        let dmut res = to!{T, 8us, F} (a);
+        if (res.len > 0 && res [0] == '-') {
+            cte if is!{U}{X of c32} {
+                return copy "-0o"s32 ~ res [1 .. $];
+            } else {
+                return copy "-0o" ~ res [1 .. $];
+            }
         } else {
-            return alias (copy "0o" ~ to!{T, 8us, F} (a));
+            cte if is!{U}{X of c32} {
+                return copy "0o"s32 ~ res;
+            } else {
+                return copy "0o" ~ res;
+            }
         }
     }
 
@@ -486,7 +513,7 @@ pub {
     }
 
     /**
-     * Transfrom a utf32 encoded char into a utf8 string
+     * Transfrom a utf8 encoded char into a utf8 string
      * @params :
      *   - s: a char in utf32
      * @example:
@@ -496,8 +523,53 @@ pub {
      * assert (utf8 == "😉" && utf8.len == 3us);
      * ===
      */
-    fn if is!{U}{X of c8} to {T of [U], U, F of c32} (s : F) -> dmut [c8] {
-        alias Runtime::_yrt_to_utf8_array ([s])
+    fn to {T of [U], U of c8, F of c8} (s : F) -> dmut [c8] {
+        copy [s]
+    }
+
+    /**
+     * Transfrom a utf32 encoded char into a utf8 string
+     * @params :
+     *   - s: a char in utf32
+     * @example:
+     * ===
+     * let utf8 = ('😉'c32).to![c8] ();
+     *
+     * assert (utf8 == "😉" && utf8.len == 3us);
+     * ===
+     */
+    fn to {T of [U], U of c8, F of c32} (s : F) -> dmut [c8] {
+        alias Runtime::_yrt_to_utf8_array (copy [s])
+    }
+
+    /**
+     * Transfrom a utf8 encoded char into a utf32 string
+     * @params :
+     *   - s: a char in utf32
+     * @example:
+     * ===
+     * let utf32 = ('😉').to![c32] ();
+     *
+     * assert (utf32 == "😉"s32 && utf32.len == 1us);
+     * ===
+     */
+    fn to {T of [U], U of c32, F of c8} (s : F) -> dmut [c32] {
+        alias Runtime::_yrt_to_utf32_array (copy [s])
+    }
+
+    /**
+     * Transfrom a utf32 encoded char into a utf32 string
+     * @params :
+     *   - s: a char in utf32
+     * @example:
+     * ===
+     * let utf32 = ('😉'c32).to![c32] ();
+     *
+     * assert (utf32 == "😉"s32 && utf32.len == 1us);
+     * ===
+     */
+    fn to {T of [U], U of c32, F of c32} (s : F) -> dmut [c32] {
+        copy [s]
     }
 
     /**

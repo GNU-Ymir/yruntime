@@ -20,19 +20,64 @@ __test {
 }
 
 
-// __test {
-//     let x = to![c32] (-12);
-//     let y = (-879).to![c8] ();
+__test {
+    let x = to![c32] (-12);
+    let y = (-879).to![c8] ();
 
-//     let z = (-12345).to!{[c8], "x"} ();
-//     let a = (-12345).to!{[c8], "b"} ();
-//     let b = (-12345).to!{[c8], "o"} ();
-//     let c = (-12345).to!{[c8], 5us} ();
+    let z = (-12345).to!{[c8], "x"} ();
+    let a = (-12345).to!{[c8], "b"} ();
+    let b = (-12345).to!{[c8], "o"} ();
+    let c = (-12345).to!{[c8], 5us} ();
 
-//     assert (x == "-12"s32, "Conversion error to c32");
-//     assert (y == "-879", "Conversion error to c8");
-//     assert (z == "-0x3039", "Conversion error z");
-//     assert (a == "-0b11000000111001", "Conversion error a");
-//     assert (b == "-0o30071", "Conversion error b");
-//     assert (c == "-343340", "Conversion error c");
-// }
+    assert (x == "-12"s32, "Conversion error to c32");
+    assert (y == "-879", "Conversion error to c8");
+    assert (z == "-0x3039", "Conversion error z");
+    assert (a == "-0b11000000111001", "Conversion error a");
+    assert (b == "-0o30071", "Conversion error b");
+    assert (c == "-343340", "Conversion error c");
+}
+
+__test {
+    let x = to![c32] (-12is);
+    let y = (-879is).to![c8] ();
+
+    let z = (-12345is).to!{[c8], "x"} ();
+    let a = (-12345is).to!{[c8], "b"} ();
+    let b = (-12345is).to!{[c32], "o"} ();
+    let c = (-12345is).to!{[c8], 5us} ();
+
+    assert (x == "-12"s32, "Conversion error to c32");
+    assert (y == "-879", "Conversion error to c8");
+    assert (z == "-0x3039", "Conversion error z");
+    assert (a == "-0b11000000111001", "Conversion error a");
+    assert (b == "-0o30071", "Conversion error b");
+    assert (c == "-343340", "Conversion error c");
+}
+
+
+__test {
+    let x = "hello"s32.to!{[c8]} ();
+    assert (x == "hello"s8);
+
+    let encoded = ("Hello world, Καλημέρα κόσμε, コンニチハ"s32).to![c8] ();
+    assert (encoded.len == 59 && encoded == "Hello world, Καλημέρα κόσμε, コンニチハ"s8);
+}
+
+__test {
+    let x = "hello"s8.to!{[c32]} ();
+    assert (x == "hello"s32);
+
+    let encoded = ("Hello world, Καλημέρα κόσμε, コンニチハ"s8).to![c32] ();
+    assert (encoded.len == 34 && encoded == "Hello world, Καλημέρα κόσμε, コンニチハ"s32);
+}
+
+__test {
+    let val = (copy [0xf0u8, 0x9fu8, 0x98u8, 0x89u8]).to![c8] ();
+    assert (val == "😉");
+
+    let val2 = "😉".to![u8] ();
+    assert (val2 == [0xf0u8, 0x9fu8, 0x98u8, 0x89u8]);
+
+    // let utf8 = ('😉'c32).to![c8] ();
+    // assert (utf8 == "😉" && utf8.len == 3us);
+}

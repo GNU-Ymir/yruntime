@@ -185,21 +185,18 @@ pub fn print {class T} (a : T) {
 }
 
 pub fn print {record T} (a : T) {
-    print (T::typeid, '(');
-    for i, j in (expand a,) {
-        cte if (i != 0) print (", ");
-        print (j);
+    cte if is!{T}{X impl std::stream::Streamable} {
+        let dmut stream = copy std::stream::StringStream ();
+        a.toStream (alias stream);
+        print (stream[]);
+    } else {
+        print (T::typeid, '(');
+        for i, j in (expand a,) {
+            cte if (i != 0) print (", ");
+            print (j);
+        }
+        print (')');
     }
-    print (')');
-}
-
-pub fn print {entity T} (ref a : T) {
-    print (T::typeid, '(');
-    for i, j in (expand a,) {
-        cte if (i != 0) print (", ");
-        print (j);
-    }
-    print (')');
 }
 
 fn print () {}

@@ -1,10 +1,15 @@
 in stream;
 
-use std::collection::{set, vec, list};
+use std::collection::set;
 
 mod Runtime {F, T} {
     pub extern (C) fn _yrt_unsafe_cast (x : F)-> dmut T;
 }
+
+prv enum : usize
+| DEFAULT_ALLOC_SIZE = 10us
+ -> StreamConst;
+
 
 lazy dmut __PRINT_SET__ = copy HashSet!{*void} ();
 
@@ -62,9 +67,17 @@ pub trait Streamable {
 @final
 pub class StringStream {
 
-    let dmut _content = copy Vec!{c8} ();
+    // The content of the stream
+    let dmut _content : [c8] = [];
 
-    let dmut _entabing = copy List!{[c8]} ();
+    // The actual size of the stream
+    let mut _len : usize = 0us;
+
+    // The list of string used to entab
+    let mut _entabing : [mut [c8]] = [];
+
+    // The actual size of the entabing
+    let mut _entabingLen : usize = 0us;
 
     let mut _willEntab = false;
 
@@ -73,13 +86,21 @@ pub class StringStream {
      */
     pub self () {}
 
+    /*!
+     * ====================================================================
+     * ====================================================================
+     * ==========================   ENTABING  =============================
+     * ====================================================================
+     * ====================================================================
+     * */
+
     /**
      * Stores a list of entabing string, and write them at the beginning of each new line.
      * @params:
      *    - txt: the text to write at the beginning of every new line.
      * @example:
      * ==================
-     * let dmut str = StringStream::new ();
+     * let dmut str = copy StringStream ();
      *
      * str:.write ("Array {\n");
      * str:.entabing (); // write "\t" at the beginning of new line from now on
@@ -92,15 +113,34 @@ pub class StringStream {
      * ==================
      */
     pub fn entabing (mut self, txt : [c8] = "\t"s8) {
-        self._entabing:.push (txt);
+        if (self._entabing.len == self._entabingLen) {
+            self:.growEntabing ();
+        }
+
+        self._entabing [self._entabingLen] = txt;
+        self._entabingLen += 1us;
     }
 
     /**
      * Stop the current entabing (if there is any, does nothing otherwise).
      */
     pub fn detabing (mut self) {
-        self._entabing:.pop ()?;
+        if (self._entabingLen != 0us) {
+            self._entabingLen -= 1us;
+
+            if (self._entabingLen < self._entabing.len / 2us) {
+                self:.fitEntabing ();
+            }
+        }
     }
+
+    /*!
+     * ==========================================================================
+     * ==========================================================================
+     * =============================   WRITE STRINGS  ===========================
+     * ==========================================================================
+     * ==========================================================================
+     * */
 
     /**
      * Write a c8 into the stream.
@@ -108,19 +148,11 @@ pub class StringStream {
      *     - c: the c8 to append at the end of the stream.
      */
     pub fn write (mut self, c : c8) -> dmut &StringStream {
-        if self._willEntab {
-            for j in self._entabing {
-                for z in j {
-                    self._content:.push (z);
-                }
-            }
-            self._willEntab = false;
-        }
-
-        self._content:.push (c);
+        self:.push (c);
         if (c == '\n'c8) {
             self._willEntab = true;
         }
+
         alias self
     }
 
@@ -130,74 +162,7 @@ pub class StringStream {
      *     - c: the string to append at the end of the stream.
      */
     pub fn write {T of [U], U of c8} (mut self, c : T) -> dmut &StringStream {
-        for i in c {
-            if self._willEntab {
-                for j in self._entabing {
-                    for z in j {
-                        self._content:.push (z);
-                    }
-                }
-                self._willEntab = false;
-            }
-            if i != '\u{0}'c8 {
-                self._content:.push (i);
-            }
-            if (i == '\n'c8) {
-                self._willEntab = true;
-            }
-        };
-        alias self
-    }
-
-    /**
-     * Write a element in the stream
-     * @info: the element must be convertible to a [c8] using `std::conv` module.
-     * @params:
-     *    - c: the element to write that is neither a struct nor a class
-     */
-    pub fn if (!is!T {record U} && !is!T {class U}) write {T} (mut self, c : T) -> dmut &StringStream {
-        self:.write (std::conv::to!{[c8]} (c));
-        alias self
-    }
-
-    /**
-     * Write a pointer in the stream.
-     * @params:
-     *    - c: the pointer whose address to write in the stream.
-     * @example:
-     * ===
-     * let j = 123;
-     * let i = &j;
-     *
-     * let dmut stream = StringStream::new ();
-     *
-     * // Every pointer can be casted to *void, but it has to be written explicitely
-     * stream:.write (cast!{*void} (i));
-     * ===
-     */
-    pub fn write (mut self, c : *(void))-> dmut &StringStream {
-        let val = Runtime!{*void, usize}::_yrt_unsafe_cast (c);
-        self:.write (std::conv::to!{[c8], "x"} (val));
-        alias self
-    }
-
-    /**
-     * Assert error, the class must impl Streamable.
-     * @info: This method does not compile, it is here to give a proper error message.
-     * @params:
-     *    - c: a class that does not implement Streamable.
-     */
-    pub fn write {class T} (mut self, c : T) -> dmut &StringStream {
-        cte assert (false, "class " ~ T::typeid ~ " does not impl Streamable");
-    }
-
-    /**
-     * Write an object that implement the trait `Streamable` in the stream.
-     * @params:
-     *    - c: a class instance that implements the trait `Streamable`.
-     */
-    pub fn write {T impl Streamable} (mut self, c : T) -> dmut &StringStream {
-        c.toStream (alias self);
+        self:.push (c);
         alias self
     }
 
@@ -211,13 +176,91 @@ pub class StringStream {
     }
 
     /**
+     * Write a element in the stream
+     * @info: the element must be convertible to a [c8] using `std::conv` module.
+     * @params:
+     *    - c: the element to write that is neither a struct nor a class
+     */
+    pub fn if (!is!{T}{record R} && !is!{T}{class C} && !is!{T}{entity E}) write {T} (mut self, c : T) -> dmut &StringStream {
+        self:.write (std::conv::to!{[c8]} (c));
+        alias self
+    }
+
+    /**
+     * Write a pointer in the stream.
+     * @params:
+     *    - c: the pointer whose address to write in the stream.
+     * @example:
+     * ===
+     * let j = 123;
+     * let i = &j;
+     *
+     * let dmut stream = copy StringStream ();
+     *
+     * // Every pointer can be casted to *void, but it has to be written explicitely
+     * stream:.write (cast!{*void} (i));
+     * ===
+     */
+    pub fn write (mut self, c : *(void))-> dmut &StringStream {
+        let val = Runtime!{*void, usize}::_yrt_unsafe_cast (c);
+        self:.write (std::conv::to!{[c8], "x"} (val));
+        alias self
+    }
+
+    /*!
+     * ====================================================================
+     * ====================================================================
+     * ==========================   CLASSES  ==============================
+     * ====================================================================
+     * ====================================================================
+     * */
+
+    pub fn if (is!{T}{class C} || is!{T}{record C}) write {T} (mut self, c : T) -> dmut &StringStream {
+        cte if is!{T}{X impl std::stream::Streamable} {
+            c.toStream (alias self);
+        } else {
+            self:.write (T::typeid, '(');
+            for i, j in (expand c,) {
+                cte if (i != 0) self:.write (", ");
+                self:.write (j);
+            }
+            self:.write (')');
+        }
+
+        alias self
+    }
+
+    pub fn if (is!{T}{class C} || is!{T}{record C}) write {T} (mut self, ref c : T) -> dmut &StringStream {
+        cte if is!{T}{X impl std::stream::Streamable} {
+            c.toStream (alias self);
+        } else {
+            self:.write (T::typeid, '(');
+            for i, j in (expand c,) {
+                cte if (i != 0) self:.write (", ");
+                self:.write (j);
+            }
+            self:.write (')');
+        }
+
+        alias self
+    }
+
+    /*!
+     * =================================================================================
+     * =================================================================================
+     * ==========================   SLICES AND VARIADICS  ==============================
+     * =================================================================================
+     * =================================================================================
+     * */
+
+    /**
      * Write a slice into the stream.
      * @params:
      *    - c: a slice of anything (that is streamable)
      */
-    pub fn if !isChar!{U} () write {T of [U], U} (mut self, c : T) -> dmut &StringStream {
+    pub fn write {T of [U], U} (mut self, c : T) -> dmut &StringStream {
         let mut j = 0us;
-        self:.write ('['c8);
+        self:.write ('[');
         for i in c {
             if (j != 0us) {
                 self:.write (", "s8);
@@ -225,7 +268,7 @@ pub class StringStream {
             j += 1us;
             self:.write (i);
         }
-        self:.write (']'c8);
+        self:.write (']');
         alias self
     }
 
@@ -309,12 +352,21 @@ pub class StringStream {
         alias self
     }
 
+    /*!
+     * ====================================================================
+     * ====================================================================
+     * ==========================   INDEXING  ==============================
+     * ====================================================================
+     * ====================================================================
+     * */
+
+
     /**
      * @returns: the content of the stream, in a utf8 string.
      * @complexity: O(1)
      */
     pub fn opIndex (self) -> [c8] {
-        self._content []
+        self._content [0 .. self._len]
     }
 
     /**
@@ -322,7 +374,7 @@ pub class StringStream {
      * @example:
      * ===
      *
-     * let dmut stream = StringStream::new ();
+     * let dmut stream = copy StringStream ();
      * stream:.write ("Some content");
      * stream:.clear ();
      *
@@ -330,7 +382,11 @@ pub class StringStream {
      * ===
      */
     pub fn clear (mut self) {
-        self._content:.clear ();
+        self._content = [];
+        self._len = 0us;
+        self._entabing = [];
+        self._entabingLen = 0us;
+        self._willEntab = false;
     }
 
     impl std::stream::Streamable {
@@ -339,10 +395,93 @@ pub class StringStream {
          * Write the content of the stream inside another stream.
          */
         pub over toStream (self, dmut stream: &StringStream) {
-            stream:.write (self[]);
+            stream:.write (self._content [0 .. self._len]);
         }
 
     }
 
+    /*!
+     * ====================================================================
+     * ====================================================================
+     * ==========================   PRIVATE  ==============================
+     * ====================================================================
+     * ====================================================================
+     * */
+
+    prv fn push (mut self, i : c8) {
+        if self._willEntab {
+            for j in self._entabing [0 .. self._entabingLen] {
+                if (self._content.len <= self._len + j.len) {
+                    self:.grow (self._len + j.len);
+                }
+
+                self:.pushFast (j);
+            }
+
+            self._willEntab = false;
+        }
+
+        if (self._content.len <= self._len + 1) { self:.grow ((self._len + 1us)); }
+        self:.pushFast (i);
+        if (i == '\n') self._willEntab = true;
+    }
+
+    prv fn push (mut self, i : [c8]) {
+        if (self._entabingLen == 0us) {
+            if (self._content.len <= self._len + i.len) { self:.grow (self._len + i.len); }
+            self:.pushFast (i);
+        } else {
+            for z in i {
+                self:.push (z);
+            }
+        }
+    }
+
+    prv fn pushFast (mut self, i : [c8]) {
+        for z in i {
+            self._content [self._len] = z;
+            self._len += 1us;
+        }
+
+        self._willEntab = (i.len != 0 && i [$ - 1] == '\n');
+    }
+
+    prv fn pushFast (mut self, i : c8) {
+        self._content [self._len] = i;
+        self._len += 1us;
+    }
+
+    prv fn grow (mut self, nlen : usize) {
+        if (self._content.len == 0us) {
+            self._content = alias core::duplication::allocArray!c8 (nlen);
+        } else {
+            let dmut aux : [c8] = core::duplication::allocArray!c8 (nlen);
+            core::duplication::memCopy!c8 (self._content, alias aux);
+            self._content = alias aux;
+        }
+    }
+
+    prv fn fit (mut self) {
+        let dmut aux : [c8] = core::duplication::allocArray!c8 (self._len);
+        core::duplication::memCopy!c8 (self._content, alias aux);
+        self._content = alias aux;
+    }
+
+    prv fn growEntabing (mut self) {
+        if (self._entabing.len == 0us) {
+            self._entabing = alias core::duplication::allocArray![c8] (1us);
+        } else {
+            let nlen = (self._entabing.len * 2us);
+            let mut aux : [mut [c8]] = core::duplication::allocArray![c8] (nlen);
+            core::duplication::memCopy![c8] (self._entabing, alias aux);
+            self._entabing = alias aux;
+        }
+    }
+
+    prv fn fitEntabing (mut self) {
+        let mut aux : [mut [c8]] = core::duplication::allocArray![c8] (self._len);
+        core::duplication::memCopy![c8] (self._entabing, alias aux);
+        self._entabing = alias aux;
+    }
 
 }
