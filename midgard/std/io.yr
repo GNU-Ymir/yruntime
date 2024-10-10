@@ -1,226 +1,756 @@
 in io;
 
+mod io_utils;
 
-extern (C) fn printf (c : *c8, ...);
-extern (C) fn _yrt_putwchar (c : c32);
-extern (C) fn putchar (c : c8);
+use std::io::io_utils;
 
-extern (C) fn _yrt_printf32 (f : f32);
-extern (C) fn _yrt_printf64 (f : f64);
+/*!
+ * =========================================================================================
+ * =========================================================================================
+ * ===============                           PRINT                  ========================
+ * =========================================================================================
+ * =========================================================================================
+ * */
 
+pub {
 
-pub fn print (c : [c8]) {
-    for i in 0us .. c.len {
-        putchar (c [i]);
+    /**
+     * Print a char to stdout.
+     */
+    fn print (c : c8)  {
+        putchar (c)
     }
-}
 
-pub fn print (c : c8) -> void {
-    putchar (c)
-}
+    /**
+     * Print an utf8 char to stderr.
+     */
+    fn eprint (c : c8) {
 
-pub fn print (c : c32) -> void {
-    _yrt_putwchar (c)
-}
-
-pub fn print (s : [c32]) -> void {
-    for i in 0us .. s.len {
-        _yrt_putwchar (s [i]);
+        putc (c, io_utils::stderr);
     }
+
+    /**
+     * Print an utf32 char to stdout.
+     */
+    fn print (c : c32)  {
+        _yrt_putwchar (c)
+    }
+
+    /**
+     * Print an utf32 char to stderr.
+     */
+    fn eprint (c : c32) {
+        _yrt_eputwchar (c);
+    }
+
+    /**
+     * Print an utf32 string to stdout.
+     */
+    fn print (s : [c32]) {
+        for c in s {
+            _yrt_putwchar (c);
+        }
+    }
+
+    /**
+     * Print an utf32 string to stderr.
+     */
+    fn eprint (s :  [c32]) {
+        for c in s {
+            _yrt_eputwchar (c);
+        }
+    }
+
+    /**
+     * Print an utf8 string to stdout.
+     */
+    fn print (s : [c8]) {
+        for c in s {
+            putchar (c);
+        }
+    }
+
+    /**
+     * Print an utf8 string to stderr.
+     */
+    fn eprint (s : [c8]) {
+        for c in s {
+            putc (c, io_utils::stderr);
+        }
+    }
+
+    /**
+     * Print a isize to stdout.
+     */
+    fn print (i : isize)  {
+        printf ("%lld".ptr, i);
+    }
+
+    /**
+     * Print a isize to stderr.
+     */
+    fn eprint (i : isize) {
+        fprintf (io_utils::stderr, "%lld".ptr, i);
+    }
+
+    /**
+     * Print a usize to stdout.
+     */
+    fn print (i : usize)  {
+        printf ("%llu".ptr, i);
+    }
+
+    /**
+     * Print a usize to stderr.
+     */
+    fn eprint (i : usize)  {
+        fprintf (io_utils::stderr, "%llu".ptr, i);
+    }
+
+    /**
+     * Print a i64 to stdout.
+     */
+    fn print (i : i64)  {
+        printf ("%lld".ptr, i);
+    }
+
+    /**
+     * Print a i64 to stdout.
+     */
+    fn eprint (i : i64)  {
+        fprintf (io_utils::stderr, "%lld".ptr, i);
+    }
+
+    /**
+     * Print a i32 to stdout.
+     */
+    fn print (i : i32)  {
+        printf ("%d".ptr, i);
+    }
+
+    /**
+     * Print a i32 to stderr.
+     */
+    fn eprint (i : i32)  {
+        fprintf (io_utils::stderr, "%d".ptr, i);
+    }
+
+    /**
+     * Print a i16 to stdout.
+     */
+    fn print (i : i16)  {
+        printf ("%hd".ptr, i);
+    }
+
+    /**
+     * Print a i16 to stderr.
+     */
+    fn eprint (i : i16)  {
+        fprintf (io_utils::stderr, "%hd".ptr, i);
+    }
+
+    /**
+     * Print a i8 to stdout.
+     */
+    fn print (i : i8)  {
+        printf ("%hhx".ptr, i);
+    }
+
+    /**
+     * Print a i8 to stderr.
+     */
+    fn eprint (i : i8)  {
+        fprintf (io_utils::stderr, "%hhx".ptr, i);
+    }
+
+    /**
+     * Print a u64 to stdout.
+     */
+    fn print (i : u64)  {
+        printf ("%llu".ptr, i);
+    }
+
+    /**
+     * Print a u64 to stderr.
+     */
+    fn eprint (i : u64)  {
+        fprintf (io_utils::stderr, "%llu".ptr, i);
+    }
+
+    /**
+     * Print a u32 to stdout.
+     */
+    fn print (i : u32)  {
+        printf ("%u".ptr, i);
+    }
+
+    /**
+     * Print a u32 to stderr.
+     */
+    fn eprint (i : u32)  {
+        fprintf (io_utils::stderr, "%u".ptr, i);
+    }
+
+    /**
+     * Print a u16 to stdout.
+     */
+    fn print (i : u16)  {
+        printf ("%hu".ptr, i);
+    }
+
+    /**
+     * Print a u16 to stderr.
+     */
+    fn eprint (i : u16)  {
+        fprintf (io_utils::stderr, "%hu".ptr, i);
+    }
+
+    /**
+     * Print a u8 to stdout
+     * @params:
+     *    - i: the int to print
+     */
+    fn print (i : u8)
+        printf ("%hhx".ptr, i)
+
+    /**
+     * Print an address to stdout.
+     */
+    fn print (i : *void) {
+        printf ("%x".ptr, i);
+    }
+
+    /**
+     * Print an address to stderr.
+     */
+    fn eprint (i : *void) {
+        fprintf (io_utils::stderr, "%x".ptr, i);
+    }
+
+    /**
+     * Print a float value of size 64 to stdout
+     */
+    fn print (f : f64)  {
+        _yrt_printf64 (f);
+    }
+
+    /**
+     * Print a float value of size 64 to stderr.
+     */
+    fn eprint (f : f64)  {
+        _yrt_eprintf64 (f);
+    }
+
+    /**
+     * Print a float value of size 32 to stdout
+     */
+    fn print (f : f32)  {
+        _yrt_printf32 (f);
+    }
+
+    /**
+     * Print a float value of size 32 to stderr.
+     */
+    fn eprint (f : f32)  {
+        _yrt_eprintf32 (f);
+    }
+
+    /**
+     * Print a float value of size 80 to stdout
+     */
+    fn print (f : f80)  {
+        _yrt_printf80 (f);
+    }
+
+    /**
+     * Print a float value of size 80 to stderr.
+     */
+    fn eprint (f : f80)  {
+        _yrt_eprintf80 (f);
+    }
+
+    /**
+     * Print a float value of size 80 to stdout
+     */
+    fn print (f : fsize)  {
+        _yrt_printfsize (f);
+    }
+
+    /**
+     * Print a float value of size 80 to stderr.
+     */
+    fn eprint (f : fsize)  {
+        _yrt_eprintfsize (f);
+    }
+
+    /**
+     * Print a bool value to stdout.
+     */
+    fn print (b : bool)  {
+        if (b)
+            printf ("true".ptr);
+        else
+            printf ("false".ptr);
+    }
+
+    /**
+     * Print a bool value to stderr.
+     */
+    fn eprint (b : bool)  {
+        if (b)
+            fprintf (io_utils::stderr, "true".ptr);
+        else
+            fprintf (io_utils::stderr, "false".ptr);
+    }
+
+    /**
+     * Print an array of type U to stdout.
+     * @params:
+     *    - a: an array to print
+     * @templates :
+     *    - T: a slice type
+     *    - U: any
+     */
+    fn print {T of [U], U} (a : T)  {
+        putchar ('[');
+        if a.len > 0 {
+            print (a [0]);
+            for i in a [1 .. $] {
+                putchar (',');
+                putchar (' ');
+                print (j);
+            }
+        }
+
+        putchar (']');
+    }
+
+    /**
+     * Print an array of type U to stderr.
+     * @params:
+     *    - a: an array to print
+     * @templates :
+     *    - T: a slice type
+     *    - U: any
+     */
+    fn eprint {T of [U], U} (a : T)  {
+        let mut i = 0_u64;
+        eprint ('[');
+        if a.len > 0 {
+            eprint (a [0]);
+            for i in a [1 .. $] {
+                fprintf (io_utils::stderr, ", ".ptr);
+                eprint (i);
+            }
+        }
+
+        eprint (']');
+    }
+
+    /**
+     * Print a static array of type U to stdout
+     * @params :
+     *    - a: an array to print
+     * @templates :
+     *    - T: an static array type
+     *    - U: any
+     *    - N: the static size
+     */
+    fn print {T of [U;N], U, N : usize} (a : T)  {
+        putchar ('[');
+        cte if N > 0 {
+            print (a [0]);
+            for i in a [1 .. $] {
+                putchar (',');
+                putchar (' ');
+                print (i);
+            }
+        }
+        putchar (']');
+    }
+
+    /**
+     * Print a static array of type U to stderr
+     * @params :
+     *    - a: an array to print
+     * @templates :
+     *    - T: an static array type
+     *    - U: any
+     *    - N: the static size
+     */
+    fn eprint {T of [U;N], U, N : usize} (a : T)  {
+        eprint ('[');
+        cte if N > 0 {
+            eprint (a [0]);
+            for i in a [1 .. $] {
+                fprintf (io_utils::stderr, ", ".ptr);
+                eprint (i);
+            }
+        }
+        eprint (']');
+    }
+
+    /**
+     * Print a range type to stdout
+     * @params:
+     *    - a: the value of type range
+     * @template:
+     *    - T: any type
+     * */
+    fn print {T} (a : ..T) {
+        print ("range!", T::typeid, " (", a.fst, "->", a.scd, " by ", a.step, " ? ", a.contain, ')');
+    }
+
+    /**
+     * Print a range type to stderr
+     * @params:
+     *    - a: the value of type range
+     * @template:
+     *    - T: any type
+     * */
+    fn eprint {T} (a : ..T) {
+        eprint ("range!", T::typeid, " (", a.fst, "->", a.scd, " by ", a.step, " ? ", a.contain, ')');
+    }
+
+    /**
+     * Print an option type to stdout
+     * @params:
+     *   - a: a value of type option
+     * @templates:
+     *   - T: any type
+     */
+    fn print {T} (a : T?)  {
+        cte if (!is!{T}{U of void}) {
+            match a {
+                Ok  (x:_)   => print ("Ok(", x, ")");
+                Err (msg:_) => print ("Err(", msg, ")");
+                Err ()      => print ("Err()");
+            }
+        } else {
+            match a {
+                Ok  ()   => print ("Ok()");
+                Err (msg:_) => print ("Err(", msg, ")");
+                Err ()      => print ("Err()");
+            }
+        }
+    }
+
+    /**
+     * Print an option type to stderr.
+     * @params:
+     *   - a: a value of type option
+     * @templates:
+     *   - T: any type
+     */
+    fn eprint {T} (a : T?)  {
+        cte if (!is!{T}{U of void}) {
+            match a {
+                Ok  (x:_)   => eprint ("Ok(", x, ")");
+                Err (msg:_) => eprint ("Err(", msg, ")");
+                Err ()      => eprint ("Err()");
+            }
+        } else {
+            match a {
+                Ok  ()   => eprint ("Ok()");
+                Err (msg:_) => eprint ("Err(", msg, ")");
+                Err ()      => eprint ("Err()");
+            }
+        }
+    }
+
+    /**
+     * Print multiple elements to stdout
+     * */
+    fn print  {F, T...} (a : F, b : T) {
+        print (a);
+        cte if ((T,)::arity >= 2us) {
+            cte for i in b {
+                print (i);
+            }
+        } else {
+            print (b);
+        }
+    }
+
+    /**
+     * Print multiple elements to stderr
+     * */
+    fn eprint  {F, T...} (a : F, b : T) {
+        eprint (a);
+        cte if ((T,)::arity >= 2us) {
+            cte for i in b {
+                eprint (i);
+            }
+        } else {
+            eprint (b);
+        }
+    }
+
+    /**
+     * Print a tuple to stdout
+     * @params:
+     *    - a: a tuple of arbitrary arity
+     */
+    fn print {T of (U,), U...} (a : T) {
+        print ('(');
+        cte if T::arity > 0 {
+            print (a.0);
+            cte for i in 1 .. T::arity {
+                putchar (',');
+                putchar (' ');
+                print (a.i);
+            }
+        }
+
+        cte if (T::arity == 1) putchar (',');
+        putchar (')');
+    }
+
+
+    /**
+     * Print a tuple to stderr
+     * @params:
+     *    - a: a tuple of arbitrary arity
+     */
+    fn eprint {T of (U,), U...} (a : T) {
+        eprint ('(');
+        cte if T::arity > 0 {
+            eprint (a.0);
+            cte for i in 1 .. T::arity {
+                fprintf (io_utils::stderr, ", ".ptr);
+                eprint (a.i);
+            }
+        }
+
+        cte if (T::arity == 1) fprintf (io_utils::stderr, ",)".ptr);
+        else {
+            fprintf (io_utils::stderr, ")".ptr);
+        }
+    }
+
+    /**
+     * Print an empty tuple to stdout
+     * */
+    fn print (_ : ()) {
+        putchar ('(');
+        putchar (')');
+    }
+
+    /**
+     * Print an empty tuple to stderr
+     * */
+    fn eprint (_ : ()) {
+        fprintf (io_utils::stderr, "()".ptr);
+    }
+
+
+    /**
+     * Print a class object to stdout
+     * @params:
+     *    - a: the object to print
+     * */
+    fn print {class T} (a : T) {
+        let dmut stream = copy std::stream::StringStream ();
+        stream:.write (a);
+        print (stream[]);
+    }
+
+    /**
+     * Print a record to stdout
+     * @params:
+     *    - a: the record to print
+     * */
+    fn print {record T} (a : T) {
+        let dmut stream = copy std::stream::StringStream ();
+        stream:.write (a);
+        print (stream[]);
+    }
+
+    /**
+     * Print a record to stdout (by reference to avoid the copy of the record)
+     * @params:
+     *    - a: the record to print
+     * */
+    fn print {record T} (ref a : T) {
+        let dmut stream = copy std::stream::StringStream ();
+        stream:.write (a);
+        print (stream[]);
+    }
+
+    /**
+     * Print a class object to stderr
+     * @params:
+     *    - a: the object to print
+     * */
+    fn eprint {class T} (a : T) {
+        let dmut stream = copy std::stream::StringStream ();
+        stream:.write (a);
+        eprint (stream[]);
+    }
+
+    /**
+     * Print a record to stderr
+     * @params:
+     *    - a: the record to print
+     * */
+    fn eprint {record T} (a : T) {
+        let dmut stream = copy std::stream::StringStream ();
+        stream:.write (a);
+        eprint (stream[]);
+    }
+
+    /**
+     * Print a record to stderr (by reference to avoid the copy of the record)
+     * @params:
+     *    - a: the record to print
+     * */
+    fn eprint {record T} (ref a : T) {
+        let dmut stream = copy std::stream::StringStream ();
+        stream:.write (a);
+        eprint (stream[]);
+    }
+
+    /**
+     * Print variadic elements to stdout, and end the writing by a line return
+     * */
+    fn println {F, T...} (a : F, b : T) {
+        print (a);
+        cte if ((T,)::arity >= 2us) {
+            cte for i in b {
+                print (i);
+            }
+        } else {
+            print (b);
+        }
+        putchar ('\n');
+    }
+
+    /**
+     * Print an element to stdout, and end the writing by a line return
+     * */
+    fn println {T} (a : T) {
+        print (a);
+        putchar ('\n');
+    }
+
+    /**
+     * Print a line return to stdout.
+     */
+    fn println () {
+        putchar ('\n');
+    }
+
+    /**
+     * Print variadic elements to stderr, and end the writing by a line return
+     * */
+    fn eprintln {F, T...} (a : F, b : T) {
+        eprint (a);
+        cte if ((T,)::arity >= 2us) {
+            cte for i in b {
+                eprint (i);
+            }
+        } else {
+            eprint (b);
+        }
+        fprintf (io_utils::stderr, "\n".ptr);
+    }
+
+    /**
+     * Print an element to stdout, and end the writing by a line return
+     * */
+    fn eprintln {T} (a : T) {
+        eprint (a);
+        fprintf (io_utils::stderr, "\n".ptr);
+    }
+
+    /**
+     * Print a line return to stdout.
+     */
+    fn eprintln () {
+        fprintf (io_utils::stderr, "\n".ptr);
+    }
+
 }
 
-pub fn print (i : isize) -> void {
-    printf ("%lld"s8.ptr, i);
-}
-
-pub fn print (i : usize) -> void {
-    printf ("%lld"s8.ptr, i);
-}
 
 /**
- * Print a i64 to stdout.
- */
-pub fn print (i : i64) -> void {
-    printf ("%lld"s8.ptr, i);
-}
-
-pub fn print (i : i32) -> void {
-    printf ("%d"s8.ptr, i);
-}
-
-pub fn print (i : i16) -> void {
-    printf ("%hd"s8.ptr, i);
-}
-
-pub fn print (i : i8) -> void {
-    printf ("%hhx"s8.ptr, i);
-}
-
-pub fn print (i : u64) -> void {
-    printf ("%llu"s8.ptr, i);
-}
-
-pub fn print (i : u32) -> void {
-    printf ("%u"s8.ptr, i);
-}
-
-pub fn print (i : u16) -> void {
-    printf ("%hu"s8.ptr, i);
-}
-
-pub fn print (i : u8) -> void {
-    printf ("%hhx"s8.ptr, i)
-}
-
-pub fn print (i : *(void))-> void {
-    printf ("%x"s8.ptr, i);
-}
-
-pub fn print (f : f64) -> void {
-    _yrt_printf64 (f);
-}
-
-pub fn print (f : f32) -> void {
-    _yrt_printf32 (f);
-}
-
-pub fn print (b : bool) -> void {
-    if (b)
-        printf ("true"s8.ptr);
-    else
-        printf ("false"s8.ptr);
-}
-
-pub fn print {T of [U], U} (a : T) -> void {
-    putchar ('['c8);
-    for i in 0us .. a.len {
-        if i != 0us {
-            putchar (','c8);
-            putchar (' 'c8);
-        }
-
-        print (a [i]);
-    }
-    putchar (']'c8);
-}
-
-pub fn print {T of [U;N], U, N : usize} (a : T) -> void {
-    print ('['c8);
-    for i in 0_u64 .. cast!u64 (N) {
-        if i != 0_u64 {
-            putchar (','c8);
-            putchar (' 'c8);
-        }
-
-        print (a [i]);
-    }
-    print (']'c8);
-}
-
-
-pub fn print {T} (a : T?) -> void {
-    cte if (!is!{T}{U of void}) {
-        match a {
-            Ok  (x)   => print ("Ok(", x, ")");
-            Err (msg)      => print ("Err(", msg.__typeinfo__.name, ")");
-            Err ()      => print ("Err()");
-        }
-    } else {
-        match a {
-            Ok  ()   => print ("Ok()");
-            Err (msg)      => print ("Err(", msg.__typeinfo__.name, ")");
-            Err () => print ("Err ()");
-        }
-    }
-}
-
-
-pub fn print  {F, T...} (a : F, b : T) {
-    print (a);
-    cte if ((T,)::arity >= 2us) {
-        cte for i in b {
-            print (i);
-        }
-    } else {
-        print (b);
-    }
-}
-
-/**
- * Print an element of type tuple to stdout
- * @params:
- *    - a: a tuple of arbitrary arity
- */
-pub fn print {T of (U,), U...} (a : T) {
-    print ('(');
-    let mut j = 0;
-    for i in a {
-        if j != 0 {
-            print (',');
-        }
-        print (i);
-        j += 1;
-    }
-    if (j == 1) print (',');
-    print (')');
-}
-
-pub fn print (_ : ()) {
-    print ('('c8,')'c8);
-}
-
-pub fn print {class T} (a : T) {
-    cte if is!{T}{X impl std::stream::Streamable} {
-        let dmut stream = copy std::stream::StringStream ();
-        a.toStream (alias stream);
-        print (stream[]);
-    } else {
-        print (T::typeid, '(');
-        for i, j in (expand a,) {
-            cte if (i != 0) print (", ");
-            print (j);
-        }
-        print (')');
-    }
-}
-
-pub fn print {record T} (a : T) {
-    cte if is!{T}{X impl std::stream::Streamable} {
-        let dmut stream = copy std::stream::StringStream ();
-        a.toStream (alias stream);
-        print (stream[]);
-    } else {
-        print (T::typeid, '(');
-        for i, j in (expand a,) {
-            cte if (i != 0) print (", ");
-            print (j);
-        }
-        print (')');
-    }
-}
-
+ * Termination of variadic execution
+ * @info: does nothing
+ * */
 fn print () {}
 
-pub fn println {F, T...} (a : F, b : T) {
-    print (a);
-    cte if ((T,)::arity >= 2us) {
-        cte for i in b {
-            print (i);
-        }
-    } else {
-        print (b);
-    }
-    putchar ('\n'c8);
-}
-
-pub fn println {T} (a : T) {
-    print (a);
-    putchar ('\n'c8);
-}
-
 /**
- * Print a return line to stdout.
- */
-pub fn println () {
-    putchar ('\n'c8);
+ * Termination of variadic execution
+ * @info: does nothing
+ * */
+fn eprint () {}
+
+
+/*!
+ * =========================================================================================
+ * =========================================================================================
+ * ===============                            SCAN                  ========================
+ * =========================================================================================
+ * =========================================================================================
+ * */
+
+
+pub {
+
+    /**
+     * Read a i32 from the stdin
+     * @returns : a i32
+     */
+    fn if std::traits::isIntegral!{T} () read {T} (ask : [c8] = "") -> T {
+        print (ask);
+        io_utils::_yrt_fflush_stdout ();
+        let mut x : T = 0;
+        cte if T::size <= 4 {
+            scanf ("%d"s8.ptr, &x);
+        } else {
+            scanf ("%ld"s8.ptr, &x);
+        }
+        x
+    }
+
+    /**
+     * Read a c8 from the stdin
+     * @returns : a c8
+     */
+    fn read {T of c8} (ask : [c8] = "") -> c8 {
+        print (ask);
+        io_utils::_yrt_fflush_stdout ();
+        let mut x : c8 = '\u{0}'c8;
+        if (io_utils::etc::read (io_utils::etc::stdin, alias &x, 1us) == io_utils::etc::EOF) {
+            return '\u{0}';
+        }
+        x
+    }
+
+    /**
+     * Read a [c8] from the stdin
+     * @info:
+     * =============
+     * this function waits for the enter to be pressed (if the stdin is from a terminal)
+     * To avoid this waiting, you should use the std::term::Terminal class, that manage advance io
+     * =============
+     * @returns: a [c8]
+     */
+    fn read {T of [U], U of c8} (ask : [c8] = "")-> [c8] {
+        print (ask);
+        io_utils::_yrt_fflush_stdout ();
+        let dmut v = copy std::collection::vec::Vec!(c8) ();
+        loop {
+            let mut c = '\u{0}'c8;
+            let size = io_utils::etc::read (io_utils::etc::stdin, alias &c, 1us);
+            if (size != io_utils::etc::EOF) {
+                if (c == '\n') break {}
+                v:.push (c);
+            } else break {}
+        }
+
+        v:.fit ();
+        v[]
+    }
+
 }
