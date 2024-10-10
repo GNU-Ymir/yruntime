@@ -1,0 +1,81 @@
+in any;
+
+use std::any;
+use std::io;
+
+fn foo (x : i32)-> &Any {
+    if (x < 10) {
+        copy Some!i32 (14) // returns a i32, if x < 10
+    } else if (x < 100) {
+        copy Some![c8] ("foo") // returns a [c8] if x < 100 and x >= 10
+    } else {
+        copy None () // returns nothing if x >= 100
+    }
+}
+
+__test {
+    match foo (1) {
+        Some!i32 (value -> v) => {
+            assert (v == 14, "a");
+        }
+        _ => { assert (false, "b"); }
+    }
+
+    if let Ok (v) = foo (1).unwrap!{i32} () {
+        assert (v == 14, "c");
+    } else {
+        assert (false, "d");
+    }
+}
+
+__test {
+    match foo (12) {
+        Some![c8] (value -> v) => {
+            assert (v == "foo");
+        }
+        _ => { assert (false); }
+    }
+
+    if let Ok (v) = foo (15).unwrap!{[c8]} () {
+        assert (v == "foo");
+    } else {
+        assert (false);
+    }
+}
+
+__test {
+    match foo (120) {
+        None () => {}
+        _ => { assert (false, "a"); }
+    }
+
+    assert (foo (150).isEmpty (), "b");
+}
+
+
+class X {
+    pub let mut x = 12;
+    pub self () {}
+}
+
+
+__test {
+    let dmut a = copy Some!{dmut &X} (copy X ());
+    match alias a {
+        dmut z : &Some!{dmut &X} => {
+            z:.value.x = 97;
+        }
+    }
+
+    if let Ok (X (x-> x)) = a.unwrap!{&X} () {
+        assert (x == 97);
+    }
+
+    if let Ok (dmut x : &X) = alias a:.unwrap!{dmut &X} () {
+        x.x = 34;
+    }
+
+    if let Ok (X (x-> x)) = a.unwrap!{&X} () {
+        assert (x == 34);
+    }
+}
