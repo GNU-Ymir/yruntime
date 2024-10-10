@@ -112,11 +112,9 @@ void* _yrt_alloc_class (void* vtable) {
     return cl;
 }
 
-uint8_t _yrt_cmp_class_of_type (void * to, void * from) {
-    if (to == from) return 1;
-
-    _ytype_info *tiTo = *((_ytype_info**) to);
+uint8_t _yrt_cmp_class_of_type (void * tiTo, void * from) {
     _ytype_info *tiFrom = *((_ytype_info**) from);
+    if (tiTo == tiFrom) return 1;
 
     while (tiFrom-> inner.len != 0) {
         _ytype_info * ancestor = ((_ytype_info*) (tiFrom-> inner.data));

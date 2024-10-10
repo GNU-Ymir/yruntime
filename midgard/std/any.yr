@@ -1,36 +1,135 @@
+/**
+ * This module register the class type `Any` that can encapsulate any
+ * value, primitive or user defined.  It uses the the strength of
+ * pattern matching to perform the type specialization and
+ * retreival.
+ * <br>
+ * It can be considered as some kind of option type, where
+ * in addition to have optional value, it can have different types.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @example:
+ * ===
+ * use std::{io, any, conv};
+ *
+ * /*
+ *  * Function that can return anything
+ *  */
+ * fn foo (x : i32)-> &Any {
+ *     if (x < 10) {
+ *         copy Some (14) // returns a i32, if x < 10
+ *     } else if (x < 100) {
+ *         copy Some ("foo"s8) // returns a [c8] if x < 100 and x >= 10
+ *     } else {
+ *         copy None () // returns nothing if x >= 100
+ *     }
+ * }
+ *
+ * fn main () {
+ *     let a = foo (27); // foo can return anything
+ *
+ *     // One can use pattern matching to safely unwrap the Any type
+ *     match a {
+ *        Some!{i32} (value-> x) =>
+ *            println (x); // maybe its an i32
+ *        Some!{f32} (value-> y) =>
+ *            println (y); // maybe its an f32
+ *     }
+ *
+ *     // any can be transformed into an option
+ *     if let Ok (str) = a.unwrap!{[c8]} () {
+ *        println (str);
+ *     } else if let Ok (str) = a.unwrap!{[c32]} () {
+ *        println (str);
+ *     }
+ * }
+ * ===
+ */
 in any;
 
+mod implem;
+use std::any::implem;
+
+/**
+ * An any type that can store anything
+ * */
 @abstract
 pub class Any {
 
     prot self () {}
 
+    /**
+     * Unwrap the value inside the any
+     * @returns: the value inside the any
+     * */
     pub fn unwrap {T} (self)-> (T)? {
-        if let Some!{T} (value-> v) = self {
+        if let ISome!{T, false} (value-> v) = self {
             return (v)?;
+        } else cte if __pragma!compile (ISome!{T, true}) {
+            if let ISome!{T, true} (value-> v) = self {
+                return (v)?;
+            }
+        }
+
+        none
+    }
+    /**
+     * Mutable unwrap of the value inside the any
+     * @returns: the value inside the any
+     * */
+    pub fn unwrap {T of dmut J, class J} (mut self)-> dmut (T)? {
+        match alias self {
+            dmut s : &ISome!{T, true} => {
+                return (alias s:.value)?;
+            }
         }
 
         none
     }
 
-}
+    /**
+     * @returns: true if the any contains no data
+     * */
+    @final
+    pub fn isEmpty (self)-> bool {
+        match self {
+            None () => { true }
+            _ => { false }
+        }
+    }
 
-@final
-pub class Some {T} over Any {
-
-    let _val : T;
-
-    pub self (val : T)
-        with _val = val
-    {}
-
-    @field
-    pub fn value (self)-> T {
-        self._val
+    impl std::stream::Streamable {
+        pub over toStream (self, dmut stream : &std::stream::StringStream) {
+            stream:.write (self.__typeid__, "()");
+        }
     }
 
 }
 
+/**
+ * Immutable container
+ * */
+@final
+pub class Some {T} over ISome!{T, false} {
+    pub self (val : T)
+        with super (val)
+    {}
+}
+
+/**
+ * Mutable container
+ * */
+@final
+pub class Some {T of dmut J, class J} over ISome!{T, true} {
+    pub self (dmut val : T)
+        with super (alias val)
+    {}
+}
+
+/**
+ * Empty value
+ * */
 @final
 pub class None over Any {
     pub self () {}

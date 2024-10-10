@@ -1,0 +1,38 @@
+in implem;
+
+@abstract
+pub class ISome {T, mutable : bool} over Any {
+    cte if mutable {
+        let dmut _value : T;
+        pub self (dmut val : T)
+            with _value = alias val
+        {}
+
+
+        @field
+        pub fn value (mut self)-> dmut T {
+            alias self._value
+        }
+    } else {
+        let _value : T;
+        pub self (val : T)
+            with _value = val
+        {}
+    }
+
+    @field
+    pub fn value (self)-> T {
+        self._value
+    }
+
+    impl std::stream::Streamable {
+        pub over toStream (self, dmut stream : &std::stream::StringStream) {
+            stream:.write ("std::any::Some!{", T::typeid, "}(");
+            cte if __pragma!compile ({stream:.write (self._value);}) {
+                stream:.write (self._value);
+            }
+            stream:.write (')');
+        }
+    }
+
+}
