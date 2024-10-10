@@ -1,11 +1,41 @@
 mod stream;
 
+use std::io;
 use std::stream;
 
-class Z {
+class A {
     let x : i32 = 0;
     pub self (x : i32) with x = x {}
     impl Streamable;
+}
+
+record B {
+    let x : i32;
+    pub self (x : i32)
+        with x = x
+    {}
+
+    impl Streamable;
+}
+
+class C {
+    let x : i32;
+    pub let y : i32;
+
+    pub self (x : i32, y : i32)
+        with x = x
+        , y = y
+    {}
+}
+
+record D {
+    let x : i32;
+    pub let y : i32;
+
+    pub self (x : i32, y : i32)
+        with x = x
+        , y = y
+    {}
 }
 
 __test {
@@ -18,13 +48,68 @@ __test {
 
     str:.detabing ();
     str:.write ("}");
-    assert (str[] == "Array {\n\t0\n\t1\n\t2\n\t3\n\t4\n\t5\n\t6\n\t7\n\t8\n\t9\n}");
+    assert (str[] == "Array {\n\t0\n\t1\n\t2\n\t3\n\t4\n\t5\n\t6\n\t7\n\t8\n\t9\n}", str[]);
 }
 
 __test {
     let dmut str = copy StringStream ();
-    let z = copy Z (78);
+    let z = copy A (78);
 
     str:.write (z);
-    assert (str[] == "&(stream::Z)(.x = 78)");
+
+    assert (str[] == "stream::A(78)", str[]);
+
+    str:.clear ();
+    let b = B (23);
+    str:.write (b);
+
+    assert (str[] == "stream::B(23)", str[]);
+}
+
+__test {
+    let c = copy C (12, 56);
+    let d = D (34, 73);
+
+    let dmut str = copy StringStream ();
+    str:.write (c, ", ", d);
+
+    assert (str[] == "stream::C(56), stream::D(73)", str[]);
+}
+
+
+class E {
+    let mut z : [&E] = [];
+    pub self () {}
+    pub fn store (mut self, z : &E) {
+        self.z = copy [z];
+    }
+
+    impl Streamable;
+}
+
+__test {
+    let dmut e = copy E ();
+    e:.store (e);
+
+    let dmut str = copy StringStream ();
+    str:.write (e);
+    assert (str[] == "stream::E([stream::E(...)])", str[]);
+}
+
+
+class F {
+    pub let mut z : [&F] = [];
+    pub self () {}
+    pub fn store (mut self, z : &F) {
+        self.z = copy [z];
+    }
+}
+
+__test {
+    let dmut f = copy F ();
+    f:.store (f);
+
+    let dmut str = copy StringStream ();
+    str:.write (f);
+    assert (str[] == "stream::F([stream::F(...)])");
 }

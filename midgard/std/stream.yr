@@ -8,11 +8,18 @@ mod Runtime {F, T} {
 
 prv enum : usize
 | DEFAULT_ALLOC_SIZE = 10us
+| DEFAULT_ENTABING_SIZE = 1us
  -> StreamConst;
 
-
+/**
+ * The print set stores the list of classes that are already printed, to avoid infinite loops when a class contains itself
+ */
 lazy dmut __PRINT_SET__ = copy HashSet!{*void} ();
 
+/**
+ * Trait used to perform a complex stream writing of classes or records
+ * Default implementation exists, and allows to print private fields
+ * */
 pub trait Streamable {
 
     /**
@@ -32,7 +39,7 @@ pub trait Streamable {
             cte if (i != 0) stream:.write (", ");
             let name = cte {typeof (self)::field_infos [i].name};
             cte if (__pragma!compile ({stream:.write (__pragma!field (self, name));})) {
-                stream:.write (".", name, " = ", __pragma!field (self, name));
+                stream:.write (__pragma!field (self, name));
             } else {
                 stream:.write (".", name, " : ", (typeof (__pragma!field (self, name)))::typeid);
             }
@@ -49,7 +56,7 @@ pub trait Streamable {
      */
     pub fn toStream (self, dmut stream : &StringStream)-> void {
         let vd = Runtime!{typeof (self), *void}::_yrt_unsafe_cast (self);
-        stream:.write (typeof (self)::typeid, "(");
+        stream:.write (self.__typeid__, "(");
         if vd !in __PRINT_SET__ {
             __PRINT_SET__:.insert (vd);
             self.__stream__streamContent (alias stream);
@@ -79,6 +86,7 @@ pub class StringStream {
     // The actual size of the entabing
     let mut _entabingLen : usize = 0us;
 
+    // Toggle when reading a \n char, to trigger the writing of entabing strings at next write
     let mut _willEntab = false;
 
     /**
@@ -149,10 +157,6 @@ pub class StringStream {
      */
     pub fn write (mut self, c : c8) -> dmut &StringStream {
         self:.push (c);
-        if (c == '\n'c8) {
-            self._willEntab = true;
-        }
-
         alias self
     }
 
@@ -208,29 +212,60 @@ pub class StringStream {
     }
 
     /*!
-     * ====================================================================
-     * ====================================================================
-     * ==========================   CLASSES  ==============================
-     * ====================================================================
-     * ====================================================================
+     * ================================================================================
+     * ================================================================================
+     * ==========================   CLASSES and RECORDS  ==============================
+     * ================================================================================
+     * ================================================================================
      * */
 
+    /**
+     * Write a class or a record into the stream
+     * @params:
+     *   - c: the element to write
+     * @info: consider weither the element is Streamable or not
+     * @returns: the stream
+     * */
     pub fn if (is!{T}{class C} || is!{T}{record C}) write {T} (mut self, c : T) -> dmut &StringStream {
         cte if is!{T}{X impl std::stream::Streamable} {
             c.toStream (alias self);
         } else {
-            self:.write (T::typeid, '(');
-            for i, j in (expand c,) {
-                cte if (i != 0) self:.write (", ");
-                self:.write (j);
+            cte if is!{T}{class C} {
+                let vd = Runtime!{typeof (self), *void}::_yrt_unsafe_cast (self);
+                self:.write (c.__typeinfo.name, '(');
+                if vd !in __PRINT_SET__ {
+                    __PRINT_SET__:.insert (vd);
+                    for i, j in (expand c,) {
+                        cte if (i != 0) self:.write (", ");
+                        self:.write (j);
+                    }
+                    __PRINT_SET__:.remove (vd);
+                } else {
+                    self:.write ("...");
+                }
+
+                self:.write (')');
+            } else {
+                self:.write (T::typeid, '(');
+                for i, j in (expand c,) {
+                    cte if (i != 0) self:.write (", ");
+                    self:.write (j);
+                }
+                self:.write (')');
             }
-            self:.write (')');
         }
 
         alias self
     }
 
-    pub fn if (is!{T}{class C} || is!{T}{record C}) write {T} (mut self, ref c : T) -> dmut &StringStream {
+    /**
+     * Write a record into the stream as a reference (to avoid the copy of the record)
+     * @params:
+     *   - c: the element to write
+     * @info: consider weither the element is Streamable or not
+     * @returns: the stream
+     * */
+    pub fn write {T of R, record R} (mut self, ref c : T) -> dmut &StringStream {
         cte if is!{T}{X impl std::stream::Streamable} {
             c.toStream (alias self);
         } else {
@@ -408,7 +443,12 @@ pub class StringStream {
      * ====================================================================
      * */
 
-    prv fn push (mut self, i : c8) {
+    /**
+     * Write a char at the end of the stream
+     * @params:
+     *    - c: the char to write
+     * */
+    prv fn push (mut self, c : c8) {
         if self._willEntab {
             for j in self._entabing [0 .. self._entabingLen] {
                 if (self._content.len <= self._len + j.len) {
@@ -422,66 +462,111 @@ pub class StringStream {
         }
 
         if (self._content.len <= self._len + 1) { self:.grow ((self._len + 1us)); }
-        self:.pushFast (i);
-        if (i == '\n') self._willEntab = true;
+        self:.pushFast (c);
     }
 
-    prv fn push (mut self, i : [c8]) {
+    /**
+     * Write a string at the end of the stream
+     * @params:
+     *    - s: the string to write
+     * */
+    prv fn push (mut self, s : [c8]) {
         if (self._entabingLen == 0us) {
-            if (self._content.len <= self._len + i.len) { self:.grow (self._len + i.len); }
-            self:.pushFast (i);
+            if (self._content.len <= self._len + s.len) { self:.grow (self._len + s.len); }
+            self:.pushFast (s);
         } else {
-            for z in i {
+            for z in s {
                 self:.push (z);
             }
         }
     }
 
-    prv fn pushFast (mut self, i : [c8]) {
-        for z in i {
+    /**
+     * Write a string at the end of the stream
+     * @warning: does not check wether the string will fit or not, and thus does not regrow the buffer if needed
+     * @assume: self._len + s.len <= self._content.len
+     * @params:
+     *    - s: the string to write
+     * */
+    prv fn pushFast (mut self, s : [c8]) {
+        for z in s {
             self._content [self._len] = z;
             self._len += 1us;
         }
 
-        self._willEntab = (i.len != 0 && i [$ - 1] == '\n');
+        self._willEntab = (s.len != 0 && s [$ - 1] == '\n');
     }
 
-    prv fn pushFast (mut self, i : c8) {
-        self._content [self._len] = i;
+    /**
+     * Write a char at the end of the stream
+     * @warning: does not check wether the char will fit or not, and thus does not regrow the buffer if needed
+     * @assume: self._len + 1 <= self._content.len
+     * @params:
+     *    - c: the char to write
+     * */
+    prv fn pushFast (mut self, c : c8) {
+        self._content [self._len] = c;
         self._len += 1us;
+        self._willEntab = (c == '\n');
     }
 
+    /**
+     * Grow the size of the buffer of the stream
+     * @params:
+     *    - nlen: the minimum len the buffer should be
+     * @info: nlen is just an information, the buffer might be bigger than that for optimisation and avoid regrowing at each new insertion
+     * */
     prv fn grow (mut self, nlen : usize) {
         if (self._content.len == 0us) {
-            self._content = alias core::duplication::allocArray!c8 (nlen);
+            let realLen = std::algorithm::comparison::max (nlen, StreamConst::DEFAULT_ALLOC_SIZE);
+            self._content = alias core::duplication::allocArray!c8 (realLen);
         } else {
-            let dmut aux : [c8] = core::duplication::allocArray!c8 (nlen);
+            let realLen = std::algorithm::comparison::max (nlen, self._content.len * 2us, StreamConst::DEFAULT_ALLOC_SIZE);
+            let dmut aux : [c8] = core::duplication::allocArray!c8 (realLen);
             core::duplication::memCopy!c8 (self._content, alias aux);
             self._content = alias aux;
         }
     }
 
+    /**
+     * Resize the buffer of the stream to take exactly the amount of space that is actually used
+     * @info: does not fit the buffer used to store entabing information
+     * */
     prv fn fit (mut self) {
-        let dmut aux : [c8] = core::duplication::allocArray!c8 (self._len);
-        core::duplication::memCopy!c8 (self._content, alias aux);
-        self._content = alias aux;
+        if (self._len == 0us) {
+            self._content = [];
+        } else {
+            let dmut aux : [c8] = core::duplication::allocArray!c8 (self._len);
+            core::duplication::memCopy!c8 (self._content, alias aux);
+            self._content = alias aux;
+        }
     }
 
+    /**
+     * Grow the entabing buffer to accept at least one new element
+     * */
     prv fn growEntabing (mut self) {
         if (self._entabing.len == 0us) {
-            self._entabing = alias core::duplication::allocArray![c8] (1us);
+            self._entabing = alias core::duplication::allocArray![c8] (StreamConst::DEFAULT_ENTABING_SIZE);
         } else {
-            let nlen = (self._entabing.len * 2us);
+            let nlen = std::algorithm::comparison::max (self._entabing.len * 2us, StreamConst::DEFAULT_ENTABING_SIZE);
             let mut aux : [mut [c8]] = core::duplication::allocArray![c8] (nlen);
             core::duplication::memCopy![c8] (self._entabing, alias aux);
             self._entabing = alias aux;
         }
     }
 
+    /**
+     * Fit the entabing buffer to take exactly the required amount of space
+     * */
     prv fn fitEntabing (mut self) {
-        let mut aux : [mut [c8]] = core::duplication::allocArray![c8] (self._len);
-        core::duplication::memCopy![c8] (self._entabing, alias aux);
-        self._entabing = alias aux;
+        if (self._entabingLen == 0us) {
+            self._entabing = [];
+        } else {
+            let mut aux : [mut [c8]] = core::duplication::allocArray![c8] (self._entabingLen);
+            core::duplication::memCopy![c8] (self._entabing, alias aux);
+            self._entabing = alias aux;
+        }
     }
 
 }
