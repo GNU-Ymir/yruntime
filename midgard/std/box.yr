@@ -1,0 +1,51 @@
+/**
+ * Box is a system to encapsulate non aliasable types (on the stack)
+ * onto aliasable types (on the heap). There is a mutable and an
+ * immutable version of the box. Unlike `Any` which does almost the
+ * same thing, Boxes don't have a super type common to every boxes.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in box;
+
+mod implem;
+
+/**
+ * A box class is a mutable pointer to a value that is allocated on the heap
+ * They can be used to change values of closure, inside a closure
+ * The inner value is not mutable
+ * @example:
+ * =============
+ * import std::box;
+ *
+ * fn foo () -> (dg () -> i32) {
+ *    let dmut x = Box::new (0);
+ *    let closure = move || {
+ *        x.get ()
+ *    };
+ *    x:.set(42);
+ *    return closure;
+ * }
+ *
+ * fn main ()
+ *     throws &AssertError
+ * {
+ *     let enclosedvalue = foo ();
+ *     assert (enclosedvalue () == 42);
+ * }
+ * =============
+ */
+@final
+pub class Box {T} over implem::IBox!{T, false} {
+    pub self (val : T)
+        with super (val)
+    {}
+}
+
+@final
+pub class Box {T of dmut J, class J} over implem::IBox!{T, true} {
+    pub self (dmut val : T)
+        with super (alias val)
+    {}
+}
