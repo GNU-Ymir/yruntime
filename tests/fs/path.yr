@@ -1,0 +1,298 @@
+in path;
+
+use std::fs::path;
+use std::io;
+
+use std::env;
+
+__test {
+    // Path are created from string, containing a path
+    let p = Path ("./some/dir");
+
+    // A custom separator can be used
+    let c = Path (".\\some\\windows\\dir\\", sep-> "\\");
+    let m = Path ("std::fs::path", sep-> "::");
+
+    // parts, return the elements composing the path
+    assert (c.parts () == [".", "some", "windows", "dir"], "a");
+    assert (m.parts () == ["std", "fs", "path"], "b");
+
+    // append a sub element to a path
+    let fp = p.push ("some_file.txt");
+
+    // append a path to a path from string, or a path
+    let sp = c.push ("another/path/str");
+    let sp2 = c.push (Path ("another/path/str"));
+
+    assert (sp == sp2, "c");
+
+    // file returns the last element of the path
+    assert (fp.file () == "some_file.txt" && fp.parts () == [".", "some", "dir", "some_file.txt"], "d");
+
+    // root returns the first element of the path
+    assert (fp.root () == ".", "e");
+
+    // path can be translated to string
+    assert (m.toStr () == "std/fs/path", "f");
+
+    // Or by using a custom separator
+    assert (m.toStr (sep-> "::") == "std::fs::path", "g");
+
+}
+
+
+__test {
+    // Create a path using the standard separator '/' ('\\' on windows)
+    let path = Path ("foo/bar/baz.txt");
+
+    // parts lists the different component of the path
+    assert (path.parts () == ["foo", "bar", "baz.txt"]);
+}
+
+__test {
+    let path = Path ("/foo/test.txt");
+
+    // using the standard separator '/'
+    assert (path.toStr () == "/foo/test.txt");
+
+    // Or using a custom separator '!'
+    assert (path.toStr (sep-> "!") == "!foo!test.txt");
+}
+
+
+__test {
+    let p = Path ("/some/root/dir");
+    let p2 = Path ("/");
+
+    assert (p != p2 && p == p2.push ("some/root/dir"));
+}
+
+
+__test {
+    let p = Path ("/some/root/dir");
+    let p2 = Path ("/");
+
+    assert (p != p2 && p == p2.push ("some/root/dir"));
+}
+
+__test {
+    let mut path = Path ("/");
+    path = path.push ("foo/bar/");
+    path = path.push ("test.txt");
+    assert (path.toStr () == "/foo/bar/test.txt");
+
+    // Example of inconsistent separators, that create no problem for the class
+    // but has to be kept in mind by the user
+    let mut ipath = Path ("std::fs::path", sep-> "::");
+    ipath = ipath.push ("some::dir/some::file", sep-> "/");
+
+    assert (ipath.parts () == ["std", "fs", "path", "some::dir", "some::file"]);
+}
+
+__test {
+    let mut path = Path ("/");
+
+    //  Pushing sub directories to the path (the last '/' is useless, and will be omitted)
+    path = path.push (Path ("foo/bar/"));
+
+    // append a filename to the path (the fact that it is a filename is up to the user)
+    path = path.push (Path ("test.txt"));
+
+    assert (path.toStr () == "/foo/bar/test.txt");
+}
+
+__test {
+    // Create an absolute path
+    let abs = Path ("/some/absolute/dir/test.txt");
+
+    // Because path is absolute the first element of parts is an empty string
+    assert (abs.parts () == ["", "some", "absolute", "dir", "test.txt"]);
+
+    // Create a relative path
+    let rel = Path ("./some/relative/dir/test.txt");
+
+    // It is a relative path, it does not contain an empty string at first index of parts
+    assert (rel.parts () == [".", "some", "relative", "dir", "test.txt"]);
+}
+
+
+__test {
+    let abs = Path ("/some/absolute/dir");
+    let rel = Path ("./some/relative/dir");
+
+    assert (abs.isAbsolute () && !rel.isAbsolute ());
+
+    // One can create an absolute path from a relative path using std::env::currentDir ()
+    let absFromRel = env::currentDir ().push (rel);
+    assert (absFromRel.isAbsolute ());
+}
+
+__test {
+    let root = Path ("/");
+    let cwd = Path (".");
+
+    // There is no way to create an empty path from a constructor
+    // But we can get one using a function that returns an empty path (for example parent, or commonPrefix)
+    let empty1 = root.parent ();
+    let empty2 = cwd.parent ();
+
+    assert (empty1.isEmpty () && empty2.isEmpty ());
+
+    // root is not empty, it contains one empty component
+    assert (!cwd.isEmpty () && !root.isEmpty ());
+
+    // Empty means it really contains nothing
+    assert (empty1.toStr () == "" && empty1.parts () == []);
+
+    // Empty path can still be used to create valid paths
+    let notEmpty = empty1.push (".");
+    assert (!notEmpty.isEmpty () && notEmpty == cwd);
+}
+
+
+__test {
+    let path = Path ("/foo/bar/baz.txt");
+
+    // Parent remove the last component of a path
+    let parent = path.parent ();
+
+    assert (parent.toStr () == "/foo/bar");
+
+    // A root path has an empty parent directory (empty does not mean root, it means empty)
+    let root = Path ("/");
+    assert (root.parent ().toStr () == "" && root.parent ().isEmpty ());
+}
+
+
+__test {
+    let path = Path ("/foo/bar/baz.txt");
+
+    // The filename is the last component of a path
+    assert (path.file () == "baz.txt");
+
+    // In case of empty path the file is simply empty
+    let empty = Path ("/").parent ();
+    assert (empty.file () == "");
+}
+
+
+__test {
+    let path = Path ("/foo/bar/baz.txt");
+
+    // root dir is defined by an empty part string at first index
+    assert (path.root () == "");
+
+    let path2 = Path ("foo/bar");
+    assert (path2.root () == "foo");
+
+    // Empty path root is undefined, but for convinience it just return an empty string
+    let empty = Path ("/").parent ();
+    assert (empty.root () == "");
+
+}
+
+__test {
+    let path = Path ("/foo/bar/baz.txt");
+
+    // Remove the .txt extension
+    assert (path.stripExtension ().file () == "baz");
+
+    let path2 = Path ("/foo/bar/baz.tar.gz");
+
+    // Remove the .gz extension an keep the .tar one
+    assert (path2.stripExtension ().file () == "baz.tar");
+
+    let path3 = Path ("/foo/bar/baz");
+
+    // Path has no extension, so it does nothing
+    assert (path3.stripExtension ().file () == "baz");
+
+    let path4 = Path ("/foo/bar/baz::txt");
+
+    // Using a custom token as extension delimiter, to remove ::txt extension
+    assert (path4.stripExtension (sep-> "::").file () == "baz");
+}
+
+__test {
+    let path = Path ("/foo/bar/baz.txt");
+    assert (path.extension () == "txt");
+
+    let path2 = Path ("/foo/bar/baz.tar.gz");
+    assert (path2.extension () == "gz");
+
+    // If path has no extension, simply return an empty string
+    let path3 = Path ("/foo/bar/baz");
+    assert (path3.extension () == "");
+
+    // A custom extension separator can be used
+    let path4 = Path ("/foo/bar/baz::txt");
+    assert (path4.extension (sep-> "::") == "txt");
+}
+
+__test {
+    let path = Path ("/foo/bar/baz").addExtension ("txt");
+    assert (path.file () == "baz.txt", "a");
+
+    let path2 = Path ("/foo/bar/baz.tar").addExtension ("gz");
+    assert (path2.file () == "baz.tar.gz", "b");
+
+    // empty path are not empty after adding an extension to them
+    let empty = Path ("").parent ().addExtension ("empty");
+    println (empty.file ());
+    assert (empty.file  () == ".empty", "c");
+}
+
+__test {
+    let root = Path ("/foo/bar");
+    let subPath = Path ("/foo/bar/baz/file.txt");
+
+    let cwd = Path ("./");
+    let relativePath = subPath.removePrefix (root);
+
+    // Create a new relative path from "./"
+    assert (cwd.push (relativePath).toStr () == "./baz/file.txt");
+}
+
+__test {
+    let root = Path ("/some/absolute/path");
+    let abs = Path ("/some/absolute/path/with/some/dirs");
+    let rel = Path ("./some/relative/dir");
+
+    assert (root.isPrefix (abs) && !root.isPrefix (rel));
+
+    // A path is a prefix of itself
+    assert (root.isPrefix (root) && rel.isPrefix (rel));
+}
+
+__test {
+    let abs1 = Path ("/some/absolute/path/leading/to/dir/1");
+    let abs2 = Path ("/some/absolute/path/with/other/dirs");
+
+    assert (abs1.commonPrefix (abs2) == Path ("/some/absolute/path"), "a");
+
+    // This is a commutative operation
+    assert (abs1.commonPrefix (abs2) == abs2.commonPrefix (abs1), "b");
+
+    // Evidently commonPrefix returns a prefix (when not empty)
+    assert (abs1.commonPrefix (abs2).isPrefix (abs1), "c");
+    assert (abs1.commonPrefix (abs2).isPrefix (abs2), "d");
+
+
+    let root = Path ("/");
+    let cwd = Path (".");
+
+    // If there is no common prefix an empty path is returned
+    assert (root.commonPrefix (cwd).isEmpty (), "e");
+
+    // In that case it is still a prefix to root nor cwd
+    assert (root.commonPrefix (cwd).isPrefix (root), "f");
+}
+
+
+__test {
+    let p = Path ("/path/to/somewhere");
+    let d = Path ("path/to/somewhere");
+
+    assert (p.removeRoot ().toStr () == "path/to/somewhere");
+    assert (d.removeRoot ().toStr () == "to/somewhere");
+}
