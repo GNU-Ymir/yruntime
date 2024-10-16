@@ -24,44 +24,42 @@ use std::time::instant;
  *   - FsError: if there was an error in the creation of the directory, cf FsErrorCode
  * @example:
  * ========================
- * import std::fs::sys;
- * import std::fs::path; // for Path
+ * use std::fs::{sys, path};
  *
- * createDir (Path::new ("./some/dir"s8));
- * assert (isDir (Path::new ("./some/dir"s8)));
+ * createDir (Path ("./some/dir"));
+ * assert (isDir (Path ("./some/dir")));
  *
  * // Creation of directory can be recursive
- * createDir (Path::new ("./some/dir/and/some/sub/directories/"s8), recursive-> true);
- * assert (isDir (Path::new ("./some/dir/and/some/sub/directories/"s8)));
+ * createDir (Path ("./some/dir/and/some/sub/directories/"), recursive-> true);
+ * assert (isDir (Path ("./some/dir/and/some/sub/directories/")));
  *
  * // Permission of created directory can be defined
- * createDir (Path::new ("./some/dir/small_permissions"s8), permission-> 0o600);
- * assert (isDir (Path::new ("./some/dir/small_permissions"s8)));
+ * createDir (Path ("./some/dir/small_permissions"), permission-> 0o600);
+ * assert (isDir (Path ("./some/dir/small_permissions")));
  * ========================
  */
-pub fn createDir (path : &Path, recursive : bool = false, permission : i32 = 0o775)
-    throws &FsError
+pub fn createDir (path : Path, recursive : bool = false, permission : i32 = 0o775)
+    throws FsError
 {
     let parent = path.parent ();
     if (isDir (parent)) {
         let code = etc::c::dirent::mkdir (path.toStr ().toStringZ (), permission);
         if (code == -1) {
-            throw FsError::new (errno ().to!(FsErrorCode) (), path.toStr ());
+            throw copy FsError (errors::to!{FsErrorCode} (errno ()), path.toStr ());
         }
     } else if (recursive) {
         {
-            if (parent.toStr () != ""s8) {
+            if (!parent.isEmpty ()) {
                 createDir (parent, recursive-> true, permission-> permission);
             }
         } catch {
-            x : &FsError => {
-                import std::conv;
-                throw FsError::new (x.code, path.toStr ());
+            FsError (code-> code) => {
+                throw copy FsError (code, path.toStr ());
             }
         }
         etc::c::dirent::mkdir (path.toStr ().toStringZ (), permission);
     } else {
-        throw FsError::new (FsErrorCode::PARENT_DONT_EXIST, path.parent ().toStr ());
+        throw copy FsError (FsErrorCode::PARENT_DONT_EXIST, path.parent ().toStr ());
     }
 }
 
@@ -78,20 +76,21 @@ pub fn createDir (path : &Path, recursive : bool = false, permission : i32 = 0o7
  * import std::fs::sys;
  * import std::fs::path; // for Path
  *
- * if isDir (Path::new ("./some/dir")) {
+ * if isDir (Path ("./some/dir")) {
  *    println ("Directory exists");
  * } else {
  *    println ("Directory does not exists");
  * }
  * ========================
  */
-pub fn isDir (path : &Path)-> bool {
+pub fn isDir (path : Path)-> bool {
     let dir = opendir (path.toStr ().toStringZ ());
-    let succ = dir !is null;
-    if (succ) {
+    if (dir != null) {
         closedir (dir);
+        true
+    } else {
+        false
     }
-    succ
 }
 
 /**
@@ -101,7 +100,7 @@ pub fn isDir (path : &Path)-> bool {
  *   - recursive: if true, remove the directory after removing all its content
  * @Warning: recursive deletion must be used very carefully
  * @throws:
- *    - &FsError:
+ *    - FsError:
  *          + the directory is not empty, (and the removing is not recursive)
  *          + the user lacks the permission
  *          + the path does not exists
@@ -109,37 +108,34 @@ pub fn isDir (path : &Path)-> bool {
  *          + other reasons
  * @example:
  * ========================
- * import std::fs::sys;
- * import std::fs::path; // for Path
+ * use std::fs::{sys, path};
  *
- * removeDir (Path::new ("./some/dir"));
- * assert (!isDir (Path::new ("./some/dir"s8)));
- * assert (isDir (Path::new ("./some"s8)));
+ * removeDir (Path ("./some/dir"));
+ * assert (!isDir (Path ("./some/dir")));
+ * assert (isDir (Path ("./some")));
  * ========================
  */
-pub fn removeDir (path : &Path, recursive : bool = false)
-    throws &FsError
+pub fn removeDir (path : Path, recursive : bool = false)
+    throws FsError
 {
     if (isDir (path)) {
         if (recursive) {
-            for i in readDir (path) {
-                match i {
-                    f : &FileEntry => { removeFile (f.path); }
-                    d : &DirEntry => {
-                        removeDir (d.path, recursive-> true);
-                    }
-                    fs : &FsEntry => {
-                        removeFsEntry (fs.path);
-                    }
+            for i in readDir (path) match i {
+                FsEntry (kind-> FsEntryKind::FILE, path-> p) => { removeFile (p); }
+                FsEntry (kind-> FsEntryKind::DIR, path-> p) => {
+                    removeDir (p, recursive-> true);
+                }
+                FsEntry (path-> p) => {
+                    removeFsEntry (p);
                 }
             }
         }
 
         if (etc::c::dirent::rmdir (path.toStr ().toStringZ ()) == -1) {
-            throw FsError::new (errno ().to!(FsErrorCode) (), path.toStr ());
+            throw copy FsError (errors::to!{FsErrorCode} (errno ()), path.toStr ());
         }
     } else {
-        throw FsError::new (FsErrorCode::PARENT_DONT_EXIST, path.toStr ());
+        throw copy FsError (FsErrorCode::PARENT_DONT_EXIST, path.toStr ());
     }
 }
 
@@ -159,33 +155,30 @@ pub fn removeDir (path : &Path, recursive : bool = false)
  *      + other reasons
  * @example:
  * =====================
- * import std::fs::sys;
- * import std::fs::path; // For Path
+ * use std::fs::{sys, path};
  *
- * copyDir (Path::new ("./some/dir"s8), Path::new ("/tmp/some/other/dir"s8), recursive-> true, create-> true);
- * assert (isDir (Path::new ("/tmp/some/other/dir"s8)));
+ * copyDir (Path ("./some/dir"), Path ("/tmp/some/other/dir"), recursive-> true, create-> true);
+ * assert (isDir (Path ("/tmp/some/other/dir")));
  * =====================
  */
-pub fn copyDir (src : &Path, dst : &Path, recursive : bool = false, create : bool = false)
-    throws &FsError
+pub fn copyDir (src : Path, dst : Path, recursive : bool = false, create : bool = false)
+    throws FsError
 {
     if isDir (src) {
         if (create && !isDir (dst)) { createDir (dst, recursive-> true); }
-        else if !isDir (dst) { throw FsError::new (FsErrorCode::PARENT_DONT_EXIST, dst.toStr ()); }
-        for i in readDir (src) {
-            match i {
-                f : &FileEntry => { copyFile (f.path, dst.push (f.path.removePrefix (src))); }
-                d : &DirEntry => {
-                    createDir (dst.push (d.path.removePrefix (src)));
-                    if (recursive) copyDir (d.path, dst.push (d.path.removePrefix (src)), recursive-> true, create-> create);
-                }
-                fs : &FsEntry => {
-                    copyFsEntry (fs.path, dst.push (fs.path.removePrefix (src)));
-                }
+        else if !isDir (dst) { throw copy FsError (FsErrorCode::PARENT_DONT_EXIST, dst.toStr ()); }
+        for i in readDir (src) match i {
+            FsEntry (kind-> FsEntryKind::FILE, path-> p) => { copyFile (p, dst.push (p.removePrefix (src))); }
+            FsEntry (kind-> FsEntryKind::DIR, path-> p) => {
+                createDir (dst.push (p.removePrefix (src)));
+                if (recursive) copyDir (p, dst.push (p.removePrefix (src)), recursive-> true, create-> create);
+            }
+            FsEntry (path-> p) => {
+                copyFsEntry (p, dst.push (p.removePrefix (src)));
             }
         }
     } else {
-        throw FsError::new (FsErrorCode::PARENT_DONT_EXIST, src.toStr ());
+        throw copy FsError (FsErrorCode::PARENT_DONT_EXIST, src.toStr ());
     }
 }
 
@@ -193,80 +186,42 @@ pub fn copyDir (src : &Path, dst : &Path, recursive : bool = false, create : boo
  * @returns: an iterator over the entries of a directory
  * @example:
  * ===
- * import std::fs::sys;
+ * import std::fs::{sys, path};
  *
  * // List entries of a directory
- * for entry in readDir (Path::new ("./some/dir"s8)) {
+ * for entry in readDir (Path ("./some/dir")) {
  *     println (entry);
  * }
  * ===
  */
-pub fn readDir (path : &Path)-> dmut &DirEntry
-    throws &FsError
+pub fn readDir (path : Path)-> FsEntry
+    throws FsError
 {
     if (isDir (path)) {
-        return DirEntry::new (path);
+        return FsEntry (path, FsEntryKind::DIR);
     }
 
-    throw FsError::new (errno ().to!(FsErrorCode) (), path.toStr ())
+    throw copy FsError (errors::to!{FsErrorCode} (errno ()), path.toStr ())
 }
 
-
-__version LINUX {
-
-    /**
-     * Create a temporary directory, and return its path
-     * @params:
-     *    - root: the path of the parent temporary directory in which the directory will be created
-     *    - prefix: prefix to add at the beginning of the name of the temp directory
-     * @returns: the path of the created temporary directory
-     */
-    pub fn tempDirectory (root : &Path = Path::new ("/tmp"s8), prefix : [c8] = ""s8)-> &Path
-        throws &FsError
-    {
-        let template = root.push (prefix ~ "XXXXXX"s8).toStr ();
-        let res = mkdtemp(template.toStringZ ());
-        if (res !is null) {
-            {
-                Path::new (res.fromStringZ ())
-            }  catch {
-                _ => throw FsError::new (FsErrorCode::IO_ERROR, root.toStr ());
-            }
-        } else throw FsError::new (errno ().to!(FsErrorCode) (), root.toStr ());
-    }
-}
-
-__version WINDOWS {
-
-    import std::conv;
-
-    extern (C) fn GetTempPathA (len : u32, dmut buf : &c8)-> u32;
-
-    /**
-     * Create a temporary directory, and return its path
-     */
-    pub fn tempDirectory ()-> &Path
-        throws &FsError
-    {
-        let dmut rootBuf : [c8] = ['\u{0}'c8 ; 255u32];
-        let size = GetTempPathA (255u32, alias rootBuf.ptr);
-        if (size == 0u32) throw FsError::new (FsErrorCode::IO_ERROR, ""s8);
-
-        let mut i = 0;
-        let dmut rootPath = Path::new (rootBuf[0u32 .. size], sep-> '\\'c8);
-        loop {
-            let aux = rootPath.push ("ymir_temp_"s8 ~ (i.to![c8] ()));
-            if (!isDir (aux)) {
-                createDir (aux);
-                break aux;
-            }
-
-            i += 1;
+/**
+ * Create a temporary directory, and return its path
+ * @params:
+ *    - root: the path of the parent temporary directory in which the directory will be created
+ *    - prefix: prefix to add at the beginning of the name of the temp directory
+ * @returns: the path of the created temporary directory
+ */
+pub fn tempDirectory (root : Path = Path ("/tmp"), prefix : [c8] = "")-> Path
+    throws FsError
+{
+    let template = root.push (prefix ~ "XXXXXX").toStr ();
+    let res = etc::c::files::mkdtemp (template.toStringZ ());
+    if (res != null) {
+        unsafe {
+            Path (res.fromStringZ ())
         }
-    }
-
+    } else throw copy FsError (errors::to!{FsErrorCode} (errno ()), root.toStr ());
 }
-
 
 /**
  * Create a new file without openning it
@@ -279,18 +234,18 @@ __version WINDOWS {
  *         + path is invalid
  * @example:
  * =================
- * import std::fs;
+ * use std::fs::{sys, path};
  *
- * createFile (Path::new ("./some/dir/file.txt"s8));
- * assert (isFile (Path::new ("./some/dir/file.txt"s8));
+ * createFile (Path ("./some/dir/file.txt"));
+ * assert (isFile (Path ("./some/dir/file.txt"));
  * =================
  */
-pub fn createFile (path : &Path)
-    throws &FsError
+pub fn createFile (path : Path)
+    throws FsError
 {
-    let f = etc::c::files::fopen (path.toStr ().toStringZ (), "w"s8.ptr);
-    if (f is null) {
-        throw FsError::new (errno ().to!(FsErrorCode) (), path.toStr ())
+    let f = etc::c::files::fopen (path.toStr ().toStringZ (), "w".ptr);
+    if (f == null) {
+        throw copy FsError (errors::to!(FsErrorCode) (errno ()), path.toStr ())
     }
 
     etc::c::files::fclose (f);
@@ -302,24 +257,23 @@ pub fn createFile (path : &Path)
  * @throws: FsError, if the path does not refer to a file
  * @example:
  * ============
- * import std::fs::sys;
- * import std::fs::path;
+ * use std::fs::{sys, path};
  *
- * let path1 = Path::new ("./some/dir/file.txt"s8);
- * let path2 = Path::new ("./some/dir/file2.txt"s8);
+ * let path1 = Path ("./some/dir/file.txt");
+ * let path2 = Path ("./some/dir/file2.txt");
  *
  * if (fileDate (path1) > fileDate (path2)) {
- *     println ("Path ", path2.toStr (), " is older than ", path1.toStr ());
+ *     println ("Path ", path2, " is older than ", path1);
  * }
  * ============
  */
-pub fn fileDate (path : &Path)-> std::time::instant::Instant
-    throws &FsError
+pub fn fileDate (path : Path)-> std::time::instant::Instant
+    throws FsError
 {
-    let mut fileStat = etc::c::files::stat_t::init;
+    let mut fileStat = etc::c::files::stat_t ();
     let f = etc::c::files::stat (path.toStr ().toStringZ (), alias &fileStat);
     if (f != 0) {
-        throw FsError::new (errno ().to!(FsErrorCode) (), path.toStr ());
+        throw copy FsError (errors::to!{FsErrorCode} (errno ()), path.toStr ());
     }
 
     Instant (fileStat.st_mtime, 0u64)
@@ -334,14 +288,14 @@ pub fn fileDate (path : &Path)-> std::time::instant::Instant
  *    - false if the file does not exists or is not a file, or the current user does not have permission to access it
  * @example:
  * =================
- * import std::fs;
+ * use std::fs::_;
  *
- * if (isFile (Path::new ("./some/dir/file.txt"s8))) {
+ * if (isFile (Path ("./some/dir/file.txt"))) {
  *     println ("File exists");
  * }
  * =================
  */
-pub fn isFile (path : &Path)-> bool {
+pub fn isFile (path : Path)-> bool {
     etc::c::files::access (path.toStr ().toStringZ (), AccessMode::F_OK) == 0
 }
 
@@ -352,14 +306,14 @@ pub fn isFile (path : &Path)-> bool {
  * @returns: true if the file exists and is writable
  * @example:
  * =================
- * import std::fs;
+ * use std::fs::_;
  *
- * if (isWritable (Path::new ("./some/dir/file.txt")) {
+ * if (isWritable (Path ("./some/dir/file.txt")) {
  *     println ("File is writable");
  * }
  * =================
  */
-pub fn isWritable (path : &Path)-> bool {
+pub fn isWritable (path : Path)-> bool {
     etc::c::files::access (path.toStr ().toStringZ (), AccessMode::W_OK) == 0
 }
 
@@ -370,14 +324,14 @@ pub fn isWritable (path : &Path)-> bool {
  * @returns: true if the file exists and is readable
  * @example:
  * =================
- * import std::fs;
+ * use std::fs::_;
  *
- * if (isReadable (Path::new ("./some/dir/file.txt")) {
+ * if (isReadable (Path ("./some/dir/file.txt")) {
  *     println ("File is readable");
  * }
  * =================
  */
-pub fn isReadable (path : &Path)-> bool {
+pub fn isReadable (path : Path)-> bool {
     etc::c::files::access (path.toStr ().toStringZ (), AccessMode::R_OK) == 0
 }
 
@@ -388,14 +342,14 @@ pub fn isReadable (path : &Path)-> bool {
  * @returns: true if the file exists and is executable
  * @example:
  * =================
- * import std::fs;
+ * use std::fs::_;
  *
- * if (isExecutable (Path::new ("./some/dir/file.txt")) {
+ * if (isExecutable (Path ("./some/dir/file.txt")) {
  *     println ("File is readable");
  * }
  * =================
  */
-pub fn isExecutable (path : &Path)-> bool {
+pub fn isExecutable (path : Path)-> bool {
     etc::c::files::access (path.toStr ().toStringZ (), AccessMode::X_OK) == 0
 }
 
@@ -404,20 +358,20 @@ pub fn isExecutable (path : &Path)-> bool {
  * @params:
  *    - path: the path of the file, absolute or relative to cwd
  * @throws:
- *   - &FsError:
+ *   - FsError:
  *       + the file does not exists
  *       + permission denied
  *       + this is not a file
  */
-pub fn removeFile (path : &Path)
-    throws &FsError
+pub fn removeFile (path : Path)
+    throws FsError
 {
     if (isFile (path)) {
         if unlink (path.toStr ().toStringZ ()) == -1 {
-            throw FsError::new (errno ().to!(FsErrorCode) (), path.toStr ())
+            throw copy FsError (errors::to!{FsErrorCode} (errno ()), path.toStr ())
         }
     } else {
-        throw FsError::new (FsErrorCode::PERMISSION_DENIED, path.toStr ())
+        throw copy FsError (FsErrorCode::PERMISSION_DENIED, path.toStr ())
     }
 }
 
@@ -427,31 +381,28 @@ pub fn removeFile (path : &Path)
  *    - src: the path of the file to copy
  *    - dst: the path of the file created by the copy (path of the file, not of the parent directory)
  * @throws:
- *   - &FsError:
+ *   - FsError:
  *      + the src file does not exists
  *      + the dst file already exists
  *      + permission denied
  *      + this is not a file
  * @example:
  * ===
- * import std::fs::sys;
+ * use std::fs::{sys, path};
  *
- * assert (isFile (Path::new ("./some/dir/file.txt"s8)));
- * assert (isDir (Path::new ("./some/other/dir"s8)));
+ * assert (isFile (Path ("./some/dir/file.txt")));
+ * assert (isDir (Path ("./some/other/dir")));
  *
- * copyFile (Path::new ("./some/dir/file.txt"s8), Path::new ("./some/other/dir/copy.txt"s8));
- * assert (isFile (Path::new ("./some/other/dir/copy.txt"s8)));
+ * copyFile (Path ("./some/dir/file.txt"), Path ("./some/other/dir/copy.txt"));
+ * assert (isFile (Path ("./some/other/dir/copy.txt")));
  * ===
  */
-pub fn copyFile (src : &Path, dst : &Path)
-    throws &FsError
+pub fn copyFile (src : Path, dst : Path)
+    throws FsError
 {
-    import std::fs::file;
-    with dmut srcF = File::open (src) {
-        with dmut dstF = File::create (dst, write-> true) {
-            dstF:.write (srcF:.readAll ());
-        }
-    }
+    let dmut srcF = fs::file::File::open (src);
+    let dmut dstF = fs::file::File::create (dst, write-> true);
+    dstF:.write (srcF:.readAll ());
 }
 
 /**
@@ -464,15 +415,15 @@ pub fn copyFile (src : &Path, dst : &Path)
  *       + permission denied
  *       + this is a file, or a dir
  */
-pub fn removeFsEntry (path : &Path)
-    throws &FsError
+pub fn removeFsEntry (path : Path)
+    throws FsError
 {
     if (!isDir (path) && !isFile (path)) {
         if unlink (path.toStr ().toStringZ ()) == -1 {
-            throw FsError::new (errno ().to!(FsErrorCode) (), path.toStr ())
+            throw copy FsError (errors::to!{FsErrorCode} (errno ()), path.toStr ())
         }
     } else {
-        throw FsError::new (FsErrorCode::PERMISSION_DENIED, path.toStr ())
+        throw copy FsError (FsErrorCode::PERMISSION_DENIED, path.toStr ())
     }
 }
 
@@ -490,23 +441,18 @@ pub fn removeFsEntry (path : &Path)
  *       + this is not a symbolic link
  *       + others
  */
-pub fn copyFsEntry (src : &Path, dst : &Path)
-    throws &FsError
+pub fn copyFsEntry (src : Path, dst : Path)
+    throws FsError
 {
-    if isReadable (dst) { throw FsError::new (FsErrorCode::ALREADY_EXISTS, dst.toStr ()); }
-    __version LINUX {
-        if !isDir (src) && !isFile (src) {
-            let dmut buf = ['\u{0}'c8 ; 255us];
-            if readlink (src.toStr ().toStringZ (), alias buf [].ptr, 255) == -1 {
-                throw FsError::new (errno ().to!(FsErrorCode) (), src.toStr ());
-            }
-
-            if symlink (dst.toStr ().toStringZ (), buf [].ptr) == -1 {
-                throw FsError::new (errno ().to!(FsErrorCode) (), src.toStr ());
-            }
+    if isReadable (dst) { throw copy FsError (FsErrorCode::ALREADY_EXISTS, dst.toStr ()); }
+    if !isDir (src) && !isFile (src) {
+        let dmut buf = ['\u{0}' ; 255us];
+        if readlink (src.toStr ().toStringZ (), alias buf.ptr, 255) == -1 {
+            throw copy FsError (errors::to!{FsErrorCode} (errno ()), src.toStr ());
         }
-    } else {
-        src; dst;
-    }
 
+        if symlink (dst.toStr ().toStringZ (), buf.ptr) == -1 {
+            throw copy FsError (errors::to!{FsErrorCode} (errno ()), src.toStr ());
+        }
+    }
 }

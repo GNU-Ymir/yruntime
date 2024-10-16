@@ -1,0 +1,499 @@
+/**
+ * This module defines the File type, which provides access to files in the filesystem. A File can be opened for reading or writing based on the specified options during the open operation. As an entity, a File is automatically closed when it goes out of scope.
+ * However, like all entity types, only one variable can own the file handle at a time. This ownership rule prevents storing files in collections, ensuring that open file handles do not remain unintentionally active.
+ *
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ *
+ * <hr>
+ *
+ * @example:
+ * Create a file and write a string in it :
+ * ===
+ * import std::fs::file;
+ * import std::file::path; // For Path
+ *
+ * // Create a file named "foo.txt", and write something in it
+ * {
+ *     let dmut file = File::create (Path::new ("foo.txt"), write-> true) {
+ *     file:.write ("Hello World!");
+ * } catch {
+ *     err : &FsError => { // creation failed for some reason
+ *         println (err);
+ *     }
+ * }
+ * ===
+ * <br>
+ * Open an existing file and read its content :
+ * ===
+ * use std::fs::{file, path};
+ *
+ * let content = {
+ *     let dmut file = File::open (Path::new ("foo.txt"));
+ *     file:.readAll () // read the all the content of the file
+ * } catch {
+ *     // File does not exist or permission denied
+ *     err : &FsError => { "" } // return an empty string
+ * };
+ *
+ * println (content);
+ * ===
+ *
+ * <br>
+ * Open an existing file and append content to it :
+ * ===
+ * use std::fs::{file, path};
+ *
+ * {
+ *   let dmut file = File::open (Path::new ("foo.txt"), append-> true);
+ *   file:.write ("Appending content");
+ *   // files are entities, so automatically closed when scope is exited
+ * } catch {
+ *     // File does not exist or permission denied
+ *     err : &FsError => {
+ *         println (err);
+ *     }
+ * }
+ * ===
+ */
+
+in file;
+
+use std::fs::{path, errors};
+use std::conv;
+use etc;
+use etc::runtime::errno;
+
+/**
+ * This type is a reference to a file in the file system.
+ */
+pub entity File {
+
+    prv let dmut _handle : *(void) = null;
+
+    prv let mut _filename : Path = Path ();
+
+    prv let _read : bool = false;
+
+    prv let _write : bool = false;
+
+    prv let _append : bool = false;
+
+    /**
+     * Create a file in the filesystem.
+     * @params:
+     *    - path: the path of the file to create
+     *    - read: if true open the file in read mode (can be composed with write or append)
+     *    - write: if true open the file in write mode (can be composed with read)
+     *    - read: if true open the file in append mode (can be composed with read)
+     * @throws:
+     *     - FsError, if the file failed to be created or opened.
+     * @info: if the file already existed, it will be erased.
+     */
+    pub self create (path : Path, read : bool = true, write : bool = false, append : bool = false)
+        with _filename = path,
+             _read = read,
+             _write = write && !append,
+             _append = append
+        throws FsError
+    {
+        std::fs::sys::createFile (path);
+        self:.open ();
+    }
+
+    /**
+     * Open an existing file in the file system.
+     * @params:
+     *    - path: the path of the file to create
+     *    - read: if true open the file in read mode (can be composed with write or append)
+     *    - write: if true open the file in write mode (can be composed with read)
+     *    - read: if true open the file in append mode (can be composed with read)
+     * @throws:
+     *    - FsError, if the file does not exists, or current user does not have the proper permissions
+     * @info: if append and written are set to true, append is prioritized
+     */
+    pub self open (path : Path, read : bool = true, write : bool = false, append : bool = false)
+        with _filename = path,
+             _read = read,
+             _write = write && !append,
+             _append = append
+        throws FsError
+    {
+        if fs::sys::isDir (path) || !fs::sys::isReadable (path) {
+            throw copy FsError (FsErrorCode::NOT_A_FILE, self._filename.toStr ());
+        }
+        self:.open ();
+    }
+
+    /**
+     * Open the file
+     */
+    prv fn open (mut self)
+        throws FsError
+    {
+        let mode = self.createMode ();
+        self._handle = c::files::fopen (self._filename.toStr ().toStringZ (), mode.ptr);
+
+        if (self._handle == null) {
+            throw copy FsError (fs::errors::to!(FsErrorCode) (errno ()), self._filename.toStr ());
+        }
+    }
+
+    /**
+     * Read all the content contained in the file from the current cursor position.
+     * @throws:
+     *   - FsError: if the file is not opened, or not readable.
+     * @example:
+     * ==============
+     * use std::fs::{file, path};
+     *
+     * {
+     *     // Create a file in read and write mode (read is set by default)
+     *     let dmut fs = File::create (Path ("foo.txt"), write-> true);
+     *     fs:.write ("Hello World !");
+     *
+     *     // Put the cursor to the beginning of the file
+     *     fs:.seek (0);
+     *
+     *     let res = fs:.readAll ();
+     *     assert (res == "Hello World !");
+     * } catch {
+     *      err : _ => {
+     *          println (err);
+     *      }
+     * }
+     * ==============
+     */
+    pub fn readAll (mut self) -> dmut [c8]
+        throws FsError
+    {
+        if (self._handle == null) {
+            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+        } else if (!self._read) {
+            throw copy FsError (FsErrorCode::NOT_READABLE, self._filename.toStr ());
+        }
+
+        if (!c::files::feof (self._handle)) {
+            let cursor = c::files::ftell (self._handle);
+            c::files::fseek (self._handle, 0u32, c::files::SeekWhence::SEEK_END);
+            let len = c::files::ftell (self._handle) - cursor;
+            c::files::fseek (self._handle, cursor, c::files::SeekWhence::SEEK_SET);
+
+            if (len != 0u32) {
+                let dmut res = core::duplication::allocArray!{c8} (cast!usize (len));
+                c::files::fread (alias cast!{dmut *void} (res.ptr), c8::size, len, alias self._handle);
+
+                return alias res
+            }
+        }
+
+        []
+    }
+
+    /**
+     * Read the content of a file until the delimiter text if found or EOF.
+     * @params:
+     *    - delim: the delimiter to find in the file content to stop the reading.
+     * @throws:
+     *   - FsError: if the file is not opened, or not readable
+     * @example:
+     * ==============
+     * use std::fs::{file, path};
+     *
+     * {
+     *     let dmut fs = File::create (Path ("foo.txt"), write-> true);
+     *     fs:.write ("Hello World !");
+     *
+     *     // Put the cursor to the begin of the file
+     *     fs:.seek (0);
+     *
+     *     let res = fs:.readUntil ("Wor");
+     *     assert (res == "Hello Wor");
+     *
+     *     let end = fs:.readAll ();
+     *     assert (end == "ld !");
+     * } catch {
+     *      err : _ => {
+     *          println (err);
+     *      }
+     * }
+     * ==============
+     */
+    pub fn readUntil (mut self, delim : [c8])-> dmut [c8]
+        throws FsError
+    {
+        if (self._handle == null) {
+            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+        } else if (!self._read) {
+            throw copy FsError (FsErrorCode::NOT_READABLE, self._filename.toStr ());
+        }
+
+        let dmut res = copy std::collection::vec::Vec!{c8} ();
+        let mut current = 0u64;
+
+        while (!c::files::feof (self._handle) && current < delim.len) {
+            let u : u32 = c::files::fgetc (alias self._handle);
+            if (u >= u8::max) break {} // feof is not triggered before trying to read it, so this u can be eof == 256
+
+            let c = cast!c8 (cast!u8 (u));
+            res:.push (c);
+            {
+                if (delim [current] == c) { current += 1; }
+                else { current = 0; }
+            }
+        }
+
+        let dmut aux = core::duplication::allocArray!{c8} (res.len);
+        core::duplication::memCopy!{c8} (res[], alias aux);
+
+        return alias aux;
+    }
+
+    /**
+     * Write text in a file.
+     * @params:
+     *    - text: the text to write in the file.
+     * @throws:
+     *   - FsError: if the file is not opened, or not writable
+     * @example:
+     * ===
+     * use std::fs::{file, path};
+     *
+     * {
+     *      let dmut file = File::open (Path ("foo.txt"), write-> true);
+     *      file:.write ("Some text");
+     * } catch {
+     *      err : &FsError => {
+     *          println (err);
+     *      }
+     * }
+     * ===
+     */
+    pub fn write (mut self, text : [c8]) -> void
+        throws FsError
+    {
+        if (self._handle == null) {
+            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+        } else if (!self._write && !self._append) {
+            throw copy FsError (FsErrorCode::NOT_WRITABLE, self._filename.toStr ());
+        }
+
+        c::files::fwrite (cast!{*void} (text.ptr), c8::size, cast!{u32} (text.len), alias self._handle);
+    }
+
+
+    /**
+     * Read all content contained in the file from the current cursor position in byte mode.
+     * @throws:
+     *   - FsError: if the file is not opened, or not readable
+     * @example:
+     * ==============
+     * use std::fs::{file, path};
+     *
+     * {
+     *     let dmut fs = File::create (Path::new ("foo.txt"), write-> true);
+     *     fs:.write ("Hello World !");
+     *     fs:.seek (0);
+     *
+     *     let res : [u8] = fs:.readBytesAll ();
+     *     assert (res == [72u8, 101u8, 108u8, 108u8, 111u8, 32u8, 87u8, 111u8, 114u8, 108u8, 100u8, 32u8, 33u8]);
+     * } catch {
+     *      err : _ => {
+     *          println (err);
+     *      }
+     * }
+     * ==============
+     */
+    pub fn readBytesAll (mut self) -> dmut [u8]
+        throws FsError
+    {
+        if (self._handle == null) {
+            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+        } else if (!self._read) {
+            throw copy FsError (FsErrorCode::NOT_READABLE, self._filename.toStr ());
+        }
+
+        if (!c::files::feof (self._handle)) {
+            let cursor = c::files::ftell (self._handle);
+            c::files::fseek (self._handle, 0u32, c::files::SeekWhence::SEEK_END);
+            let len = c::files::ftell (self._handle) - cursor;
+            c::files::fseek (self._handle, cursor, c::files::SeekWhence::SEEK_SET);
+
+            if (len != 0u32) {
+                let dmut res = core::duplication::allocArray!{u8} (cast!(usize) (len));
+                c::files::fread (alias cast!{dmut *void} (res.ptr), u8::size, cast!(u32) (len), alias self._handle);
+
+                return alias res
+            }
+        }
+
+        []
+    }
+
+    /**
+     * Read the content of a file until the delimiter bytes is found or EOF.
+     * @params:
+     *    - delim: the delimiter to find in the file content to stop the reading.
+     * @throws:
+     *   - FsError: if the file is not opened, are not readable
+     * @example:
+     * ==============
+     * use std::fs::{file, path};
+     *
+     * {
+     *     let dmut fs = File::create (Path::new ("foo.txt"), write-> true);
+     *     fs:.write ("Hello World !");
+     *     fs:.seek (0);
+     *
+     *     let res : [u8] = fs:.readBytesUntil ([87u8, 111u8, 114u8]);
+     *     assert (res == [72u8, 101u8, 108u8, 108u8, 111u8, 32u8, 87u8, 111u8, 114u8]);
+     *
+     *     let end = fs:.readAll ();
+     *     assert (end == "ld !");
+     * } catch {
+     *      err : _ => {
+     *          println (err);
+     *      }
+     * }
+     * ==============
+     */
+    pub fn readBytesUntil (mut self, delim : [u8])-> dmut [u8]
+        throws FsError
+    {
+        if (self._handle == null) {
+            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+        } else if (!self._read) {
+            throw copy FsError (FsErrorCode::NOT_READABLE, self._filename.toStr ());
+        }
+
+        let dmut res = copy std::collection::vec::Vec!{u8} ();
+        let mut current = 0u64;
+
+        while (!c::files::feof (self._handle) && current < delim.len) {
+            let u : u32 = c::files::fgetc (alias self._handle);
+            if (u >= u8::max) break {} // feof is not triggered before trying to read it, so this u can be eof == 256
+
+            let c = cast!{u8} (u);
+            res:.push (c);
+            {
+                if (delim [current] == c) { current += 1u64; }
+                else { current = 0u64; }
+            }
+        }
+
+        let dmut aux = core::duplication::allocArray!{u8} (res.len);
+        core::duplication::memCopy!u8 (res[], alias aux);
+
+        return alias aux;
+    }
+
+    /**
+     * Write some bytes to a file.
+     * @params:
+     *    - text: the bytes to write in the file
+     * @throws:
+     *   - FsError: if the file is not opened, are not writable
+     * @example:
+     * ===
+     * import std::fs::file, std::fs::path;
+     *
+     * with dmut file = File::open (Path::new ("foo.txt"), write-> true) {
+     *      file:.writeBytes ([83u8, 111u8, 109u8, 101u8, 32u8, 84u8, 101u8, 120u8, 116u8]);
+     * } catch {
+     *      err : &FsError => {
+     *          println (err);
+     *      }
+     * }
+     * ===
+     */
+    pub fn writeBytes (mut self, text : [u8]) -> void
+        throws FsError
+    {
+        if (self._handle == null) {
+            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+        } else if (!self._write && !self._append) {
+            throw copy FsError (FsErrorCode::NOT_WRITABLE, self._filename.toStr ());
+        }
+
+        c::files::fwrite (cast!{*void} (text.ptr), u8::size, cast!(u32) (text.len), alias self._handle);
+    }
+
+
+    /**
+     * Move the position of the cursor of the file
+     * @info: the cursor position is relative to the beginning of the file in number of bytes.
+     * @throws:
+     *   - FsError: if the file is not opened
+     */
+    pub fn seek (mut self, cursor : u32)-> void
+        throws FsError
+    {
+        if (self._handle == null) {
+            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+        }
+
+        c::files::fseek (self._handle, cursor, c::files::SeekWhence::SEEK_SET);
+    }
+
+    /**
+     * Tell the position of the cursor in the file relative to the beginning of the file in number of bytes.
+     * @throws:
+     *   - FsError: if the file is not opened
+     */
+    pub fn tell (self)-> u32
+        throws FsError
+    {
+        if (self._handle == null) {
+            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+        }
+
+        c::files::ftell (self._handle)
+    }
+
+    /**
+     * @returns: the len of the file (from current cursor position to end) in number of bytes.
+     */
+    pub fn len (self)-> u32
+        throws FsError
+    {
+        if self._handle == null {
+            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+        }
+
+        let cursor = self.tell ();
+        c::files::fseek (self._handle, 0u32, c::files::SeekWhence::SEEK_END);
+        let len = self.tell ();
+        c::files::fseek (self._handle, cursor, c::files::SeekWhence::SEEK_SET);
+
+        len
+    }
+
+    /**
+     * Close the file.
+     * @info: if the file was not open, this method does nothing
+     */
+    pub fn close (mut self) {
+        if (self._handle != null) {
+            c::files::fclose (alias self._handle);
+            self._handle = null;
+        }
+    }
+
+    /**
+     * Create the mode of reading
+     */
+    prv fn createMode (self)-> [c8] {
+        if (self._write) return "r+";
+        if (self._read && self._append) return "a+";
+        if (self._append) return "a";
+
+        return "r";
+    }
+
+    /**
+     * Close the file when the entity is destroyed
+     */
+    __dtor (mut self) {
+        self:.close ();
+    }
+}

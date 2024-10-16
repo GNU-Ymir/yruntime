@@ -30,8 +30,10 @@ pub enum : u32
  */
 pub record stat_t {
     pub let padd : [u8 ; 88u32] = [0u8 ; 88u32];
-    pub let st_mtime : u64;
-    pub let padd2 : [u8 ; 48u8];
+    pub let st_mtime : u64 = 0;
+    pub let padd2 : [u8 ; 48u8] = [0 ; 48];
+
+    pub self () {}
 
     pub self (st_mtime : u64,
               padd : [u8 ; 88] = [0u8 ; 88],
@@ -43,20 +45,16 @@ pub record stat_t {
 }
 
 pub extern (C) fn fopen (filename : *c8, mode : *c8)-> dmut *void;
-pub extern (C) fn fclose (dmut handle : *c8);
-pub extern (C) fn fseek (dmut handle : *void, pos : u32, cursor : SeekWhence);
+pub extern (C) fn fclose (dmut handle : *void);
+pub extern (C) fn fseek (handle : *void, pos : u32, cursor : SeekWhence);
 pub extern (C) fn ftell (handle : *void)-> u32;
-pub extern (C) fn fgets (dmut buf : *(c8), len : u32, handle : *void)-> i32;
+pub extern (C) fn fgets (dmut buf : *(c8), len : u32, dmut handle : *void)-> i32;
 pub extern (C) fn fread (dmut buf : *void, blockSize : u32, len : u32, dmut handle : *void)-> i32;
 pub extern (C) fn feof (handle : *void)-> bool;
-pub extern (C) fn fgetc (handle : *void)-> u32;
+pub extern (C) fn fgetc (dmut handle : *void)-> u32;
 pub extern (C) fn fwrite (text : *void, blockSize : u32, len : u32, dmut handle : *void);
 pub extern (C) fn access (name : *c8, mode : AccessMode)-> i32;
 pub extern (C) fn stat (name : *c8, dmut stat : *stat_t)-> i32;
-
-__version LINUX {
-    pub extern (C) fn fcntl (fd : i32, type : FileFlags, flag : u32)-> u32;
-    pub extern (C) fn mkdtemp (template : *c8)-> *c8;
-    pub extern (C) fn pipe (streams : *(i32))-> i32;
-
-}
+pub extern (C) fn fcntl (fd : i32, type : FileFlags, flag : u32)-> u32;
+pub extern (C) fn mkdtemp (template : *c8)-> *c8;
+pub extern (C) fn pipe (streams : *(i32))-> i32;
