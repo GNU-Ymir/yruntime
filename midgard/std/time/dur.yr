@@ -1,0 +1,739 @@
+/**
+ * This module implements the structure `Duration` and some utility
+ * function to encode a time duration.  You may note that there is no
+ * function for the biggest duration supported by this module is
+ * weeks. This is because a month and a year have a fluctuating time
+ * duration (28 to 31 days for months and 365 to 366 days for a
+ * year). An implementation of date is under consideration to manage
+ * duration that are relative to a time instant and thus have known
+ * and computable durations.
+ *
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @example:
+ * ===
+ * use std::time::dur;
+ *
+ * let a_sec = (1).seconds (); // a duration of one second
+ * let a_week = (1).weeks (); // a duration of a week
+ *
+ * // A duration of 12 weeks, 3 days, 8 hours and 12 milliseconds
+ * let an_arbitrary_dur = Duration (w-> 12u64, d-> 3u64, h-> 8u64, ms-> 12u64);
+ *
+ * // Duration are comparable
+ * assert (a_sec < a_week);
+ * assert (an_arbitrary_dur > a_week);
+ *
+ * // Functions can be used to extract sub duration information
+ * assert (an_arbitrary_dur.weeks == 12u64 && an_arbitrary_dur.days == 3u64);
+ *
+ * // Basic arithmetic can be used on duration (addition, substraction and division)
+ * let another_duration = a_week + a_sec;
+ *
+ * // A duration can be negative
+ * let negitave_duration = (12).second () - (2).minutes ();
+ *
+ * // Let's sleep for seven seconds
+ * dur::sleep ((7).seconds ());
+ *
+ * // Duration are convertible to string of utf8 for better formatting
+ * println (Duration (m-> 3u64, s-> 12u64, us-> 89u64));
+ * ===
+ */
+
+in dur;
+
+/**
+ * Structure representing a time duration.
+ */
+pub record Duration {
+    // iif true the duration is negative
+    let mut _negative : bool;
+
+    // The number of seconds in the duration
+    let mut _sec : u64;
+
+    // The number of micro seconds in the duration
+    let mut _usec : u64;
+
+    /*!
+     * ================================================================================
+     * ================================================================================
+     * =============================        CTORS       ===============================
+     * ================================================================================
+     * ================================================================================
+     */
+
+    /**
+     * Create a duration from basic fields
+     * @params:
+     *    - sec: the number of seconds
+     *    - usec: the number of micro seconds
+     *    - negative: the sign of the duration
+     * */
+    pub self (sec : u64, usec : u64, negative : bool = false)
+        with _sec = sec
+        , _usec = usec
+        , _negative = negative
+    {}
+
+    /**
+     * Create a new duration with given values
+     * @params:
+     *    - w: the number of weeks in the duration
+     *    - d: the number of days in the duration
+     *    - h: the number of hours in the duration
+     *    - m: the number of seconds in the duration
+     *    - ms: the number of milliseconds in the duration
+     *    - us: the number of microseconds in the duration
+     * @returns: the duration corresponding the values given in parameters
+     * @example:
+     * ================
+     * import std::time::dur;
+     *
+     * // A duration of one week, 2 days, 3 hours and 89 milliseconds
+     * let d = Duration (w-> 1u64, d-> 2u64, h-> 3u64, ms-> 89u64);
+     * assert (d.to![c8] () == "1w2d3h89ms"s8);
+     *
+     * // A duration of 6 days, 23 hours, 59 minutes, 59 seconds, 999 millseconds and 999 microseconds.
+     * let d2 = Duration (d-> 6u64, h-> 23u64, m-> 59u64, s-> 59u64, ms-> 999u64, us-> 999u64);
+     * assert ((d2 + dur::micros (1u64)).to![c8] () == "1w"s8);
+     * ================
+     */
+    pub self (w : u64 = 0u64, d : u64 = 0u64, h : u64 = 0u64, m : u64 = 0u64, s : u64 = 0u64, ms : u64 = 0u64, us : u64 = 0u64)
+        with _sec = (w * 7u64 * 24u64 * 3_600u64) + (d * 24u64 * 3_600u64) + (h * 3_600u64) + (m * 60u64) + s
+        , _usec = (ms * 1_000u64) + us
+        , _negative = false
+    {}
+
+    /*!
+     * ================================================================================
+     * ================================================================================
+     * =============================        GETTERS       ==============================
+     * ================================================================================
+     * ================================================================================
+     */
+
+    /**
+     * @returns: true if the duration is negative
+     * */
+    pub fn isNegative (self)-> bool {
+        self._negative
+    }
+
+    /**
+     * @returns: the second counter
+     * */
+    pub fn getSec (self)-> u64 {
+        self._sec
+    }
+
+    /**
+     * @returns: the micro second counter
+     * */
+    pub fn getUSec (self)-> u64 {
+        self._usec
+    }
+
+    /*!
+     * ================================================================================
+     * ================================================================================
+     * =============================        FIELDS       ==============================
+     * ================================================================================
+     * ================================================================================
+     */
+
+
+    /**
+     * @returns: the number of weeks in the duration
+     * */
+    @field
+    pub fn weeks (self)-> u64 {
+        self._sec / (7u64 * 24u64 * 3_600u64)
+    }
+
+    /**
+     * @returns: the number of days in the current week
+     * @example:
+     * ================
+     * use std::time::dur;
+     *
+     * let x = dur::days (89);
+     *
+     * // 12 weeks of seven days + 5 days
+     * assert (x.days == 5)
+     * assert (x.allDays == 89);
+     * ================
+     */
+    @field
+    pub fn days (self)-> u64 {
+        self._sec / (24u64 * 3_600u64) % (7u64)
+    }
+
+    /**
+     * @returns: the number of days
+     * @example:
+     * ================
+     * use std::time::dur;
+     *
+     * let x = dur::days (89);
+     *
+     * // 12 weeks of seven days + 5 days
+     * assert (x.days == 5)
+     * assert (x.allDays == 89);
+     * ================
+     */
+    @field
+    pub fn  allDays (self)-> u64 {
+        self._sec / (24u64 * 3_600u64)
+    }
+
+    /**
+     * @returns: the number of hours in the duration in the current day.
+     * @example:
+     * ================
+     * use std::time::dur;
+     *
+     * let x = dur::hours (427);
+     *
+     * // 17 days + 19 hours
+     * assert (x.hours == 19)
+     *
+     * // also count the hours forming days
+     * assert (x.allHours == 427)
+     * ================
+     */
+    @field
+    pub fn hours (self)-> u64 {
+        self._sec / (3_600u64) % (24u64)
+    }
+
+    /**
+     * @returns: the number of hours in the duration
+     * @example:
+     * ================
+     * use std::time::dur;
+     *
+     * let x = dur::hours (427);
+     *
+     * // 17 days + 19 hours
+     * assert (x.hours == 19)
+     *
+     * // also count the hours forming days
+     * assert (x.allHours == 427)
+     * ================
+     */
+    @field
+    pub fn allHours (self)-> u64 {
+        self._sec / (3_600u64)
+    }
+
+    /**
+     * @returns: the number of minutes in the duration in the current hour.
+     * @example:
+     * ================
+     * use std::time::dur;
+     *
+     * let x = dur::minutes (478);
+     *
+     * // 7 hours and 58 minutes
+     * assert (x.minutes == 58)
+     *
+     * // Also count the minutes forming hours
+     * assert (x.allMinutes == 478)
+     * ================
+     */
+    @field
+    pub fn minutes (self)-> u64 {
+        self._sec / (60u64) % (60u64)
+    }
+
+    /**
+     * @returns: the number of minutes in the duration
+     * @example:
+     * ================
+     * use std::time::dur;
+     *
+     * let x = dur::minutes (478);
+     *
+     * // 7 hours and 58 minutes
+     * assert (x.minutes == 58)
+     *
+     * // Also count the minutes forming hours
+     * assert (x.allMinutes == 478)
+     * ================
+     */
+    @field
+    pub fn allMinutes (self)-> u64 {
+        self._sec / (60u64)
+    }
+
+    /**
+     * @returns: the number of seconds in the duration in the current minute.
+     * @example:
+     * ================
+     * import std::time::dur;
+     *
+     * let x = dur::minutes (120u64);
+     *
+     * // 2 minutes and 0 seconds
+     * assert (x.seconds == 0)
+     *
+     * // Also count the seconds forming minutes
+     * assert (x.allSeconds () == 120)
+     * ================
+     */
+    @field
+    pub fn seconds (self)-> u64 {
+        self._sec % (60u64)
+    }
+
+    /**
+     * @returns: the number of seconds in the duration.
+     * @example:
+     * ================
+     * import std::time::dur;
+     *
+     * let x = dur::minutes (120u64);
+     *
+     * // 2 minutes and 0 seconds
+     * assert (x.seconds == 0)
+     *
+     * // Also count the seconds forming minutes
+     * assert (x.allSeconds () == 120)
+     * ================
+     */
+    @field
+    pub fn allSeconds (self)-> u64 {
+        self._sec
+    }
+
+    /**
+     * @returns: the number of milliseconds in the duration in the current seconself.
+     * @example:
+     * ================
+     * import std::time::dur;
+     *
+     * let x = dur::minutes (59);
+     *
+     * // 59 minutes and 0 milliseconds
+     * assert (x.millis == 0u64)
+     *
+     * // Also count the milliseconds forming seconds and minutes
+     * assert (x.allMillis () == 3540_000u64)
+     * ================
+     */
+    @field
+    pub fn millis (self)-> u64 {
+        self._usec / 1_000u64 % (1_000u64)
+    }
+
+    /**
+     * @returns: the number of milliseconds in the duration.
+     * @warning: Due to the capacity of u64 representation, only the seconds, minutes, hours and days will be added (weeks will be omitted)
+     * @example:
+     * ================
+     * import std::time::dur;
+     *
+     * let x = dur::minutes (59);
+     *
+     * // 59 minutes and 0 milliseconds
+     * assert (x.millis == 0u64)
+     *
+     * // Also count the milliseconds forming seconds and minutes
+     * assert (x.allMillis () == 3540_000u64)
+     * ================
+     */
+    @field
+    pub fn allMillis (self)-> u64 {
+        (self._usec + (1_000_000u64 * (self._sec % (7u64 * 24u64 * 3_600u64)))) / 1_000u64
+    }
+
+    /**
+     * @returns: the number of microseconds in the duration in the current milli seconself.
+     * @example:
+     * ================
+     * use std::time::dur;
+     *
+     * let x = dur::minutes (59);
+     *
+     * // 59 minutes and 0 microseconds
+     * assert (x.micros == 0)
+     * ================
+     */
+    @field
+    pub fn micros (self)-> u64 {
+        self._usec % (1_000u64)
+    }
+
+    /**
+     * @returns: the number of microseconds in the duration.
+     * @warning: For capacity of u64 representation, only the seconds, minutes, hours and days will be added (weeks will be omitted)
+     * @example:
+     * ================
+     * use std::time::dur;
+     *
+     * let x = dur::minutes (59);
+     *
+     * // 59 minutes and 0 microseconds
+     * assert (x.micros == 0)
+     *
+     * // Also count the micro seconds forming minutes
+     * assert (x.allMicros == 3540_000_000u64)
+     *
+     * let d = Duration (d-> 6u64, h-> 23u64, m-> 59u64, s-> 59u64, ms-> 999u64, us-> 999u64);
+     *
+     * assert (self.allMicros == 604_799_999_999u64);
+     *
+     * // weeks are ommitted dur to capacity overflow of u64
+     * assert ((d + dur::micros (1u64)).allMicros == 0u64);
+     * ================
+     */
+    @field
+    pub fn allMicros (self)-> u64 {
+        let x = self._sec % (7u64 * 24u64 * 3_600u64);
+        self._usec + (1_000_000u64 * (x))
+    }
+
+    /*!
+     * ================================================================================
+     * ================================================================================
+     * ==========================        OPERATIONS       =============================
+     * ================================================================================
+     * ================================================================================
+     */
+
+    /**
+     * Addition of two durations.
+     * @example:
+     * ================
+     * use std::time::dur;
+     *
+     * let x = dur::seconds (2u64) + dur::millis (300u64);
+     *
+     * // 2 seconds and 300 milliseconds
+     * assert (x.seconds == 2 && x.millis == 300);
+     * ================
+     */
+    pub fn opBinary {"+"} (self, right : Duration)-> Duration {
+        self.add (right)
+    }
+
+    /**
+     * Add two durations
+     * */
+    prv fn add (self, right : Duration)-> Duration {
+        if (right._negative) {
+            self.minus (Duration (right._sec, right._usec), negative-> false)
+        } else if (self._negative) {
+            right.minus (Duration (self._sec, self._usec), negative-> false)
+        } else if (self._usec + right._usec >= 1_000_000u64) {
+            let usec = (self._usec + right._usec) ;
+            Duration (self._sec + right._sec + (usec / 1_000_000u64), usec % 1_000_000u64)
+        } else {
+            Duration (self._sec + right._sec, self._usec + right._usec)
+        }
+    }
+
+    /**
+     * Substraction of two durations.
+     * @example:
+     * ================
+     * use std::time::dur;
+     *
+     * let x = dur::seconds (2u64) - dur::millis (300u64);
+     *
+     * // 1 second and 700 milliseconds
+     * assert (x.seconds == 1 && x.millis = 700);
+     *
+     * // Duration can be negative
+     * let y = dur::millis (300u64) - dur::seconds (2u64);
+     * assert (x.sec == 1 && x.millis = 700 && x.isNegative ());
+     * ================
+     */
+    pub fn opBinary {"-"} (self, right : Duration)-> Duration {
+        self.minus (right, negative-> false)
+    }
+
+    /**
+     * Substraction of two durations
+     * */
+    prv fn minus (self, right : Duration, negative : bool)-> Duration {
+        if (right._negative) { // a -- b -> a + b
+            self.add (Duration (right._sec, right._usec))
+        } else if (self._negative) { // -a - b -> - (a + b)
+            let res = Duration (self._sec, self._usec).add (right);
+            Duration (negative-> !res._negative, res._sec, res._usec)
+        } else {
+            if (self._sec < right._sec) {
+                return right.minus (self, negative-> true);
+            }
+
+            if (self._usec >= right._usec) {
+                Duration (negative-> negative, self._sec - right._sec, self._usec - right._usec)
+            } else {
+                if (self._sec == right._sec) {
+                    right.minus (self, negative-> true)
+                } else {
+                    let usec = (right._usec - self._usec);
+                    if (usec != 0u64) {
+                        Duration (negative-> negative, self._sec - right._sec - 1u64, 1_000_000u64 - usec)
+                    } else {
+                        Duration (negative-> negative, self._sec - right._sec, 1_000_000u64 - usec)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Division of a duration by a factor value.
+     * @params:
+     *    - right: the factor of division
+     * @example:
+     * ================
+     * use std::time::dur;
+     * use std::conv;
+     *
+     * // A sixtieth of a second
+     * let x = (1).seconds () / 60;
+     * assert (x.to![c8] () == "16ms666µs");
+     * ================
+     */
+    pub fn opBinary {"/"} (self, right : u64)-> Duration {
+        let rest = (self._sec * 1_000_000u64) / right % 1_000_000u64;
+        Duration (negative-> self._negative, self._sec / right, self._usec / right + rest)
+    }
+
+    /**
+     * @returns: the opposite value of `d`, such that `-d + d == dur::seconds (0u64)`.
+     * @example:
+     * ===============
+     * use std::time::dur;
+     * use std::conv;
+     *
+     * let x = (2).seconds ();
+     *
+     * // Minus 2 seconds
+     * assert ((-x).to![c8] () == "-2s");
+     * ===============
+     */
+    pub fn opUnary {"-"} (self)-> Duration {
+        Duration (negative-> !self._negative, self._sec, self._usec)
+    }
+
+    /**
+     * Compare two durations.
+     * @example:
+     * ===============
+     * use std::time::dur;
+     *
+     * let a = (2).seconds ();
+     * let b = (1).seconds ();
+     *
+     * assert (a > b);
+     * assert (a == a);
+     * ===============
+     */
+    pub fn opCmp (self, right : Duration) -> i32 {
+        if (right._negative == self._negative) {
+            let v = { if (self._sec < right._sec) { -1 }
+                      else if (self._sec == right._sec) {
+                          if (self._usec < right._usec) { -1 }
+                          else if (self._usec > right._usec) { 1 }
+                          else { 0 }
+                      }
+                      else { 1 }
+            }
+
+            if (self._negative) { -v }
+            else { v }
+        } else {
+            if (self._sec == right._sec && self._usec == right._usec) { 0 }
+            else if (right._negative) { 1 }
+            else { -1 }
+        }
+    }
+
+    /*!
+     * ================================================================================
+     * ================================================================================
+     * =========================        MISCELLANEOUS       ===========================
+     * ================================================================================
+     * ================================================================================
+     */
+
+    impl std::stream::Streamable {
+        pub over toStream (self, dmut stream : &std::stream::StringStream) {
+            let mut wrote = false;
+            if (self._negative) stream:.write ("-"s8);
+            if (self.weeks != 0u64) {
+                stream:.write (self.weeks):.write ("w"s8);
+                wrote = true;
+            }
+            if (self.days != 0u64) {
+                stream:.write (self.days):.write ("d"s8);
+                wrote = true;
+            }
+            if (self.hours != 0u64) {
+                stream:.write (self.hours):.write ("h"s8);
+                wrote = true;
+            }
+            if (self.minutes != 0u64) {
+                stream:.write (self.minutes):.write ("m"s8);
+                wrote = true;
+            }
+            if (self.seconds != 0u64) {
+                stream:.write (self.seconds):.write ("s"s8);
+                wrote = true;
+            }
+            if (self.millis != 0u64) {
+                stream:.write (self.millis):.write ("ms"s8);
+                wrote = true;
+            }
+            if (self.micros != 0u64) {
+                stream:.write (self.micros):.write ("µs"s8);
+                wrote = true;
+            }
+
+            if (!wrote) stream:.write ("0s"s8);
+        }
+    }
+
+}
+
+
+/*!
+ * ==================================================================================
+ * ==================================================================================
+ * ==========================        CONSTRUCTION       =============================
+ * ==================================================================================
+ * ==================================================================================
+ */
+
+/**
+ * @returns: A duration of `week` weeks.
+ * @example:
+ * ====================
+ * use std::time::dur;
+ *
+ * // Sleep for two weeks
+ * sleep ((2).weeks ());
+ * ====================
+ */
+pub fn weeks (week : u64) -> Duration {
+    Duration (week * 7u64 * 24u64 * 3_600u64, 0u64)
+}
+
+/**
+ * @returns: A duration of `day` days
+ * @example:
+ * ====================
+ * use std::time::dur;
+ *
+ * // Sleep for two days
+ * sleep ((2).days ());
+ * ====================
+ */
+pub fn days (day : u64) -> Duration {
+    Duration (day * 24u64 * 3_600u64, 0u64)
+}
+
+/**
+ * @returns: A duration of `hou` hours
+ * @example:
+ * ====================
+ * use std::time::dur;
+ *
+ * // Sleep for two hours
+ * sleep ((2).hours ());
+ * ====================
+ */
+pub fn hours (hou : u64) -> Duration {
+    Duration (hou * 3_600u64, 0u64)
+}
+
+/**
+ * @returns: A duration of `min` minutes.
+ * @example:
+ * ====================
+ * use std::time::dur;
+ *
+ * // Sleep for two minutes
+ * sleep ((2).minutes ());
+ * ====================
+ */
+pub fn minutes (mins : u64) -> Duration {
+    Duration (mins * 60u64, 0u64)
+}
+
+/**
+ * @returns: A duration of `secs` seconds.
+ * @example:
+ * ====================
+ * import std::time::dur;
+ *
+ * // Sleep for two seconds
+ * sleep ((2u64).dur::seconds ());
+ * ====================
+ */
+pub fn seconds (secs : u64) -> Duration {
+    Duration (secs, 0u64)
+}
+
+
+/**
+ * @returns: A duration of `mil` milliseconds.
+ * @example:
+ * ====================
+ * import std::time::dur;
+ *
+ * // Sleep for 2000 milliseconds
+ * sleep ((2_000u64).dur::millis ());
+ * ====================
+ */
+pub fn millis (mil : u64) -> Duration {
+    Duration (mil / 1_000u64, (mil % 1_000u64) * 1_000u64)
+}
+
+/**
+ * @returns: A duration of `mic` microseconds.
+ * @example:
+ * ====================
+ * import std::time::dur;
+ *
+ * // Sleep for 2000000 microseconds
+ * sleep ((2_000_000u64).dur::micros ());
+ * ====================
+ */
+pub fn micros (mic : u64) -> Duration {
+    Duration (mic / 1_000_000u64, mic % 1_000_000u64)
+}
+
+/*!
+ * ================================================================================
+ * ================================================================================
+ * =============================        SLEEPING       ============================
+ * ================================================================================
+ * ================================================================================
+ */
+
+/**
+ * Make the thread sleep for a given amount of time.
+ * @params:
+ *    - dur: the duration during which the thread will be sleeping
+ */
+pub fn sleep (dur : Duration) {
+    if (!dur.isNegative ()) {
+        let mut in_ = etc::c::time::dur_t (dur.getSec (), dur.getUSec () * 1000u64);
+        loop {
+            let mut out_ = etc::c::time::dur_t (0u64, 0u64);
+            let ret = etc::c::time::nanosleep (&in_, alias &out_);
+            if (ret == 0) break {}
+            else {
+                in_ = out_;
+            }
+        }
+    }
+}
