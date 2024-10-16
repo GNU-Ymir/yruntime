@@ -1,0 +1,57 @@
+in file;
+
+use std::{fs::{file, path, errors}, io};
+
+__test {
+    // Create a file named "foo.txt", and write something in it
+    {
+        let dmut file = File::create (Path ("foo.txt"), write-> true);
+        file:.write ("Hello World!");
+    } catch {
+        err : &FsError => { // creation failed for some reason
+            println (err);
+            assert (false);
+        }
+    }
+
+    {
+        let content = {
+            let dmut file = File::open (Path ("foo.txt"));
+            file:.readAll () // read the all the content of the file
+        } catch {
+            // File does not exist or permission denied
+            FsError () => { "" } // return an empty string
+        };
+
+        assert (content == "Hello World!");
+    }
+
+    {
+        let dmut file = File::open (Path ("foo.txt"), append-> true);
+        file:.write ("\nAppending content");
+        // files are entities, so automatically closed when scope is exited
+    } catch {
+        // File does not exist or permission denied
+        err : &FsError => {
+            println (err);
+            assert (false);
+        }
+    }
+
+    {
+        let content = {
+            let dmut file = File::open (Path ("foo.txt"));
+            file:.readAll () // read the all the content of the file
+        } catch {
+            // File does not exist or permission denied
+            FsError () => { "" } // return an empty string
+        };
+
+        assert (content == "Hello World!\nAppending content");
+    }
+
+    assert (sys::isFile (Path ("foo.txt")));
+    sys::removeFile (Path ("foo.txt"));
+    assert (!sys::isFile (Path ("foo.txt")));
+
+}

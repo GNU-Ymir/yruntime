@@ -85,7 +85,7 @@ ELSE(UNIX)
 ENDIF(UNIX)
 
 add_library (midgard_tests STATIC ${SRC_LIB})
-add_dependencies (midgard_tests gymidgard-bootstrap-debug gymidgard-bootstrap-tests)
+#add_dependencies (midgard_tests gymidgard-bootstrap-debug gymidgard-bootstrap-tests)
 add_custom_command(TARGET midgard_tests
   PRE_BUILD
   COMMAND ${CMAKE_COMMAND} -E touch_nocreate ${CMAKE_CURRENT_SOURCE_DIR}/tests/__lib__.yr
