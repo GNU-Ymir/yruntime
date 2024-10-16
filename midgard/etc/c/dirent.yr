@@ -7,55 +7,31 @@
 in dirent;
 
 pub extern (C) fn opendir (path : *c8)-> dmut *void;
-
 pub extern (C) fn closedir (dir : *void);
-
 pub extern (C) fn mkdir (path : *c8, permission : i32)-> i32;
-
 pub extern (C) fn rmdir (path : *c8)-> i32;
-
 pub extern (C) fn readdir (dir : *void)-> *dirent;
-
 pub extern (C) fn readlink (path : *c8, dmut ret : *c8, len : i32)-> i32;
-
 pub extern (C) fn symlink (dst : *c8, srcpath : *c8)-> i32;
-
 pub extern (C) fn unlink (path : *c8)-> i32;
 
-__version WINDOWS {
-    pub record dirent {
-        pub let d_ino    : u32;
-        pub let d_reclen : u16;
-        pub let d_namlen : u16;
-        pub let d_name   : [c8 ; 261];
+pub record dirent {
+    pub let d_ino    : u64;
+    pub let d_off    : u64;
+    pub let d_reclen : u16;
+    pub let d_type   : u8;
+    pub let d_name   : [c8 ; 256u32];
 
-        pub self (d_ino : u32, d_reclen : u16, d_namelen : u16, d_name : [c8 ; 261])
-            with d_ino = d_ino
-            , d_reclen = d_reclen
-            , d_namelen = d_namelen
-            , d_name = d_name
-        {}
-    }
-
-} else {
-    pub record dirent {
-        pub let d_ino    : u64;
-        pub let d_off    : u64;
-        pub let d_reclen : u16;
-        pub let d_type   : u8;
-        pub let d_name   : [c8 ; 256u32];
-
-        pub self (d_ino : u64, d_off : u64, d_reclen : u16, d_type : u8, d_name : [c8 ; 256])
-            with d_ino = d_ino
-            , d_off = d_off
-            , d_reclen = d_reclen
-            , d_type = d_type
-            , d_name = d_name
-        {}
-    }
+    pub self (d_ino : u64, d_off : u64, d_reclen : u16, d_type : u8, d_name : [c8 ; 256])
+        with d_ino = d_ino
+        , d_off = d_off
+        , d_reclen = d_reclen
+        , d_type = d_type
+        , d_name = d_name
+    {}
 }
 
-pub enum
+pub enum : u8
 | DT_UNKNOWN = 0u8
 | DT_REG     = 8u8
 | DT_DIR     = 4u8
