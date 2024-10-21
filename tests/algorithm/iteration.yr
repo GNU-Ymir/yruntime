@@ -1,1 +1,79 @@
 in iteration;
+
+use std::algorithm::iteration;
+
+__test {
+    let i = copy [1, 2, 3, 4];
+    assert (i.fold!{|x,y| => x + y} () == 10?, "a");
+    assert (i.fold!{|x,y| => x * y} () == 24?, "b");
+
+    let j = i [0 .. 0];
+    assert (j.fold!{|x,y| => x + y} () == none, "c");
+}
+
+__test {
+    let i = copy [1, 2, 3, 4];
+    assert (i.fold (|x,y| => x + y) == 10?, "d");
+    assert (i.fold (|x,y| => x * y) == 24?, "e");
+
+    let j = i [0 .. 0];
+    assert (j.fold(|x,y| => x + y) == none, "f");
+}
+
+__test {
+    let i = copy [1, 2, 3, 4];
+    let z = 2;
+
+    let a = i.fold (copy |x, y| => x + y + z); // 1 + (2 + 2) + (3 + 2) + (4 + 2)
+    let b = i.fold (copy |x, y| => {
+        if (y % z == 1) { x + y } else { x }
+    }); // 1 + 3
+
+    assert (a == 16?, "g");
+    assert (b == 4?, "h");
+
+    let j = i [0 .. 0];
+    let c = j.fold (copy |x, y| => { x + y + z });
+
+    assert (c == none, "i");
+}
+
+__test {
+    let i = [1, 2, 3, 4];
+    assert (i.fold!{|x,y| => x + y} () == 10);
+    assert (i.fold!{|x,y| => x * y} () == 24);
+
+    let j : [i32 ; 0] = [];
+    cte assert (!__pragma!compile ({
+        j.fold!{|x,y| => x + y} ();
+    }));
+}
+
+__test {
+    let i = [1, 2, 3, 4];
+    assert (i.fold (|x,y| => x + y) == 10);
+    assert (i.fold (|x,y| => x * y) == 24);
+
+    let j : [i32 ; 0] = [];
+    cte assert (!__pragma!compile ({
+        j.fold (|x,y| => x + y);
+    }));
+}
+
+__test {
+    let i = [1, 2, 3, 4];
+    let z = 2;
+
+    let a = i.fold (copy |x,y| => x + y + z); // 1 + (2 + 2) + (3 + 2) + (4 + 2)
+    let b = i.fold (copy |x,y| => {
+        if (y % z == 1) { x + y } else { x }
+    }); // 1 + 3
+
+    assert (a == 16);
+    assert (b == 4);
+
+    let j : [i32 ; 0] = [];
+    cte assert (!__pragma!compile ({
+        j.fold (copy |x,y| => x + y + z);
+    }));
+}

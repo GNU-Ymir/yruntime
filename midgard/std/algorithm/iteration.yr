@@ -6,91 +6,147 @@
 
 in iteration;
 
-// /**
-//  * Implement the homonym function fold
-//  * This function takes a seed as initial value, the seed is set at U::init as default
-//  * Then it traverse the slice and for each element x of the slice result = F (result, x)
-//  * @info: the operation of the accumulator F, does not need to be commutative
-//  * @returns: the accumulation of the slice and the initial seed
-//  * @example:
-//  * ===============
-//  * let i = [1, 2, 3];
-//  * assert (i.scan!{|x,y| x + y} (0) == 6);
-//  * assert (i.scan!{|x,y| x + y} (12) == 18);
-//  * ===============
-//  * @complexity: O (n), with n = a.len
-//  */
-// pub fn fold {F : fn (U,U)-> U, T of [U], U} (a : T, seed : U)-> U {
-//     let mut res = seed;
-//     for i in a {
-//         res = F (res, i);
-//     }
-//     res
-// }
+/**
+ * Implement the homonym function fold
+ * @returns: the accumulation of the slice and the initial seed
+ * @example:
+ * ===============
+ * let i = copy [1, 2, 3, 4];
+ * assert (i.fold!{|x,y| => x + y} () == 10?);
+ * assert (i.fold!{|x,y| => x * y} () == 24?);
+ * ===============
+ * @complexity: O (n), with n = a.len
+ */
+pub fn fold {F : fn (U, U)-> U, T of [U], U} (a : T)-> U? {
+    if (a.len > 0) {
+        let mut res = a [0];
+        for i in a [1 .. $] {
+            res = F (res, i);
+        }
 
-// /**
-//  * Implement the homonym function fold
-//  * This function takes a seed as initial value, the seed is set at U::init as default
-//  * Then it traverse the slice and for each element x of the slice result = F (result, x)
-//  * @info: the operation of the accumulator F, does not need to be commutative
-//  * @returns: the accumulation of the slice and the initial seed
-//  * @example:
-//  * ===============
-//  * let i = [1, 2, 3];
-//  * assert (i.scan!{|x,y| x + y} (0) == 6);
-//  * assert (i.scan!{|x,y| x + y} (12) == 18);
-//  * ===============
-//  * @complexity: O (n), with n = a.len
-//  */
-// pub fn fold {F : fn (U,U)-> U, T of [U], U} (a : T)-> U {
-//     let mut res = cte if (is!U (X of f32)) 0.f else cte if (is!U (X of f64)) 0.0 else U::init;
-//     for i in a {
-//         res = F (res, i);
-//     }
-//     res
-// }
+        res?
+    } else {
+        none
+    }
+}
 
-// /**
-//  * Implement the homonym function fold
-//  * This function takes a seed as initial value
-//  * Then it traverse the slice and for each element x of the slice result = F (result, x)
-//  * @info: the operation of the accumulator F, does not need to be commutative
-//  * @returns: the accumulation of the slice and the initial seed
-//  * @example:
-//  * ===============
-//  * let i = [1, 2, 3];
-//  * assert (i.scan!{|x,y| x + y} (0) == 6);
-//  * assert (i.scan!{|x,y| x + y} (12) == 18);
-//  * ===============
-//  * @complexity: O (n), with n = a.len
-//  */
-// pub fn fold {F : fn (U,U)-> U, T impl Seq!U, U} (a : T, seed : U)-> U {
-//     let mut res = seed;
-//     for i in a {
-//         res = F (res, x);
-//     }
-//     res
-// }
+/**
+ * Implement the homonym function fold
+ * @returns: the accumulation of the slice and the initial seed
+ * @example:
+ * ===============
+ * let i = copy [1, 2, 3, 4];
+ * assert (i.fold (|x,y| => x + y) == 10);
+ * assert (i.fold (|x,y| => x * y) == 24);
+ * ===============
+ * @complexity: O (n), with n = a.len
+ */
+pub fn fold {T of [U], U} (a : T, func : fn (U, U)-> U)-> U? {
+    if (a.len > 0) {
+        let mut res = a [0];
+        for i in a [1 .. $] {
+            res = func (res, i);
+        }
 
-// /**
-//  * Implement the homonym function fold
-//  * This function set a initial result at U::init (or 0.0 if U is a float type) as default
-//  * Then it traverse the slice and for each element x of the slice result = F (result, x)
-//  * @info: the operation of the accumulator F, does not need to be commutative
-//  * @returns: the accumulation of the slice and the initial seed
-//  * @example:
-//  * ===============
-//  * let i = [1, 2, 3];
-//  * assert (i.scan!{|x,y| x + y} () == 6);
-//  * let j = [1., 2., 3.0];
-//  * assert (i.scan!{|x,y| x + y} () == 6.0);
-//  * ===============
-//  * @complexity: O (n), with n = a.len
-//  */
-// pub fn fold {F : fn (U,U)-> U, T impl Seq!U, U} (a : T)-> U {
-//     let mut res = cte if (is!U (X of f32)) 0.f else cte if (is!U (X of f64)) 0.0 else U::init;
-//     for i in a {
-//         res = F (res, x);
-//     }
-//     res
-// }
+        res?
+    } else {
+        none
+    }
+}
+
+/**
+ * Implement the homonym function fold
+ * @returns: the accumulation of the slice and the initial seed
+ * @example:
+ * ===============
+ * let i = copy [1, 2, 3, 4];
+ * let z = 2;
+ *
+ * let a = i.fold (copy |x,y| => x + y + z); // 1 + (2 + 2) + (3 + 2) + (4 + 2)
+ * let b = i.fold (copy |x,y| => {
+ *      if (y % z == 1) { x + y } else { x }
+ * }); // 1 + 3
+ *
+ * assert (a == 16?);
+ * assert (b == 4?);
+ * ===============
+ * @complexity: O (n), with n = a.len
+ */
+pub fn fold {T of [U], U} (a : T, func : dg (U, U)-> U)-> U? {
+    if (a.len > 0) {
+        let mut res = a [0];
+        for i in a [1 .. $] {
+            res = func (res, i);
+        }
+
+        res?
+    } else {
+        none
+    }
+}
+
+/**
+ * Implement the homonym function fold
+ * @returns: the accumulation of the slice and the initial seed
+ * @example:
+ * ===============
+ * let i = [1, 2, 3, 4];
+ * assert (i.fold!{|x,y| => x + y} () == 10);
+ * assert (i.fold!{|x,y| => x * y} () == 24);
+ * ===============
+ * @complexity: O (n), with n = a.len
+ */
+pub fn if (N > 0) fold {F : fn (U,U)-> U, T of [U ; N], U, N : usize} (a : T)-> U {
+    let mut res = a [0];
+    for i in a [1 .. $] {
+        res = F (res, i);
+    }
+
+    res
+}
+
+/**
+ * Implement the homonym function fold
+ * @returns: the accumulation of the slice and the initial seed
+ * @example:
+ * ===============
+ * let i = [1, 2, 3, 4];
+ * assert (i.fold (|x,y| => x + y) == 10);
+ * assert (i.fold (|x,y| => x * y) == 24);
+ * ===============
+ * @complexity: O (n), with n = a.len
+ */
+pub fn if (N > 0) fold {T of [U ; N], U, N : usize} (a : T, func : fn (U, U)-> U)-> U {
+    let mut res = a [0];
+    for i in a [1 .. $] {
+        res = func (res, i);
+    }
+
+    res
+}
+
+/**
+ * Implement the homonym function fold
+ * @returns: the accumulation of the slice and the initial seed
+ * @example:
+ * ===============
+ * let i = [1, 2, 3, 4];
+ * let z = 1;
+ * let a = i.fold (copy |x,y| => x + y + z); // 1 + (2 + 2) + (3 + 2) + (4 + 2)
+ * let b = i.fold (copy |x,y| => {
+ *    if (y % z == 1) { x + y } else { x }
+ * }); // 1 + 3
+ *
+ * assert (a == 16);
+ * assert (b == 4);
+ * ===============
+ * @complexity: O (n), with n = a.len
+ */
+pub fn if (N > 0) fold {T of [U ; N], U, N : usize} (a : T, func : dg (U, U)-> U)-> U {
+    let mut res = a [0];
+    for i in a [1 .. $] {
+        res = func (res, i);
+    }
+
+    res
+}
