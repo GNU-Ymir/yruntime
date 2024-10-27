@@ -1,0 +1,165 @@
+in opipe;
+
+use etc::c::{files, socket};
+use core::exception;
+
+/**
+ * A reading pipe
+ * */
+pub record OPipe {
+
+    // The managed pipe
+    let mut _pipe : i32 = -1;
+
+    // True if the pipe failed to read
+    let mut _error : bool = false;
+
+    /**
+     * @params:
+     *    - the reading pipe
+     * */
+    pub self (pipe : i32 = -1)
+        with _pipe = pipe
+        , _error = false
+    {}
+
+    /**
+     * ================================================================================
+     * ================================================================================
+     * =============================        SETTERS        ============================
+     * ================================================================================
+     * ================================================================================
+     */
+
+    /**
+     * Set the pipe to non block mode
+     * */
+    pub fn setNonBlocking (mut self) {
+        if (self.isOpen ()) {
+            let old = fcntl (self._pipe, FileFlags::F_GETFL, 0);
+            fcntl (self._pipe, FileFlags::F_SETFL, old | SocketFlag::O_NONBLOCK);
+        }
+    }
+
+    /**
+     * Set the pipe to blocking mode
+     * */
+    pub fn setBlocking (mut self) {
+        if (self.isOpen ()) {
+            let old = fcntl (self._pipe, FileFlags::F_GETFL, 0);
+            fcntl (self._pipe, FileFlags::F_SETFL, old | !SocketFlag::O_NONBLOCK);
+        }
+    }
+
+    /**
+     * ================================================================================
+     * ================================================================================
+     * =============================        GETTERS        ============================
+     * ================================================================================
+     * ================================================================================
+     */
+
+    /**
+     * @returns: true if the pipe is open
+     * */
+    pub fn isOpen (self)-> bool {
+        self._pipe >= 0 && !self._error
+    }
+
+    /**
+     * ================================================================================
+     * ================================================================================
+     * ==============================        RECV        ==============================
+     * ================================================================================
+     * ================================================================================
+     */
+
+    /**
+     * Write a char on the pipe
+     * @throws:
+     *    - IOError, if the write fails
+     * */
+    pub fn if (std::traits::isChar!{C} ()) write {C} (mut self, c : C)
+        throws IOError
+    {
+        let dmut pv = cast!{dmut *void} (&c);
+        let dmut pu = cast!{dmut *u8} (alias pv);
+
+        self:.inner_WriteRaw (alias pu, C::size);
+    }
+
+    /**
+     * Write a int on the pipe
+     * @throws:
+     *    - IOError, if the write fails
+     * */
+    pub fn if (std::traits::isIntegral!{I} ()) write {I} (mut self, i : I)
+        throws IOError
+    {
+        let dmut pv = cast!{dmut *void} (&i);
+        let dmut pu = cast!{dmut *u8} (alias pv);
+
+        self:.inner_WriteRaw (alias pu, I::size);
+    }
+
+    /**
+     * Write a float on the pipe
+     * @throws:
+     *    - IOError, if the write fails
+     * */
+    pub fn if (std::traits::isFloating!{F} ()) write {F} (mut self, f : F)
+        throws IOError
+    {
+        let dmut pv = cast!{dmut *void} (&f);
+        let dmut pu = cast!{dmut *u8} (alias pv);
+
+        self:.inner_WriteRaw (alias pu, F::size);
+    }
+
+    /**
+     * Write raw value on the pipe
+     * */
+    prv fn inner_WriteRaw (mut self, dmut buffer : *u8, len : u32)
+        throws core::exception::IOError
+    {
+        if (self.isOpen ()) {
+            let dmut curr = alias buffer;
+            let mut lenToSend = len;
+
+            while (lenToSend > 0) {
+                let valsent = socket::write (self._pipe, cast!{*void} (curr), cast!usize (lenToSend));
+                if (valsent <= 0) {
+                    self._error = true;
+                    throw copy core::exception::IOError ();
+                }
+
+                curr = alias (curr + cast!usize (valsent));
+                lenToSend = lenToSend - cast!u32 (valsent);
+            }
+        } else {
+            throw copy IOError ();
+        }
+    }
+
+    /**
+     * ================================================================================
+     * ================================================================================
+     * ==============================        CLOSE        =============================
+     * ================================================================================
+     * ================================================================================
+     */
+
+    /**
+     * Close the pipe
+     * */
+    pub fn dispose (mut self) {
+        if (self.isOpen () && self._pipe >= 3) { // stderr = 2, out = 1, in = 0
+            socket::close (self._pipe);
+        }
+
+        self._pipe = -1;
+        self._error = false;
+    }
+
+
+}

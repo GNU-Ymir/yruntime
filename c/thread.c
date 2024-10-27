@@ -115,8 +115,32 @@ void _yrt_thread_sem_wait (sem_t * sem) {
     sem_wait (sem);
 }
 
+uint8_t _yrt_thread_sem_wait_timeout (sem_t * sem, float timeout) {
+    struct timespec ts;
+    if (clock_gettime (CLOCK_REALTIME, &ts) == -1) {
+        return 0;
+    }
+
+    ts.tv_sec += (uint64_t) timeout;
+    ts.tv_nsec += (uint64_t) (timeout * 1000000000) % 1000000000;
+
+    if (ts.tv_nsec > 1000000000) {
+        ts.tv_nsec -= 1000000000;
+        ts.tv_sec += 1;
+    }
+
+    return sem_timedwait (sem, &ts) == 0;
+}
+
 void _yrt_thread_sem_post (sem_t * sem) {
     sem_post (sem);
+}
+
+int32_t _yrt_thread_sem_get (sem_t * sem) {
+    int32_t i;
+    sem_getvalue (sem, &i);
+
+    return i;
 }
 
 _yrt_mutex_t * _yrt_ensure_monitor (void* object) {

@@ -1,0 +1,81 @@
+/**
+ * Low level thread management
+ *
+ * */
+
+in thread;
+
+// C runtime bindings
+mod spawning;
+
+/**
+ * Type used to identify and communicate with a threads
+ * */
+pub record Thread {
+
+    // The uniq id of the thread
+    let mut _id : usize;
+
+    // The pipe used to communicate between threads
+    // let _pipe : &ThreadPipe;
+
+    pub self (id : usize, withPipes : bool)
+        with _id = id
+    {
+        withPipes;
+    }
+
+    /**
+     * Spawn a thread
+     * @params:
+     *    - func: the function to launch as the thread main
+     * */
+    pub self spawn (func : fn (Thread)-> void, withPipes : bool = true)
+        with _id = 0us
+    {
+        let dmut th = copy spawning::FnThreadLauncher (func, withPipes);
+        spawning::Runtime!{&spawning::FnThreadLauncher}::_yrt_thread_create (&th.thContent._id, null, &spawning::thread_fn_main, th);
+
+        self._id = th.thContent.id;
+        // self._pipes = th.thContent.pipes;
+    }
+
+    /**
+     * Spawn a thread
+     * @params:
+     *    - func: the delegate to launch as the thread main
+     * */
+    pub self spawn (func : dg (Thread)-> void, withPipes : bool = true)
+        with _id = 0us
+    {
+        let dmut th = copy spawning::DgThreadLauncher (func, withPipes);
+        spawning::Runtime!{&spawning::DgThreadLauncher}::_yrt_thread_create (&th.thContent._id, null, &spawning::thread_dg_main, th);
+
+        self._id = th.thContent.id;
+        // self._pipes = th.thContent.pipes;
+    }
+
+    /**
+     * Wait for the thread to join
+     * */
+    pub fn join (self) {
+        spawning::_yrt_thread_join (self._id, null);
+    }
+
+    /**
+     * @returns: the id of the thread
+     * */
+    @field
+    pub fn id (self)-> usize {
+        self._id
+    }
+
+    /**
+     * @returns: the pipes of the thread
+     * */
+    // @field
+    // pub fn pipes (mut self)-> dmut &ThreadPipes {
+    //     self._pipes
+    // }
+
+}

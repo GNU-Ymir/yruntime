@@ -1,0 +1,117 @@
+in semaphore;
+
+/**
+ * A C semaphore
+ * */
+prv record sem_t {
+    let data : [u8; 32_u64] = [0 ; 32];
+    pub self () {}
+}
+
+
+/**
+ * Initialize a semaphore
+ * @params:
+ *    - pshared: the number of signal to emit before the semaphore is triggered
+ *    - value: the value of the semaphore (see libpthread)
+ * @returns:
+ *    - sem: the semaphore
+ */
+extern (C) fn _yrt_thread_sem_init (id : *sem_t, shared : i32, value : i32);
+
+/**
+ * Destroy a semaphore
+ * @params:
+ *    - sem: the semaphore to destroy
+ */
+extern (C) fn _yrt_thread_sem_destroy (id : *sem_t);
+
+/**
+ * Wait for a semaphore to be triggered
+ * @params:
+ *    - sem: the semaphore
+ */
+extern (C) fn _yrt_thread_sem_wait (id : *sem_t);
+
+/**
+ * Wait for a semaphore to be triggered
+ * @params:
+ *    - sem: the semaphore
+ *    - timeout: the timeout in second
+ * @returns: true if the semaphore was posted, false if timedout
+ */
+extern (C) fn _yrt_thread_sem_wait_timeout (id : *sem_t, timeout : f32)-> bool;
+
+/**
+ * Emit a new entry in the semaphore
+ * @params:
+ *    - sem: the semaphore to post
+ * @info: if the number of post is equal to its value, the semaphore is triggered and wait-ers no longer wait
+ */
+extern (C) fn _yrt_thread_sem_post (id : *sem_t);
+
+/**
+ * @returns: the current count of the semaphore
+ * */
+extern (C) fn _yrt_thread_sem_get (id : *sem_t)-> i32;
+
+/**
+ * A semaphore used to send signals between threads
+ * */
+pub record Semaphore {
+
+    // The C semaphore
+    let _sem : sem_t;
+
+    /**
+     * Create a new semaphore
+     * */
+    pub self new ()
+        with _sem = sem_t ()
+    {
+        _yrt_thread_sem_init (&self._sem, 0, 0);
+    }
+
+    /**
+     * Empty semaphore
+     * */
+    pub self empty ()
+        with _sem = sem_t ()
+    {}
+
+    /**
+     * Post the semaphore
+     * */
+    pub fn post (mut self) {
+        _yrt_thread_sem_post (&self._sem);
+    }
+
+    /**
+     * Wait for the semaphore to be posted
+     * @params:
+     *    - timeout: the timeout in second (<= 0 means infinite)
+     * */
+    pub fn wait (self, timeout : f32 = -1.f)-> bool {
+        if (timeout <= 0.f) {
+            _yrt_thread_sem_wait (&self._sem);
+            true
+        } else {
+            _yrt_thread_sem_wait_timeout (&self._sem, timeout)
+        }
+    }
+
+    /**
+     * @returns: the current counter of the semaphore
+     * */
+    pub fn get (self)-> i32 {
+        _yrt_thread_sem_get (&self._sem)
+    }
+
+    /**
+     * Destroy the semaphore
+     * */
+    pub fn dispose (self) {
+        _yrt_thread_sem_destroy (&self._sem);
+    }
+
+}

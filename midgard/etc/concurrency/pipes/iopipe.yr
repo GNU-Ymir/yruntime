@@ -1,0 +1,62 @@
+in iopipe;
+
+use pipes::{opipe, ipipe};
+use etc::c::{files, socket};
+use core::exception;
+
+/**
+ * IO Pipes
+ * */
+pub record IOPipe {
+
+    // The pipe used to read
+    let mut _in : IPipe = IPipe (pipe-> -1);
+
+    // The pipe used to write
+    let mut _out : OPipe = OPipe (pipe-> -1);
+
+    /**
+     * Empty IOPipe
+     * */
+    pub self empty () {}
+
+    /**
+     * Create a new io pipe
+     * */
+    pub self new ()
+        throws IOError
+    {
+        let dmut pipes : [i32 ; 2] = [0, 0];
+        if (files::pipe (pipes.ptr) != 0) {
+            throw copy IOError ();
+        }
+
+        self._in = IPipe (pipe-> pipes [0]);
+        self._out = OPipe (pipe-> pipes [1]);
+    }
+
+    /**
+     * @returns: the reading pipe
+     * */
+    @field
+    pub fn ipipe (mut self)-> ipipe::IPipe {
+        self._in
+    }
+
+    /**
+     * @returns: the writing pipe
+     * */
+    @field
+    pub fn opipe (mut self)-> opipe::OPipe {
+        self._out
+    }
+
+    /**
+     * Dispose the input/output pipes
+     * */
+    pub fn dispose (mut self) {
+        self._in:.dispose ();
+        self._out:.dispose ();
+    }
+
+}

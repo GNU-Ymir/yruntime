@@ -3,6 +3,7 @@
 
 //#ifdef __linux__
 #include <pthread.h>
+#include <stdint.h>
 
 typedef pthread_t _yrt_thread_t;
 typedef pthread_attr_t _yrt_attr_t;
@@ -137,10 +138,25 @@ void _yrt_thread_sem_destroy (sem_t * sem);
 
 /**
  * Wait for a semaphore to be triggered
- * @params: 
+ * @params:
  *    - sem: the semaphore
  */
 void _yrt_thread_sem_wait (sem_t * sem);
+
+/**
+ * @returns: the current counter of the semaphore
+ * @params:
+ *    - sem: the semaphore
+ */
+int32_t _yrt_thread_sem_get (sem_t * sem);
+
+/**
+ * Wait for a semaphore to be triggered or timeout
+ * @params:
+ *    - sem: the semaphore
+ *    - timeout: the timeout in second (<= 0 means no timeout)
+ */
+uint8_t _yrt_thread_sem_wait_timeout (sem_t * sem, float timeout);
 
 /**
  * Emit a new entry in the semaphore

@@ -1,0 +1,68 @@
+in condition;
+
+/**
+ * Condition are used to synchronize threads
+ * */
+record _yrt_thread_cond_t {
+    let _data : [u8 ; 48] = [0; 48];
+    pub self () {}
+}
+
+
+/**
+ * Init a waitable conditional
+ * @params:
+ *    - data: the data of the condition (see libpthread)
+ * @returns:
+ *    - cond: the condition
+ */
+extern (C) fn _yrt_thread_cond_init (id : *_yrt_thread_cond_t, data : *void);
+
+/**
+ * Trigger a condition
+ * @params:
+ *    - cond: the condition to trigger
+ */
+extern (C) fn _yrt_thread_cond_signal (id : *_yrt_thread_cond_t);
+
+
+/**
+ * Condition are used to synchronize threads
+ * */
+pub record Condition {
+
+    let _cond : _yrt_thread_cond_t;
+
+    /**
+     * Create a usable condition
+     * */
+    pub self new ()
+        with _cond = _yrt_thread_cond_t ()
+    {
+        _yrt_thread_cond_init (&self._cond, null);
+    }
+
+    /**
+     * Create an empty condition
+     * */
+    pub self empty ()
+        with _cond = _yrt_thread_cond_t ()
+    {}
+
+    /**
+     * Wait for the signal to be emited by another thread
+     * @params:
+     *     - mutex: a locked mutex that will be associated to the condition
+     */
+    pub fn wait (self, m : mutex::Mutex) {
+        m.waitCondition (cast!{*void} (&self._cond));
+    }
+
+    /**
+     * Signal the condition to restart the waiting thread
+     * */
+    pub fn signal (self) {
+        _yrt_thread_cond_signal (&self._cond);
+    }
+
+}
