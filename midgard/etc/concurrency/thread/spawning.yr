@@ -1,5 +1,8 @@
 in spawning;
 
+
+use core::exception;
+
 /**
  * Create a new thread that will executed a function
  * @params:
@@ -10,7 +13,7 @@ in spawning;
  *    - id: the id of the created thread
  */
 pub mod Runtime {class T} {
-    pub extern (C) fn _yrt_thread_create (id : *usize, attr : *void, func : fn (T)-> void, data : T);
+    pub extern (C) fn _yrt_thread_create (id : *usize, attr : *void, func : fn (dmut T)-> void, data : T);
 }
 
 /**
@@ -48,24 +51,29 @@ pub extern (C) fn _yrt_thread_exit (val : *void);
 pub class FnThreadLauncher {
 
     // The data to send to the thread at start
-    pub let dmut thContent : Thread;
+    pub let dmut thContent : &Thread;
 
     // THe function to launch
-    let _func : fn (Thread)-> void;
+    let _func : fn (dmut &Thread)-> void;
+
+    // Function to launch at close
+    let _closing : dg ()-> void;
 
     /**
      * New thread launcher
      * */
-    pub self (func : fn (Thread)-> void, withPipes : bool)
-        with thContent = Thread (0us, withPipes)
+    pub self (func : fn (dmut &Thread)-> void, dmut th : &Thread, closing : dg ()-> void)
+        with thContent = alias th
         , _func = func
+        , _closing = closing
     {}
 
     /**
      * Launch the thread function
      * */
-    pub fn start (self) {
-        self._func (self.thContent)
+    pub fn start (mut self) {
+        self._func (alias self.thContent);
+        self._closing ();
     }
 }
 
@@ -73,37 +81,42 @@ pub class FnThreadLauncher {
 pub class DgThreadLauncher {
 
     // The data to send to the thread at start
-    pub let dmut thContent : Thread;
+    pub let dmut thContent : &Thread;
 
     // THe function to launch
-    let _func : dg (Thread)-> void;
+    let _func : dg (dmut &Thread)-> void;
+
+    // Function to launch at close
+    let _closing : dg ()-> void;
 
     /**
      * New thread launcher
      * */
-    pub self (func : dg (Thread)-> void, withPipes : bool)
-        with thContent = Thread (0us, withPipes)
+    pub self (func : dg (dmut &Thread)-> void, dmut th : &Thread, closing : dg ()-> void)
+        with thContent = alias th
         , _func = func
+        , _closing = closing
     {}
 
     /**
      * Launch the thread function
      * */
-    pub fn start (self) {
-        self._func (self.thContent)
+    pub fn start (mut self) {
+        self._func (alias self.thContent);
+        self._closing ();
     }
 }
 
 /**
  * Pthread takes a void (void*) function pointer
  * */
-pub fn thread_fn_main (what : &FnThreadLauncher)-> void {
-    what.start ();
+pub fn thread_fn_main (dmut what : &FnThreadLauncher)-> void {
+    what:.start ();
 }
 
 /**
  * Pthread takes a void (void*) function pointer
  * */
-pub fn thread_dg_main (what : &DgThreadLauncher)-> void {
-    what.start ();
+pub fn thread_dg_main (dmut what : &DgThreadLauncher)-> void {
+    what:.start ();
 }

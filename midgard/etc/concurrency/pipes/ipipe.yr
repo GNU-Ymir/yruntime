@@ -6,7 +6,8 @@ use core::exception;
 /**
  * A reading pipe
  * */
-pub record IPipe {
+@final
+pub class IPipe {
 
     // The managed pipe
     let mut _pipe : i32 = -1;
@@ -66,100 +67,74 @@ pub record IPipe {
         self._pipe >= 0 && !self._error
     }
 
-    /**
-     * ================================================================================
-     * ================================================================================
-     * ==============================        RECV        ==============================
-     * ================================================================================
-     * ================================================================================
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =====================================          ARRAYS          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
      */
 
     /**
-     * Read a string from the pipe
+     * Read a slice from the pipe
      * @params:
-     *    - len: the len of the string to read
+     *    - len: the len of the slice to read
      * */
-    pub fn read {T of [U], U of c8} (mut self, len : usize)-> [c8]
+    pub fn if (std::traits::isScalar!{C} ()) read {T of [C], C} (mut self, limits : usize = (1024 * 1024))-> [C]
         throws IOError
     {
-        if (self.isOpen ()) {
-            let dmut res = copy std::stream::StringStream ();
-            let bufSize = 1024;
-            let dmut chr = ['\u{0}' ; bufSize];
-            let mut lenToRecv = len;
+        if (!self.isOpen ()) throw copy IOError ();
 
-            while (lenToRecv > 0) {
-                let currentRecv = if (lenToRecv > bufSize) { bufSize } else { lenToRecv };
-                let valread = socket::read (self._pipe, chr.ptr, currentRecv);
-                if (valread <= 0) {
-                    self._error = true;
-                    throw copy IOError ();
-                }
+        let len = self:.read!{usize} ();
+        if (len > limits) throw copy IOError ();
 
-                for i in 0 .. valread {
-                    res:.write (buffer [i]);
-                }
+        let dmut res = core::duplication::allocArray!{C} (len);
+        let bufSize = 1024us;
+        let dmut chr = [cast!{C} ('\u{0}') ; bufSize];
+        let mut lenToRecv = len;
+        let mut currIndex = 0us;
 
-                lenToRecv -= valread;
+        while (lenToRecv > 0) {
+            let currentRecv = if (lenToRecv > bufSize) { bufSize } else { lenToRecv };
+            let valread = socket::read (self._pipe, cast!{dmut *void} (alias chr.ptr), currentRecv * C::size);
+            if (valread <= 0) {
+                self._error = true;
+                throw copy IOError ();
             }
 
-            return res[];
+            for i in 0 .. valread {
+                res [currIndex] = chr [i];
+                currIndex += 1us;
+            }
+
+            lenToRecv -= cast!usize (valread);
         }
 
-        throw copy IOError ();
+        res
     }
 
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =====================================          SCALAR          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
     /**
-     * Read a char from the pipe
+     * Read data from the pipe
      * @returns: the char read
      * @throws:
      *    - IOError, if the read fails
      * */
-    pub fn if (std::traits::isChar!{C} ()) read {C} (mut self)-> C
+    pub fn if (std::traits::isScalar!{C} ()) read {C} (mut self)-> C
         throws IOError
     {
-        let mut res : C = '\u{0}';
+        let mut res : C = C::init;
         let dmut pv = cast!{dmut *void} (&res);
         let dmut pu = cast!{dmut *u8} (alias pv);
 
-        self:.inner_ReadRaw (alias pu, C::size);
-
-        res
-    }
-
-    /**
-     * Read a int from the pipe
-     * @returns: the int read
-     * @throws:
-     *    - IOError, if the read fails
-     * */
-    pub fn if (std::traits::isIntegral!{T} ()) read {T} (mut self)-> T
-        throws IOError
-    {
-        let mut res : T = 0;
-        let dmut pv = cast!{dmut *void} (&res);
-        let dmut pu = cast!{dmut *u8} (alias pv);
-
-        self:.inner_ReadRaw (alias pu, T::size);
-
-        res
-    }
-
-
-    /**
-     * Read a float from the pipe
-     * @returns: the float read
-     * @throws:
-     *    - IOError, if the read fails
-     * */
-    pub fn if (std::traits::isFloating!{F} ()) read {F} (mut self)-> F
-        throws IOError
-    {
-        let mut res : F = 0.f;
-        let dmut pv = cast!{dmut *void} (&res);
-        let dmut pu = cast!{dmut *u8} (alias pv);
-
-        self:.inner_ReadRaw (alias pu, F::size);
+        self:.readRaw (alias pu, C::size);
 
         res
     }
@@ -167,25 +142,32 @@ pub record IPipe {
     /**
      * Read raw value from the pipe
      * */
-    prv fn inner_ReadRaw (mut self, dmut buffer : *u8, len : u32)
-        throws core::exception::IOError
+    pub fn readRaw (mut self, dmut buffer : *u8, len : usize)
+        throws IOError
     {
-        if (self.isOpen ()) {
-            let dmut curr = alias buffer;
-            let mut lenToRecv = len;
+        if (!self.isOpen ()) throw copy IOError ();
+        self:.inner_ReadRaw (alias buffer, len)
+    }
 
-            while (lenToRecv > 0) {
-                let valread = socket::read (self._pipe, cast!{*void} (curr), cast!usize (lenToRecv));
-                if (valread <= 0) {
-                    self._error = true;
-                    throw copy core::exception::IOError ();
-                }
+    /**
+     * Inner read raw
+     * @warning: does not check wether the pipe is open or not
+     * */
+    prv fn inner_ReadRaw (mut self, dmut buffer : *u8, len : usize)
+        throws IOError
+    {
+        let dmut curr = alias buffer;
+        let mut lenToRecv = len;
 
-                curr = alias (curr + cast!usize (valread));
-                lenToRecv = lenToRecv - cast!u32 (valread);
+        while (lenToRecv > 0) {
+            let valread = socket::read (self._pipe, cast!{*void} (curr), cast!usize (lenToRecv));
+            if (valread <= 0) {
+                self._error = true;
+                throw copy IOError ();
             }
-        } else {
-            throw copy IOError ();
+
+            curr = alias (curr + cast!usize (valread));
+            lenToRecv = lenToRecv - cast!usize (valread);
         }
     }
 
@@ -209,5 +191,8 @@ pub record IPipe {
         self._error = false;
     }
 
+    __dtor (mut self) {
+        self:.dispose ();
+    }
 
 }

@@ -6,7 +6,8 @@ use core::exception;
 /**
  * A reading pipe
  * */
-pub record OPipe {
+@final
+pub class OPipe {
 
     // The managed pipe
     let mut _pipe : i32 = -1;
@@ -66,12 +67,44 @@ pub record OPipe {
         self._pipe >= 0 && !self._error
     }
 
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =====================================          ARRAYS          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
     /**
-     * ================================================================================
-     * ================================================================================
-     * ==============================        RECV        ==============================
-     * ================================================================================
-     * ================================================================================
+     * Write a slice on the pipe
+     * @params:
+     *    - sl : the slice to write
+     * */
+    pub fn if (std::traits::isScalar!{C} ()) write {T of [C], C} (mut self, sl : T)
+        throws IOError
+    {
+        if (!self.isOpen ()) throw copy IOError ();
+
+        {
+            let len : usize = sl.len;
+            let pv = cast!{*void} (&len);
+            let pu = cast!{*u8} (pv);
+            self:.inner_WriteRaw (pu, usize::size);
+        }
+
+        {
+            let pv = cast!{*void} (sl.ptr);
+            let pu = cast!{*u8} (pv);
+            self:.inner_WriteRaw (pu, sl.len * C::size);
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =====================================          SCALAR          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
      */
 
     /**
@@ -79,65 +112,46 @@ pub record OPipe {
      * @throws:
      *    - IOError, if the write fails
      * */
-    pub fn if (std::traits::isChar!{C} ()) write {C} (mut self, c : C)
+    pub fn if (std::traits::isScalar!{C} ()) write {C} (mut self, c : C)
         throws IOError
     {
-        let dmut pv = cast!{dmut *void} (&c);
-        let dmut pu = cast!{dmut *u8} (alias pv);
+        if (!self.isOpen ()) throw copy IOError ();
+        let pv = cast!{*void} (&c);
+        let pu = cast!{*u8} (pv);
 
-        self:.inner_WriteRaw (alias pu, C::size);
-    }
-
-    /**
-     * Write a int on the pipe
-     * @throws:
-     *    - IOError, if the write fails
-     * */
-    pub fn if (std::traits::isIntegral!{I} ()) write {I} (mut self, i : I)
-        throws IOError
-    {
-        let dmut pv = cast!{dmut *void} (&i);
-        let dmut pu = cast!{dmut *u8} (alias pv);
-
-        self:.inner_WriteRaw (alias pu, I::size);
-    }
-
-    /**
-     * Write a float on the pipe
-     * @throws:
-     *    - IOError, if the write fails
-     * */
-    pub fn if (std::traits::isFloating!{F} ()) write {F} (mut self, f : F)
-        throws IOError
-    {
-        let dmut pv = cast!{dmut *void} (&f);
-        let dmut pu = cast!{dmut *u8} (alias pv);
-
-        self:.inner_WriteRaw (alias pu, F::size);
+        self:.inner_WriteRaw (pu, C::size);
     }
 
     /**
      * Write raw value on the pipe
      * */
-    prv fn inner_WriteRaw (mut self, dmut buffer : *u8, len : u32)
-        throws core::exception::IOError
+    pub fn writeRaw (mut self, buffer : *u8, len : usize)
+        throws IOError
     {
-        if (self.isOpen ()) {
-            let dmut curr = alias buffer;
-            let mut lenToSend = len;
+        if (!self.isOpen ()) throw copy IOError ();
+        self:.inner_WriteRaw (buffer, len)
+    }
 
-            while (lenToSend > 0) {
-                let valsent = socket::write (self._pipe, cast!{*void} (curr), cast!usize (lenToSend));
-                if (valsent <= 0) {
-                    self._error = true;
-                    throw copy core::exception::IOError ();
-                }
 
-                curr = alias (curr + cast!usize (valsent));
-                lenToSend = lenToSend - cast!u32 (valsent);
+    /**
+     * Write raw value on the pipe
+     * @warning: does not check wether the pipe is open or not
+     * */
+    prv fn inner_WriteRaw (mut self, buffer : *u8, len : usize)
+        throws IOError
+    {
+        let mut curr = buffer;
+        let mut lenToSend = len;
+
+        while (lenToSend > 0) {
+            let valsent = socket::write (self._pipe, cast!{*void} (curr), cast!usize (lenToSend));
+            if (valsent <= 0) {
+                self._error = true;
+                throw copy core::exception::IOError ();
             }
-        } else {
-            throw copy IOError ();
+
+            curr = (curr + cast!usize (valsent));
+            lenToSend = lenToSend - cast!usize (valsent);
         }
     }
 
@@ -161,5 +175,9 @@ pub record OPipe {
         self._error = false;
     }
 
+
+    __dtor (mut self) {
+        self:.dispose ();
+    }
 
 }

@@ -29,7 +29,8 @@ extern (C) fn _yrt_thread_cond_signal (id : *_yrt_thread_cond_t);
 /**
  * Condition are used to synchronize threads
  * */
-pub record Condition {
+@final
+pub class Condition {
 
     let _cond : _yrt_thread_cond_t;
 
@@ -54,14 +55,14 @@ pub record Condition {
      * @params:
      *     - mutex: a locked mutex that will be associated to the condition
      */
-    pub fn wait (self, m : mutex::Mutex) {
-        m.waitCondition (cast!{*void} (&self._cond));
+    pub fn wait (mut self, dmut m : &mutex::Mutex) {
+        m:.waitCondition (cast!{*void} (&self._cond));
     }
 
     /**
      * Signal the condition to restart the waiting thread
      * */
-    pub fn signal (self) {
+    pub fn signal (mut self) {
         _yrt_thread_cond_signal (&self._cond);
     }
 

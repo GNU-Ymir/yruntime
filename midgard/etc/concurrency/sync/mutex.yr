@@ -45,7 +45,8 @@ pub extern (C) fn _yrt_thread_cond_wait (id : *void, mutex : *_yrt_thread_mutex_
  * A mutex that can be locked and unlocked to make a part of code atomic
  * It has the same behavior of "atomic", but is low level
  * */
-pub record Mutex {
+@final
+pub class Mutex {
 
     // The mutex to lock
     let _lock : _yrt_thread_mutex_t;
@@ -69,21 +70,21 @@ pub record Mutex {
     /**
      * Lock the mutex in the current thread
      * */
-    pub fn lock (self) {
+    pub fn lock (mut self) {
         _yrt_thread_mutex_lock (&self._lock);
     }
 
     /**
      * Wait a condition and lock the mutex
      * */
-    pub fn waitCondition (self, cond : *void) {
+    pub fn waitCondition (mut self, cond : *void) {
         _yrt_thread_cond_wait (cond, &self._lock);
     }
 
     /**
      * Unlock the mutex in the current thread
      * */
-    pub fn unlock (self) {
+    pub fn unlock (mut self) {
         _yrt_thread_mutex_unlock (&self._lock);
     }
 }
@@ -102,30 +103,32 @@ pub record Mutex {
  * */
 pub entity MutexLocker {
 
-    let _m : Mutex;
+    let dmut _m : (&Mutex)?;
 
     /**
      * Move ctor
      * */
     pub self ()
-        with _m = Mutex::empty ()
+        with _m = none
     {}
 
     /**
      * @params:
      *    - m: the mutex to lock
      * */
-    pub self (m : Mutex)
-        with _m = m
+    pub self (dmut m : &Mutex)
+        with _m = (alias m)?
     {
-        self._m.lock ();
+        m:.lock ();
     }
 
     /**
      * Unlock the mutex
      * */
     __dtor (mut self) {
-        self._m.unlock ();
+        if let Ok (dmut m) = alias self._m {
+            m:.unlock ();
+        }
     }
 
 
