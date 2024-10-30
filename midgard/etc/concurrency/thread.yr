@@ -29,14 +29,11 @@ pub class Thread {
     // Pipe to write
     let dmut _out : (&OPipe)? = none;
 
-    // Mutex for conditional sync
-    let dmut _mutex : &Mutex = copy Mutex::new ();
-
-    // Condition to sync two threads
-    let dmut _cond : &Condition = copy Condition::empty ();
+    // The barrier used to sync the threads in read/write
+    let dmut _barrier : (&Barrier)? = none;
 
     // Semaphore to finalize the sync
-    let dmut _sem : &Semaphore = copy Semaphore::empty ();
+    let dmut _sem : (&Semaphore)? = none;
 
     prv self (id : usize, withPipes : bool)
         with _id = id
@@ -51,8 +48,8 @@ pub class Thread {
 
             self._in = (copy IPipe (pipe-> pipes [0]))?;
             self._out = (copy OPipe (pipe-> pipes [1]))?;
-            self._cond = copy Condition::new ();
-            self._sem = copy Semaphore::new ();
+            self._barrier = (copy Barrier (2))?;
+            self._sem = (copy Semaphore ())?;
         }
     }
 
@@ -125,15 +122,20 @@ pub class Thread {
         if let Ok (dmut pi) = alias self._in {
             if (!pi.isOpen ()) throw copy IOError ();
 
-            self._mutex:.lock ();
-            self._sem:.post ();
-            self._cond:.wait (alias self._mutex);
+            if let Ok (dmut b) = alias self._barrier {
+                if let Ok (dmut s) = alias self._sem {
+                    s:.post ();
 
-            let res : T = pi:.read!{T} (limits-> limits);
-            self._mutex:.unlock ();
+                    b:.lock ();
+                    let res : T = pi:.read!{T} (limits-> limits);
+                    b:.lock ();
 
-            res
-        } else throw copy IOError ();
+                    return res;
+                }
+            }
+        }
+
+        throw copy IOError ();
     }
 
     /**
@@ -146,15 +148,20 @@ pub class Thread {
         if let Ok (dmut pi) = alias self._in {
             if (!pi.isOpen ()) throw copy IOError ();
 
-            self._mutex:.lock ();
-            self._sem:.post ();
-            self._cond:.wait (alias self._mutex);
+            if let Ok (dmut b) = alias self._barrier {
+                if let Ok (dmut s) = alias self._sem {
+                    s:.post ();
 
-            let res = pi:.read!{C} ();
-            self._mutex:.unlock ();
+                    b:.lock ();
+                    let res = pi:.read!{C} ();
+                    b:.lock ();
 
-            res
-        } else throw copy IOError ();
+                    return res;
+                }
+            }
+        }
+
+        throw copy IOError ();
     }
 
     /**
@@ -166,13 +173,20 @@ pub class Thread {
         if let Ok (dmut pi) = alias self._in {
             if (!pi.isOpen ()) throw copy IOError ();
 
-            self._mutex:.lock ();
-            self._sem:.post ();
-            self._cond:.wait (alias self._mutex);
+            if let Ok (dmut b) = alias self._barrier {
+                if let Ok (dmut s) = alias self._sem {
+                    s:.post ();
 
-            pi:.readRaw (alias buffer, len);
-            self._mutex:.unlock ();
-        } else throw copy IOError ();
+                    b:.lock ();
+                    pi:.readRaw (alias buffer, len);
+                    b:.lock ();
+
+                    return;
+                }
+            }
+        }
+
+        throw copy IOError ();
     }
 
     /*!
@@ -194,13 +208,20 @@ pub class Thread {
         if let Ok (dmut pi) = alias self._out {
             if (!pi.isOpen ()) throw copy IOError ();
 
-            self._sem:.wait ();
-            self._mutex:.lock ();
-            pi:.write!{T} (sl);
+            if let Ok (dmut b) = alias self._barrier {
+                if let Ok (dmut s) = alias self._sem {
+                    s:.wait ();
 
-            self._cond:.signal ();
-            self._mutex:.unlock ();
-        } else throw copy IOError ();
+                    b:.lock ();
+                    pi:.write!{T} (sl);
+                    b:.lock ();
+
+                    return;
+                }
+            }
+        }
+
+        throw copy IOError ();
     }
 
     /**
@@ -214,13 +235,20 @@ pub class Thread {
         if let Ok (dmut pi) = alias self._out {
             if (!pi.isOpen ()) throw copy IOError ();
 
-            self._sem:.wait ();
-            self._mutex:.lock ();
-            pi:.write!{C} (v);
+            if let Ok (dmut b) = alias self._barrier {
+                if let Ok (dmut s) = alias self._sem {
+                    s:.wait ();
 
-            self._cond:.signal ();
-            self._mutex:.unlock ();
-        } else throw copy IOError ();
+                    b:.lock ();
+                    pi:.write!{C} (v);
+                    b:.lock ();
+
+                    return;
+                }
+            }
+        }
+
+        throw copy IOError ();
     }
 
     /**
@@ -232,13 +260,20 @@ pub class Thread {
         if let Ok (dmut pi) = alias self._out {
             if (!pi.isOpen ()) throw copy IOError ();
 
-            self._sem:.wait ();
-            self._mutex:.lock ();
-            pi:.writeRaw (buffer, len);
+            if let Ok (dmut b) = alias self._barrier {
+                if let Ok (dmut s) = alias self._sem {
+                    s:.wait ();
 
-            self._cond:.signal ();
-            self._mutex:.unlock ();
-        } else throw copy IOError ();
+                    b:.lock ();
+                    pi:.writeRaw (buffer, len);
+                    b:.lock ();
+
+                    return;
+                }
+            }
+        }
+
+        throw copy IOError ();
     }
 
     /*!
@@ -268,7 +303,6 @@ pub class Thread {
      * Dispose the allocated content of the thread
      * */
     prv fn dispose (mut self) {
-        std::io::println ("Disposed");
         if let Ok (dmut pi) = alias self._in {
             pi:.dispose ();
         }
@@ -277,9 +311,14 @@ pub class Thread {
             pi:.dispose ();
         }
 
+        if let Ok (dmut s) = alias self._sem {
+            s:.dispose ();
+        }
+
         self._in = none;
         self._out = none;
-        self._sem:.dispose ();
+        self._sem = none;
+        self._barrier = none;
     }
 
     __dtor (mut self) {

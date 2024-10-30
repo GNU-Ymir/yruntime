@@ -113,11 +113,18 @@ void _yrt_thread_cond_init (_yrt_cond_t * cond, _yrt_condattr_t* data);
 void _yrt_thread_cond_wait (_yrt_cond_t * cond, _yrt_mutex_t* lock);
 
 /**
- * Trigger a condition 
- * @params: 
+ * Trigger a condition
+ * @params:
  *    - cond: the condition to trigger
  */
 void _yrt_thread_cond_signal (_yrt_cond_t* cond);
+
+/**
+ * Broadcast a condition
+ * @params:
+ *    - cond: the condition to trigger
+ */
+void _yrt_thread_cond_broadcast (_yrt_cond_t* cond);
 
 /**
  * Initialize a semaphore

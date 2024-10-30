@@ -103,6 +103,10 @@ void _yrt_thread_cond_signal (_yrt_cond_t* cond) {
     pthread_cond_signal (cond);
 }
 
+void _yrt_thread_cond_broadcast (_yrt_cond_t* cond) {
+    pthread_cond_broadcast (cond);
+}
+
 void _yrt_thread_sem_init (sem_t * sem, int pshared, int value) {
     sem_init (sem, pshared, value);
 }

@@ -1,0 +1,96 @@
+in implem;
+
+use std::collection::list;
+
+/**
+ * Atomic linked list storing
+ * */
+@abstract
+pub class IMailBox {T, mutable : bool} {
+
+    cte if mutable {
+        // The list of mails
+        let dmut _mails = copy List!{dmut T} ();
+    } else {
+        let dmut _mails = copy List!{T} ();
+    }
+
+    // The len of the mailbox
+    let mut _len : usize;
+
+    /**
+     * Create a new empty mailbox
+     * */
+    pub self ()
+        with _len = 0
+    {}
+
+
+    cte if !mutable {
+        /**
+         * Post a message in the mailbox
+         * @params:
+         *   - value: the value to post
+         * */
+        pub fn send (mut self, value : T) {
+            atomic self {
+                self._mails:.push (value);
+                self._len += 1;
+            }
+        }
+
+        /**
+         * @returns: the first value found in the box if any
+         * */
+        pub fn receive (mut self)-> (T)? {
+            atomic self {
+                if (self._len == 0us) return none;
+                self._len -= 1;
+                return (self._mails:.popFront ())?;
+            }
+        }
+
+    } else {
+        /**
+         * Post a message in the mailbox
+         * @params:
+         *   - value: the value to post
+         * */
+        pub fn send (mut self, dmut value : T) {
+            atomic self {
+                self._mails:.push (alias value);
+                self._len += 1;
+            }
+        }
+
+        /**
+         * @returns: the first value found in the box if any
+         * */
+        pub fn receive (mut self)-> dmut (T)? {
+            atomic self {
+                if (self._len == 0us) return none;
+                self._len -= 1;
+                return (alias self._mails:.popFront ())?;
+            }
+        }
+    }
+
+
+    /**
+     * Clear everything that can be found in the mailbox
+     * */
+    pub fn clear (mut self) {
+        atomic self {
+            self._mails:.clear ();
+        }
+    }
+
+    /**
+     * @returns: the number of element in the box
+     * */
+    @field
+    pub fn len (self)-> usize {
+        self._len
+    }
+
+}

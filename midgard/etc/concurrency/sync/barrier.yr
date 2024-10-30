@@ -1,0 +1,49 @@
+in barrier;
+
+use etc::concurrency::sync::{mutex, condition};
+
+@final
+pub class Barrier {
+
+    let dmut _m = copy Mutex ();
+
+    let dmut _c = copy Condition ();
+
+    // The number of threads to sync
+    let _nb : usize;
+
+    // The number of threads that reached the barrier
+    let mut _state : usize = 0;
+
+    // The current barrier round to sync threads
+    let mut _round : usize = 0;
+
+    /**
+     * @params:
+     *    - nb: the number of threads to sync
+     * */
+    pub self (nb : usize)
+        with _nb = nb
+    {}
+
+    /**
+     * Synchronize the threads
+     * */
+    pub fn lock (mut self) {
+        self._m:.lock ();
+        self._state += 1;
+        if (self._state == self._nb) {
+            self._round += 1;
+            self._state = 0;
+            self._c:.broadcast ();
+        } else {
+            let lround = self._round;
+            do {
+                self._c:.wait (alias self._m);
+            } while (lround == self._round);
+        }
+
+        self._m:.unlock ();
+    }
+
+}

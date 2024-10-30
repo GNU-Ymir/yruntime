@@ -25,6 +25,13 @@ extern (C) fn _yrt_thread_cond_init (id : *_yrt_thread_cond_t, data : *void);
  */
 extern (C) fn _yrt_thread_cond_signal (id : *_yrt_thread_cond_t);
 
+/**
+ * Broadcast a condition
+ * @params:
+ *    - cond: the condition to trigger
+ */
+extern (C) fn _yrt_thread_cond_broadcast (id : *_yrt_thread_cond_t);
+
 
 /**
  * Condition are used to synchronize threads
@@ -37,18 +44,11 @@ pub class Condition {
     /**
      * Create a usable condition
      * */
-    pub self new ()
+    pub self ()
         with _cond = _yrt_thread_cond_t ()
     {
         _yrt_thread_cond_init (&self._cond, null);
     }
-
-    /**
-     * Create an empty condition
-     * */
-    pub self empty ()
-        with _cond = _yrt_thread_cond_t ()
-    {}
 
     /**
      * Wait for the signal to be emited by another thread
@@ -57,6 +57,13 @@ pub class Condition {
      */
     pub fn wait (mut self, dmut m : &mutex::Mutex) {
         m:.waitCondition (cast!{*void} (&self._cond));
+    }
+
+    /**
+     * Broadcast the signal to all waiting threads
+     * */
+    pub fn broadcast (mut self) {
+        _yrt_thread_cond_broadcast (&self._cond);
     }
 
     /**
