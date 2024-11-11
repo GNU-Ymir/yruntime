@@ -176,7 +176,7 @@ uint32_t _yrt_to_utf32 (char* text, size_t * byte_count) {
 }
 
 
-_yrt_slice_ _yrt_to_utf32_array (_yrt_slice_ array) {
+_yrt_slice_ _yrt_to_utf32_slice (_yrt_slice_ array) {
     uint64_t len = 0;
     for (uint64_t i = 0 ; i < array.len ;) {
 		size_t nb = 0;
@@ -186,7 +186,7 @@ _yrt_slice_ _yrt_to_utf32_array (_yrt_slice_ array) {
     }
 
 	_yrt_slice_ result;
-	_yrt_alloc_slice_no_set (&result, len + 1, 1);
+	_yrt_alloc_slice_no_set (&result, len, 1);
     int j = 0;
     for (uint64_t i = 0 ; i < array.len ;) {
 		size_t nb = 0;
