@@ -22,7 +22,7 @@ FILE (
 FILE (
   GLOB_RECURSE
   SRC_RUNTIME
-  c/*.c
+  rt/*.c
   )
 
 FILE (
@@ -63,10 +63,16 @@ add_library (gymidgard-bootstrap-release STATIC ${SRC_CORE_C} ${SRC_STD_C} ${SRC
 add_library (gymidgard-bootstrap-debug STATIC ${SRC_CORE_C} ${SRC_STD_C} ${SRC_RUNTIME} ${CMAKE_CURRENT_BINARY_DIR}/__lib_debug_.o)
 add_library (gymidgard-bootstrap-tests STATIC ${SRC_UNITTEST} ${CMAKE_CURRENT_BINARY_DIR}/__lib_test_.o)
 
+add_library (runtime STATIC ${SRC_RUNTIME})
+
 add_dependencies (gymidgard-bootstrap-release lib_release)
 add_dependencies (gymidgard-bootstrap-debug lib_debug)
 add_dependencies (gymidgard-bootstrap-tests lib_tests)
 add_dependencies (midgard_tests gymidgard-bootstrap-debug gymidgard-bootstrap-tests gymidgard-bootstrap-release)
+
+target_include_directories (gymidgard-bootstrap-release PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/)
+target_include_directories (gymidgard-bootstrap-debug PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/)
+target_include_directories (runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/)
 
 install (TARGETS gymidgard-bootstrap-debug DESTINATION /usr/lib/)
 install (TARGETS gymidgard-bootstrap-release DESTINATION /usr/lib/)

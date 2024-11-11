@@ -8,15 +8,15 @@
 #include <string.h>
 
 #include <gc/gc.h>
-#include "../c/yarray.h"
+#include "../rt/memory/types.h"
 
 
-_yrt_array_ _yrt_create_args_array (int len, char ** argv);
+_yrt_slice_ _yrt_create_args_slice (int len, char ** argv);
 int _yrt_run_unittests_impl ();
-void _yrt_register_unittest_impl (_yrt_array_ name, void (*ptr) ());
+void _yrt_register_unittest_impl (_yrt_slice_ name, void (*ptr) ());
 
 void _yrt_register_unittest (char * func, void (*ptr) ()) {
-  _yrt_array_ arr;
+  _yrt_slice_ arr;
   arr.len = strlen (func) + 1;
   arr.data = GC_malloc (arr.len);
   memcpy (arr.data, func, arr.len - 1);
@@ -25,5 +25,5 @@ void _yrt_register_unittest (char * func, void (*ptr) ()) {
 }
 
 int _yrt_run_unittests (int argc, char ** argv) {
-  return _yrt_run_unittests_impl (_yrt_create_args_array (argc, argv));
+  return _yrt_run_unittests_impl (_yrt_create_args_slice (argc, argv));
 }

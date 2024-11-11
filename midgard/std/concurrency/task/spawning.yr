@@ -1,0 +1,46 @@
+in spawning;
+
+/**
+ * Base task spawned by a task pool
+ * */
+@abstract
+pub class Task {
+    pub self () {}
+
+    /**
+     * Execute the task in a thread
+     * */
+    pub fn execute (self, dmut &Task)-> void;
+}
+
+@final
+pub class FnTask {T...} over Task {
+
+    let _data : (T,);
+    let _func : fn (T)-> void;
+
+    pub self (func : fn (T)-> void, data : T)
+        with _func = func
+        _data = data
+    {}
+
+    pub over execute (self) {
+        self._func (expand self._data);
+    }
+}
+
+@final
+pub class DgTask {T...} over Task {
+
+    let _data : (T,);
+    let _func : dg (T)-> void;
+
+    pub self (func : fn (T)-> void, data : T)
+        with _func = func
+        _data = data
+    {}
+
+    pub over execute (self) {
+        self._func (expand self._data);
+    }
+}

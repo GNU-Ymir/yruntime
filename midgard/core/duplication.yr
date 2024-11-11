@@ -1,13 +1,14 @@
 in duplication;
 
 mod YRUNTIME {T} {
-    pub extern (C) fn _yrt_new_array (size : usize, len : usize)-> dmut T;
+    pub extern (C) fn _yrt_alloc_slice_no_set (ref res : [T], len : usize, size : usize);
     pub extern (C) fn memcpy (_ : *T,  _ : *T, _ : usize)-> void;
 }
 
 pub fn deepCopySlice {T of [U], U} (a : T)-> dmut T {
     if (a.len == 0us) { return []; }
-    let dmut res = YRUNTIME!{T}::_yrt_new_array (U::size, a.len);
+    let dmut res : [U] = [];
+    YRUNTIME!{U}::_yrt_alloc_slice_no_set (res, a.len, U::size);
     for i, ti in a {
         res [i] = dcopy ti;
     }
@@ -15,9 +16,11 @@ pub fn deepCopySlice {T of [U], U} (a : T)-> dmut T {
     return alias res;
 }
 
-
 pub fn allocArray {T} (len : usize)-> dmut [T] {
-    alias YRUNTIME!{[T]}::_yrt_new_array (T::size, len)
+    let dmut res : [T] = [];
+    YRUNTIME!{T}::_yrt_alloc_slice_no_set (res, len, T::size);
+
+    alias res
 }
 
 /**
