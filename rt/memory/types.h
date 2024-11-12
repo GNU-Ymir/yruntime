@@ -11,12 +11,12 @@
  * ====================================================================================================
  */
 
-typedef struct {
+typedef struct _yrt_slice_blk_info_ {
 	uint64_t len;
 	uint64_t cap;
 } _yrt_slice_blk_info_;
 
-typedef struct {
+typedef struct _yrt_slice_ {
     uint64_t len;
     void * data;
     _yrt_slice_blk_info_ * blk_info;
@@ -30,12 +30,32 @@ typedef struct {
  * ====================================================================================================
  */
 
-struct _yrt_dcopy_map_node {
+typedef struct _yrt_dcopy_map_node_ {
     unsigned long len;
     unsigned long used;
     void** from;
     void** to;
-};
+}  _yrt_dcopy_map_node_ ;
+
+typedef struct _yrt_map_entry_ {
+    uint64_t hash;
+    struct _yrt_map_entry_ * next;
+} _yrt_map_entry_;
+
+typedef struct _yrt_map_info_ {
+    uint8_t (*cmp) (uint8_t*, uint8_t*);
+    uint64_t (*hash) (uint8_t*);
+    uint64_t keySize;
+    uint64_t valueSize;
+} _yrt_map_info_;
+
+typedef struct _yrt_map_ {
+    _yrt_map_info_ * minfo;
+    _yrt_map_entry_ ** data;
+    uint64_t len; // the length of the data array
+    uint64_t loaded; // The number of entries used
+    uint64_t size; // The number of elements in the map
+} _yrt_map_;
 
 /*!
  * ====================================================================================================
@@ -45,17 +65,17 @@ struct _yrt_dcopy_map_node {
  * ====================================================================================================
  */
 
-struct _yrt_lazy_closure {
+typedef struct _yrt_lazy_closure_ {
     void * closure;
     void (*func) (void* closure, void*ret);
-};
+}  _yrt_lazy_closure_ ;
 
-struct _yrt_lazy_value {
+typedef struct _yrt_lazy_value_ {
     unsigned char set;
     void* data;
     uint32_t size;
-    struct _yrt_lazy_closure closure;
-};
+    struct _yrt_lazy_closure_ closure;
+} _yrt_lazy_value_;
 
 /*!
  * ====================================================================================================
@@ -65,7 +85,7 @@ struct _yrt_lazy_value {
  * ====================================================================================================
  */
 
-typedef struct {
+typedef struct _yrt_type_info {
     unsigned int id;
     unsigned long long size;
     _yrt_slice_ inner;

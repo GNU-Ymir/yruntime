@@ -1,13 +1,204 @@
 #include <rt/memory/map.h>
+#include <rt/memory/alloc.h>
 
 #include <rt/utils/gc.h>
 #include <rt/thread.h>
 
+#include <string.h>
 
 pthread_mutex_t _yrt_dcopy_map_mutex;
-struct _yrt_dcopy_map_node _yrt_dcopy_head = {.len = 0, .used = 0, .from = NULL, .to = NULL};
+_yrt_dcopy_map_node_ _yrt_dcopy_head = {.len = 0, .used = 0, .from = NULL, .to = NULL};
 
-char _yrt_dcopy_map_is_started () {
+#define MAP_MAX_LOADED_FACTOR 75
+#define MAP_MIN_LOADED_FACTOR 40
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ================================          DEFAULT MAP IMPL          ================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+void _yrt_map_empty (_yrt_map_ * mp, uint64_t (*hash) (uint8_t*), uint8_t (*cmp) (uint8_t*, uint8_t*), uint64_t keySize, uint64_t valueSize) {
+    memset (mp, 0, sizeof (_yrt_map_));
+
+    mp-> minfo = (_yrt_map_info_*) GC_malloc (sizeof (_yrt_map_info_));
+    mp-> minfo-> hash = hash;
+    mp-> minfo-> cmp = cmp;
+    mp-> minfo-> keySize = keySize;
+    mp-> minfo-> valueSize = valueSize;
+}
+
+void _yrt_map_insert (_yrt_map_ * mp, uint8_t * key, uint8_t * value) {
+    if (mp-> len == 0) {
+        _yrt_map_fit (mp, 1);
+    } else if ((mp-> loaded * 100 / mp-> len) > MAP_MAX_LOADED_FACTOR) {
+        _yrt_map_fit (mp, _yrt_next_pow2 (mp-> len + 1));
+    }
+
+    uint64_t hash = mp-> minfo-> hash (key);
+    _yrt_map_insert_no_resize (mp, hash, key, value);
+}
+
+void _yrt_map_insert_no_resize (_yrt_map_ * mp, uint64_t hash, uint8_t * key, uint8_t * value) {
+    uint64_t index = hash % mp-> len;
+    if (mp-> data [index] != NULL) {
+        _yrt_map_entry_ * entry = mp-> data [index];
+        if (_yrt_map_entry_insert (entry, hash, key, value, mp-> minfo) == 1) {
+            mp-> size += 1;
+        }
+
+        return;
+    }
+
+    _yrt_map_create_entry (&(mp-> data [index]), hash, key, value, mp-> minfo);
+    mp-> loaded += 1;
+    mp-> size += 1;
+}
+
+uint8_t _yrt_map_entry_insert (_yrt_map_entry_ * mp, uint64_t hash, uint8_t * key, uint8_t * value, _yrt_map_info_ * minfo) {
+    uint8_t * keyEntry = ((uint8_t*) mp) + sizeof (_yrt_map_entry_);
+    if (minfo-> cmp (key, keyEntry) == 0) {
+        uint8_t * valEntry = keyEntry + minfo-> keySize;
+        memcpy (valEntry, value, minfo-> valueSize);
+        return 0;
+    }
+
+    if (mp-> next != NULL) {
+        return _yrt_map_entry_insert (mp-> next, hash, key, value, minfo);
+    }
+
+    _yrt_map_create_entry (&(mp-> next), hash, key, value, minfo);
+    return 1;
+}
+
+void _yrt_map_create_entry (_yrt_map_entry_ ** entry, uint64_t hash, uint8_t * key, uint8_t * value, _yrt_map_info_ * minfo) {
+    uint64_t nodeSize = sizeof (_yrt_map_entry_) + (minfo-> keySize + minfo-> valueSize);
+    uint8_t * newEntry = (uint8_t *) GC_malloc (nodeSize);
+    uint8_t * keyEntry = newEntry + sizeof (_yrt_map_entry_);
+    uint8_t * valueEntry = keyEntry + minfo-> keySize;
+
+    ((_yrt_map_entry_*) newEntry)-> hash = hash;
+    ((_yrt_map_entry_*) newEntry)-> next = NULL;
+
+    memcpy (keyEntry, key, minfo-> keySize);
+    memcpy (valueEntry, value, minfo-> valueSize);
+
+    *entry = (_yrt_map_entry_*) newEntry;
+}
+
+void _yrt_map_erase (_yrt_map_ * mp, uint8_t * key) {
+    if (mp-> len == 0) {
+        return;
+    }
+
+    uint64_t hash = mp-> minfo-> hash (key);
+    uint64_t index = hash % mp-> len;
+    if (mp-> data [index] == NULL) {
+        return;
+    }
+
+    if (_yrt_map_erase_entry (&(mp-> data [index]), key, mp-> minfo) == 1) {
+        mp-> size -= 1;
+    }
+
+    if (mp-> data [index] == NULL) {
+        mp-> loaded -= 1;
+    }
+
+    if (((mp-> loaded * 100) / mp-> len) < MAP_MIN_LOADED_FACTOR) {
+        _yrt_map_fit (mp, _yrt_next_pow2 (mp-> loaded + 1));
+    }
+}
+
+uint8_t _yrt_map_erase_entry (_yrt_map_entry_ ** en, uint8_t * key, _yrt_map_info_ * minfo) {
+    uint8_t * keyEntry = ((uint8_t*) (*en)) + sizeof (_yrt_map_entry_);
+    if (minfo-> cmp (key, keyEntry) == 0) {
+        *en = (*en)-> next;
+        return 1;
+    }
+
+    if ((*en)-> next != NULL) {
+        return _yrt_map_erase_entry (&(*en)-> next, key, minfo);
+    }
+
+    return 0;
+}
+
+uint8_t _yrt_map_find (_yrt_map_ * mp, uint8_t * key, uint8_t * value) {
+    if (mp-> len == 0) {
+        return 0;
+    }
+
+    uint64_t hash = mp-> minfo-> hash (key);
+    uint64_t index = hash % mp-> len;
+    if (mp-> data [index] == NULL) {
+        return 0;
+    }
+
+    return _yrt_map_find_entry (mp-> data [index], key, value, mp-> minfo);
+}
+
+uint8_t _yrt_map_find_entry (_yrt_map_entry_ * en, uint8_t * key, uint8_t * value, _yrt_map_info_ * minfo) {
+    uint8_t * keyEntry = ((uint8_t*) en) + sizeof (_yrt_map_entry_);
+    if (minfo-> cmp (key, keyEntry) == 0) {
+        uint8_t * valueEntry = keyEntry + minfo-> keySize;
+        memcpy (value, valueEntry, minfo-> valueSize);
+
+        return 1;
+    }
+
+    if (en-> next == NULL) {
+        return 0;
+    }
+
+    return _yrt_map_find_entry (en-> next, key, value, minfo);
+}
+
+void _yrt_map_fit (_yrt_map_ * mp, uint64_t newSize) {
+    if (newSize == 0) {
+        mp-> data = NULL;
+        mp-> loaded = 0;
+        mp-> len = 0;
+        mp-> size = 0;
+
+        return;
+    }
+
+    _yrt_map_ result;
+    result.data = (_yrt_map_entry_**) GC_malloc (newSize * sizeof (_yrt_map_entry_*));
+    memset (result.data, 0, newSize * sizeof (_yrt_map_entry_*));
+
+    result.minfo = mp-> minfo;
+    result.loaded = 0;
+    result.size = 0;
+    result.len = newSize;
+
+    for (uint64_t i = 0 ; i < mp-> len ; i++) {
+        if (mp-> data [i] != NULL) {
+            _yrt_map_entry_ * head = mp-> data [i];
+            while (head != NULL) {
+                uint64_t hash = head-> hash;
+                uint8_t * key = ((uint8_t*) head) + sizeof (_yrt_map_entry_);
+                uint8_t * value = ((uint8_t*) head) + sizeof (_yrt_map_entry_) + mp-> minfo-> keySize;
+
+                _yrt_map_insert_no_resize (&result, hash, key, value);
+                head = head-> next;
+            }
+        }
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ====================================          COPY MAP          ====================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+uint8_t _yrt_dcopy_map_is_started () {
     _yrt_thread_mutex_lock (&_yrt_dcopy_map_mutex);
     char ret = (_yrt_dcopy_head.len != 0);
     _yrt_thread_mutex_unlock (&_yrt_dcopy_map_mutex);
@@ -46,7 +237,6 @@ void* _yrt_find_dcopy_map (void * data) {
 
     return NULL;
 }
-
 
 void _yrt_dcopy_map_grow () {
     uint64_t len = _yrt_dcopy_head.len;

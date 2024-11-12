@@ -227,7 +227,7 @@ pub entity File {
             throw copy FsError (FsErrorCode::NOT_READABLE, self._filename.toStr ());
         }
 
-        let dmut res = copy std::collection::vec::Vec!{c8} ();
+        let dmut res : [c8] = [];
         let mut current = 0u64;
 
         while (!c::files::feof (self._handle) && current < delim.len) {
@@ -235,17 +235,14 @@ pub entity File {
             if (u >= u8::max) break {} // feof is not triggered before trying to read it, so this u can be eof == 256
 
             let c = cast!c8 (cast!u8 (u));
-            res:.push (c);
+            res ~= [c];
             {
                 if (delim [current] == c) { current += 1; }
                 else { current = 0; }
             }
         }
 
-        let dmut aux = core::duplication::allocArray!{c8} (res.len);
-        core::duplication::memCopy!{c8} (res[], alias aux);
-
-        return alias aux;
+        return alias res;
     }
 
     /**
@@ -365,7 +362,7 @@ pub entity File {
             throw copy FsError (FsErrorCode::NOT_READABLE, self._filename.toStr ());
         }
 
-        let dmut res = copy std::collection::vec::Vec!{u8} ();
+        let dmut res : [u8] = [];
         let mut current = 0u64;
 
         while (!c::files::feof (self._handle) && current < delim.len) {
@@ -373,17 +370,14 @@ pub entity File {
             if (u >= u8::max) break {} // feof is not triggered before trying to read it, so this u can be eof == 256
 
             let c = cast!{u8} (u);
-            res:.push (c);
+            res ~= [c];
             {
                 if (delim [current] == c) { current += 1u64; }
                 else { current = 0u64; }
             }
         }
 
-        let dmut aux = core::duplication::allocArray!{u8} (res.len);
-        core::duplication::memCopy!u8 (res[], alias aux);
-
-        return alias aux;
+        return alias res;
     }
 
     /**

@@ -12,6 +12,14 @@
 #include <rt/memory/types.h>
 
 /**
+ * Compute the new power of 2
+ * @params:
+ *   - x: an arbitrary number
+ * @returns: the closest power of two to 'x'
+ *  */
+uint64_t _yrt_next_pow2 (uint64_t x);
+
+/**
  * Allocate a new array and set the values of each element
  * @info: allocation made with the gc
  */

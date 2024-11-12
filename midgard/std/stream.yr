@@ -1,7 +1,5 @@
 in stream;
 
-use std::collection::set;
-
 mod Runtime {F, T} {
     pub extern (C) fn _yrt_unsafe_cast (x : F)-> dmut T;
 }
@@ -14,7 +12,7 @@ prv enum : usize
 /**
  * The print set stores the list of classes that are already printed, to avoid infinite loops when a class contains itself
  */
-lazy dmut __PRINT_SET__ = copy HashSet!{*void} ();
+// lazy dmut __PRINT_SET__ = copy HashSet!{*void} ();
 
 /**
  * Trait used to perform a complex stream writing of classes or records
@@ -55,15 +53,15 @@ pub trait Streamable {
      *     - stream: the stream in which the class instance will be written
      */
     pub fn toStream (self, dmut stream : &StringStream)-> void {
-        let vd = Runtime!{typeof (self), *void}::_yrt_unsafe_cast (self);
+        // let vd = Runtime!{typeof (self), *void}::_yrt_unsafe_cast (self);
         stream:.write (self.__typeid__, "(");
-        if vd !in __PRINT_SET__ {
-            __PRINT_SET__:.insert (vd);
-            self.__stream__streamContent (alias stream);
-            __PRINT_SET__:.remove (vd);
-        } else {
-            stream:.write ("...");
-        }
+        // if vd !in __PRINT_SET__ {
+        //     __PRINT_SET__:.insert (vd);
+        //     self.__stream__streamContent (alias stream);
+        //     __PRINT_SET__:.remove (vd);
+        // } else {
+        //     stream:.write ("...");
+        // }
 
         stream:.write (")");
     }
@@ -231,18 +229,18 @@ pub class StringStream {
             c.toStream (alias self);
         } else {
             cte if is!{T}{class C} {
-                let vd = Runtime!{typeof (self), *void}::_yrt_unsafe_cast (self);
+                // let vd = Runtime!{typeof (self), *void}::_yrt_unsafe_cast (self);
                 self:.write (c.__typeinfo.name, '(');
-                if vd !in __PRINT_SET__ {
-                    __PRINT_SET__:.insert (vd);
-                    for i, j in (expand c,) {
-                        cte if (i != 0) self:.write (", ");
-                        self:.write (j);
-                    }
-                    __PRINT_SET__:.remove (vd);
-                } else {
-                    self:.write ("...");
-                }
+                // if vd !in __PRINT_SET__ {
+                //     __PRINT_SET__:.insert (vd);
+                //     for i, j in (expand c,) {
+                //         cte if (i != 0) self:.write (", ");
+                //         self:.write (j);
+                //     }
+                //     __PRINT_SET__:.remove (vd);
+                // } else {
+                //     self:.write ("...");
+                // }
 
                 self:.write (')');
             } else {

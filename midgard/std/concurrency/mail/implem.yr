@@ -1,7 +1,5 @@
 in implem;
 
-use std::collection::list;
-
 /**
  * Atomic linked list storing
  * */
@@ -10,20 +8,15 @@ pub class IMailBox {T, mutable : bool} {
 
     cte if mutable {
         // The list of mails
-        let dmut _mails = copy List!{dmut T} ();
+        let dmut _mails : [T] = [];
     } else {
-        let dmut _mails = copy List!{T} ();
+        let mut _mails : [mut T] = [];
     }
-
-    // The len of the mailbox
-    let mut _len : usize;
 
     /**
      * Create a new empty mailbox
      * */
-    pub self ()
-        with _len = 0
-    {}
+    pub self () {}
 
 
     cte if !mutable {
@@ -34,8 +27,7 @@ pub class IMailBox {T, mutable : bool} {
          * */
         pub fn send (mut self, value : T) {
             atomic self {
-                self._mails:.push (value);
-                self._len += 1;
+                self._mails ~= [value];
             }
         }
 
@@ -44,9 +36,11 @@ pub class IMailBox {T, mutable : bool} {
          * */
         pub fn receive (mut self)-> (T)? {
             atomic self {
-                if (self._len == 0us) return none;
-                self._len -= 1;
-                return (self._mails:.popFront ())?;
+                if (self._mails.len == 0us) return none;
+                let fr = self._mails [0];
+                self._mails = alias self._mails [1 .. $];
+
+                (fr)?
             }
         }
 
@@ -58,8 +52,7 @@ pub class IMailBox {T, mutable : bool} {
          * */
         pub fn send (mut self, dmut value : T) {
             atomic self {
-                self._mails:.push (alias value);
-                self._len += 1;
+                self._mails ~= [alias value];
             }
         }
 
@@ -68,9 +61,11 @@ pub class IMailBox {T, mutable : bool} {
          * */
         pub fn receive (mut self)-> dmut (T)? {
             atomic self {
-                if (self._len == 0us) return none;
-                self._len -= 1;
-                return (alias self._mails:.popFront ())?;
+                if (self._mails.len == 0us) return none;
+                let dmut fr = self._mails [0];
+                self._mails = alias self._mails [1 .. $];
+
+                (alias fr)?
             }
         }
     }
@@ -81,7 +76,7 @@ pub class IMailBox {T, mutable : bool} {
      * */
     pub fn clear (mut self) {
         atomic self {
-            self._mails:.clear ();
+            self._mails = [];
         }
     }
 
@@ -90,7 +85,7 @@ pub class IMailBox {T, mutable : bool} {
      * */
     @field
     pub fn len (self)-> usize {
-        self._len
+        self._mails.len
     }
 
 }
