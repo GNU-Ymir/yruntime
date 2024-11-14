@@ -13,8 +13,11 @@
 
 /**
  * Create an empty map
+ * @params:
+ *    - mp: the map to init
+ *    - info: the information about the types in the map
  */
-void _yrt_map_empty (_yrt_map_ * mp, uint64_t (*hash) (uint8_t*), uint8_t (*cmp) (uint8_t*, uint8_t*), uint64_t keySize, uint64_t valueSize);
+void _yrt_map_empty (_yrt_map_ * mp, _yrt_map_info_ * info);
 
 /**
  * Insert an element into the map

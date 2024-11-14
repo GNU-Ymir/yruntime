@@ -42,6 +42,8 @@ typedef struct _yrt_map_entry_ {
     struct _yrt_map_entry_ * next;
 } _yrt_map_entry_;
 
+
+// The map info is a constant placed in the text
 typedef struct _yrt_map_info_ {
     uint8_t (*cmp) (uint8_t*, uint8_t*);
     uint64_t (*hash) (uint8_t*);

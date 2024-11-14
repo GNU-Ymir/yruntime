@@ -20,14 +20,12 @@ _yrt_dcopy_map_node_ _yrt_dcopy_head = {.len = 0, .used = 0, .from = NULL, .to =
  * ====================================================================================================
  */
 
-void _yrt_map_empty (_yrt_map_ * mp, uint64_t (*hash) (uint8_t*), uint8_t (*cmp) (uint8_t*, uint8_t*), uint64_t keySize, uint64_t valueSize) {
-    memset (mp, 0, sizeof (_yrt_map_));
-
-    mp-> minfo = (_yrt_map_info_*) GC_malloc (sizeof (_yrt_map_info_));
-    mp-> minfo-> hash = hash;
-    mp-> minfo-> cmp = cmp;
-    mp-> minfo-> keySize = keySize;
-    mp-> minfo-> valueSize = valueSize;
+void _yrt_map_empty (_yrt_map_ * mp, _yrt_map_info_ * info) {
+    mp-> minfo = info;
+    mp-> data = NULL;
+    mp-> len = 0;
+    mp-> loaded = 0;
+    mp-> size = 0;
 }
 
 void _yrt_map_insert (_yrt_map_ * mp, uint8_t * key, uint8_t * value) {
@@ -59,7 +57,7 @@ void _yrt_map_insert_no_resize (_yrt_map_ * mp, uint64_t hash, uint8_t * key, ui
 
 uint8_t _yrt_map_entry_insert (_yrt_map_entry_ * mp, uint64_t hash, uint8_t * key, uint8_t * value, _yrt_map_info_ * minfo) {
     uint8_t * keyEntry = ((uint8_t*) mp) + sizeof (_yrt_map_entry_);
-    if (minfo-> cmp (key, keyEntry) == 0) {
+    if (minfo-> cmp (key, keyEntry) == 1) {
         uint8_t * valEntry = keyEntry + minfo-> keySize;
         memcpy (valEntry, value, minfo-> valueSize);
         return 0;
@@ -114,7 +112,7 @@ void _yrt_map_erase (_yrt_map_ * mp, uint8_t * key) {
 
 uint8_t _yrt_map_erase_entry (_yrt_map_entry_ ** en, uint8_t * key, _yrt_map_info_ * minfo) {
     uint8_t * keyEntry = ((uint8_t*) (*en)) + sizeof (_yrt_map_entry_);
-    if (minfo-> cmp (key, keyEntry) == 0) {
+    if (minfo-> cmp (key, keyEntry) == 1) {
         *en = (*en)-> next;
         return 1;
     }
@@ -142,7 +140,7 @@ uint8_t _yrt_map_find (_yrt_map_ * mp, uint8_t * key, uint8_t * value) {
 
 uint8_t _yrt_map_find_entry (_yrt_map_entry_ * en, uint8_t * key, uint8_t * value, _yrt_map_info_ * minfo) {
     uint8_t * keyEntry = ((uint8_t*) en) + sizeof (_yrt_map_entry_);
-    if (minfo-> cmp (key, keyEntry) == 0) {
+    if (minfo-> cmp (key, keyEntry) == 1) {
         uint8_t * valueEntry = keyEntry + minfo-> keySize;
         memcpy (value, valueEntry, minfo-> valueSize);
 
@@ -188,6 +186,8 @@ void _yrt_map_fit (_yrt_map_ * mp, uint64_t newSize) {
             }
         }
     }
+
+    *mp = result;
 }
 
 /*!
