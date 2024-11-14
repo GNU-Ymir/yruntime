@@ -23,16 +23,16 @@ _yrt_dcopy_map_node_ _yrt_dcopy_head = {.len = 0, .used = 0, .from = NULL, .to =
 void _yrt_map_empty (_yrt_map_ * mp, _yrt_map_info_ * info) {
     mp-> minfo = info;
     mp-> data = NULL;
-    mp-> len = 0;
+    mp-> allocLen = 0;
     mp-> loaded = 0;
-    mp-> size = 0;
+    mp-> len = 0;
 }
 
 void _yrt_map_insert (_yrt_map_ * mp, uint8_t * key, uint8_t * value) {
-    if (mp-> len == 0) {
+    if (mp-> allocLen == 0) {
         _yrt_map_fit (mp, 1);
-    } else if ((mp-> loaded * 100 / mp-> len) > MAP_MAX_LOADED_FACTOR) {
-        _yrt_map_fit (mp, _yrt_next_pow2 (mp-> len + 1));
+    } else if ((mp-> loaded * 100 / mp-> allocLen) > MAP_MAX_LOADED_FACTOR) {
+        _yrt_map_fit (mp, _yrt_next_pow2 (mp-> allocLen + 1));
     }
 
     uint64_t hash = mp-> minfo-> hash (key);
@@ -40,11 +40,11 @@ void _yrt_map_insert (_yrt_map_ * mp, uint8_t * key, uint8_t * value) {
 }
 
 void _yrt_map_insert_no_resize (_yrt_map_ * mp, uint64_t hash, uint8_t * key, uint8_t * value) {
-    uint64_t index = hash % mp-> len;
+    uint64_t index = hash % mp-> allocLen;
     if (mp-> data [index] != NULL) {
         _yrt_map_entry_ * entry = mp-> data [index];
         if (_yrt_map_entry_insert (entry, hash, key, value, mp-> minfo) == 1) {
-            mp-> size += 1;
+            mp-> len += 1;
         }
 
         return;
@@ -52,7 +52,7 @@ void _yrt_map_insert_no_resize (_yrt_map_ * mp, uint64_t hash, uint8_t * key, ui
 
     _yrt_map_create_entry (&(mp-> data [index]), hash, key, value, mp-> minfo);
     mp-> loaded += 1;
-    mp-> size += 1;
+    mp-> len += 1;
 }
 
 uint8_t _yrt_map_entry_insert (_yrt_map_entry_ * mp, uint64_t hash, uint8_t * key, uint8_t * value, _yrt_map_info_ * minfo) {
@@ -87,25 +87,25 @@ void _yrt_map_create_entry (_yrt_map_entry_ ** entry, uint64_t hash, uint8_t * k
 }
 
 void _yrt_map_erase (_yrt_map_ * mp, uint8_t * key) {
-    if (mp-> len == 0) {
+    if (mp-> allocLen == 0) {
         return;
     }
 
     uint64_t hash = mp-> minfo-> hash (key);
-    uint64_t index = hash % mp-> len;
+    uint64_t index = hash % mp-> allocLen;
     if (mp-> data [index] == NULL) {
         return;
     }
 
     if (_yrt_map_erase_entry (&(mp-> data [index]), key, mp-> minfo) == 1) {
-        mp-> size -= 1;
+        mp-> len -= 1;
     }
 
     if (mp-> data [index] == NULL) {
         mp-> loaded -= 1;
     }
 
-    if (((mp-> loaded * 100) / mp-> len) < MAP_MIN_LOADED_FACTOR) {
+    if (((mp-> loaded * 100) / mp-> allocLen) < MAP_MIN_LOADED_FACTOR) {
         _yrt_map_fit (mp, _yrt_next_pow2 (mp-> loaded + 1));
     }
 }
@@ -125,12 +125,12 @@ uint8_t _yrt_map_erase_entry (_yrt_map_entry_ ** en, uint8_t * key, _yrt_map_inf
 }
 
 uint8_t _yrt_map_find (_yrt_map_ * mp, uint8_t * key, uint8_t * value) {
-    if (mp-> len == 0) {
+    if (mp-> allocLen == 0) {
         return 0;
     }
 
     uint64_t hash = mp-> minfo-> hash (key);
-    uint64_t index = hash % mp-> len;
+    uint64_t index = hash % mp-> allocLen;
     if (mp-> data [index] == NULL) {
         return 0;
     }
@@ -158,8 +158,8 @@ void _yrt_map_fit (_yrt_map_ * mp, uint64_t newSize) {
     if (newSize == 0) {
         mp-> data = NULL;
         mp-> loaded = 0;
+        mp-> allocLen = 0;
         mp-> len = 0;
-        mp-> size = 0;
 
         return;
     }
@@ -170,10 +170,10 @@ void _yrt_map_fit (_yrt_map_ * mp, uint64_t newSize) {
 
     result.minfo = mp-> minfo;
     result.loaded = 0;
-    result.size = 0;
-    result.len = newSize;
+    result.len = 0;
+    result.allocLen = newSize;
 
-    for (uint64_t i = 0 ; i < mp-> len ; i++) {
+    for (uint64_t i = 0 ; i < mp-> allocLen ; i++) {
         if (mp-> data [i] != NULL) {
             _yrt_map_entry_ * head = mp-> data [i];
             while (head != NULL) {
