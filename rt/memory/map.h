@@ -72,7 +72,7 @@ uint8_t _yrt_map_erase_entry (_yrt_map_entry_ ** en, uint8_t * key, _yrt_map_inf
  *    - 0 if not found, 1 otherwise
  *    - value: the value
  */
-uint8_t _yrt_map_find (_yrt_map_ * mp, uint8_t * key, uint8_t * value);
+uint8_t * _yrt_map_find (_yrt_map_ * mp, uint8_t * key);
 
 /**
  * Lookup wheter the key exists in the linked list
@@ -84,7 +84,7 @@ uint8_t _yrt_map_find (_yrt_map_ * mp, uint8_t * key, uint8_t * value);
  *    - 0 if not found, 1 otherwise
  *    - value: the value
  */
-uint8_t _yrt_map_find_entry (_yrt_map_entry_ * en, uint8_t * key, uint8_t * value, _yrt_map_info_ * minfo);
+uint8_t * _yrt_map_find_entry (_yrt_map_entry_ * en, uint8_t * key, _yrt_map_info_ * minfo);
 
 /**
  * Change the size of the map to decrease the complexity of access/insert or to decrease the amount of unused indexes

@@ -28,40 +28,14 @@ pub trait Hashable {
     }
 }
 
-/**
- * Transform a string into a u64
- * @complexity: O(n), with n = str.len
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ====================================          SCALARS          =====================================
+ * ====================================================================================================
+ * ====================================================================================================
  */
-pub fn __hash (str : [c32]) -> u64 {
-    let p = 31u64;
-    let m = 1_000_000_009u64;
-    let mut res = 0u64;
-    let mut p_pow = 1u64;
-
-    for c in str {
-        res = (res + (cast!u64 (cast!u32 (c)) + 1u64) * p_pow) % m;
-        p_pow = (p_pow * p) % m;
-    }
-
-    res
-}
-
-
-/**
- * Transform a string into a u64
- * @complexity: O(n), with n = str.len
- */
-pub fn __hash (str : [c8]) -> u64 {
-    let p = 31u64;
-    let m = 1_000_000_009u64;
-    let mut res = 0u64;
-    let mut p_pow = 1u64;
-    for c in str {
-        res = (res + (cast!u64 (cast!u8 (c)) + 1u64) * p_pow) % m;
-        p_pow = (p_pow * p) % m;
-    }
-    res
-}
 
 /**
  * Transform a char into a u64
@@ -192,6 +166,14 @@ pub fn __hash (f : f64)-> u64 {
     p
 }
 
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ===================================          COMPOUNDS          ====================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
 /**
  * Transform a slice into a u64.
  * If the slice contains class instances, they must implement the trait Hashable for the function to compile.
@@ -233,27 +215,24 @@ pub fn __hash {T of [U ; N], U, N : usize} (a : T)-> u64 {
 }
 
 /**
- * Transform a pointer into a u64.
- * @complexity: O (1)
+ * Transform an array into a u64.
+ * If the array contains class instances, they must implement the trait Hashable for the function to compile.
+ * @complexity: O (n), with n = a.len
+ * @templates:
+ *    - U: a hashable type
  */
-pub fn __hash {T} (x : *T) -> u64 {
-    Runtime!{*T}::_yrt_ptr_to_u64 (x)
-}
+pub fn __hash {T of [U ; N], U, N : usize} (ref a : T)-> u64 {
+    let p = 31u64;
+    let m = 1_000_000_009u64;
+    let mut res = 0u64;
+    let mut p_pow = 1u64;
 
-/**
- * Transform a pointer into a u64.
- * @complexity: O (1)
- */
-pub fn __hash {Z, T...} (x : fn (T)-> Z) -> u64 {
-    Runtime!{fn(T)-> Z}::_yrt_ptr_to_u64 (x)
-}
+    for c in a {
+        res = (res + (__hash (c) + 1u64) * p_pow) % m;
+        p_pow = (p_pow * p) % m;
+    }
 
-/**
- * Transform a pointer into a u64.
- * @complexity: O (1)
- */
-pub fn __hash {Z} (x : fn ()-> Z) -> u64 {
-    Runtime!{fn()-> Z}::_yrt_ptr_to_u64 (x)
+    res
 }
 
 /**
@@ -265,95 +244,6 @@ pub fn __hash {T} (a : (T)?)-> u64 {
         __hash (x)
     } else {
         0
-    }
-}
-
-
-/**
- * Transform a class that implement the trait Hashable into a u64
- * @complexity: O (1), the real complexity depends on the method `hash` of the class
- */
-pub fn __hash {class T} (a : T) -> u64 {
-    cte if (is!{T}{X impl core::hash::Hashable}) {
-        a.toHash ()
-    } else {
-        let mut res = 0x345678u64;
-        let mut mult = 31u64;
-        mult;
-
-        for i in (expand a,) {
-            res = (res ^ __hash (i)) * mult;
-            mult += (82520u64 + cast!u64 (typeof ((expand a,))::arity * 2us));
-        }
-
-        res
-    }
-}
-
-/**
- * Transform a struct into a u64.
- * This transformation hash all the fields of the struct. If the struct contains objects, they must implement the trait Hashable for this function to compile.
- * @complexity: O (n), where n is the number of fields of the struct.
- */
-pub fn __hash {record T} (a : T)-> u64 {
-    cte if (is!{T}{X impl core::hash::Hashable}) {
-        a.toHash ()
-    } else {
-        let mut res = 0x345678u64;
-        let mut mult = 31u64;
-        mult;
-
-        for i in (expand a,) {
-            res = (res ^ __hash (i)) * mult;
-            mult += (82520u64 + cast!u64 (typeof ((expand a,))::arity * 2us));
-        }
-
-        res
-    }
-}
-
-/**
- * Transform a struct into a u64.
- * This transformation hash all the fields of the struct. If the struct contains objects, they must implement the trait Hashable for this function to compile.
- * @complexity: O (n), where n is the number of fields of the struct.
- */
-pub fn __hash {record T} (ref a : T)-> u64 {
-    cte if (is!{T}{X impl core::hash::Hashable}) {
-        a.toHash ()
-    } else {
-        let mut res = 0x345678u64;
-        let mut mult = 31u64;
-        mult;
-
-        for i in (expand a,) {
-            res = (res ^ __hash (i)) * mult;
-            mult += (82520u64 + cast!u64 (typeof ((expand a,))::arity * 2us));
-        }
-
-        res
-    }
-}
-
-
-/**
- * Transform a struct into a u64.
- * This transformation hash all the fields of the struct. If the struct contains objects, they must implement the trait Hashable for this function to compile.
- * @complexity: O (n), where n is the number of fields of the struct.
- */
-pub fn __hash {entity T} (ref a : T)-> u64 {
-    cte if (is!{T}{X impl core::hash::Hashable}) {
-        a.toHash ()
-    } else {
-        let mut res = 0x345678u64;
-        let mut mult = 31u64;
-        mult;
-
-        for i in (expand a,) {
-            res = (res ^ __hash (i)) * mult;
-            mult += (82520u64 + cast!u64 (typeof ((expand a,))::arity * 2us));
-        }
-
-        res
     }
 }
 
@@ -372,4 +262,96 @@ pub fn __hash {T...} (a : (T,))-> u64 {
         mult += (82520u64 + cast!u64 (typeof (a)::arity * 2us));
     }
     res
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ====================================          POINTERS          ====================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Transform a pointer into a u64.
+ * @complexity: O (1)
+ */
+pub fn __hash {T} (x : *T) -> u64 {
+    Runtime!{*T}::_yrt_ptr_to_u64 (x)
+}
+
+/**
+ * Transform a function pointer into a u64.
+ * @complexity: O (1)
+ */
+pub fn __hash {Z, T...} (x : fn (T)-> Z) -> u64 {
+    Runtime!{fn(T)-> Z}::_yrt_ptr_to_u64 (x)
+}
+
+/**
+ * Transform a function pointer into a u64.
+ * @complexity: O (1)
+ */
+pub fn __hash {Z} (x : fn ()-> Z) -> u64 {
+    Runtime!{fn()-> Z}::_yrt_ptr_to_u64 (x)
+}
+
+/**
+ * Transform a function pointer into a u64.
+ * @complexity: O (1)
+ */
+pub fn __hash {Z, T...} (x : dg (T)-> Z) -> u64 {
+    0u64
+}
+
+/**
+ * Transform a function pointer into a u64.
+ * @complexity: O (1)
+ */
+pub fn __hash {Z} (x : dg ()-> Z) -> u64 {
+    0u64
+}
+
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ==================================          CUSTOM TYPES          ==================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Transform a class that implement the trait Hashable into a u64
+ * @complexity: O (1), the real complexity depends on the method `hash` of the class
+ */
+pub fn __hash {T of C && of I, class C, I impl core::hash::Hashable} (a : T)-> u64 {
+    a.toHash ()
+}
+
+/**
+ * Transform a struct into a u64.
+ * This transformation hash all the fields of the struct. If the struct contains objects, they must implement the trait Hashable for this function to compile.
+ * @complexity: O (n), where n is the number of fields of the struct.
+ */
+pub fn __hash {T of R && of I, record R, I impl core::hash::Hashable} (a : T)-> u64 {
+    a.toHash ()
+}
+
+/**
+ * Transform a struct into a u64.
+ * This transformation hash all the fields of the struct. If the struct contains objects, they must implement the trait Hashable for this function to compile.
+ * @complexity: O (n), where n is the number of fields of the struct.
+ */
+pub fn __hash {T of R && of I, record R, I impl core::hash::Hashable} (ref a : T)-> u64 {
+    a.toHash ()
+}
+
+/**
+ * Transform a struct into a u64.
+ * This transformation hash all the fields of the struct. If the struct contains objects, they must implement the trait Hashable for this function to compile.
+ * @complexity: O (n), where n is the number of fields of the struct.
+ */
+pub fn __hash {T of E && of I, entity E, I impl core::hash::Hashable} (ref a : T)-> u64 {
+    a.toHash ()
 }

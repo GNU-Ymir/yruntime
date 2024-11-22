@@ -124,34 +124,32 @@ uint8_t _yrt_map_erase_entry (_yrt_map_entry_ ** en, uint8_t * key, _yrt_map_inf
     return 0;
 }
 
-uint8_t _yrt_map_find (_yrt_map_ * mp, uint8_t * key, uint8_t * value) {
+uint8_t * _yrt_map_find (_yrt_map_ * mp, uint8_t * key) {
     if (mp-> allocLen == 0) {
-        return 0;
+        return NULL;
     }
 
     uint64_t hash = mp-> minfo-> hash (key);
     uint64_t index = hash % mp-> allocLen;
     if (mp-> data [index] == NULL) {
-        return 0;
+        return NULL;
     }
 
-    return _yrt_map_find_entry (mp-> data [index], key, value, mp-> minfo);
+    return _yrt_map_find_entry (mp-> data [index], key, mp-> minfo);
 }
 
-uint8_t _yrt_map_find_entry (_yrt_map_entry_ * en, uint8_t * key, uint8_t * value, _yrt_map_info_ * minfo) {
+uint8_t * _yrt_map_find_entry (_yrt_map_entry_ * en, uint8_t * key, _yrt_map_info_ * minfo) {
     uint8_t * keyEntry = ((uint8_t*) en) + sizeof (_yrt_map_entry_);
     if (minfo-> cmp (key, keyEntry) == 1) {
         uint8_t * valueEntry = keyEntry + minfo-> keySize;
-        memcpy (value, valueEntry, minfo-> valueSize);
-
-        return 1;
+        return valueEntry;
     }
 
     if (en-> next == NULL) {
-        return 0;
+        return NULL;
     }
 
-    return _yrt_map_find_entry (en-> next, key, value, minfo);
+    return _yrt_map_find_entry (en-> next, key, minfo);
 }
 
 void _yrt_map_fit (_yrt_map_ * mp, uint64_t newSize) {
