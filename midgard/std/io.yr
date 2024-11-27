@@ -304,18 +304,18 @@ pub {
     }
 
     /**
-     * Print an array of type U to stdout.
+     * Print a slice of type U to stdout.
      * @params:
-     *    - a: an array to print
+     *    - s: a slice to print
      * @templates :
      *    - T: a slice type
      *    - U: any
      */
-    fn print {T of [U], U} (a : T)  {
+    fn print {T of [U], U} (s : T)  {
         putchar ('[');
-        if a.len > 0 {
-            print (a [0]);
-            for i in a [1 .. $] {
+        if s.len > 0 {
+            print (s [0]);
+            for i in s [1 .. $] {
                 putchar (',');
                 putchar (' ');
                 print (i);
@@ -326,24 +326,66 @@ pub {
     }
 
     /**
-     * Print an array of type U to stderr.
+     * Print a slice of type U to stderr.
      * @params:
-     *    - a: an array to print
+     *    - s: an slice to print
      * @templates :
      *    - T: a slice type
      *    - U: any
      */
-    fn eprint {T of [U], U} (a : T)  {
+    fn eprint {T of [U], U} (s : T)  {
         let mut i = 0_u64;
         eprint ('[');
-        if a.len > 0 {
-            eprint (a [0]);
-            for i in a [1 .. $] {
+        if s.len > 0 {
+            eprint (s [0]);
+            for i in s [1 .. $] {
                 fprintf (io_utils::stderr, ", ".ptr);
                 eprint (i);
             }
         }
 
+        eprint (']');
+    }
+
+    /**
+     * Print a map of type K => V to stdout
+     * @params:
+     *    - m: the map to print
+     * */
+    fn print {M of [K => V], K, V} (m : M) {
+        putchar ('[');
+        let mut fst = true;
+        for k, v in m {
+            if (!fst) {
+                putchar (',');
+                putchar (' ');
+            } else fst = false;
+
+            print (k);
+            print (" => ");
+            print (v);
+        }
+        putchar (']');
+    }
+
+    /**
+     * Print a map of type K => V to stderr
+     * @params:
+     *    - m: the map to print
+     * */
+    fn eprint {M of [K => V], K, V} (m : M) {
+        eprint ('[');
+        let mut fst = true;
+        for k, v in m {
+            if (!fst) {
+                eprint (',');
+                eprint (' ');
+            } else fst = false;
+
+            eprint (k);
+            eprint (" => ");
+            eprint (v);
+        }
         eprint (']');
     }
 

@@ -30,33 +30,6 @@ pub fn stepBy {T, U} (x : ..T, s : U)-> ..T {
 }
 
 /**
- * Count the number of elements in the range
- * */
-pub fn countNbIterations {T, U} (fst : T, scd : T, step : U, contains : bool)-> usize {
-    let (stepU, fstU, scdU, mut subU) = if (step < 0) {
-        let fstU = cast!usize (scd);
-        let scdU = cast!usize (fst);
-        (cast!usize (-step), fstU, scdU, scdU - fstU)
-    } else {
-        let fstU = cast!usize (fst);
-        let scdU = cast!usize (scd);
-        (cast!usize (step), fstU, scdU, scdU - fstU)
-    };
-
-    let nbAll = subU / stepU;
-
-    // Overflow
-    if (nbAll == usize::max) return nbAll;
-    if (contains) return nbAll + 1us;
-
-    // recompute, because is it not necessarily == scd since the division might trunc the value
-    let last = (nbAll * stepU) + fstU;
-    if (last != scdU) return nbAll + 1us;
-
-    nbAll
-}
-
-/**
  * Create a reversed range
  * @example:
  * ===
@@ -86,7 +59,7 @@ pub fn reverse {T} (x : ..T)-> ..T {
  * ===
  */
 pub fn opContains {T} (range : ..T, x : T) -> bool {
-    if (range.contain) {
+    if (range.contains) {
         if range.fst < range.scd {
             x >= range.fst && x <= range.scd
         } else {

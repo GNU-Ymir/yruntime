@@ -1,0 +1,89 @@
+in array;
+
+mod YRUNTIME {T} {
+    pub extern (C) fn _yrt_alloc_slice_no_set (ref res : [T], len : usize, size : usize);
+    pub extern (C) fn memcpy (_ : *T,  _ : *T, _ : usize)-> void;
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ===================================          COMPARISON          ===================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+pub fn opCmp {T of [U], U} (a : T, b : T)-> i32 {
+    let mi = if (b.len > a.len) { a.len } else { b.len };
+    for i in 0us .. mi {
+        if (a [i] < b [i]) return -1;
+        else if (a [i] > b [i]) return 1;
+    }
+
+    if (a.len > b.len) return 1;
+    else if (a.len < b.len) return -1;
+    else return 0;
+}
+
+
+pub fn opEquals {T of [U], U} (a : T, b : T)-> bool {
+    if a.len != b.len { return false };
+    for i in 0us .. a.len {
+        if (a [i] != b [i]) return false;
+    }
+
+    true
+}
+
+pub fn opEquals (a : [c8], b : [c8])-> bool {
+    if a.len != b.len { return false };
+    for i in 0us .. a.len {
+        if (a [i] != b [i]) return false;
+    }
+
+    true
+}
+
+pub fn opEquals (a : [c32], b : [c32])-> bool {
+    if a.len != b.len { return false };
+    for i in 0us .. a.len {
+        if (a [i] != b [i]) return false;
+    }
+
+    true
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =============================          ALLOCATION/DUPLICATION          =============================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+pub fn deepCopySlice {T of [U], U} (a : T)-> dmut T {
+    if (a.len == 0us) { return []; }
+    let dmut res : [U] = [];
+    YRUNTIME!{U}::_yrt_alloc_slice_no_set (res, a.len, U::size);
+    for i, ti in a {
+        res [i] = dcopy ti;
+    }
+
+    return alias res;
+}
+
+pub fn allocArray {T} (len : usize)-> dmut [T] {
+    let dmut res : [T] = [];
+    YRUNTIME!{T}::_yrt_alloc_slice_no_set (res, len, T::size);
+
+    alias res
+}
+
+/**
+ * Copy the second array inside the first one, without reallocation
+ * Copy only what can be copied (max (to.len, fr.len))
+ */
+pub fn memCopy {T} (fr : [T], mut to : [mut T]) {
+    let len = if (to.len < fr.len) { to.len } else { fr.len }
+    YRUNTIME!{T}::memcpy (to.ptr, fr.ptr, cast!usize (len) * T::size);
+}

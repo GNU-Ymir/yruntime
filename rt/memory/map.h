@@ -20,6 +20,15 @@
 void _yrt_map_empty (_yrt_map_ * mp, _yrt_map_info_ * info);
 
 /**
+ * Create a new map from a copy of an old map
+ * @params:
+ *    - result: the result map
+ *    - info: the information about the types in the map
+ *    - old: the old map to copy
+ */
+void _yrt_dup_map (_yrt_map_ * result, _yrt_map_info_ * info, _yrt_map_ *old);
+
+/**
  * Insert an element into the map
  * @params:
  *    - mp: the map in which the insertion is made
@@ -91,6 +100,13 @@ uint8_t * _yrt_map_find_entry (_yrt_map_entry_ * en, uint8_t * key, _yrt_map_inf
  */
 void _yrt_map_fit (_yrt_map_ * mp, uint64_t newSize);
 
+/**
+ * Insert all the key-> values from old into result
+ * @assume: result has allocated data array
+ * @warning: result is not be resized
+ */
+void _yrt_map_copy_entries (_yrt_map_ * result, _yrt_map_ * old);
+
 /*!
  * ====================================================================================================
  * ====================================================================================================
@@ -132,5 +148,37 @@ void _yrt_insert_dcopy_map (void* data, void* value);
 void _yrt_dcopy_map_grow ();
 
 
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =================================          MAP ITERATION          ==================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Create a new iterator over a map
+ */
+_yrt_map_iterator_ * _yrt_map_iter_begin (_yrt_map_ * mp);
+
+/**
+ * Extract the key pointed by the current iteration
+ */
+uint8_t* _yrt_map_iter_key (_yrt_map_iterator_ * iter);
+
+/**
+ * Extract the value pointed by the current iteration
+ */
+uint8_t* _yrt_map_iter_val (_yrt_map_iterator_ * iter);
+
+/**
+ * Increment the iterator and go to the next element
+ */
+void _yrt_map_iter_next (_yrt_map_iterator_ * iter);
+
+/**
+ * Free the allocated iterator
+ */
+void _yrt_map_iter_del (_yrt_map_iterator_ * iter);
 
 #endif // MAP_H_

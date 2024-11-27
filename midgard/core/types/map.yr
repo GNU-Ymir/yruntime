@@ -1,5 +1,9 @@
 in map;
 
+mod Runtime{K, V} {
+    pub extern (C) fn _yrt_map_erase (a : *[K => V], k : *K);
+}
+
 /**
  * Binding to the comparison function in order to be callable from the C runtime
  * */
@@ -14,6 +18,13 @@ pub fn compareKeys {T} (a : *T, b : *T)-> bool {
  * */
 pub fn hashKey {T} (a : *T)-> u64 {
     unsafe {
-        core::hash::__hash (*a)
+        core::types::hash::__hash (*a)
     }
+}
+
+/**
+ * Remove a key from the map
+ * */
+pub fn removeKey {K, V} (dmut ref a : [K => V], key : K) {
+    Runtime!{K, V}::_yrt_map_erase (&a, &key);
 }

@@ -4,31 +4,6 @@ mod Runtime {T} {
     pub extern (C) fn _yrt_ptr_to_u64 (a : T)-> u64;
 }
 
-pub trait Hashable {
-
-    /**
-     * Transform an object into a u64.
-     * By default, it hashes all the fields of the class. If the class has an ancestor, and that ancestor is hashable, it is also hashed. If the ancestor class is not hashable it is simply ignored.
-     * @warning: all the fields of the class must be hashable for this function to compile.
-     * @complexity: O (n), with n = recursive number of field of the class
-     */
-    pub fn toHash (self)-> u64 {
-        let mut res = cte if (__pragma!compile (self.super.toHash)) {
-            self.super.toHash ()
-        } else { 0x345678u64 };
-
-        let mut mult = 31u64;
-        mult;
-        for i in (expand self,) {
-            res = (res ^ __hash (i)) * mult;
-            mult += (82520u64 + cast!u64 (typeof ((expand self,))::arity * 2us));
-        }
-
-        res
-    }
-}
-
-
 /*!
  * ====================================================================================================
  * ====================================================================================================
@@ -325,7 +300,7 @@ pub fn __hash {Z} (x : dg ()-> Z) -> u64 {
  * Transform a class that implement the trait Hashable into a u64
  * @complexity: O (1), the real complexity depends on the method `hash` of the class
  */
-pub fn __hash {T of C && of I, class C, I impl core::hash::Hashable} (a : T)-> u64 {
+pub fn __hash {T of C && of I, class C, I impl core::types::Hashable} (a : T)-> u64 {
     a.toHash ()
 }
 
@@ -334,7 +309,7 @@ pub fn __hash {T of C && of I, class C, I impl core::hash::Hashable} (a : T)-> u
  * This transformation hash all the fields of the struct. If the struct contains objects, they must implement the trait Hashable for this function to compile.
  * @complexity: O (n), where n is the number of fields of the struct.
  */
-pub fn __hash {T of R && of I, record R, I impl core::hash::Hashable} (a : T)-> u64 {
+pub fn __hash {T of R && of I, record R, I impl core::types::Hashable} (a : T)-> u64 {
     a.toHash ()
 }
 
@@ -343,7 +318,7 @@ pub fn __hash {T of R && of I, record R, I impl core::hash::Hashable} (a : T)-> 
  * This transformation hash all the fields of the struct. If the struct contains objects, they must implement the trait Hashable for this function to compile.
  * @complexity: O (n), where n is the number of fields of the struct.
  */
-pub fn __hash {T of R && of I, record R, I impl core::hash::Hashable} (ref a : T)-> u64 {
+pub fn __hash {T of R && of I, record R, I impl core::types::Hashable} (ref a : T)-> u64 {
     a.toHash ()
 }
 
@@ -352,6 +327,6 @@ pub fn __hash {T of R && of I, record R, I impl core::hash::Hashable} (ref a : T
  * This transformation hash all the fields of the struct. If the struct contains objects, they must implement the trait Hashable for this function to compile.
  * @complexity: O (n), where n is the number of fields of the struct.
  */
-pub fn __hash {T of E && of I, entity E, I impl core::hash::Hashable} (ref a : T)-> u64 {
+pub fn __hash {T of E && of I, entity E, I impl core::types::Hashable} (ref a : T)-> u64 {
     a.toHash ()
 }

@@ -59,6 +59,13 @@ typedef struct _yrt_map_ {
     uint64_t len; // The number of elements in the map
 } _yrt_map_;
 
+typedef struct _yrt_map_iterator_ {
+    _yrt_map_ * mp;
+    _yrt_map_entry_ * current;
+    uint64_t rootIndex;
+    uint8_t notEnd;
+} _yrt_map_iterator_;
+
 /*!
  * ====================================================================================================
  * ====================================================================================================

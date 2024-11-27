@@ -85,7 +85,8 @@
 in conv;
 
 use std::{io, stream, traits};
-use core::{typeinfo, exception, duplication, array};
+use core::exception;
+use core::types::{array, info};
 
 mod Runtime {
     pub extern (C) fn _yrt_ulong_to_double (a : usize)-> f64;
@@ -280,7 +281,7 @@ pub {
             n /= base;
         }
 
-        let dmut res = core::duplication::allocArray!(U)(len);
+        let dmut res = core::types::array::allocArray!(U)(len);
         let mut j = 1us;
         for i in len .. 0us {
             res [i - 1us] = inner::to!U ((cast!usize (a) / j) % base, base);
@@ -421,7 +422,7 @@ pub {
 
         let mut j = 1is;
         if (!sign) {
-            let dmut res = core::duplication::allocArray!(U)(len);
+            let dmut res = core::types::array::allocArray!(U)(len);
             for i in len .. 0us {
                 res [i - 1us] = inner::to!U (cast!usize ((cast!isize (a) / j) % cast!isize (base)), base);
                 j *= cast!isize (base);
@@ -430,7 +431,7 @@ pub {
             }
             return alias res;
         } else {
-            let dmut res = core::duplication::allocArray!(U)(len + 1us);
+            let dmut res = core::types::array::allocArray!(U)(len + 1us);
             {
                 for i in len .. 0us {
                     res [i] = inner::to!U (cast!usize ((cast!isize (-a) / j) % cast!isize (base)), base);
@@ -488,7 +489,7 @@ pub {
      * ===
      */
     fn if (is!{U}{X of c8} && is!{G}{X of u8}) to {T of [U], U, F of [G], G} (a : F)-> dmut [c8] {
-        let dmut res = core::duplication::allocArray!c8 (a.len);
+        let dmut res = core::types::array::allocArray!c8 (a.len);
         Runtime::memcpy (cast!{*void} (res.ptr), cast!{*void} (a.ptr), res.len);
 
         alias res
@@ -506,7 +507,7 @@ pub {
      * ===
      */
     fn if (is!{U}{X of u8} && is!{G}{X of c8}) to {T of [U], U, F of [G], G} (s : F)-> dmut [u8] {
-        let dmut res = core::duplication::allocArray!u8 (s.len);
+        let dmut res = core::types::array::allocArray!u8 (s.len);
         Runtime::memcpy (cast!{*void} (res.ptr), cast!{*void} (s.ptr), res.len);
 
         alias res
@@ -1128,8 +1129,8 @@ pub {
      * ===
      */
     fn toStringZ (a : [c8])-> *c8 {
-        let dmut res = core::duplication::allocArray!(c8)(a.len + 1us);
-        core::duplication::memCopy (a, alias res);
+        let dmut res = core::types::array::allocArray!(c8)(a.len + 1us);
+        core::types::array::memCopy (a, alias res);
         {
             res [$-1us] = '\u{0}'c8;
         }
@@ -1199,7 +1200,7 @@ pub {
             else len += 1us;
         }
 
-        let dmut res = core::duplication::allocArray!(c8)(len);
+        let dmut res = core::types::array::allocArray!(c8)(len);
         for i in 0us .. len {
             res [i] = *(a + i);
         }
