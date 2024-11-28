@@ -13,21 +13,21 @@ int _yrt_demangle_number (char * data, int * current);
 /**
  * Demangle the name of a symbol
  */
-_yrt_slice_ _yrt_demangle_symbol (char * data, uint64_t len);
+_yrt_slice_t _yrt_demangle_symbol (char * data, uint64_t len);
 
 /**
  * Demangle the name of a symbol
  */
-_yrt_slice_ _yrt_demangle_symbol_to_slice (char * data, uint64_t len);
+_yrt_slice_t _yrt_demangle_symbol_to_slice (char * data, uint64_t len);
 
 /**
  * Demangle the parameters of a function
  */
-_yrt_slice_ _yrt_demangle_function_parameters (char * data, uint64_t len);
+_yrt_slice_t _yrt_demangle_function_parameters (char * data, uint64_t len);
 
 /**
  * Mangle the name of a class 
  */
-_yrt_slice_ _yrt_mangle_path (_yrt_slice_ name);
+_yrt_slice_t _yrt_mangle_path (_yrt_slice_t name);
 
 #endif

@@ -7,7 +7,7 @@
  * Make a copy of the slice
  * @info: allocation made with the gc
  */
-void _yrt_dup_slice (_yrt_slice_ * result, _yrt_slice_ * old, uint64_t size);
+void _yrt_dup_slice (_yrt_slice_t * result, _yrt_slice_t * old, uint64_t size);
 
 /**
  * Duplicate a tuple

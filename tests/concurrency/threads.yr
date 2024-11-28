@@ -1,57 +1,56 @@
-in threads;
+// in threads;
 
-use std::io;
-use etc::concurrency::thread;
-use std::concurrency::mail;
+// use std::io;
+// use std::concurrency::mail;
 
-lazy dmut mailBox = copy MailBox!{i32} ();
+// lazy dmut mailBox = copy MailBox!{i32} ();
 
-fn foo (dmut th : &Thread) {
-    let msg = th:.read![c8] ();
-    th:.write (msg);
+// fn foo (dmut th : &Thread) {
+//     let msg = th:.read![c8] ();
+//     th:.write (msg);
 
-    if th:.read!bool () {
-        println ("Here") ;
-        th:.write (true);
-        return;
-    }
+//     if th:.read!bool () {
+//         println ("Here") ;
+//         th:.write (true);
+//         return;
+//     }
 
-    assert (false);
-} catch {
-    _ => {
-        println ("Failed");
-    }
-}
+//     assert (false);
+// } catch {
+//     _ => {
+//         println ("Failed");
+//     }
+// }
 
-fn bar (dmut th : &Thread) {
-    if (th:.read!bool ()) {
-        assert (mailBox:.receive () == 12?);
-    }
+// fn bar (dmut th : &Thread) {
+//     if (th:.read!bool ()) {
+//         assert (mailBox:.receive () == 12?);
+//     }
 
-    th:.write (true);
-} catch {
-    _ => {
-        println ("Failed");
-    }
-}
+//     th:.write (true);
+// } catch {
+//     _ => {
+//         println ("Failed");
+//     }
+// }
 
-__test {
-    let dmut a = copy Thread::spawn (&foo);
-    a:.write ("Hello");
-    let msg = a:.read![c8] ();
+// __test {
+//     let dmut a = copy Thread::spawn (&foo);
+//     a:.write ("Hello");
+//     let msg = a:.read![c8] ();
 
-    assert (msg == "Hello");
-    a:.write (true);
-    assert (a:.read!bool (), "a");
-    a:.join ();
-}
+//     assert (msg == "Hello");
+//     a:.write (true);
+//     assert (a:.read!bool (), "a");
+//     a:.join ();
+// }
 
 
-__test {
-    let dmut a = copy Thread::spawn (&bar);
-    mailBox:.send (12);
+// __test {
+//     let dmut a = copy Thread::spawn (&bar);
+//     mailBox:.send (12);
 
-    a:.write (true);
-    assert (a:.read!bool (), "b");
-    a:.join ();
-}
+//     a:.write (true);
+//     assert (a:.read!bool (), "b");
+//     a:.join ();
+// }

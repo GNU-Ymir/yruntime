@@ -1,5 +1,6 @@
 #include <rt/except/personnality.h>
 #include <rt/except/stacktrace.h>
+#include <rt/except/panic.h>
 
 #define DW_EH_PE_absptr 0x00
 #define DW_EH_PE_omit   0xff
@@ -23,7 +24,7 @@
 #define DW_EH_PE_indirect 0x80
 
 void _yrt_exc_save (struct _Unwind_Exception* unwindHeader, int handler, const char* lsda, _Unwind_Ptr landingPad, _Unwind_Word cfa) {
-    _yrt_exception_header_ * eh = _yrt_to_exception_header (unwindHeader);
+    _yrt_exception_header_t * eh = _yrt_to_exception_header (unwindHeader);
     eh-> lsda = lsda;
     eh-> handler = handler;
     eh-> landingPad = landingPad;
@@ -31,7 +32,7 @@ void _yrt_exc_save (struct _Unwind_Exception* unwindHeader, int handler, const c
 }
 
 void _yrt_exc_restore (struct _Unwind_Exception* unwindHeader, int * handler, const char** lsda, _Unwind_Ptr* landingPad, _Unwind_Word* cfa) {
-    _yrt_exception_header_ * eh = _yrt_to_exception_header (unwindHeader);
+    _yrt_exception_header_t * eh = _yrt_to_exception_header (unwindHeader);
     *lsda = eh-> lsda;
     *handler = eh-> handler;
     *landingPad = eh-> landingPad ;
@@ -51,7 +52,7 @@ uint32_t _yrt_exc_size_of_encoded_value (uint8_t encoding) {
     case DW_EH_PE_udata8 :
         return 8;
     default :
-        _yrt_exc_terminate ("reading encoded", __LINE__);
+        _yrt_exc_terminate ("reading encoded", __FILE__, __FUNCTION__, __LINE__);
     }
 }
 
@@ -70,7 +71,7 @@ _Unwind_Ptr _yrt_exc_base_of_encoded_value (uint8_t encoding, struct _Unwind_Con
     case DW_EH_PE_funcrel:
         return _Unwind_GetRegionStart (context);
     default :
-        _yrt_exc_terminate ("reading encoded", __LINE__);
+        _yrt_exc_terminate ("reading encoded", __FILE__, __FUNCTION__, __LINE__);
     }
 }
 
@@ -173,7 +174,7 @@ _Unwind_Ptr _yrt_exc_read_encoded_value_with_base (uint8_t encoding, _Unwind_Ptr
             break;
         }
         default :
-            _yrt_exc_terminate ("reading encoded", __LINE__);
+            _yrt_exc_terminate ("reading encoded", __FILE__, __FUNCTION__, __LINE__);
         }
     }
 
@@ -329,7 +330,7 @@ _Unwind_Reason_Code _yrt_exc_personality (_Unwind_Action actions,
     if (actions == (_UA_CLEANUP_PHASE | _UA_HANDLER_FRAME)) {
         _yrt_exc_restore (unwindHeader, &handler, &lsda, &landingPad, &cfa);
         if (landingPad == 0) {
-            _yrt_exc_terminate ("unwind error", __LINE__);
+            _yrt_exc_terminate ("unwind error", __FILE__, __FUNCTION__, __LINE__);
         }
     } else {
         lsda = _Unwind_GetLanguageSpecificData (context);

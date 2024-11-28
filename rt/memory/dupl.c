@@ -4,7 +4,7 @@
 #include <rt/utils/gc.h>
 #include <string.h>
 
-void _yrt_dup_slice (_yrt_slice_ * result, _yrt_slice_ * old, uint64_t size) {
+void _yrt_dup_slice (_yrt_slice_t * result, _yrt_slice_t * old, uint64_t size) {
 	_yrt_alloc_slice_no_set (result, old-> len, size);
 	memcpy (result-> data, old-> data, old-> len * size);
 }

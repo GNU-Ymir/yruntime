@@ -1,27 +1,7 @@
-/**
- * Low level thread management
- *
- * */
 
-in thread;
 
-// C runtime bindings
-mod spawning;
-
-use etc::concurrency::sync::_;
-use etc::concurrency::pipes::_;
-use core::exception::io;
-
-use etc::c::{files, socket};
-
-/**
- * Type used to identify and communicate with a threads
- * */
 @final
-pub class Thread {
-
-    // The uniq id of the thread
-    let mut _id : usize;
+pub class ThreadPipe {
 
     // Pipe to read
     let dmut _in : (&IPipe)? = none;
@@ -35,72 +15,21 @@ pub class Thread {
     // Semaphore to finalize the sync
     let dmut _sem : (&Semaphore)? = none;
 
-    prv self (id : usize, withPipes : bool)
-        with _id = id
-
-        throws io::IOError
+    /**
+     * Create pipes used to communicate between threads
+     * */
+    pub self ()
+        throws &IOError
     {
-        if (withPipes) {
-            let dmut pipes : [i32 ; 2] = [0, 0];
-            if (files::pipe (pipes.ptr) != 0) {
-                throw copy IOError ();
-            }
-
-            self._in = (copy IPipe (pipe-> pipes [0]))?;
-            self._out = (copy OPipe (pipe-> pipes [1]))?;
-            self._barrier = (copy Barrier (2))?;
-            self._sem = (copy Semaphore ())?;
+        let dmut pipes : [i32 ; 2] = [0, 0];
+        if (files::pipe (pipes.ptr) != 0) {
+            throw copy IOError ();
         }
-    }
 
-    /*!
-     * ====================================================================================================
-     * ====================================================================================================
-     * ====================================          SPAWNING          ====================================
-     * ====================================================================================================
-     * ====================================================================================================
-     */
-
-    /**
-     * Spawn a thread
-     * @params:
-     *    - func: the function to launch as the thread main
-     * */
-    pub self spawn (func : fn (dmut &Thread)-> void, withPipes : bool = true)
-        with self (0us, withPipes)
-        throws IOError
-    {
-        let dmut th = copy spawning::FnThreadLauncher (func, alias self, &self:.dispose);
-        spawning::Runtime!{&spawning::FnThreadLauncher}::_yrt_thread_create (&self._id, null, &spawning::thread_fn_main, th);
-    }
-
-    /**
-     * Spawn a thread
-     * @params:
-     *    - func: the delegate to launch as the thread main
-     * */
-    pub self spawn (func : dg (dmut &Thread)-> void, withPipes : bool = true)
-        with self (0us, withPipes)
-        throws IOError
-    {
-        let dmut th = copy spawning::DgThreadLauncher (func, alias self, &self:.dispose);
-        spawning::Runtime!{&spawning::DgThreadLauncher}::_yrt_thread_create (&self._id, null, &spawning::thread_dg_main, th);
-    }
-
-    /*!
-     * ====================================================================================================
-     * ====================================================================================================
-     * ====================================          GETTERS          =====================================
-     * ====================================================================================================
-     * ====================================================================================================
-     */
-
-    /**
-     * @returns: the id of the thread
-     * */
-    @field
-    pub fn id (self)-> usize {
-        self._id
+        self._in = (copy IPipe (pipe-> pipes [0]))?;
+        self._out = (copy OPipe (pipe-> pipes [1]))?;
+        self._barrier = (copy Barrier (2))?;
+        self._sem = (copy Semaphore ())?;
     }
 
     /*!
@@ -276,29 +205,6 @@ pub class Thread {
         throw copy IOError ();
     }
 
-    /*!
-     * ====================================================================================================
-     * ====================================================================================================
-     * ====================================          CLOSING          =====================================
-     * ====================================================================================================
-     * ====================================================================================================
-     */
-
-    /**
-     * Wait for the thread to join
-     * */
-    pub fn join (mut self) {
-        spawning::_yrt_thread_join (self._id, null);
-    }
-
-    /*!
-     * ====================================================================================================
-     * ====================================================================================================
-     * ===================================          DISPOSING          ====================================
-     * ====================================================================================================
-     * ====================================================================================================
-     */
-
     /**
      * Dispose the allocated content of the thread
      * */
@@ -324,5 +230,6 @@ pub class Thread {
     __dtor (mut self) {
         self:.dispose ();
     }
+
 
 }

@@ -14,7 +14,7 @@
 /**
  * Check if the lazy value is set, if not construct it
  */
-void* _yrt_call_lazy (_yrt_lazy_value_ * value);
+void* _yrt_call_lazy (_yrt_lazy_value_t * value);
 
 
 #endif // LAZY_H_

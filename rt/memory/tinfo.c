@@ -36,10 +36,10 @@ void* _yrt_unsafe_cast (void* x) {
     return x;
 }
 
-_yrt_slice_ _yrt_type_typeinfo_name (_yrt_slice_ mangled) {
-    _yrt_slice_ name = str_copy_len ("_Y", 2);
+_yrt_slice_t _yrt_type_typeinfo_name (_yrt_slice_t mangled) {
+    _yrt_slice_t name = str_copy_len ("_Y", 2);
 
-	_yrt_slice_ tmp = str_create_len (mangled.data, mangled.len);
+	_yrt_slice_t tmp = str_create_len (mangled.data, mangled.len);
 	_yrt_append_slice (&name, &tmp, 1);
 
 	tmp = str_create_len ("TI", 2);
@@ -49,9 +49,9 @@ _yrt_slice_ _yrt_type_typeinfo_name (_yrt_slice_ mangled) {
 }
 
 
-_yrt_slice_ _yrt_type_vtable_name (_yrt_slice_ mangled) {
-    _yrt_slice_ name = str_copy_len ("_Y", 2);
-	_yrt_slice_ tmp = str_create_len (mangled.data, mangled.len);
+_yrt_slice_t _yrt_type_vtable_name (_yrt_slice_t mangled) {
+    _yrt_slice_t name = str_copy_len ("_Y", 2);
+	_yrt_slice_t tmp = str_create_len (mangled.data, mangled.len);
 
 	_yrt_append_slice (&name, &tmp, 1);
 
@@ -62,10 +62,10 @@ _yrt_slice_ _yrt_type_vtable_name (_yrt_slice_ mangled) {
 }
 
 
-_yrt_slice_ _yrt_type_constructor_no_param_name (_yrt_slice_ mangled) {
-    _yrt_slice_ name = str_copy_len ("_Y", 2);
+_yrt_slice_t _yrt_type_constructor_no_param_name (_yrt_slice_t mangled) {
+    _yrt_slice_t name = str_copy_len ("_Y", 2);
 
-	_yrt_slice_ tmp = str_create_len (mangled.data, mangled.len);
+	_yrt_slice_t tmp = str_create_len (mangled.data, mangled.len);
 	_yrt_append_slice (&name, &tmp, 1);
 
 	tmp = str_create_len ("4selfF", 6);

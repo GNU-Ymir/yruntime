@@ -14,7 +14,7 @@
 int __YRT_DEBUG__ = 0;
 int __YRT_FORCE_DEBUG__ = 0;
 int __YRT_TEST_CODE__ = 0;
-_yrt_slice_ __MAIN_ARGS__;
+_yrt_slice_t __MAIN_ARGS__;
 
 
 void _yrt_exit (int i) {
@@ -54,23 +54,23 @@ void _yrt_force_debug (int act) {
     }
 }
 
-_yrt_slice_ _yrt_create_args_slice (int len, char ** argv) {
-    _yrt_slice_ arr;
-    arr.data = GC_malloc (sizeof (_yrt_slice_) * len);
+_yrt_slice_t _yrt_create_args_slice (int len, char ** argv) {
+    _yrt_slice_t arr;
+    arr.data = GC_malloc (sizeof (_yrt_slice_t) * len);
     arr.len = (unsigned long) len;
 
     for (int i = 0 ; i < len ; i++) {
-        _yrt_slice_ inner;
+        _yrt_slice_t inner;
         inner.data = argv[i];
         inner.len = strlen (argv [i]);
-        ((_yrt_slice_*) arr.data)[i] = inner;
+        ((_yrt_slice_t*) arr.data)[i] = inner;
     }
 
     __MAIN_ARGS__ = arr;    
     return arr;
 }
 
-_yrt_slice_ _yrt_get_main_args () {
+_yrt_slice_t _yrt_get_main_args () {
     return __MAIN_ARGS__;
 }
 

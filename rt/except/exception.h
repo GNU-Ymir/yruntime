@@ -9,23 +9,16 @@
 #include <string.h>
 
 #include <rt/memory/types.h>
-#include <rt/thread.h>
-
-/**
- * Structure of an ymir exception
- */
-typedef struct _yrt_exception_ {
-    _yrt_slice_ trace;
-} _yrt_exception_;
+#include <rt/concurrency/thread.h>
 
 /**
  * Content of an unwindable exception
  */
-typedef struct  _yrt_exception_header_ {
+typedef struct  _yrt_exception_header_t {
     struct _Unwind_Exception unwindHeader;
 
     // the Ymir class Exception thrown
-    _yrt_exception_* object;
+    void* object;
 
     // The id of the thread that created the exception
     pthread_t thread_id;
@@ -52,23 +45,21 @@ typedef struct  _yrt_exception_header_ {
     _Unwind_Word cfa;
 
     // stack other thrown exception in the current thread
-    struct _yrt_exception_header_ * next;
+    struct _yrt_exception_header_t * next;
 
-} _yrt_exception_header_;
-
+} _yrt_exception_header_t;
 
 /**
  * stack of the exceptions (one stack per thread)
  */
-typedef struct _yrt_exc_thread_stack_ {
-    _yrt_exception_header_ * stack;
-    struct _yrt_exc_thread_stack_ * next;
+typedef struct _yrt_exc_thread_stack_t {
+    _yrt_exception_header_t * stack;
+    struct _yrt_exc_thread_stack_t * next;
 
-    _yrt_exception_header_ ehstorage;
+    _yrt_exception_header_t ehstorage;
 
     pthread_t id;
-} _yrt_exc_thread_stack_;
-
+} _yrt_exc_thread_stack_t;
 
 
 /**
@@ -88,44 +79,44 @@ void _yrt_exc_init ();
 /**
  * @returns: the stack for the current thread NULL if none
  */
-_yrt_exc_thread_stack_* _yrt_exc_get_thread_stack_current (pthread_t id, _yrt_exc_thread_stack_ * current);
+_yrt_exc_thread_stack_t* _yrt_exc_get_thread_stack_current (pthread_t id, _yrt_exc_thread_stack_t * current);
 
 /**
  * Insert a new exception stack into the thread stack
  */
-_yrt_exc_thread_stack_* _yrt_exc_insert_thread (pthread_t id);
+_yrt_exc_thread_stack_t* _yrt_exc_insert_thread (pthread_t id);
 
 /**
  * Remove the exception stack for the thread 'id'
  */
-void _yrt_exc_remove_thread (_yrt_exc_thread_stack_* stack);
+void _yrt_exc_remove_thread (_yrt_exc_thread_stack_t* stack);
 
 
 /**
  * Get the exception stack of the current thread
  * Insert a new one if not found
  */
-_yrt_exc_thread_stack_* _yrt_exc_get_thread_stack (pthread_t id);
+_yrt_exc_thread_stack_t* _yrt_exc_get_thread_stack (pthread_t id);
 
 /**
  * Allocate and init an _yrt_exception_header_
  */
-_yrt_exception_header_* _yrt_exc_create_header (void* object, _yrt_exc_thread_stack_* stack);
+_yrt_exception_header_t* _yrt_exc_create_header (void* object, _yrt_exc_thread_stack_t* stack);
 
 /**
  * Free exception created by create ()
  */
-void _yrt_exc_free_header (_yrt_exception_header_* head, _yrt_exc_thread_stack_* stack);
+void _yrt_exc_free_header (_yrt_exception_header_t* head, _yrt_exc_thread_stack_t* stack);
 
 /**
  * Push the exception header onto the stack
  */
-void _yrt_exc_push (_yrt_exception_header_* e, _yrt_exc_thread_stack_ * stack);
+void _yrt_exc_push (_yrt_exception_header_t* e, _yrt_exc_thread_stack_t * stack);
 
 /**
  * Pop the last pushed exception of the stack
  */
-_yrt_exception_header_* _yrt_exc_pop (_yrt_exc_thread_stack_* stack);
+_yrt_exception_header_t* _yrt_exc_pop (_yrt_exc_thread_stack_t* stack);
 
 
 /**
@@ -136,21 +127,15 @@ _yrt_exception_header_* _yrt_exc_pop (_yrt_exc_thread_stack_* stack);
  * ======================================================================================
  */
 
-
-/**
- * Terminate the program due to a irrecoverable error
- */
-void _yrt_exc_terminate (const char * msg, unsigned int line);
-
 /**
  * Terminate the program due to a uncaught exception error
  */
-void _yrt_exc_panic_exception (_yrt_exception_header_* eh);
+void _yrt_exc_panic_exception (_yrt_exception_header_t* eh);
 
 /**
  * Cast an _Unwind_Exception into a _yrt_exception header
  */
-_yrt_exception_header_* _yrt_to_exception_header (struct _Unwind_Exception* exc);
+_yrt_exception_header_t* _yrt_to_exception_header (struct _Unwind_Exception* exc);
 
 
 /**

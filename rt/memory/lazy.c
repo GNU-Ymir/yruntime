@@ -2,7 +2,7 @@
 
 #include <rt/utils/gc.h>
 
-void* _yrt_call_lazy (_yrt_lazy_value_ * value) {
+void* _yrt_call_lazy (_yrt_lazy_value_t * value) {
     if (!value-> set) {
         void * data = GC_malloc (value-> size);
         value-> closure.func (value-> closure.closure, data); // value-> data);

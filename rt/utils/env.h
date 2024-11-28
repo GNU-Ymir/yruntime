@@ -3,7 +3,7 @@
 
 #include <rt/memory/types.h>
 
-_yrt_slice_ _yrt_get_current_dir ();
+_yrt_slice_t _yrt_get_current_dir ();
 
 
 #endif // ENV_H_

@@ -17,7 +17,7 @@
  *    - mp: the map to init
  *    - info: the information about the types in the map
  */
-void _yrt_map_empty (_yrt_map_ * mp, _yrt_map_info_ * info);
+void _yrt_map_empty (_yrt_map_t * mp, _yrt_map_info_t * info);
 
 /**
  * Create a new map from a copy of an old map
@@ -26,7 +26,7 @@ void _yrt_map_empty (_yrt_map_ * mp, _yrt_map_info_ * info);
  *    - info: the information about the types in the map
  *    - old: the old map to copy
  */
-void _yrt_dup_map (_yrt_map_ * result, _yrt_map_info_ * info, _yrt_map_ *old);
+void _yrt_dup_map (_yrt_map_t * result, _yrt_map_info_t * info, _yrt_map_t *old);
 
 /**
  * Insert an element into the map
@@ -35,7 +35,7 @@ void _yrt_dup_map (_yrt_map_ * result, _yrt_map_info_ * info, _yrt_map_ *old);
  *    - key: the data of the key
  *    - value: the data of the value
  */
-void _yrt_map_insert (_yrt_map_ * mp, uint8_t * key, uint8_t * value);
+void _yrt_map_insert (_yrt_map_t * mp, uint8_t * key, uint8_t * value);
 
 /**
  * Insert an element into the map without rebalancing
@@ -45,7 +45,7 @@ void _yrt_map_insert (_yrt_map_ * mp, uint8_t * key, uint8_t * value);
  *    - key: the data of the key
  *    - value: the data of the value
  */
-void _yrt_map_insert_no_resize (_yrt_map_ * mp, uint64_t hash, uint8_t * key, uint8_t * value);
+void _yrt_map_insert_no_resize (_yrt_map_t * mp, uint64_t hash, uint8_t * key, uint8_t * value);
 /**
  * Insert an element in the map entry linked list
  * @params:
@@ -55,22 +55,22 @@ void _yrt_map_insert_no_resize (_yrt_map_ * mp, uint64_t hash, uint8_t * key, ui
  *    - value: the data of the value
  * @returns: true if new entry, false if replaced
  */
-uint8_t _yrt_map_entry_insert (_yrt_map_entry_ * en, uint64_t hash, uint8_t * key, uint8_t * value, _yrt_map_info_ * minfo);
+uint8_t _yrt_map_entry_insert (_yrt_map_entry_t * en, uint64_t hash, uint8_t * key, uint8_t * value, _yrt_map_info_t * minfo);
 
 /**
  * Allocate a map entry
  */
-void _yrt_map_create_entry (_yrt_map_entry_ ** en, uint64_t hash, uint8_t * key, uint8_t * value, _yrt_map_info_ * minfo);
+void _yrt_map_create_entry (_yrt_map_entry_t ** en, uint64_t hash, uint8_t * key, uint8_t * value, _yrt_map_info_t * minfo);
 
 /**
  * Erase data from the map
  */
-void _yrt_map_erase (_yrt_map_ * mp, uint8_t * key);
+void _yrt_map_erase (_yrt_map_t * mp, uint8_t * key);
 
 /**
  * Erase a key from the linked list
  */
-uint8_t _yrt_map_erase_entry (_yrt_map_entry_ ** en, uint8_t * key, _yrt_map_info_ * minfo);
+uint8_t _yrt_map_erase_entry (_yrt_map_entry_t ** en, uint8_t * key, _yrt_map_info_t * minfo);
 
 /**
  * Lookup wheter the key exists in the map
@@ -81,7 +81,7 @@ uint8_t _yrt_map_erase_entry (_yrt_map_entry_ ** en, uint8_t * key, _yrt_map_inf
  *    - 0 if not found, 1 otherwise
  *    - value: the value
  */
-uint8_t * _yrt_map_find (_yrt_map_ * mp, uint8_t * key);
+uint8_t * _yrt_map_find (_yrt_map_t * mp, uint8_t * key);
 
 /**
  * Lookup wheter the key exists in the linked list
@@ -93,19 +93,19 @@ uint8_t * _yrt_map_find (_yrt_map_ * mp, uint8_t * key);
  *    - 0 if not found, 1 otherwise
  *    - value: the value
  */
-uint8_t * _yrt_map_find_entry (_yrt_map_entry_ * en, uint8_t * key, _yrt_map_info_ * minfo);
+uint8_t * _yrt_map_find_entry (_yrt_map_entry_t * en, uint8_t * key, _yrt_map_info_t * minfo);
 
 /**
  * Change the size of the map to decrease the complexity of access/insert or to decrease the amount of unused indexes
  */
-void _yrt_map_fit (_yrt_map_ * mp, uint64_t newSize);
+void _yrt_map_fit (_yrt_map_t * mp, uint64_t newSize);
 
 /**
  * Insert all the key-> values from old into result
  * @assume: result has allocated data array
  * @warning: result is not be resized
  */
-void _yrt_map_copy_entries (_yrt_map_ * result, _yrt_map_ * old);
+void _yrt_map_copy_entries (_yrt_map_t * result, _yrt_map_t * old);
 
 /*!
  * ====================================================================================================
@@ -159,26 +159,26 @@ void _yrt_dcopy_map_grow ();
 /**
  * Create a new iterator over a map
  */
-_yrt_map_iterator_ * _yrt_map_iter_begin (_yrt_map_ * mp);
+_yrt_map_iterator_t * _yrt_map_iter_begin (_yrt_map_t * mp);
 
 /**
  * Extract the key pointed by the current iteration
  */
-uint8_t* _yrt_map_iter_key (_yrt_map_iterator_ * iter);
+uint8_t* _yrt_map_iter_key (_yrt_map_iterator_t * iter);
 
 /**
  * Extract the value pointed by the current iteration
  */
-uint8_t* _yrt_map_iter_val (_yrt_map_iterator_ * iter);
+uint8_t* _yrt_map_iter_val (_yrt_map_iterator_t * iter);
 
 /**
  * Increment the iterator and go to the next element
  */
-void _yrt_map_iter_next (_yrt_map_iterator_ * iter);
+void _yrt_map_iter_next (_yrt_map_iterator_t * iter);
 
 /**
  * Free the allocated iterator
  */
-void _yrt_map_iter_del (_yrt_map_iterator_ * iter);
+void _yrt_map_iter_del (_yrt_map_iterator_t * iter);
 
 #endif // MAP_H_

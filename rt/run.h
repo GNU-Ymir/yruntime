@@ -52,7 +52,7 @@ void _yrt_exit (int code);
  * @params:
  *   - msg: the message of the abort exception
  */
-void _yrt_throw_runtime_abort (_yrt_slice_ msg);
+void _yrt_throw_runtime_abort (_yrt_slice_t msg);
 
 /**
  * Panic due to seg fault exception

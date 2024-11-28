@@ -93,7 +93,7 @@ int _yrt_find_dwarf_die (Dwarf_Debug obj, uint64_t addr, Dwarf_Die * die) {
     return 1;
 }
 
-void _yrt_find_in_dwarf (const char * filename, void * addr, _yrt_slice_ * file, int * line) {
+void _yrt_find_in_dwarf (const char * filename, void * addr, _yrt_slice_t * file, int * line) {
     Dwarf_Debug dbg = 0;
     int res = DW_DLV_ERROR;
     Dwarf_Error error;
@@ -164,7 +164,7 @@ end:
     close(fd);
 }
 
-int _yrt_resolve_address (const char * filename, void* addr, _yrt_slice_ * file, int* line) {
+int _yrt_resolve_address (const char * filename, void* addr, _yrt_slice_t * file, int* line) {
     *file = str_empty ();
     *line = 0;
 
@@ -172,8 +172,8 @@ int _yrt_resolve_address (const char * filename, void* addr, _yrt_slice_ * file,
     return 0;
 }
 
-_yrt_slice_ _yrt_exc_resolve_stack_trace (_yrt_slice_ syms) {
-	_yrt_slice_ result;
+_yrt_slice_t _yrt_exc_resolve_stack_trace (_yrt_slice_t syms) {
+	_yrt_slice_t result;
 	memset (&result, 0, sizeof (result));
 
     if (__YRT_DEBUG__ == 1 || __YRT_FORCE_DEBUG__ == 1) {
@@ -182,9 +182,9 @@ _yrt_slice_ _yrt_exc_resolve_stack_trace (_yrt_slice_ syms) {
 	return result;
 }
 
-_yrt_slice_ _yrt_exc_get_stack_trace () {
-	_yrt_slice_ result;
-	memset (&result, 0, sizeof (_yrt_slice_));
+_yrt_slice_t _yrt_exc_get_stack_trace () {
+	_yrt_slice_t result;
+	memset (&result, 0, sizeof (_yrt_slice_t));
 
     if (__YRT_DEBUG__ == 1 || __YRT_FORCE_DEBUG__ == 1) {
         void **trace = (void**) malloc (__YRT_MAXIMUM_TRACE_LEN__ * sizeof (void*));
@@ -195,7 +195,7 @@ _yrt_slice_ _yrt_exc_get_stack_trace () {
         memcpy (res, trace, sizeof (void*) * trace_size);
         free (trace);
 
-        _yrt_slice_ arr;
+        _yrt_slice_t arr;
         arr.len = trace_size;
         arr.data = res;
     }

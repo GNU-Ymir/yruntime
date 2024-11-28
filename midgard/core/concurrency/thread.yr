@@ -1,0 +1,313 @@
+// /**
+//  * Low level thread management
+//  *
+//  * */
+
+// in thread;
+
+// // C runtime bindings
+// mod spawning;
+
+// use core::concurrency::sync::_;
+// use core::concurrency::pipes::_;
+// use core::exception::io;
+
+// use etc::c::{files, socket};
+
+// /**
+//  * Type used to identify and communicate with a threads
+//  * */
+// pub record Thread {
+
+//     // The uniq id of the thread
+//     let mut _id : usize;
+
+//     pub self (id : usize)
+//         with _id = id
+//     {
+//         if (withPipes) {
+//             let dmut pipes : [i32 ; 2] = [0, 0];
+//             if (files::pipe (pipes.ptr) != 0) {
+//                 throw copy IOError ();
+//             }
+
+//             self._in = (copy IPipe (pipe-> pipes [0]))?;
+//             self._out = (copy OPipe (pipe-> pipes [1]))?;
+//             self._barrier = (copy Barrier (2))?;
+//             self._sem = (copy Semaphore ())?;
+//         }
+//     }
+
+//     /*!
+//      * ====================================================================================================
+//      * ====================================================================================================
+//      * ====================================          SPAWNING          ====================================
+//      * ====================================================================================================
+//      * ====================================================================================================
+//      */
+
+//     /**
+//      * Spawn a thread
+//      * @params:
+//      *    - func: the function to launch as the thread main
+//      * */
+//     pub self spawn (func : fn (dmut &Thread)-> void, withPipes : bool = true)
+//         with self (0us, withPipes)
+//         throws IOError
+//     {
+//         let dmut th = copy spawning::FnThreadLauncher (func, alias self, &self:.dispose);
+//         spawning::Runtime!{&spawning::FnThreadLauncher}::_yrt_thread_create (&self._id, null, &spawning::thread_fn_main, th);
+//     }
+
+//     /**
+//      * Spawn a thread
+//      * @params:
+//      *    - func: the delegate to launch as the thread main
+//      * */
+//     pub self spawn (func : dg (dmut &Thread)-> void, withPipes : bool = true)
+//         with self (0us, withPipes)
+//         throws IOError
+//     {
+//         let dmut th = copy spawning::DgThreadLauncher (func, alias self, &self:.dispose);
+//         spawning::Runtime!{&spawning::DgThreadLauncher}::_yrt_thread_create (&self._id, null, &spawning::thread_dg_main, th);
+//     }
+
+//     /*!
+//      * ====================================================================================================
+//      * ====================================================================================================
+//      * ====================================          GETTERS          =====================================
+//      * ====================================================================================================
+//      * ====================================================================================================
+//      */
+
+//     /**
+//      * @returns: the id of the thread
+//      * */
+//     @field
+//     pub fn id (self)-> usize {
+//         self._id
+//     }
+
+//     /*!
+//      * ====================================================================================================
+//      * ====================================================================================================
+//      * ====================================          READING          =====================================
+//      * ====================================================================================================
+//      * ====================================================================================================
+//      */
+
+//     /**
+//      * Read a slice from the pipe
+//      * @params:
+//      *    - len: the len of the slice to read
+//      * */
+//     pub fn if (std::traits::isScalar!C ()) read {T of [C], C} (mut self, limits : usize = (1024 * 1024))-> [C]
+//         throws IOError
+//     {
+//         if let Ok (dmut pi) = alias self._in {
+//             if (!pi.isOpen ()) throw copy IOError ();
+
+//             if let Ok (dmut b) = alias self._barrier {
+//                 if let Ok (dmut s) = alias self._sem {
+//                     s:.post ();
+
+//                     b:.lock ();
+//                     let res : T = pi:.read!{T} (limits-> limits);
+//                     b:.lock ();
+
+//                     return res;
+//                 }
+//             }
+//         }
+
+//         throw copy IOError ();
+//     }
+
+//     /**
+//      * Read a scalar value from the pipe
+//      * @returns: the scalar that was read
+//      * */
+//     pub fn if (std::traits::isScalar!{C} ()) read {C} (mut self)-> C
+//         throws IOError
+//     {
+//         if let Ok (dmut pi) = alias self._in {
+//             if (!pi.isOpen ()) throw copy IOError ();
+
+//             if let Ok (dmut b) = alias self._barrier {
+//                 if let Ok (dmut s) = alias self._sem {
+//                     s:.post ();
+
+//                     b:.lock ();
+//                     let res = pi:.read!{C} ();
+//                     b:.lock ();
+
+//                     return res;
+//                 }
+//             }
+//         }
+
+//         throw copy IOError ();
+//     }
+
+//     /**
+//      * Synchronized reading in pipe
+//      * */
+//     pub fn readRaw (mut self, dmut buffer : *u8, len : usize)
+//         throws IOError
+//     {
+//         if let Ok (dmut pi) = alias self._in {
+//             if (!pi.isOpen ()) throw copy IOError ();
+
+//             if let Ok (dmut b) = alias self._barrier {
+//                 if let Ok (dmut s) = alias self._sem {
+//                     s:.post ();
+
+//                     b:.lock ();
+//                     pi:.readRaw (alias buffer, len);
+//                     b:.lock ();
+
+//                     return;
+//                 }
+//             }
+//         }
+
+//         throw copy IOError ();
+//     }
+
+//     /*!
+//      * ====================================================================================================
+//      * ====================================================================================================
+//      * ====================================          WRITING          =====================================
+//      * ====================================================================================================
+//      * ====================================================================================================
+//      */
+
+//     /**
+//      * Write a slice on the pipe
+//      * @params:
+//      *    - sl: the slice to write
+//      * */
+//     pub fn if (std::traits::isScalar!{C} ()) write {T of [C], C} (mut self, sl : T)
+//         throws IOError
+//     {
+//         if let Ok (dmut pi) = alias self._out {
+//             if (!pi.isOpen ()) throw copy IOError ();
+
+//             if let Ok (dmut b) = alias self._barrier {
+//                 if let Ok (dmut s) = alias self._sem {
+//                     s:.wait ();
+
+//                     b:.lock ();
+//                     pi:.write!{T} (sl);
+//                     b:.lock ();
+
+//                     return;
+//                 }
+//             }
+//         }
+
+//         throw copy IOError ();
+//     }
+
+//     /**
+//      * Write a scalar value on the pipe
+//      * @params:
+//      *    - v: the value to write
+//      * */
+//     pub fn if (std::traits::isScalar!{C} ()) write {C} (mut self, v : C)
+//         throws IOError
+//     {
+//         if let Ok (dmut pi) = alias self._out {
+//             if (!pi.isOpen ()) throw copy IOError ();
+
+//             if let Ok (dmut b) = alias self._barrier {
+//                 if let Ok (dmut s) = alias self._sem {
+//                     s:.wait ();
+
+//                     b:.lock ();
+//                     pi:.write!{C} (v);
+//                     b:.lock ();
+
+//                     return;
+//                 }
+//             }
+//         }
+
+//         throw copy IOError ();
+//     }
+
+//     /**
+//      * Synchronized writing on the pipe
+//      * */
+//     pub fn writeRaw (mut self, buffer : *u8, len : usize)
+//         throws IOError
+//     {
+//         if let Ok (dmut pi) = alias self._out {
+//             if (!pi.isOpen ()) throw copy IOError ();
+
+//             if let Ok (dmut b) = alias self._barrier {
+//                 if let Ok (dmut s) = alias self._sem {
+//                     s:.wait ();
+
+//                     b:.lock ();
+//                     pi:.writeRaw (buffer, len);
+//                     b:.lock ();
+
+//                     return;
+//                 }
+//             }
+//         }
+
+//         throw copy IOError ();
+//     }
+
+//     /*!
+//      * ====================================================================================================
+//      * ====================================================================================================
+//      * ====================================          CLOSING          =====================================
+//      * ====================================================================================================
+//      * ====================================================================================================
+//      */
+
+//     /**
+//      * Wait for the thread to join
+//      * */
+//     pub fn join (mut self) {
+//         spawning::_yrt_thread_join (self._id, null);
+//     }
+
+//     /*!
+//      * ====================================================================================================
+//      * ====================================================================================================
+//      * ===================================          DISPOSING          ====================================
+//      * ====================================================================================================
+//      * ====================================================================================================
+//      */
+
+//     /**
+//      * Dispose the allocated content of the thread
+//      * */
+//     prv fn dispose (mut self) {
+//         if let Ok (dmut pi) = alias self._in {
+//             pi:.dispose ();
+//         }
+
+//         if let Ok (dmut pi) = alias self._out {
+//             pi:.dispose ();
+//         }
+
+//         if let Ok (dmut s) = alias self._sem {
+//             s:.dispose ();
+//         }
+
+//         self._in = none;
+//         self._out = none;
+//         self._sem = none;
+//         self._barrier = none;
+//     }
+
+//     __dtor (mut self) {
+//         self:.dispose ();
+//     }
+
+// }

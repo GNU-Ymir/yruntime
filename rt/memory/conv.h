@@ -55,15 +55,15 @@ int32_t _yrt_float_to_i32 (float x);
 /**
  * Convert a string into a float
  *  */
-float _yrt_s8_to_float (_yrt_slice_ arr, char * succ);
+float _yrt_s8_to_float (_yrt_slice_t arr, char * succ);
 
 /**
  * Convert a string into a double
  * */
-double _yrt_s8_to_double (_yrt_slice_ arr, char * succ);
+double _yrt_s8_to_double (_yrt_slice_t arr, char * succ);
 
-_yrt_slice_ _yrt_double_to_s8 (double x, int prec);
-_yrt_slice_ _yrt_double_to_s8_exp (double x, int prec);
+_yrt_slice_t _yrt_double_to_s8 (double x, int prec);
+_yrt_slice_t _yrt_double_to_s8_exp (double x, int prec);
 
 
 /*!
@@ -74,7 +74,7 @@ _yrt_slice_ _yrt_double_to_s8_exp (double x, int prec);
  * ====================================================================================================
  */
 
-_yrt_slice_ _yrt_to_utf8_slice (_yrt_slice_ array);
+_yrt_slice_t _yrt_to_utf8_slice (_yrt_slice_t array);
 char* _yrt_to_utf8 (uint32_t code, char chars [5], int * nb);
 size_t utf8_codepoint_size (char c);
 
@@ -86,7 +86,7 @@ size_t utf8_codepoint_size (char c);
  * ====================================================================================================
  */
 
-_yrt_slice_ _yrt_to_utf32_slice (_yrt_slice_ array);
+_yrt_slice_t _yrt_to_utf32_slice (_yrt_slice_t array);
 uint32_t _yrt_to_utf32 (char* text, size_t * byte_count);
 
 #endif

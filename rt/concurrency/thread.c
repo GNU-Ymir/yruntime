@@ -1,4 +1,4 @@
-#include <rt/thread.h>
+#include <rt/concurrency/thread.h>
 
 #include <stdio.h> 
 #include <stdlib.h> 
@@ -15,7 +15,6 @@
 #endif
 #include <rt/utils/gc.h>
 
-void** __YRT_TASK_POOL__ = 0;
 
 _yrt_mutex_t __monitor_mutex__ = PTHREAD_MUTEX_INITIALIZER;
 _yrt_mutex_t __global_atom__ = PTHREAD_MUTEX_INITIALIZER;
