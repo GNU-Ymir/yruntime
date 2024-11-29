@@ -6,12 +6,10 @@ use core::exception::_;
 
 use utils::colors;
 
-// lazy dmut __UNITTEST_MAP__ = copy HashMap!{[c8], fn ()-> void} ();
+lazy mut __UNITTEST_MAP__ : [[c8] => mut fn ()-> void] = [];
 
 prv extern (C) fn _yrt_register_unittest_impl (name : [c8], func : fn ()-> void) {
-    name;
-    func;
-    // __UNITTEST_MAP__:.insert (name, func);
+    __UNITTEST_MAP__ [name] = func;
 }
 
 extern (C) fn _yrt_force_debug ()-> void;
@@ -26,22 +24,22 @@ fn fake_throw (b : bool)
 prv extern (C) fn _yrt_run_unittests_impl  (args : [[c8]]) -> i32 {
     _yrt_force_debug ();
     args;
-    // for z, f in __UNITTEST_MAP__ {
-    //     {
-    //         println ("[RUN] : ", z);
-    //         println ("====================================");
-    //         fake_throw (true);
-    //         f ();
-    //         println ("====================================");
-    //         println ('[', Colors::GREEN, "SUCCESS", Colors::RESET, "] : ", z);
-    //     } catch {
-    //         err : &Exception => {
-    //             println ("====================================");
-    //             println ('[', Colors::RED, "FAILURE", Colors::RESET, "] : ", z);
+    for z, f in __UNITTEST_MAP__ {
+        {
+            println ("[RUN] : ", z);
+            println ("====================================");
+            fake_throw (true);
+            f ();
+            println ("====================================");
+            println ('[', Colors::GREEN, "SUCCESS", Colors::RESET, "] : ", z);
+        } catch {
+            err : &Exception => {
+                println ("====================================");
+                println ('[', Colors::RED, "FAILURE", Colors::RESET, "] : ", z);
 
-    //             println (" --> ", err);
-    //         }
-    //     }
-    // }
+                println (" --> ", err);
+            }
+        }
+    }
     0
 }
