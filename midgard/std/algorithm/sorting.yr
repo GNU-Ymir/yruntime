@@ -1,0 +1,75 @@
+/**
+ * Module containing generic sorting algorithms.
+ * @authors: Emile Cadorel
+ * @license: GPLv3
+ */
+
+in sorting;
+
+mod quick;
+
+/**
+ * Sort the slice `a` in ascending order
+ * <br>
+ * This function implements the quick sort algorithm.
+ * @params:
+ *    - a: the slice to sort
+ * @returns: the result of the sort
+ * @example:
+ * ======
+ * let dmut a = copy [4, 65, 2, -31, 0, 99, 2, 83, 782, 1];
+ * let dmut b = (alias a).sort ();
+ *
+ * assert (b == [-31, 0, 1, 2, 2, 4, 65, 83, 99, 782]);
+ * assert (a == b);
+ *
+ * let dmut c = copy [4, 65, 2, -31, 0, 99, 2, 83, 782, 1];
+ * let dmut d = (copy c).sort ();
+ *
+ * assert (d == a);
+ * assert (c != d);
+ * ======
+ * @info: sort the parameter slice in place
+ */
+pub fn if (__pragma!operator ("<", U, U)) sort {U} (mut a : [mut U])-> mut [mut U] {
+    quick::quicksort (alias a, |x, y| { x < y });
+
+    alias a
+}
+
+
+/**
+ * Sort the slice `a` using the predicate `F`.
+ * <br>
+ * This function implements the quick sort algorithm.
+ * @params:
+ *    - a: the slice to sort
+ * @returns: the result of the sorting
+ * @example:
+ * ===
+ * let a = [4, 65, 2, -31, 0, 99, 2, 83, 782, 1];
+ * let b = (alias a).sort (|x, y| { x > y });
+ *
+ * assert (b == [782, 99, 83, 65, 4, 2, 2, 1, 0, -31]);
+ * assert (a == b);
+ *
+ * let dmut c = copy [4, 65, 2, -31, 0, 99, 2, 83, 782, 1];
+ * let dmut d = (copy c).sort (|x, y| { x > y });
+ *
+ * assert (d == a);
+ * assert (c != d);
+ * ===
+ * @warning: if the predicate is inconsistent, the return result will not be sorted
+ * ===
+ * let a = [4, 65, 2, -31, 0, 99, 2, 83, 782, 1];
+ * let b = a.sort (|x, y| { x >= y }); // strict operator should be used '<', '>' for example
+ *
+ * println (b); // [782, 65, 2, -31, 0, 99, 2, 83, 4, 1]
+ * assert (b != [782, 99, 83, 65, 4, 2, 2, 1, 0, -31]);
+ * ===
+ */
+pub fn sort {U} (mut a : [mut U], predicate : dg (U, U)-> bool)-> mut [mut U] {
+    quick::quicksort (alias a, predicate);
+
+    alias a
+}

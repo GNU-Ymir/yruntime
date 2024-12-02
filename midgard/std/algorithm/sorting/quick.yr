@@ -1,0 +1,53 @@
+/**
+ * Module containing the implementation of the quicksort algorithms.
+ * @authors: Emile Cadorel
+ * @license: GPLv3
+ */
+
+in quick;
+
+/**
+ * Implementation of the quicksort algorithm.
+ * @params:
+ *    - a: the slice to sort
+ *    - predicate: the predicate function used to compare elements
+ */
+pub fn quicksort {U} (mut a : mut [mut U], predicate : dg (U, U)-> bool) {
+    if (a.len < 2us) {
+        return;
+    }
+
+    let pivot = a [a.len / 2us];
+    let mut i = 0us, mut j = a.len - 1us;
+    loop {
+        while (predicate (a[i], pivot)) {
+            if (i == a.len) {
+                return;
+            }
+
+            i += 1us;
+        }
+
+        while (predicate (pivot, a[j])) {
+            if (j == 0us) {
+                return;
+            }
+
+            j -= 1us;
+        }
+
+        if (i >= j) {
+            break;
+        }
+
+        let temp = a [i];
+        a [i] = a [j];
+        a [j] = temp;
+
+        i += 1us;
+        j -= 1us;
+    }
+
+    quicksort (alias a [0us .. i], predicate);
+    quicksort (alias a [i .. $], predicate);
+}
