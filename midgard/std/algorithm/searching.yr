@@ -9,46 +9,6 @@ in searching;
  */
 
 /**
- * Verify if all elements of a verify the predicate
- * @params:
- *    - a: an slice of elements
- * @templates:
- *    - F: a predicate to verify
- * @example:
- * ===========
- * let a = copy [1, 2, 3];
- * assert (a.all!{|x| => x <= 3}());
- * ===========
- * @complexity: O(a.len)
- */
-pub fn all {F : fn (U)-> bool, T of [U], U} (a : T) -> bool {
-    for i in a {
-        if (!F (i)) return false;
-    }
-    return true;
-}
-
-/**
- * Verify if all elements of a verify the predicate
- * @params:
- *    - a: an slice of elements
- * @templates:
- *    - F: a predicate to verify
- * @example:
- * ===========
- * let a = copy [1, 2, 3];
- * assert (a.all (|x| => x <= 3));
- * ===========
- * @complexity: O(a.len)
- */
-pub fn all {T of [U], U} (a : T, F : fn (U)-> bool) -> bool {
-    for i in a {
-        if (!F (i)) return false;
-    }
-    return true;
-}
-
-/**
  * Verify if any elements of a verify the predicate
  * @params:
  *    - a: an slice of elements
@@ -63,46 +23,6 @@ pub fn all {T of [U], U} (a : T, F : fn (U)-> bool) -> bool {
  * @complexity: O(a.len)
  */
 pub fn all {T of [U], U} (a : T, F : dg (U)-> bool) -> bool {
-    for i in a {
-        if (!F (i)) return false;
-    }
-    return true;
-}
-
-/**
- * Verify if all elements of a verify the predicate
- * @params:
- *    - a: an array of elements
- * @templates:
- *    - F: a predicate to verify
- * @example:
- * ===========
- * let a = [1, 2, 3];
- * assert (a.all!{|x| => x <= 3}());
- * ===========
- * @complexity: O(a.len)
- */
-pub fn if (N > 0) all {F : fn (U)-> bool, T of [U ; N], U, N : usize} (a : T) -> bool {
-    for i in a {
-        if (!F (i)) return false;
-    }
-    return true;
-}
-
-/**
- * Verify if all elements of a verify the predicate
- * @params:
- *    - a: an array of elements
- * @templates:
- *    - F: a predicate to verify
- * @example:
- * ===========
- * let a = [1, 2, 3];
- * assert (a.all (|x| => x <= 3));
- * ===========
- * @complexity: O(a.len)
- */
-pub fn if (N > 0) all {T of [U ; N], U, N : usize} (a : T, F : fn (U)-> bool) -> bool {
     for i in a {
         if (!F (i)) return false;
     }
@@ -147,96 +67,12 @@ pub fn if (N > 0) all {T of [U ; N], U, N : usize} (a : T, F : dg (U)-> bool) ->
  * @example:
  * ===========
  * let a = copy [1, 2, 3];
- * assert (a.any!{|x| => x == 3}());
- * ===========
- * @complexity: O(a.len)
- */
-pub fn any {F : fn (U)-> bool, T of [U], U} (a : T) -> bool {
-    for i in a {
-        if (F (i)) return true;
-    }
-
-    return false;
-}
-
-/**
- * Verify that at least one element verifies the predicate
- * @params:
- *    - a: a slice of elements
- * @templates:
- *    - F: a predicate to verify
- * @example:
- * ===========
- * let a = copy [1, 2, 3];
- * assert (a.any (|x| => x == 3));
- * ===========
- * @complexity: O(a.len)
- */
-pub fn any {T of [U], U} (a : T, F : fn (U)-> bool) -> bool {
-    for i in a {
-        if (F (i)) return true;
-    }
-
-    return false;
-}
-
-/**
- * Verify that at least one element verifies the predicate
- * @params:
- *    - a: a slice of elements
- * @templates:
- *    - F: a predicate to verify
- * @example:
- * ===========
- * let a = copy [1, 2, 3];
  * let z = 3;
  * assert (a.any (copy |x| => x == z));
  * ===========
  * @complexity: O(a.len)
  */
 pub fn any {T of [U], U} (a : T, F : dg (U)-> bool) -> bool {
-    for i in a {
-        if (F (i)) return true;
-    }
-
-    return false;
-}
-
-/**
- * Verify that at least one element verifies the predicate
- * @params:
- *    - a: an array of elements
- * @templates:
- *    - F: a predicate to verify
- * @example:
- * ===========
- * let a = [1, 2, 3];
- * assert (a.any!{|x| => x == 3}());
- * ===========
- * @complexity: O(a.len)
- */
-pub fn if (N > 0) any {F : fn (U)-> bool, T of [U ; N], U, N : usize} (a : T) -> bool {
-    for i in a {
-        if (F (i)) return true;
-    }
-
-    return false;
-}
-
-/**
- * Verify that at least one element verifies the predicate
- * @params:
- *    - a: an array of elements
- * @templates:
- *    - F: a predicate to verify
- * @example:
- * ===========
- * let a = [1, 2, 3];
- * assert (a.any (|x| => x == 3));
- * ===========
- * @complexity: O(a.len)
- */
-pub fn if (N > 0) any {T of [U ; N], U, N : usize} (a : T, F : fn (U)-> bool) -> bool {
     for i in a {
         if (F (i)) return true;
     }
@@ -371,4 +207,604 @@ pub fn if (N > 0) rfind {T of [U ; N], U, N : usize} (a : T, elem : U)-> (usize)
     }
 
     none
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ==============================          FIND WITH PREDICATE          ===============================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+
+/**
+ * Search an element in a slice
+ * @returns: the index of the first element that verifies the predicate
+ * @params:
+ *   - a: the slice to traverse
+ *   - predicate: the predicate to verify
+ * @example:
+ * ============
+ * let a = copy [1, 2, 3];
+ * if let Ok (i) = a.find (|x| => { x == 1 }) {
+ *    println ("Found 1 at index : ", i);
+ *    assert (i == 0us);
+ * }
+ * ============
+ * @complexity: O (a.len)
+ */
+pub fn find {T of [U], U} (a : T, predicate : dg (U)-> bool)-> (usize)? {
+    for i, j in a {
+        if predicate (j) {
+            return (i)?;
+        }
+    }
+
+    none
+}
+
+/**
+ * Search an element in an array
+ * @returns: the index of the first element that verifies the predicate
+ * @params:
+ *   - a: the array to traverse
+ *   - predicate: the predicate to verify
+ * @example:
+ * ============
+ * let a = [1, 2, 3];
+ * if let Ok (i) = a.find (|x| => { x == 1 }) {
+ *    println ("Found 1 at index : ", i);
+ *    assert (i == 0us);
+ * }
+ * ============
+ * @complexity: O (a.len)
+ */
+pub fn if (N > 0) find {T of [U ; N], U, N : usize} (a : T, predicate : dg (U)-> bool)-> (usize)? {
+    for i, j in a {
+        if predicate (j) {
+            return (i)?;
+        }
+    }
+
+    none
+}
+
+/**
+ * Search an element in a slice from right to left
+ * @returns: the index of the last element that verifies the predicate
+ * @params:
+ *   - a: the slice to traverse
+ *   - predicate: the predicate to verify
+ * @example:
+ * ============
+ * let a = copy [1, 2, 1, 3];
+ * assert (a.rfind (|x| => { x == 1 }) == (2us)?);
+ * ============
+ * @complexity: O (a.len)
+ */
+pub fn rfind {T of [U], U} (a : T, predicate : dg (U)-> bool)-> (usize)? {
+    for i in a.len .. 0us {
+        if predicate (a [i - 1us]) {
+            return (i - 1us)?;
+        }
+    }
+
+    none
+}
+
+/**
+ * Search an element in an array from right to left
+ * @returns: the index of the last element that verifies the predicate
+ * @params:
+ *   - a: an array to traverse
+ *   - predicate: the predicate to verify
+ * @example:
+ * ============
+ * let a = [1, 2, 1, 3];
+ * assert (a.rfind (|x| => { x == 1 }) == (2us)?);
+ * ============
+ * @complexity: O (a.len)
+ */
+pub fn if (N > 0) rfind {T of [U ; N], U, N : usize} (a : T, predicate : dg (U)-> bool)-> (usize)? {
+    for i in N .. 0us {
+        if predicate (a [i - 1us]) {
+            return (i - 1us)?;
+        }
+    }
+
+    none
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ==================================          FIND SORTED          ===================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+
+/**
+ * Search an element in a slice
+ * @returns: the index of an element that is equal to 'elem'
+ * @params:
+ *   - a: the slice to traverse
+ *   - elem: the element to find
+ * @example:
+ * ============
+ * let a = copy [1, 2, 3];
+ * if let Ok (i) = a.findSorted (1) {
+ *    println ("Found 1 at index : ", i);
+ *    assert (i == 0us);
+ * }
+ * ============
+ * @complexity: O (log (a.len))
+ * @assume: a is sorted
+ */
+pub fn findSorted {T of [U], U} (a : T, elem : U)-> (usize)? {
+    let mut l = 0us, mut r = a.len - 1us;
+    while l <= r {
+        let m = ((l + r) / 2);
+        if a [m] < elem {
+            l = m + 1;
+        } else if a [m] > elem {
+            r = m - 1;
+        } else return (m)?;
+    }
+
+    none
+}
+
+/**
+ * Search an element in an array
+ * @returns: the index of an element that is equal to 'elem'
+ * @params:
+ *   - a: the slice to traverse
+ *   - elem: the element to find
+ * @example:
+ * ============
+ * let a = [1, 2, 3];
+ * if let Ok (i) = a.findSorted (1) {
+ *    println ("Found 1 at index : ", i);
+ *    assert (i == 0us);
+ * }
+ * ============
+ * @complexity: O (log (a.len))
+ * @assume: a is sorted
+ */
+pub fn if (N > 0) findSorted {T of [U ; N], U, N : usize} (a : T, elem : U)-> (usize)? {
+    let mut l = 0us, mut r = a.len - 1us;
+    while l <= r {
+        let m = ((l + r) / 2);
+        if a [m] < elem {
+            l = m + 1;
+        } else if a [m] > elem {
+            r = m - 1;
+        } else return (m)?;
+    }
+
+    none
+}
+
+/**
+ * Search an element in a slice
+ * @returns: the index of an element that verifies the predicate
+ * @params:
+ *   - a: the slice to traverse
+ *   - predicate: the predicate to verify
+ * @example:
+ * ============
+ * fn cmp (x : i32)-> i32 {
+ *    if (x < 1) { -1 }
+ *    else if (x > 1) { 1 }
+ *    else { 0 }
+ * }
+ *
+ * let a = copy [1, 2, 3];
+ * if let Ok (i) = a.findSorted (&cmp) {
+ *    println ("Found 1 at index : ", i);
+ *    assert (i == 0us);
+ * }
+ * ============
+ * @complexity: O (log (a.len))
+ * @assume: a is sorted
+ */
+pub fn findSorted {T of [U], U} (a : T, cmp : dg (U)-> i32)-> (usize)? {
+    let mut l = 0us, mut r = a.len - 1us;
+    while l <= r {
+        let m = ((l + r) / 2);
+        let c = cmp (a [m]);
+        if c < 0 {
+            l = m + 1;
+        } else if c > 0 {
+            r = m - 1;
+        } else return (m)?;
+    }
+
+    none
+}
+
+/**
+ * Search an element in an array
+ * @returns: the index of an element that verifies the predicate
+ * @params:
+ *   - a: the array to traverse
+ *   - cmp: the comparison operator
+ * @example:
+ * ============
+ * fn cmp (x : i32)-> i32 {
+ *    if (x < 1) { -1 }
+ *    else if (x > 1) { 1 }
+ *    else { 0 }
+ * }
+ *
+ * let a = [1, 2, 3];
+ * if let Ok (i) = a.find (&cmp) {
+ *    println ("Found 1 at index : ", i);
+ *    assert (i == 0us);
+ * }
+ * ============
+ * @complexity: O (log (a.len))
+ * @assume: a is sorted
+ */
+pub fn if (N > 0) findSorted {T of [U ; N], U, N : usize} (a : T, cmp : dg (U)-> i32)-> (usize)? {
+    let mut l = 0us, mut r = a.len - 1us;
+    while l <= r {
+        let m = ((l + r) / 2);
+        let c = cmp (a [m]);
+        if c < 0 {
+            l = m + 1;
+        } else if c > 0 {
+            r = m - 1;
+        } else return (m)?;
+    }
+
+    none
+}
+
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =====================================          COUNT          ======================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Count the number of element respecting the predicate
+ * @returns: the number of elements in a respecting the predicate
+ * @params:
+ *    - a: a slice to traverse
+ *    - predicate: the predicate to count
+ * @example:
+ * =======
+ * let a = copy [1, 2, 3];
+ * assert (a.count (|x| => x <= 2) == 2us);
+ * ======
+ * @complexity: O (a.len)
+ * */
+pub fn count {T of [U], U} (a : T, predicate : dg (U)-> bool)-> usize {
+    let mut count = 0us;
+    for i in a {
+        if predicate (i) {
+            count += 1;
+        }
+    }
+
+    count
+}
+
+/**
+ * Count the number of element respecting the predicate
+ * @returns: the number of elements in a respecting the predicate
+ * @params:
+ *    - a: an array to traverse
+ *    - predicate: the predicate to count
+ * @example:
+ * =======
+ * let a = copy [1, 2, 3];
+ * assert (a.count (|x| => x <= 2) == 2us);
+ * ======
+ * @complexity: O (a.len)
+ * */
+pub fn if (N > 0) count {T of [U ; N], U, N : usize} (a : T, predicate : dg (U)-> bool)-> usize {
+    let mut count = 0us;
+    for i in a {
+        if predicate (i) {
+            count += 1;
+        }
+    }
+
+    count
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ==================================          MIN ELEMENT          ===================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+
+/**
+ * Find the index of the min element in the slice
+ * @returns: the index of the minimal element
+ * @params:
+ *    - a: a slice to traverse
+ *    - predicate: the predicate function to compare two elements
+ * @example:
+ * =======
+ * let a = copy [9, 8, 4, 5, 3, 6];
+ * let index = a.findMin ();
+ *
+ * assert (index == (4us)?);
+ * ======
+ * @complexity: O (a.len)
+ * */
+pub fn findMin {T of [U], U} (a : T)-> (usize)? {
+    if (a.len == 0us) return none;
+    let mut min = 0us;
+
+    for i in 1us .. a.len {
+        if (a [i] < a [min]) {
+            min = i;
+        }
+    }
+
+    (min)?
+}
+
+/**
+ * Find the index of the min element in the slice
+ * @returns: the index of the minimal element
+ * @params:
+ *    - a: a slice to traverse
+ *    - predicate: the predicate function to compare two elements
+ * @example:
+ * =======
+ * let a = [9, 7, 4, 5, 3, 6];
+ * let index = a.findMin ();
+ *
+ * assert (index == 4us);
+ * ======
+ * @complexity: O (a.len)
+ * */
+pub fn if (N > 0) findMin {T of [U ; N], U, N : usize} (a : T)-> usize {
+    let mut min = 0us;
+    for i in 1us .. N {
+        if (a [i] < a [min]) {
+            min = i;
+        }
+    }
+
+    min
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ==================================          MAX ELEMENT          ===================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Find the index of the max element in the slice
+ * @returns: the index of the maximal element
+ * @params:
+ *    - a: a slice to traverse
+ *    - predicate: the predicate function to compare two elements
+ * @example:
+ * =======
+ * let a = copy [9, 7, 4, 5, 3, 6];
+ * let index = a.findMax ();
+ *
+ * assert (index == (0us)?);
+ * ======
+ * @complexity: O (a.len)
+ * */
+pub fn findMax {T of [U], U} (a : T)-> (usize)? {
+    if (a.len == 0us) return none;
+    let mut max = 0us;
+
+    for i in 1us .. a.len {
+        if (a [i] > a [max]) {
+            max = i;
+        }
+    }
+
+    (max)?
+}
+
+/**
+ * Find the index of the max element in the array
+ * @returns: the index of the maximal element
+ * @params:
+ *    - a: an array to traverse
+ *    - predicate: the predicate function to compare two elements
+ * @example:
+ * =======
+ * let a = [9, 8, 4, 5, 3, 6];
+ * let indices = a.findMax ();
+ *
+ * assert (index == 0us)
+ * ======
+ * @complexity: O (a.len)
+ * */
+pub fn if (N > 0) findMax {T of [U ; N], U, N : usize} (a : T)-> usize {
+    let mut max = 0us;
+    for i in 1us .. N {
+        if (a [i] > a [max]) {
+            max = i;
+        }
+    }
+
+    max
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ==================================          CMP ELEMENT          ===================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+
+/**
+ * Find the index of the max element in the slice according to a predicate
+ * @returns: the index of the maximal element
+ * @params:
+ *    - a: a slice to traverse
+ *    - predicate: the predicate function to compare two elements
+ * @example:
+ * =======
+ * let a = copy [9, 8, 4, 5, 3, 6];
+ * let index = a.findCmp (|x, y| => { x > y });
+ * assert (index == 0us?);
+ *
+ * let index2 = a.findCmp (|x, y| => { x < y });
+ * assert (index2 == 4us?);
+ * ======
+ * @complexity: O (a.len)
+ * */
+pub fn findCmp {T of [U], U} (a : T, cmp : dg (U, U)-> bool)-> (usize)? {
+    if (a.len == 0us) return none;
+    let mut max = 0us;
+
+    for i in 1us .. a.len {
+        if (cmp (a [i], a [max])) {
+            max = i;
+        }
+    }
+
+    (max)?
+}
+
+/**
+ * Find the index of the max element in the slice according to a predicate
+ * @returns: the index of the maximal element
+ * @params:
+ *    - a: a slice to traverse
+ *    - predicate: the predicate function to compare two elements
+ * @example:
+ * =======
+ * let a = [9, 8, 4, 5, 3, 6];
+ * let index = a.findCmp (|x, y| => { x > y });
+ * assert (index == 0us)
+ *
+ * let index2 = a.findCmp (|x, y| => { x < y });
+ * assert (index2 == 4us);
+ * ======
+ * @complexity: O (a.len)
+ * */
+pub fn if (N > 0) findCmp {T of [U ; N], U, N : usize} (a : T, cmp : dg (U, U)-> bool)-> usize {
+    let mut max = 0us;
+    for i in 1us .. N {
+        if cmp (a [i], a [max]) {
+            max = i;
+        }
+    }
+
+    max
+}
+
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =================================          START/END WITH          =================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * @returns: true iif the slice 'a' starts with the slice 'b'
+ * @example:
+ * ======================
+ * let a = "Hello World!!", b = "Hello";
+ *
+ * assert (a.endsWith (b));
+ * ======================
+ * @params:
+ *    - a: a slice
+ *    - b: another slice
+ * @complexity: O (b.len)
+ */
+pub fn startsWith {T of [U], U} (a : T, b : T)-> bool {
+    if (a.len < b.len) return false;
+    for i in 0us .. b.len {
+        if a [i] != b [i] return false;
+    }
+
+    return true;
+}
+
+/**
+ * @returns: true iif the array 'a' starts with the array 'b'
+ * @example:
+ * ======================
+ * let a = [1, 2, 3, 4], b = [1, 2];
+ *
+ * assert (a.startsWith (b));
+ * ======================
+ * @params:
+ *    - a: an array
+ *    - b: another array
+ * @complexity: O (b.len)
+ */
+pub fn if (N >= M && N > 0) startsWith {T of [U ; N], K of [U ; M], U, N : usize, M : usize} (a : T, b : K)-> bool {
+    for i in 0us .. b.len {
+        if a [i] != b [i] return false;
+    }
+
+    return true;
+}
+
+/**
+ * @returns: true iif the slice 'a' ends with the slice 'b'
+ * @example:
+ * ======================
+ * let a = "Hello World!!", b = "World!!";
+ *
+ * assert (a.endsWith (b));
+ * ======================
+ * @params:
+ *    - a: a slice
+ *    - b: another slice
+ * @complexity: O (b.len)
+ */
+pub fn endsWith {T of [U], U} (a : T, b : T)-> bool {
+    if (a.len < b.len) return false;
+    let padding = a.len - b.len;
+    for i in 0us .. b.len {
+        if a [padding + i] != b [i] return false;
+    }
+
+    return true;
+}
+
+/**
+ * @returns: true iif the array 'a' ends with the array 'b'
+ * @example:
+ * ======================
+ * let a = [1, 2, 3, 4], b = [3, 4];
+ *
+ * assert (a.endsWith (b));
+ * ======================
+ * @params:
+ *    - a: an array
+ *    - b: another array
+ * @complexity: O (b.len)
+ */
+pub fn if (N >= M && N > 0) endsWith {T of [U ; N], K of [U ; M], U, N : usize, M : usize} (a : T, b : K)-> bool {
+    let padding = N - M;
+    for i in 0us .. b.len {
+        if a [padding + i] != b [i] return false;
+    }
+
+    return true;
 }
