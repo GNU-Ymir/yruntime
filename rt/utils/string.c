@@ -20,8 +20,9 @@ _yrt_slice_t str_from_int (int32_t value) {
 
 _yrt_slice_t str_from_char (char value) {
     unsigned int len = snprintf (NULL, 0, "%c", value);
-    char * alloc = malloc (len);
+    char * alloc = malloc (len + 1);
     sprintf (alloc, "%c", value);
+    alloc [len] = 0;
 
     _yrt_slice_t result;
     result = str_create_len (alloc, len);

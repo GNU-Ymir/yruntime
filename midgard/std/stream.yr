@@ -5,7 +5,7 @@ mod Runtime {F, T} {
 }
 
 prv enum : usize
-| DEFAULT_ALLOC_SIZE = 10us
+| DEFAULT_ALLOC_SIZE = 16us
 | DEFAULT_ENTABING_SIZE = 1us
  -> StreamConst;
 
@@ -74,9 +74,6 @@ pub class StringStream {
 
     // The content of the stream
     let dmut _content : [c8] = [];
-
-    // The actual size of the stream
-    let mut _len : usize = 0us;
 
     // The list of string used to entab
     let mut _entabing : [mut [c8]] = [];
@@ -399,7 +396,7 @@ pub class StringStream {
      * @complexity: O(1)
      */
     pub fn opIndex (self) -> [c8] {
-        self._content [0 .. self._len]
+        self._content [0 .. $]
     }
 
     /**
@@ -416,7 +413,6 @@ pub class StringStream {
      */
     pub fn clear (mut self) {
         self._content = [];
-        self._len = 0us;
         self._entabing = [];
         self._entabingLen = 0us;
         self._willEntab = false;
@@ -428,7 +424,7 @@ pub class StringStream {
          * Write the content of the stream inside another stream.
          */
         pub over toStream (self, dmut stream: &StringStream) {
-            stream:.write (self._content [0 .. self._len]);
+            stream:.write (self._content [0 .. $]);
         }
 
     }
@@ -449,18 +445,14 @@ pub class StringStream {
     prv fn push (mut self, c : c8) {
         if self._willEntab {
             for j in self._entabing [0 .. self._entabingLen] {
-                if (self._content.len <= self._len + j.len) {
-                    self:.grow (self._len + j.len);
-                }
-
-                self:.pushFast (j);
+                self._content ~= j;
             }
 
             self._willEntab = false;
         }
 
-        if (self._content.len <= self._len + 1) { self:.grow ((self._len + 1us)); }
-        self:.pushFast (c);
+        self._content ~= [c];
+        self._willEntab = (c == '\n');
     }
 
     /**
@@ -470,73 +462,12 @@ pub class StringStream {
      * */
     prv fn push (mut self, s : [c8]) {
         if (self._entabingLen == 0us) {
-            if (self._content.len <= self._len + s.len) { self:.grow (self._len + s.len); }
-            self:.pushFast (s);
+            self._content ~= s;
+            self._willEntab = (s.len != 0 && s [$ - 1] == '\n');
         } else {
             for z in s {
                 self:.push (z);
             }
-        }
-    }
-
-    /**
-     * Write a string at the end of the stream
-     * @warning: does not check wether the string will fit or not, and thus does not regrow the buffer if needed
-     * @assume: self._len + s.len <= self._content.len
-     * @params:
-     *    - s: the string to write
-     * */
-    prv fn pushFast (mut self, s : [c8]) {
-        for z in s {
-            self._content [self._len] = z;
-            self._len += 1us;
-        }
-
-        self._willEntab = (s.len != 0 && s [$ - 1] == '\n');
-    }
-
-    /**
-     * Write a char at the end of the stream
-     * @warning: does not check wether the char will fit or not, and thus does not regrow the buffer if needed
-     * @assume: self._len + 1 <= self._content.len
-     * @params:
-     *    - c: the char to write
-     * */
-    prv fn pushFast (mut self, c : c8) {
-        self._content [self._len] = c;
-        self._len += 1us;
-        self._willEntab = (c == '\n');
-    }
-
-    /**
-     * Grow the size of the buffer of the stream
-     * @params:
-     *    - nlen: the minimum len the buffer should be
-     * @info: nlen is just an information, the buffer might be bigger than that for optimisation and avoid regrowing at each new insertion
-     * */
-    prv fn grow (mut self, nlen : usize) {
-        if (self._content.len == 0us) {
-            let realLen = std::algorithm::comparison::max (nlen, StreamConst::DEFAULT_ALLOC_SIZE);
-            self._content = alias core::types::array::allocArray!c8 (realLen);
-        } else {
-            let realLen = std::algorithm::comparison::max (nlen, self._content.len * 2us, StreamConst::DEFAULT_ALLOC_SIZE);
-            let dmut aux : [c8] = core::types::array::allocArray!c8 (realLen);
-            core::types::array::memCopy!c8 (self._content, alias aux);
-            self._content = alias aux;
-        }
-    }
-
-    /**
-     * Resize the buffer of the stream to take exactly the amount of space that is actually used
-     * @info: does not fit the buffer used to store entabing information
-     * */
-    prv fn fit (mut self) {
-        if (self._len == 0us) {
-            self._content = [];
-        } else {
-            let dmut aux : [c8] = core::types::array::allocArray!c8 (self._len);
-            core::types::array::memCopy!c8 (self._content, alias aux);
-            self._content = alias aux;
         }
     }
 

@@ -1,56 +1,66 @@
-// in threads;
+in threads;
 
-// use std::io;
-// use std::concurrency::mail;
+use core::concurrency::pipes::_;
+use std::io;
+use std::concurrency::mail;
 
-// lazy dmut mailBox = copy MailBox!{i32} ();
+fn foo (dmut pipes : &ThreadPipe) -> i32 {
+    let msg = pipes:.read![c8] ();
+    pipes:.write (msg);
 
-// fn foo (dmut th : &Thread) {
-//     let msg = th:.read![c8] ();
-//     th:.write (msg);
+    if pipes:.read!bool () {
+        pipes:.write (true);
+        return 42;
+    }
 
-//     if th:.read!bool () {
-//         println ("Here") ;
-//         th:.write (true);
-//         return;
-//     }
+    0
+} catch {
+    _ => {
+        println ("Failed");
+        0
+    }
+}
 
-//     assert (false);
-// } catch {
-//     _ => {
-//         println ("Failed");
-//     }
-// }
+fn bar (dmut pipes : &ThreadPipe, dmut box : &MailBox!{i32}) -> i32 {
+    if (pipes:.read!bool ()) {
+        let x = box:.receive () ;
+        println( x );
+        assert (x == 12?);
+    }
 
-// fn bar (dmut th : &Thread) {
-//     if (th:.read!bool ()) {
-//         assert (mailBox:.receive () == 12?);
-//     }
+    pipes:.write (true);
+    42
+} catch {
+    _ => {
+        println ("Failed");
+        pipes:.write (false)?;
+        0
+    }
+}
 
-//     th:.write (true);
-// } catch {
-//     _ => {
-//         println ("Failed");
-//     }
-// }
+__test {
+    let dmut pipes = copy ThreadPipe ();
 
-// __test {
-//     let dmut a = copy Thread::spawn (&foo);
-//     a:.write ("Hello");
-//     let msg = a:.read![c8] ();
+    let dmut a = spawn foo (alias pipes);
+    pipes:.write ("Hello");
+    let msg = pipes:.read![c8] ();
 
-//     assert (msg == "Hello");
-//     a:.write (true);
-//     assert (a:.read!bool (), "a");
-//     a:.join ();
-// }
+    assert (msg == "Hello");
+    pipes:.write (true);
+    assert (pipes:.read!bool (), "a");
 
+    assert (a.value == 42);
+}
 
-// __test {
-//     let dmut a = copy Thread::spawn (&bar);
-//     mailBox:.send (12);
+__test {
+    let dmut pipes = copy ThreadPipe ();
+    let dmut box = copy MailBox!{i32} ();
 
-//     a:.write (true);
-//     assert (a:.read!bool (), "b");
-//     a:.join ();
-// }
+    let dmut a = spawn bar (alias pipes, alias box);
+    box:.send (12);
+
+    pipes:.write (true);
+    assert (pipes:.read!bool (), "b");
+
+    assert (a.value == 42);
+}
