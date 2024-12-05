@@ -1,7 +1,110 @@
 in task;
 
+use core::concurrency::sync::_;
+//use mail;
 
 @final
 pub class TaskPool {
+
+    // The list of task submitted in the task pool
+    let dmut _mails = copy mail::MailBox!{dg ()-> void} ();
+
+    // the number of thread to manage in the pool
+    let _nbThreads : u32;
+
+    // The threads spawned by the pool
+    let mut _threads : [mut future-> void] = [];
+
+    // The semaphore used to trigger the workers
+    let dmut _ready = copy Semaphore ();
+
+    // The semaphore used
+    let dmut _waitTask = copy Semaphore ();
+
+    // Set to true when the task pool is disposed
+    let mut _terminated : bool = false;
+
+    /**
+     * Create a task pool
+     * */
+    pub self (nbTh : u32 = 0u32)
+        with _nbThreads = (if (nbTh == 0u32) etc::runtime::threads::_yrt_get_nprocs () else nbTh)
+    {
+        // Spawn the threads of the pool
+        self._threads = copy [spawn { self:.workerMain (i); } for i in 0 .. self._nbThreads];
+        for _ in 0 .. self._nbThreads {
+            self._ready:.wait ();
+        }
+    }
+
+    /**
+     * Submit a task to the task pool
+     * */
+    pub fn submit (mut self, task : dg ()-> void) {
+        atomic self {
+            self._mails:.send (task);
+        }
+
+        self._waitTask:.post ();
+    }
+
+    /**
+     * Wait for the task pool to complete all submitted tasks
+     * */
+    pub fn join (mut self) {
+        if (self._mails.len == 0) return;
+        loop {
+            self._ready:.wait ();
+            atomic self {
+                // if not equal to zero then new tasks have been submitted since last mailbox finish
+                if (self._mails.len == 0) return;
+            }
+        }
+    }
+
+    /**
+     * Stop all running threads in the task pool without waiting for all tasks to be completed
+     * */
+    pub fn dispose (mut self) {
+        if (!self._terminated) {
+            self._terminated = true;
+            self._mails:.clear ();
+
+            // trigger worker threads for termination
+            for i in 0us .. self._threads.len {
+                self._waitTask:.post ();
+                self._threads [i].value; // join the worker thread
+            }
+        }
+    }
+
+    __dtor (mut self) {
+        self:.dispose ();
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          PRIVATE          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    fn workerMain (mut self, _ : u32) {
+        self._ready:.post ();
+        loop {
+            self._waitTask:.wait ();
+            if (self._terminated) break;
+
+            if let Ok (j) = self._mails:.receive () {
+                j ();
+                atomic self {
+                    if (self._mails.len == 0) {
+                        self._ready:.post ();
+                    }
+                }
+            }
+        }
+    }
 
 }
