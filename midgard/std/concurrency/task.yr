@@ -1,7 +1,41 @@
+/**
+ * This module implements the class TaskPool, that encapsulate a task queue and a set of worker thread to execute the tasks.
+ * The task queue is a FIFO queue.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @example:
+ * ===============
+ * use std::io; // for 'println'
+ * use std::conv; // for 'to'
+ * use std::concurrency::task;
+ *
+ * fn computePi (prec : i32)-> f64 {
+ *    let mut res = 0.0;
+ *    let n = prec.to!f64 ();
+ *    for i in 0 .. prec {
+ *        res += (4.0 / n) / ( 1.0 + (( to!f64 (i) - 0.5 ) * (1.0 / n)) * (( to!f64 (i) - 0.5 ) * (1.0 / n)));
+ *    }
+ *    res
+ * }
+
+ * fn main () {
+ *     let dmut pool = copy TaskPool (nbThreads-> 2u64); // Creating a task pool with two threads
+ *
+ *     // Only two threads are spawned to perform 1_000_000 jobs
+ *     for _ in 0 .. 1_000_000 {
+ *         pool:.submit (|| => {
+ *             println (computePi (i32::max / 1000));
+ *         });
+ *     }
+ *
+ *     pool:.join ();
+ * }
+ * ===============
+ */
 in task;
 
 use core::concurrency::sync::_;
-//use mail;
 
 @final
 pub class TaskPool {
@@ -24,11 +58,17 @@ pub class TaskPool {
     // Set to true when the task pool is disposed
     let mut _terminated : bool = false;
 
+    // The number of finished tasks
+    let mut _finished : usize = 0;
+
+    // The number of submitted tasks
+    let mut _submitted : usize = 0;
+
     /**
      * Create a task pool
      * */
-    pub self (nbTh : u32 = 0u32)
-        with _nbThreads = (if (nbTh == 0u32) etc::runtime::threads::_yrt_get_nprocs () else nbTh)
+    pub self (nbThreads : u32 = 0u32)
+        with _nbThreads = (if (nbThreads == 0u32) etc::runtime::threads::_yrt_get_nprocs () else nbThreads)
     {
         // Spawn the threads of the pool
         self._threads = copy [spawn { self:.workerMain (i); } for i in 0 .. self._nbThreads];
@@ -39,9 +79,11 @@ pub class TaskPool {
 
     /**
      * Submit a task to the task pool
+     * @limitation: submitted tasks cannot have blocking treatment, for complex and dependant tasks normal threads have to be used
      * */
     pub fn submit (mut self, task : dg ()-> void) {
         atomic self {
+            self._submitted += 1;
             self._mails:.send (task);
         }
 
@@ -52,7 +94,7 @@ pub class TaskPool {
      * Wait for the task pool to complete all submitted tasks
      * */
     pub fn join (mut self) {
-        if (self._mails.len == 0) return;
+        if (self._finished == self._submitted) return;
         loop {
             self._ready:.wait ();
             atomic self {
@@ -90,6 +132,9 @@ pub class TaskPool {
      * ====================================================================================================
      */
 
+    /**
+     * Worker threads waiting for tasks to be submitted and execute them one after the other
+     * */
     fn workerMain (mut self, _ : u32) {
         self._ready:.post ();
         loop {
@@ -99,9 +144,8 @@ pub class TaskPool {
             if let Ok (j) = self._mails:.receive () {
                 j ();
                 atomic self {
-                    if (self._mails.len == 0) {
-                        self._ready:.post ();
-                    }
+                    self._finished += 1;
+                    if (self._finished == self._submitted) self._ready:.post ();
                 }
             }
         }

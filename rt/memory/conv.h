@@ -18,6 +18,11 @@ double _yrt_u64_to_double (uint64_t x);
 uint64_t _yrt_ptr_to_u64 (void * x);
 
 /**
+ * Convert a delegate ptr into a u64
+ * */
+uint64_t _yrt_dg_to_u64 (void * closure, void * func);
+
+/**
  * Convert a int64_t into a double
  * */
 double _yrt_i64_to_double (int64_t x);

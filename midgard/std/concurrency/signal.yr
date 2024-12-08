@@ -7,8 +7,8 @@
  * <hr>
  * @example:
  * ===
- * import std::io;
- * import std::concurrency::signal;
+ * use std::io;
+ * use std::concurrency::signal;
  *
  * fn foo (x : i32, y : i32) {
  *     println ("Foo called with ", x, " ", y);
@@ -36,7 +36,7 @@ in signal;
 pub record Signal {T...} {
 
     // List of connected function pointers
-    let dmut _foos : [dg (T)-> void] = [];
+    let dmut _foos : [(dg (T)-> void) => ()] = [];
 
     /**
      * Create an empty signal connected to nothing
@@ -48,20 +48,10 @@ pub record Signal {T...} {
      * @params:
      *    - f: the function to connect
      * @info: does not reconnect the function if already found
-     * @complexity: O (self.len), with self.len the number of already connected function
+     * @complexity: O (1)
      */
     pub fn connect (mut self, f : dg (T)-> void) {
-        let mut found = false;
-        for i in self._foos {
-            if (i == f) {
-                found = true;
-                break;
-            }
-        }
-
-        if !found {
-            self._foos ~= [f];
-        }
+        self._foos [f] = ();
     }
 
     /**
@@ -69,16 +59,12 @@ pub record Signal {T...} {
      * @params:
      *    - f: the function to disconnect
      * @info: does nothing if the function was not connected
-     * @complexity: O (self.len), with self.len the number of already connected function
+     * @complexity: O (1)
      * * */
     pub fn disconnect (mut self, f : dg (T)-> void) {
-        for i in 0us .. self._foos.len {
-            if (self._foos [i] == f) {
-                self._foos = self._foos [0 .. i] ~ self._foos [i + 1 .. $];
-                return;
-            }
-        }
+        self._foos:.remove (f);
     }
+
 
     /**
      * Emit the signal (calling all the connected functions).
@@ -87,8 +73,8 @@ pub record Signal {T...} {
      *    - values: the list of parameters to pass to the connected functions.
      * */
     pub fn emit (self, values : T) {
-        for i in self._foos {
-            i (expand values);
+        for f, _ in self._foos {
+            f (expand values);
         }
     }
 

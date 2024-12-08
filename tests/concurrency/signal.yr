@@ -1,0 +1,52 @@
+in signal;
+
+use std::io;
+use std::concurrency::signal;
+
+lazy dmut __GLOBAL__ : [i32 => ()] = [];
+
+fn foo (i : i32) {
+    __GLOBAL__ [i] = ();
+}
+
+fn bar (i : i32) {
+    __GLOBAL__ [i * 7] = ();
+}
+
+fn baz (x : i32, y : i32) {
+    println ("Foo called with ", x, " ", y);
+}
+
+__test {
+    let dmut signal = Signal!{i32} ();
+    signal:.connect (&foo);
+    signal:.connect (&bar);
+
+    signal.emit (3);
+
+    assert (3 in __GLOBAL__, "a");
+    assert (21 in __GLOBAL__, "b");
+
+    signal:.disconnect (&bar);
+    signal.emit (4);
+    assert (4 in __GLOBAL__, "c");
+    assert (28 !in __GLOBAL__, "d");
+}
+
+__test {
+    let mut sig = Signal!{i32, i32} ();
+
+    // Connecting the foo function to the signal
+    sig:.connect (&baz);
+
+    let i = 42;
+    sig:.connect (copy |x, y| => {
+        println ("Lambda called : ", x, " ", y, " ", i);
+    });
+
+    // Call all the slots connected to the signal
+    sig.emit (1, 2);
+
+    // disconnect a connected slot
+    sig:.disconnect (&baz);
+}

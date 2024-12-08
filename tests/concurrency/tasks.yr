@@ -1,14 +1,27 @@
-in threads;
+in tasks;
 
-use std::io;
+use std::{io, conv};
 use std::concurrency::task;
 
-lazy __BOX__ = copy MailBox!{i32};
-
-fn foo () {
-
+fn computePi (prec : i32)-> f64 {
+    let mut res = 0.0;
+    let n = prec.to!f64 ();
+    for i in 0 .. prec {
+        res += (4.0 / n) / ( 1.0 + (( to!f64 (i) - 0.5 ) * (1.0 / n)) * (( to!f64 (i) - 0.5 ) * (1.0 / n)));
+    }
+    res
 }
 
 __test {
+    let dmut pool = copy TaskPool (nbThreads-> 12u64); // Creating a task pool with two threads
+    let dmut res = copy [0];
+    for i in 0 .. 100 {
+        pool:.submit (copy || => {
+            computePi (i32::max / 10000);
+            res [0] += i;
+        });
+    }
 
+    pool:.join ();
+    assert (res [0] == 4950);
 }

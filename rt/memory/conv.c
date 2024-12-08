@@ -14,7 +14,20 @@ uint64_t _yrt_ptr_to_u64 (void * x) {
 	return (uint64_t) x;
 }
 
-double _yrt_64_to_double (int64_t x) {
+uint64_t _yrt_dg_to_u64 (void * closure, void * ptr) {
+    uint64_t p = 31;
+    uint64_t m = 1000000009;
+    uint64_t res = 0;
+    uint64_t p_pow = 1;
+
+    res = (res + ((uint64_t) (closure) + 1) * p_pow) % m;
+    p_pow = (p_pow * p) % m;
+    res = (res + ((uint64_t) (ptr) + 1) * p_pow) % m;
+
+    return res;
+}
+
+double _yrt_i64_to_double (int64_t x) {
     return (double) x;
 }
 

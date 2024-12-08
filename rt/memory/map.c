@@ -30,17 +30,17 @@ void _yrt_map_empty (_yrt_map_t * mp, _yrt_map_info_t * info) {
 }
 
 void _yrt_dup_map (_yrt_map_t * result, _yrt_map_info_t * info, _yrt_map_t * old) {
-    if (old == NULL || old-> data == NULL || old-> len == 0) {
+    if (old == NULL || old-> data == NULL || old-> len == 0 || old-> allocLen == 0) {
         _yrt_map_empty (result, info);
     }
-
-    result-> data = (_yrt_map_entry_t**) GC_malloc ((result-> allocLen) * sizeof (_yrt_map_entry_t*));
-    memset (result-> data, 0, (result-> allocLen) * sizeof (_yrt_map_entry_t*));
 
     result-> minfo = info;
     result-> allocLen = old-> allocLen;
     result-> loaded = 0;
     result-> len = 0;
+
+    result-> data = (_yrt_map_entry_t**) GC_malloc ((result-> allocLen) * sizeof (_yrt_map_entry_t*));
+    memset (result-> data, 0, (result-> allocLen) * sizeof (_yrt_map_entry_t*));
 
     _yrt_map_copy_entries (result, old);
 }
