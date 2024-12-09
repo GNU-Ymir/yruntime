@@ -1,0 +1,24 @@
+in proc;
+
+use std::io;
+use std::concurrency::process;
+use std::fs::path;
+
+__test {
+    // Spawn a sub process that run the ls command in the directory /path/to/print
+    let dmut proc = copy SubProcess ("ls"s8, copy ["-la"s8], cwd-> Path ("."));
+
+    // Start the subprocess
+    proc:.start ();
+
+    // Wait the end of the proc
+    proc:.wait ();
+
+    // Print the stdout of the subprocess
+    let dmut result : [c8] = [];
+    while let Ok (c) = proc:.stdout:.read!c8 ()? {
+        result ~= [c];
+    }
+
+    println (result);
+}
