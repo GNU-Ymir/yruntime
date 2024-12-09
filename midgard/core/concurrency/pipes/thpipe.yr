@@ -61,9 +61,13 @@ pub class ThreadPipe {
                 if let Ok (dmut s) = alias self._sem {
                     s:.post ();
 
-                    b:.lock ();
-                    let res : T = pi:.read!{T} (limits-> limits);
-                    b:.lock ();
+                    b:.wait ();
+
+                    let mut len = pi:.read!{usize} ();
+                    if (len > limits) { len = limits; }
+                    let res : T = pi:.read!{T} (len-> len);
+
+                    b:.wait ();
 
                     return res;
                 }
@@ -87,9 +91,9 @@ pub class ThreadPipe {
                 if let Ok (dmut s) = alias self._sem {
                     s:.post ();
 
-                    b:.lock ();
+                    b:.wait ();
                     let res = pi:.read!{C} ();
-                    b:.lock ();
+                    b:.wait ();
 
                     return res;
                 }
@@ -112,9 +116,9 @@ pub class ThreadPipe {
                 if let Ok (dmut s) = alias self._sem {
                     s:.post ();
 
-                    b:.lock ();
+                    b:.wait ();
                     pi:.readRaw (alias buffer, len);
-                    b:.lock ();
+                    b:.wait ();
 
                     return;
                 }
@@ -147,9 +151,12 @@ pub class ThreadPipe {
                 if let Ok (dmut s) = alias self._sem {
                     s:.wait ();
 
-                    b:.lock ();
+                    b:.wait ();
+
+                    pi:.write!{usize} (sl.len);
                     pi:.write!{T} (sl);
-                    b:.lock ();
+
+                    b:.wait ();
 
                     return;
                 }
@@ -174,9 +181,9 @@ pub class ThreadPipe {
                 if let Ok (dmut s) = alias self._sem {
                     s:.wait ();
 
-                    b:.lock ();
+                    b:.wait ();
                     pi:.write!{C} (v);
-                    b:.lock ();
+                    b:.wait ();
 
                     return;
                 }
@@ -199,9 +206,11 @@ pub class ThreadPipe {
                 if let Ok (dmut s) = alias self._sem {
                     s:.wait ();
 
-                    b:.lock ();
+                    b:.wait ();
+
                     pi:.writeRaw (buffer, len);
-                    b:.lock ();
+
+                    b:.wait ();
 
                     return;
                 }

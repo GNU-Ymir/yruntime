@@ -53,6 +53,21 @@ pub class OPipe {
     }
 
     /**
+     * Set this pipe as the stdout of the current process
+     * */
+    pub fn setAsStdout (mut self) {
+        etc::c::files::dup2 (self._pipe, etc::c::files::StdFileNumbers::STDOUT);
+    }
+
+    /**
+     * Set this pipe as the stderr of the current process
+     * */
+    pub fn setAsStderr (mut self) {
+        etc::c::files::dup2 (self._pipe, etc::c::files::StdFileNumbers::STDERR);
+    }
+
+
+    /**
      * ================================================================================
      * ================================================================================
      * =============================        GETTERS        ============================
@@ -84,13 +99,6 @@ pub class OPipe {
         throws IOError
     {
         if (!self.isOpen ()) throw copy IOError ();
-
-        {
-            let len : usize = sl.len;
-            let pv = cast!{*void} (&len);
-            let pu = cast!{*u8} (pv);
-            self:.inner_WriteRaw (pu, usize::size);
-        }
 
         {
             let pv = cast!{*void} (sl.ptr);

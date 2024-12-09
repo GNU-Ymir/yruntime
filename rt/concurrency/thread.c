@@ -87,6 +87,18 @@ void _yrt_thread_mutex_unlock (_yrt_mutex_t* lock) {
     pthread_mutex_unlock (lock);
 }
 
+void _yrt_thread_barrier_init (_yrt_barrier_t * lock, uint32_t nb) {
+    pthread_barrier_init (lock, NULL, nb);
+}
+
+void _yrt_thread_barrier_wait (_yrt_barrier_t * lock) {
+    pthread_barrier_wait (lock);
+}
+
+void _yrt_thread_barrier_destroy (_yrt_barrier_t * lock) {
+    pthread_barrier_destroy (lock);
+}
+
 void _yrt_thread_cond_init (_yrt_cond_t * cond, _yrt_condattr_t* data) {
     pthread_cond_init (cond, data);
 }

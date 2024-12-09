@@ -1,49 +1,69 @@
 in barrier;
 
-use core::concurrency::sync::{mutex, condition};
+prv record _yrt_thread_barrier_t {
+    let data : [u8 ; 32] = [0 ; 32];
+    pub self () {}
+}
 
+
+/**
+ * Create a new barrier
+ * @params:
+ *    - loc: the barrier to create
+ *    - nbThreads: the number of threads to wait before the barrier opens
+ * */
+prv extern (C) fn _yrt_thread_barrier_init (lock : *_yrt_thread_barrier_t, nb : u32);
+
+/**
+ * Wait for the barrier to open
+ * */
+prv extern (C) fn _yrt_thread_barrier_wait (lock : *_yrt_thread_barrier_t);
+
+/**
+ * Destroy the barrier
+ * */
+prv extern (C) fn _yrt_thread_barrier_destroy (lock : *_yrt_thread_barrier_t);
+
+/**
+ * A barrier used to synchronized multiple threads
+ * */
 @final
 pub class Barrier {
 
-    let dmut _m = copy Mutex ();
-
-    let dmut _c = copy Condition ();
-
-    // The number of threads to sync
-    let _nb : usize;
-
-    // The number of threads that reached the barrier
-    let mut _state : usize = 0;
-
-    // The current barrier round to sync threads
-    let mut _round : usize = 0;
+    let _lock : _yrt_thread_barrier_t;
+    let mut _isInit = false;
 
     /**
      * @params:
      *    - nb: the number of threads to sync
      * */
-    pub self (nb : usize)
-        with _nb = nb
-    {}
+    pub self (nb : u32)
+        with _lock = _yrt_thread_barrier_t ()
+    {
+        _yrt_thread_barrier_init (&self._lock, nb);
+        self._isInit = true;
+    }
 
     /**
-     * Synchronize the threads
+     * Wait for the barrier to open
      * */
-    pub fn lock (mut self) {
-        self._m:.lock ();
-        self._state += 1;
-        if (self._state == self._nb) {
-            self._round += 1;
-            self._state = 0;
-            self._c:.broadcast ();
-        } else {
-            let lround = self._round;
-            do {
-                self._c:.wait (alias self._m);
-            } while (lround == self._round);
+    pub fn wait (mut self) {
+        _yrt_thread_barrier_wait (&self._lock);
+    }
+
+    /**
+     * Destroy the barrier
+     * */
+    pub fn dispose (mut self) {
+        if (self._isInit) {
+            _yrt_thread_barrier_destroy (&self._lock);
         }
 
-        self._m:.unlock ();
+        self._isInit = false;
+    }
+
+    __dtor (mut self) {
+        self:.dispose ();
     }
 
 }

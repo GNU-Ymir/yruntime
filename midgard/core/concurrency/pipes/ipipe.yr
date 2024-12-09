@@ -53,6 +53,13 @@ pub class IPipe {
     }
 
     /**
+     * Set this pipe as the stdin of the current process
+     * */
+    pub fn setAsStdin (mut self) {
+        etc::c::files::dup2 (self._pipe, etc::c::files::StdFileNumbers::STDIN);
+    }
+
+    /**
      * ================================================================================
      * ================================================================================
      * =============================        GETTERS        ============================
@@ -80,13 +87,10 @@ pub class IPipe {
      * @params:
      *    - len: the len of the slice to read
      * */
-    pub fn if (std::traits::isScalar!{C} ()) read {T of [C], C} (mut self, limits : usize = (1024 * 1024))-> [C]
+    pub fn if (std::traits::isScalar!{C} ()) read {T of [C], C} (mut self, len : usize)-> [C]
         throws IOError
     {
         if (!self.isOpen ()) throw copy IOError ();
-
-        let len = self:.read!{usize} ();
-        if (len > limits) throw copy IOError ();
 
         let dmut res = core::types::array::allocArray!{C} (len);
         let bufSize = 1024us;

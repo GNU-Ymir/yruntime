@@ -11,6 +11,7 @@ typedef pthread_mutex_t _yrt_mutex_t;
 typedef pthread_cond_t _yrt_cond_t;
 typedef pthread_condattr_t _yrt_condattr_t;
 typedef pthread_mutexattr_t _yrt_mutexattr_t;
+typedef pthread_barrier_t _yrt_barrier_t;
 
 //#endif
 
@@ -93,6 +94,21 @@ void _yrt_thread_mutex_lock (_yrt_mutex_t* lock);
  *    - lock: the mutex to unlock
  */
 void _yrt_thread_mutex_unlock (_yrt_mutex_t* lock);
+
+/**
+ * Create a new barrier blocking nb thread before opening
+ */
+void _yrt_thread_barrier_init (_yrt_barrier_t * loc, uint32_t nb);
+
+/**
+ * Wait for the barrier to open in a thread
+ */
+void _yrt_thread_barrier_wait (_yrt_barrier_t * loc);
+
+/**
+ * Destroy a barrier
+ */
+void _yrt_thread_barrier_destroy (_yrt_barrier_t * loc);
 
 /**
  * Init a waitable conditional

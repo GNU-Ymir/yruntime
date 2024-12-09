@@ -1,0 +1,271 @@
+/**
+ * This module implements the `SubProcess` class, that is used to spawn sub processes.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @example:
+ * ===
+ * // Spawn a sub process that run the ls command in the directory /path/to/print
+ * let dmut proc = copy SubProcess ("ls"s8, copy ["-la"s8], cwd-> Path ("/path/to/print"));
+ *
+ * // Start the subprocess
+ * proc:.start ()?; // might throw FsError
+ *
+ * // Wait the end of the proc
+ * proc:.wait ();
+ *
+ * // Retreive the stdout of the subprocess
+ * let dmut result : [c8] = [];
+ * while let Ok (c) = proc:.stdout:.read!c8 ()? {
+ *     result ~= [c];
+ * }
+ *
+ * println (result);
+ * ===
+ */
+
+in process;
+
+use std::fs::{path, errors};
+use etc::runtime::gc;
+use etc::c::{env, process, memory};
+use core::concurrency::pipes::{iopipe, ipipe, opipe};
+use core::exception::io;
+
+@final
+pub class SubProcess {
+
+    // The command to launch
+    let _cmd : [c8] = "";
+
+    // The list of argument passed to the command line
+    let _args : [[c8]] = [];
+
+    // The path of the execution of the command
+    let _cwd : Path = Path (".");
+
+    // The pid of the spawned command
+    let mut _pid : u32 = 0;
+
+    let dmut _stdin : (&IOPipe)? = none;
+    let dmut _stdout : (&IOPipe)? = none;
+    let dmut _stderr : (&IOPipe)? = none;
+
+    /**
+     * Run a process in parallel of this process execution
+     * @params:
+     *    - cmd: the command to launch
+     *    - args: the list of argument passed to the command
+     *    - cwd: the path location of the execution
+     * */
+    pub self (cmd : [c8], args : [[c8]], cwd : Path = Path ("."))
+        with _cmd = cmd
+        , _args = args
+        , _cwd = cwd
+    {}
+
+    /**
+     * Start the subprocess
+     * @params:
+     *    - redirect: iif true redirect stdin/out/err
+     * @throws:
+     *    - IOError: if the creation of the pipes fails
+     *    - FsError: if the cwd path does not exist
+     * @info: does nothing if the process is already started
+     * */
+    pub fn start (mut self, redirect : bool = true)
+        throws FsError
+    {
+        if (self._pid != 0) return;
+
+        if !std::fs::sys::isDir (self._cwd) throw copy FsError (FsErrorCode::PARENT_DONT_EXIST, self._cwd.toStr ());
+
+        if (redirect) {
+            self._stdin = (copy IOPipe::new ())?;
+            self._stdout = (copy IOPipe::new ())?;
+            self._stderr = (copy IOPipe::new ())?;
+        }
+
+        let mut cmds : [*c8] = [std::conv::toStringZ (self._cmd)] ~ copy [std::conv::toStringZ (a) for a in self._args];
+        let mut cwd = std::conv::toStringZ (self._cwd.toStr ());
+
+        self._pid = etc::c::process::fork ();
+        if (self._pid == 0) self:.child (cmds, cwd);
+
+        if let Ok (dmut stdin) = alias self._stdin {
+            stdin:.ipipe:.dispose ();
+            stdin:.opipe:.setNonBlocking ();
+        }
+
+        if let Ok (dmut stdout) = alias self._stdout {
+            stdout:.opipe:.dispose ();
+            stdout:.ipipe:.setNonBlocking ();
+        }
+
+        if let Ok (dmut stderr) = alias self._stderr {
+            stderr:.opipe:.dispose ();
+            stderr:.ipipe:.setNonBlocking ();
+        }
+    }
+
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ======================================          SYNC          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Wait for the subprocess to be finished
+     * @returns: the return code of the subprocess
+     * */
+    pub fn wait (mut self)-> i32 {
+        if let Ok (dmut stdin) = alias self._stdin {
+            stdin:.dispose ();
+        }
+
+        let mut status : i32 = 0;
+        process::waitpid (self._pid, &status, 0);
+        return status;
+    }
+
+    /**
+     * @returns: true if the subprocess is finished
+     * */
+    pub fn isFinished (self)-> bool {
+        process::waitpid (self._pid, null, 1);
+        if (process::kill (self._pid, 0) == -1) return true;
+
+        false
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =====================================          PIPES          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * @returns: the output pipe of the process
+     * */
+    @field
+    pub fn stdout (mut self)-> dmut (&IPipe) {
+        if let Ok (dmut stdout) = alias self._stdout {
+            return alias stdout:.ipipe;
+        }
+
+        copy IPipe ()
+    }
+
+    /**
+     * @returns: the error output pipe of the process
+     * */
+    @field
+    pub fn stderr (mut self)-> dmut (&IPipe) {
+        if let Ok (dmut stderr) = alias self._stderr {
+            return alias stderr:.ipipe;
+        }
+
+        copy IPipe ()
+    }
+
+    /**
+     * @returns: the input pipe of the process
+     * */
+    @field
+    pub fn stdin (mut self)-> dmut (&OPipe) {
+        if let Ok (dmut stdin) = alias self._stdin {
+            return alias stdin:.opipe;
+        }
+
+        copy OPipe ()
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          CLEANING          ====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    pub fn kill (mut self) {
+        if let Ok (dmut stdin) = alias self._stdin {
+            stdin:.dispose ();
+            process::kill (self._pid, 9);
+        }
+    }
+
+    /**
+     * Close the openned pipes, and kill the subprocess if it is running
+     * */
+    __dtor (mut self) {
+        if let Ok (dmut stdin) = alias self._stdin {
+            stdin:.dispose ();
+            self._stdin = none;
+        }
+
+        if let Ok (dmut stdout) = alias self._stdout {
+            stdout:.dispose ();
+            self._stdout = none;
+        }
+
+        if let Ok (dmut stderr) = alias self._stderr {
+            stderr:.dispose  ();
+            self._stderr = none;
+        }
+
+        self._pid = 0;
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ===================================          CHILD PROC          ===================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Main function of the child process
+     * */
+    prv fn child (mut self, cmd : [*c8], cwd : *c8) {
+        _yrt_disable_GC ();
+        self:.configurePipeRedirections ();
+
+        env::chdir (cwd);
+        let out = execvp (cmd [0], cmd.ptr);
+        if (out == -1) {
+            _yrt_exit (-1);
+        }
+
+        _yrt_exit (0);
+    }
+
+    /**
+     * Configure the pipes redirection of the child process
+     * */
+    prv fn configurePipeRedirections (mut self) {
+        if let Ok (dmut stderr) = alias self._stderr {
+            stderr:.opipe:.setNonBlocking ();
+            stderr:.opipe:.setAsStderr ();
+            stderr:.dispose ();
+        }
+
+        if let Ok (dmut stdout) = alias self._stdout {
+            stdout:.opipe:.setNonBlocking ();
+            stdout:.opipe:.setAsStdout ();
+            stdout:.dispose ();
+        }
+
+        if let Ok (dmut stdin) = alias self._stdin {
+            stdin:.ipipe:.setAsStdin ();
+            stdin:.dispose ();
+        }
+    }
+
+}
