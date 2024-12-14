@@ -1,0 +1,62 @@
+/**
+ * Error module for the errors that can occur when dealing with configs.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in errors;
+
+use core::{types::info, exception};
+use std::stream;
+
+pub class ConfigError over core::exception::Exception {
+    pub self () {}
+}
+
+pub class ConfigConvError over ConfigError {
+
+    // The element that failed at conversion
+    let _field : [c8];
+
+    // The type from which we wanted a cast
+    let _fr : TypeInfo;
+
+    // The type to which the cast was tried
+    let _to : TypeInfo;
+
+    // The sub error
+    let _subError : (&Exception)? = none;
+
+    /**
+     * @params:
+     *     - name: the name of the field (or element) being converted
+     *     - to: the typeinfo from which the conversion was tried
+     *     - from: the typeinfo to which the conversion was tried
+     *     - subError: the root cause of the error
+     * */
+    pub self (name : [c8] = "", to : TypeInfo, from : TypeInfo, subError : (&Exception)? = none)
+        with _field = name
+        , _fr = from
+        , _to = to
+        , _subError = subError
+    {}
+
+    impl stream::Streamable {
+        pub over toStream (self, dmut stream : &StringStream) {
+            stream:.write (self.__typeinfo__.name):.write (" ("s8);
+            stream:.write (self._fr.name):.write ("-> "s8):.write (self._to.name);
+            stream:.write (")"s8);
+            if (self._field != "")
+                stream:.write (" for field : "s8):.write (self._field);
+
+            if let Ok (sub) = self._subError {
+                stream:.writeln (""):.write (" => "s8):.write ("\t"s8):.write (sub);
+            } else {
+                if (self.hasTrace ()) {
+                    stream:.writeln (""):.write (":"s8):.write (self.getStackTrace ());
+                }
+            }
+        }
+    }
+
+}

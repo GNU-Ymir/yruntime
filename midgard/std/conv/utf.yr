@@ -1,0 +1,309 @@
+in utf;
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =================================          UTF8 DECODING          ==================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Decode an utf32 string into an utf8 string
+ * @params:
+ *   - str: the utf32 string
+ * @returns: an utf8 string
+ * */
+pub fn decode (str : [c32])-> dmut [c8] {
+    let dmut result : [c8] = [];
+    let dmut codes : [c8 ; 4] = ['\u{0}' ; 4];
+    for i in str {
+        let nbProduced = toUtf8 (i, ref codes);
+        for z in 0 .. nbProduced {
+            result ~= [codes [z]];
+        }
+    }
+
+    alias result
+}
+
+/**
+ * Decode an utf16 string into an utf8 string
+ * @params:
+ *   - str: the utf16 string
+ * @returns: an utf8 string
+ * */
+pub fn decode (str : [c16])-> dmut [c8] {
+    let dmut result : [c8] = [];
+    let dmut codes : [c8 ; 4] = ['\u{0}' ; 4];
+    let mut i = 0us;
+
+    while i < str.len - 1 {
+        let (nbConsumed, nbProduced) = toUtf8 ((str [i], str [i + 1]), ref codes);
+        for z in 0 .. nbProduced {
+            result ~= [codes [z]];
+        }
+
+        i += cast!usize (nbConsumed);
+    }
+
+    if (i == str.len - 1) {
+        let nbProduced = toUtf8 (str [$ - 1], ref codes);
+        for z in 0 .. nbProduced {
+            result ~= [codes [z]];
+        }
+    }
+
+    alias result
+}
+
+/**
+ * Transform an utf32 code point into an list of utf8 values
+ * @params:
+ *    - code: the code to decode
+ * @returns:
+ *    - ret: the list of utf8 chars
+ *    - .0: the number of chars written down in 'ret'
+ * */
+pub fn toUtf8 (code : c32, ref dmut ret : [c8 ; 4])-> u32 {
+    let ucode = cast!u32 (code);
+
+    if (ucode < 0x7Fu32) {
+        ret [0] = cast!c8 (cast!u8 (ucode) & 0x7Fu8);
+        return 1;
+    } else if (ucode <= 0x7FFu32) {
+        let c2 = ucode >> 6u32;
+
+        ret [1] = cast!c8 (0x80u8 | (cast!u8 (ucode) & 0x3Fu8));
+        ret [0] = cast!c8 (0xC0u8 | (cast!u8 (c2) & 0x1Fu8));
+        return 2;
+    } else if (ucode <= 0xFFFFu32) {
+        let c2 = ucode >> 6u32;
+        let c3 = c2 >> 6u32;
+
+        ret [2] = cast!c8 (0x80u8 | (cast!u8 (ucode) & 0x3Fu8));
+        ret [1] = cast!c8 (0x80u8 | (cast!u8 (c2) & 0x3Fu8));
+        ret [0] = cast!c8 (0xE0u8 | (cast!u8 (c3) & 0xFu8));
+
+        return 3;
+    } else if (ucode <= 0x10FFFFu32) {
+        let c2 = ucode >> 6u32;
+        let c3 = c2 >> 6u32;
+        let c4 = c3 >> 6u32;
+
+        ret [3] = cast!c8 (0x80u8 | (cast!u8 (ucode) & 0x3Fu8));
+        ret [2] = cast!c8 (0x80u8 | (cast!u8 (c2) & 0x3Fu8));
+        ret [1] = cast!c8 (0x80u8 | (cast!u8 (c3) & 0x3Fu8));
+        ret [0] = cast!c8 (0xF0u8 | (cast!u8 (c4) & 0x7u8));
+        return 4;
+    } else {
+        ret [0] = cast!c8 (0xBDu8);
+        ret [1] = cast!c8 (0xBFu8);
+        ret [2] = cast!c8 (0xEFu8);
+        return 3;
+    }
+}
+
+/**
+ * Transform an utf16 code point into a list of utf8 chars
+ * @info: this is a degraded version, as utf16 may require two consecutive chars, those are not considered
+ * @params:
+ *   - code: the code to decode
+ * @returns:
+ *   - ret: the list of utf8 chars
+ *   - .0: the number of chars written in 'ret'
+ * */
+pub fn toUtf8 (code : c16, ref dmut ret : [c8 ; 4])-> u32 {
+    let high = cast!u16 (code);
+    if ((high & 0xF800u16) != 0xD800u16) {
+        return toUtf8 (cast!c32 (cast!u32 (high)), ref ret);
+    }
+
+    // Invalid if read alone, thus just ignoring it
+    return 0;
+}
+
+/**
+ * Transform one utf16 code point into a list of utf8
+ * @params:
+ *    - code: the utf16 chars to decode
+ * @returns:
+ *    - ret: the list of utf8 chars
+ *    - .0: the number of utf16 chars read from 'code'
+ *    - .1: the number of chars written down in 'ret'
+ * @info: may consume only one of the two utf16 chars, depending on their value
+ * */
+pub fn toUtf8 (code : (c16, c16), ref dmut ret : [c8 ; 4])-> (u32, u32) {
+    let high = cast!u16 (code._0);
+    if ((high & 0xF800u16) != 0xD800u16) {
+        return (1, toUtf8 (cast!c32 (cast!u32 (high)), ref ret));
+    }
+
+    let low = cast!u16 (code._1);
+    let a = cast!u32 (high & 0x03FFu16) << 10u32;
+    let b = cast!u32 (low & 0x03FFu16);
+
+    return (2, toUtf8 (cast!c32 ((a | b) + 0x10000u32), ref ret));
+}
+
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ==================================          UTF ENCODING          ==================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Encode a utf8 string into a utf16 string
+ * @params:
+ *    - str: the string to encode
+ * @returns: the utf16 encoded string
+ * */
+pub fn encode {C of c16} (str : [c8])-> dmut [C] {
+    let dmut result : [c16] = [];
+    let dmut codes : [c16 ; 2] = ['\u{0}' ; 2];
+    let mut i = 0us;
+    while i < str.len {
+        let (nbConsumed, nbProduced) = toUtf16 (str [i .. $], ref codes);
+        for z in 0 .. nbProduced {
+            result ~= [codes [z]];
+        }
+
+        i += cast!usize (nbConsumed);
+    }
+
+    alias result
+}
+
+/**
+ * Encode a utf8 string into a utf32 string
+ * @params:
+ *    - str: the string to encode
+ * @returns: the utf32 encoded string
+ * */
+pub fn encode {C of c32} (str : [c8])-> dmut [C] {
+    let dmut result : [c32] = [];
+    let mut i = 0us;
+    while i < str.len {
+        let (code, nbConsumed) = toUtf32 (str [i .. $]);
+        result ~= [code];
+
+        i += cast!usize (nbConsumed);
+    }
+
+    alias result
+}
+
+/**
+ * Transform the next char into a utf32 code point
+ * @params:
+ *    - content: the string to encode
+ * @returns:
+ *    .0: the next utf32 encoded char
+ *    .1: the number of c8 char consumed
+ * */
+fn toUtf32 (content : [c8])-> (c32, u32) {
+    if (content.len == 0) return (cast!c32 (0u32), 0);
+    let nb = getUtf8CodePointSize (content [0]);
+    match nb {
+        4u32 => {
+            if (content.len < 4) return (cast!c32 (0u32), cast!u32 (content.len));
+            let a = cast!u32 (cast!u8 (content [0]) & 0x07u8) << 18u32;
+            let b = cast!u32 (cast!u8 (content [1]) & 0x3fu8) << 12u32;
+            let c = cast!u32 (cast!u8 (content [2]) & 0x3fu8) << 6u32;
+            let d = cast!u32 (cast!u8 (content [3]) & 0x3fu8);
+
+            return (cast!c32 (a | b | c | d), 4);
+        }
+        3u32 => {
+            if (content.len < 3) return (cast!c32 (0u32), cast!u32 (content.len));
+            let a = cast!u32 (cast!u8 (content [0]) & 0x0fu8) << 12u16;
+            let b = cast!u32 (cast!u8 (content [1]) & 0x3fu8) << 6u16;
+            let c = cast!u32 (cast!u8 (content [2]) & 0x3fu8);
+
+            return (cast!c32 (a | b | c), 3);
+        }
+        2u32 => {
+            if (content.len < 2) return (cast!c32 (0u32), cast!u32 (content.len));
+            let a = cast!u32 (cast!u8 (content [0]) & 0x1fu8) << 6u16;
+            let b = cast!u32 (cast!u8 (content [1]) & 0x3fu8);
+
+            return (cast!c32 (a | b), 2);
+        }
+        _ => {
+            let a = cast!u32 (cast!u8 (content [0]) & 0x7fu8);
+            return (cast!c32 (a), 1);
+        }
+    }
+}
+
+/**
+ * Transform the next chars into a utf16 code point
+ * @params:
+ *    - content: the char to encode
+ * @returns:
+ *    .0: the next utf16 encoded char
+ *    .1: the number of c8 char consumed
+ * */
+fn toUtf16 (content : [c8], ref dmut ret : [c16 ; 2])-> (u32, u32) {
+    if (content.len == 0) return (0, 0);
+    let nb = getUtf8CodePointSize (content [0]);
+    match nb {
+        4u32 => {
+            if (content.len < 4) return (0, cast!u32 (content.len));
+            let a = cast!u32 (cast!u8 (content [0]) & 0x07u8) << 18u32;
+            let b = cast!u32 (cast!u8 (content [1]) & 0x3fu8) << 12u32;
+            let c = cast!u32 (cast!u8 (content [2]) & 0x3fu8) << 6u32;
+            let d = cast!u32 (cast!u8 (content [3]) & 0x3fu8);
+
+            let cp = (a | b | c | d) - 0x10000u32;
+            let high = 0xD800u16 + (cast!u16 (cp >> 10u32) & 0x3FFu16);
+            let low = 0xDC00u16 + (cast!u16 (cp & 0x3FFu32));
+
+            ret [0] = cast!c16 (high);
+            ret [1] = cast!c16 (low);
+
+            return (4, 2);
+        }
+        3u32 => {
+            if (content.len < 4) return (0, cast!u32 (content.len));
+            let a = cast!u16 (cast!u8 (content [0]) & 0x0fu8) << 12u16;
+            let b = cast!u16 (cast!u8 (content [1]) & 0x3fu8) << 6u16;
+            let c = cast!u16 (cast!u8 (content [2]) & 0x3fu8);
+
+            ret [0] = cast!c16 (a | b | c);
+            return (3, 1);
+        }
+        2u32 => {
+            if (content.len < 4) return (0u32, cast!u32 (content.len));
+            let a = cast!u16 (cast!u8 (content [0]) & 0x1fu8) << 6u16;
+            let b = cast!u16 (cast!u8 (content [1]) & 0x3fu8);
+
+            ret [0] = cast!c16 (a | b);
+            return (2, 1);
+        }
+        _ => {
+            let a = cast!u16 (cast!u8 (content [0]) & 0x7fu8);
+            ret [0] = cast!c16 (a);
+            return (1, 1);
+        }
+    }
+}
+
+/**
+ * @returns: the number of chars to read according to the utf8 code point
+ * */
+fn getUtf8CodePointSize (c : c8)-> u32 {
+    let code = cast!u8 (c);
+    if((code & 0x80u8) == 0u8) {
+        1u32
+    } else if((code & 0xe0u8) == 0xc0u8) {
+        2u32
+    } else if((code & 0xf0u8) == 0xe0u8) {
+        3u32
+    } else {
+        4u32
+    }
+}

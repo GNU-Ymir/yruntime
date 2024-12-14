@@ -53,17 +53,22 @@ pub trait Streamable {
      *     - stream: the stream in which the class instance will be written
      */
     pub fn toStream (self, dmut stream : &StringStream)-> void {
-        let vd = Runtime!{typeof (self), *void}::_yrt_unsafe_cast (self);
-        stream:.write (self.__typeid__, "(");
-        if let Err () = __PRINT_SET__ [vd]? {
-            __PRINT_SET__ [vd] = ();
+        cte if is!{typeof (self)}{entity E} {
+            stream:.write (self.__typeid__, "(");
             self.__stream__streamContent (alias stream);
-            __PRINT_SET__:.remove (vd);
         } else {
-            stream:.write ("...");
-        }
+            let vd = Runtime!{typeof (self), *void}::_yrt_unsafe_cast (self);
+            stream:.write (self.__typeid__, "(");
+            if let Err () = __PRINT_SET__ [vd]? {
+                __PRINT_SET__ [vd] = ();
+                self.__stream__streamContent (alias stream);
+                __PRINT_SET__:.remove (vd);
+            } else {
+                stream:.write ("...");
+            }
 
-        stream:.write (")");
+            stream:.write (")");
+        }
     }
 
 }
@@ -175,14 +180,12 @@ pub class StringStream {
     }
 
     /**
-     * Write a element in the stream
-     * @info: the element must be convertible to a [c8] using `std::conv` module.
+     * Write any type at the end of the string
      * @params:
-     *    - c: the element to write that is neither a struct nor a class
-     */
-    pub fn if (!is!{T}{record R} && !is!{T}{class C} && !is!{T}{entity E}) write {T} (mut self, c : T) -> dmut &StringStream {
-        self:.write (std::conv::to!{[c8]} (c));
-        alias self
+     *   - c: the value to write
+     * */
+    pub fn if (!is!{T}{class C} && !is!{T}{record C} && !is!{T}{entity E}) write {T} (mut self, c : T) -> dmut &StringStream {
+        self:.write (std::conv::to!{[c8]} (c))
     }
 
     /**
@@ -260,7 +263,7 @@ pub class StringStream {
      * @info: consider weither the element is Streamable or not
      * @returns: the stream
      * */
-    pub fn write {T of R, record R} (mut self, ref c : T) -> dmut &StringStream {
+    pub fn if (is!{T}{record R} || is!{T}{entity E}) write {T} (mut self, ref c : T) -> dmut &StringStream {
         cte if is!{T}{X impl std::stream::Streamable} {
             c.toStream (alias self);
         } else {
@@ -390,13 +393,20 @@ pub class StringStream {
      * ====================================================================
      * */
 
-
     /**
      * @returns: the content of the stream, in a utf8 string.
      * @complexity: O(1)
      */
     pub fn opIndex (self) -> [c8] {
         self._content [0 .. $]
+    }
+
+    /**
+     * @returns: the content of the stream, in a utf8 string.
+     * @complexity: O(1)
+     */
+    pub fn opIndex (mut self) -> dmut [c8] {
+        alias self._content [0 .. $]
     }
 
     /**

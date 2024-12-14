@@ -1,0 +1,98 @@
+/**
+ * This module defines the types of config. `Config` is an abstract class that defines some standard access methods, such that it is easier to traverse a configuration tree without conversion. Sub types do not necessarily override the access methods, thus an `OutOfArray` execption is thrown if we try to access them using `opIndex`.
+ * @warning: if `Config` data may seem convinient to create data collections that can store anything, they should be used only when dealing with configuration file and serialization. They don't aim to be general purpose types, hence the collections from the module <a href="./std_collection__.html">std::collection</a> should be preferred.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in data;
+
+use std::{io, stream, conv};
+use std::config::errors;
+
+/**
+ * A configuration file is a tree composed of nodes.
+ * Each node contains a different type of information. Every node is an heir of the class `Config`.
+ */
+@abstract
+pub class Config {
+
+    prot self () {}
+
+    /**
+     * Access a sub config at index `i`.
+     * @throws:
+     *    - ConfigError: if the sub type does not override the function because it has no meaning, or the index `i` is just out of the array.
+     */
+    pub fn opIndex (self, i : u32) -> &Config
+        throws ConfigError
+    {
+        i;
+        throw copy ConfigError ();
+    }
+
+    /**
+     * Access a sub config using a string key.
+     * @throws:
+     *    - ConfigError: if the sub type does not override the function because it has no meaning, or the key `key` does not exist.
+     */
+    pub fn opIndex (self, key : [c8])-> &Config
+        throws ConfigError
+    {
+        key;
+        throw copy ConfigError ();
+    }
+
+    /**
+     * Replace the value at index `i` by the value `c`.
+     * @throws:
+     *    - ConfigError: if the sub type does not override the function because it has no meaning, or the index `i` is just out of the array.
+     */
+    pub fn opIndexAssign (mut self, i : u32, c : &Config)-> void
+        throws ConfigError
+    {
+        i;
+        c;
+        throw copy ConfigError ();
+    }
+
+    /**
+     * Replace the value associated to the key `key` by the value `c`
+     * @throws:
+     *    - &OutOfArray: if the sub type does not override the function because it has no meaning.
+     */
+    pub fn opIndexAssign (mut self, key : [c8], c : &Config)-> void
+        throws ConfigError
+    {
+        key;
+        c;
+        throw copy ConfigError ();
+    }
+
+    /**
+     * @returns: true if the config contains an element associated to the key `key`, false otherwise or if it has no meaning.
+     */
+    pub fn opContains (self, key : [c8])-> bool {
+        key;
+        false
+    }
+
+    impl std::stream::Streamable;
+
+}
+
+pub mod array;
+pub mod boolean;
+pub mod dict;
+pub mod empty;
+pub mod float;
+pub mod int;
+pub mod str;
+
+pub def Dict  : dict::Dict;
+pub def Array : array::Array;
+pub def Bool  : boolean::Bool;
+pub def None  : empty::None;
+pub def Int   : int::Int;
+pub def Float : float::Float;
+pub def Str   : str::Str;

@@ -1,0 +1,111 @@
+/**
+ * This module implements conversion functions, to transform `Config` into more convinient types such as `Int` to `i32`, `String` to `[c32]`, etc. It also implements functions that transforme convinient types into `Config` in order to serialize data. All functions defined in this module are called `to`, that way conversions are always done the same way `value.to!{&Config} ()` and `cfg.to!{T} ()`. Sometimes collision can happen with the functions defined in the module <a href="./std_conv.html">std::conv</a>, to resolve them the full name `config::conv::to` can be used.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ *
+ * @example:
+ * ===
+ * use std::config::_;
+ *
+ * let j = json#{"foo" : 89, "bar" : [1, 2, 3]};
+ *
+ * let iVal = j["foo"].to!{i32} ()?; // access and conversion might fail
+ * let slcVal =  j["bar"].to!{[i32]} ();
+ *
+ * assert (iVal == (89)? && slcVal == [1, 2, 3]);
+ * ===
+ */
+
+in conv;
+
+use std::{traits, config::{data, errors}};
+
+/**
+ * Transform a configuration into any integer value
+ * @throws:
+ *   - &ConfigError: if the conversion failed.
+ * @returns: the converted value.
+ * @info: successfully converts Int and Float config nodes (float values are truncated).
+ * @warning: does not verify overflow.
+ * @example:
+ * =============
+ * let i = copy Int (12);
+ * assert (i.to!i64 () == 12i64);
+ * assert (i.to!i32 () == 12);
+ *
+ * let f = copy Float (15.7f);
+ * assert (f.to!i32 () == 15);
+ * =============
+ * */
+pub fn if isIntegral!{T} to {T, C of &Config} (cfg : C)-> T
+    throws ConfigConvError
+{
+    if let Int (value-> i) = cfg {
+        return cast!T (i);
+    }
+
+    if let Float (value-> f) = cfg {
+        return std::conv::to!{T} (f);
+    }
+
+    throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__);
+}
+
+
+/**
+ * Transform a configuration into a float value
+ * @throws:
+ *   - &ConfigError: if the conversion failed.
+ * @returns: the converted value.
+ * @info: successfully converts Int and Float config nodes
+ * @example:
+ * =============
+ * let f = copy Float (12.0);
+ * assert (f.to!f64 () == 12.0);
+ * assert (f.to!f32 () == 12.0f);
+ *
+ * let i = copy Int (14);
+ * assert (i.to!f64 () == 14.0);
+ * =============
+ * @throws:
+ *   - &ConfigError: if the cast cannot be made
+ */
+pub fn if isFloating!{T} to {T, C of &Config} (cfg : C)-> T
+    throws ConfigConvError
+{
+    if let Float (value-> f) = cfg {
+        return cast!T (f);
+    }
+
+    if let Int (value-> i) = cfg {
+        return std::conv::to!{T} (i);
+    }
+
+    throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__);
+}
+
+/**
+ * Transform a configuration into a string
+ * @throws:
+ *   - &ConfigError: if the conversion failed.
+ * @returns: the converted value.
+ * @example:
+ * =============
+ * let i = copy Str ("foo");
+ * assert (i.to!{[c32]} () == "foo");
+ * =============
+ */
+pub fn if isChar!{U} to {T of [U], U, C of &Config} (cfg : C)-> T
+    throws ConfigConvError
+{
+    if let Str (value-> s) = cfg {
+        cte if is!{U}{D of c8} {
+            return s;
+        } else {
+            return std::conv::to!{T} (s);
+        }
+    }
+
+    throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__);
+}

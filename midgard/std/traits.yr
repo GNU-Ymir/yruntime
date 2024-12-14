@@ -8,18 +8,18 @@
  * <hr>
  * @example:
  * ===
- * import std::traits;
+ * use std::traits;
  *
  * /*
  *   This function accept every integral type for T (u8 to usize, and i8 to isize)
  * */
- * fn if (isIntegral!{T} ()) foo {T} (a : T)-> T {
+ * fn if isIntegral!{T} foo {T} (a : T)-> T {
  *     a + cast!T (12)
  * }
  *
  * let a = foo ();
  *
- * cte if isFloating!{typeof (a)} () {
+ * cte if isFloating!{typeof (a)} {
  *     println ("a is either a f32 or a f64");
  * } else {
  *     println ("a is something else");
@@ -30,106 +30,80 @@ in traits;
 
 /**
  * @CTE
- * @returns: true if T is f32 or f64, false otherwise
+ * @value: true iif T is floating pointer number
  */
-pub fn isFloating {T} ()-> bool {
-    cte (is!{T} {U of f32} || is!{T} {U of f64})
-}
+pub def isFloating {T} = cte (is!{T} {U of f32} ||
+                              is!{T} {U of f64} ||
+                              is!{T}{U of f80} ||
+                              is!{T}{U of fsize});
 
 /**
  * @CTE
- * @returns: true if T is an integer (signed or unsigned) false otherwise
+ * @value: true iif T is an integer (signed or unsigned) false otherwise
  */
-pub fn isIntegral {T} ()-> bool {
-    cte (is!{T}{U of i8} || is!{T}{U of u8} ||
-         is!{T}{U of i16} || is!{T}{U of u16} ||
-         is!{T}{U of i32} || is!{T}{U of u32} ||
-         is!{T}{U of i64} || is!{T}{U of u64} ||
-         is!{T}{U of isize} || is!{T}{U of usize}
-         )
-}
+pub def isIntegral {T} = cte (isSigned!{T} || isUnsigned!{T});
 
 /**
  * @CTE
- * @returns: true if T is a signed integer, false otherwise
+ * @value: true iif T is a signed integer
  */
-pub fn isSigned {T} ()-> bool {
-    cte (is!{T}{U of i8} ||
-         is!{T}{U of i16} ||
-         is!{T}{U of i32} ||
-         is!{T}{U of i64} ||
-         is!{T}{U of isize}
-         )
-}
+pub def isSigned {T} = cte (is!{T}{U of i8} ||
+                           is!{T}{U of i16} ||
+                           is!{T}{U of i32} ||
+                           is!{T}{U of i64} ||
+                           is!{T}{U of isize});
 
 /**
  * @CTE
- * @returns: true if T is a unsigned integer, false otherwise
+ * @value: true iif T is a unsigned integer
  */
-pub fn isUnsigned {T} ()-> bool {
-    cte (is!{T}{U of u8} ||
-         is!{T}{U of u16} ||
-         is!{T}{U of u32} ||
-         is!{T}{U of u64} ||
-         is!{T}{U of usize}
-         )
-}
+pub def isUnsigned {T} = cte (is!{T}{U of u8} ||
+                              is!{T}{U of u16} ||
+                              is!{T}{U of u32} ||
+                              is!{T}{U of u64} ||
+                              is!{T}{U of usize});
 
 /**
  * @CTE
- * @returns: true if T is a char type, false otherwise
+ * @value: true iif T is a char type
  */
-pub fn isChar {T} ()-> bool {
-    cte (is!{T}{U of c8} || is!{T}{U of c32} || is!{T}{U of c16} || is!{T}{U of csize})
-}
+pub def isChar {T} = cte (is!{T}{U of c8} || is!{T}{U of c32} || is!{T}{U of c16});
 
 /**
  * @CTE
- * @returns: true
+ * @value: true
  */
-pub fn isTuple{T, U...}()-> bool {
-    true
-}
+pub def isTuple{T, U...} = true;
 
 /**
  * @CTE
- * @returns: false
+ * @value: false
  */
-pub fn isTuple {T}()-> bool {
-    false
-}
+pub def isTuple {T} = false;
 
 /**
  * @CTE
  * Is a scalar type
  * */
-pub fn isScalar {T} ()-> bool {
-    (isIntegral!{T} () ||
-     isFloating!{T} () ||
-     isChar!{T} () ||
-     is!{T}{U of bool})
-}
+pub def isScalar {T} = cte (isIntegral!{T} || isFloating!{T} || isChar!{T} || is!{T}{U of bool});
 
 /**
  * @CTE
- * @returns: true if the type 'T' has a field named 'name'
+ * @value: true iif the type 'T' has a public field named 'name'
+ * @warning: does not work for method marked as fields
  * */
-pub fn hasField {record T, name : [c8]} ()-> bool {
-    cte __pragma!compile (__pragma!field_type (T, name))
-}
+pub def hasField {record T, name : [c8]} = cte __pragma!compile (__pragma!field_type (T, name));
 
 /**
  * @CTE
- * @returns: true if the type 'T' has a field named 'name'
+ * @value: true iif the type 'T' has a public field named 'name'
+ * @warning: does not work for method marked as fields
  * */
-pub fn hasField {entity T, name : [c8]} ()-> bool {
-    cte __pragma!compile (__pragma!field_type (T, name))
-}
+pub def hasField {entity T, name : [c8]} = cte __pragma!compile (__pragma!field_type (T, name));
 
 /**
  * @CTE
- * @returns: true if the type 'T' has a field named 'name'
+ * @value: true iif the type 'T' has a public field named 'name'
+ * @warning: does not work for method marked as fields
  * */
-pub fn hasField {class T, name : [c8]} ()-> bool {
-    cte __pragma!compile (__pragma!field_type (T, name))
-}
+pub def hasField {class T, name : [c8]} = cte __pragma!compile (__pragma!field_type (T, name));

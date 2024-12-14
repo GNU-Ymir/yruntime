@@ -1,0 +1,185 @@
+in dict;
+
+use std::{stream, conv};
+use std::config::errors;
+
+/**
+ * A dictionnary associates values to string keys.
+ * @example:
+ * ============
+ * let dmut dict = Dict ();
+ * dict:["foo"] = copy Str ("foo");
+ * dict:["bar"] = copy Int (42);
+ * dict:["baz"] = copy Array ();
+ *
+ * // Dict are iterable
+ * for k, v in dict[] {
+ *     println ("Key : ", k, " is associated to value : ", v);
+ * }
+ * ============
+ */
+@final
+pub class Dict over Config {
+
+    // The values in the dict
+    let mut _content : [[c8] => mut &Config] = [];
+
+    /**
+     * Creates a new empty dictionnary
+     */
+    pub self () {}
+
+    /**
+     * Access the element at index k
+     * @throws:
+     *    - &OutOfArray: if the index is not found in the dictionnary
+     * @params:
+     *    - k: a key index
+     * @example:
+     * ================
+     * let dmut dict = copy Dict ();
+     * dict:["foo"] = copy Str ("foo");
+     * dict:["bar"] = copy Int (42);
+     * {
+     *     println (dict ["foo"]);
+     * } catch {
+     *     ConfigError () => {
+     *         println ("foo not found in ", dict);
+     *     }
+     * }
+     *
+     * println (dict["bar"]?); // put it in an option type
+     * ================
+     */
+    pub over opIndex (self, k : [c8])-> &Config
+        throws ConfigError
+    {
+        if let Ok (v) = self._content [k]? {
+            return v;
+        }
+
+        throw copy ConfigError ();
+    }
+
+    /**
+     * @returns: the map containing the values contained in the dictionnary
+     * @example:
+     * =========
+     * let dmut dict = copy Dict ();
+     * dict:["foo"] = copy Str ("foo");
+     * dict:["bar"] = copy Int (42);
+     *
+     * for k, v in dict[] {
+     *     println (k, " => ", v);
+     * }
+     * */
+    pub fn opIndex (self)-> [[c8] => &Config] {
+        self._content
+    }
+
+    /**
+     * Change the value at index k
+     * @info: if the value was not in the dictionnary it is inserted
+     * @params:
+     *    - k: a index key
+     *    - value: the value to insert
+     * @example:
+     * ==============
+     * let dmut dict = copy Dict ();
+     * dict:["foo"] = copy Str ("foo");
+     * dict:["bar"] = copy Int (42);
+     *
+     * // replace the value at foo index
+     * dict:["foo"] = copy Int (12);
+     * ==============
+     */
+    pub over opIndexAssign (mut self, k : [c8], value : &Config) -> void {
+        self._content [k] = value;
+    }
+
+    /**
+     * Remove a value at index 'k'
+     * @info: does nothing if the value was not in the dictionnary
+     * @params:
+     *    - k: the key to remove
+     * @example:
+     * ========
+     * let dmut dict = copy Dict ();
+     * dict:["foo"] = copy Int (1);
+     *
+     * assert ("foo" in dict);
+     *
+     * dict:.remove ("foo");
+     * assert ("foo" !in dict);
+     * */
+    pub fn remove (mut self, k : [c8])-> void {
+        self._content:.remove (k);
+    }
+
+    /**
+     * @return: the value at index k, if it exists, otherwise return value
+     * @params:
+     * - k: an index key
+     * - value: the value to return if the key is not found, or of the wrong type
+     * @example:
+     * ================
+     * let dmut dict = copy Dict ();
+     * dict:["foo"] = copy Str ("foo");
+     * dict:["bar"] = copy Int (42);
+     *
+     * assert (dict.getOr ("bar", 56) == 42);
+     * assert (dict.getOr ("baz", 56) == 56);
+     * ================
+     */
+    pub fn getOr {T} (self, k : [c8], value : T)-> T {
+        if (k in self._content) {
+            {
+                return std::config::conv::to!{T} (self._content [k]);
+            } catch {
+                _ => return value;
+            }
+        } else return value;
+    }
+
+    /**
+     * Check if a key can be found in the dictionnary
+     * @params:
+     *   - k: the key to find
+     * @example:
+     * =================
+     * let dmut dict = Dict::new ();
+     * (alias dict) ["foo"] = Str::new ("foo");
+     * (alias dict) ["bar"] = Int::new (42);
+     *
+     * assert ("foo" in dict);
+     * =================
+     */
+    pub over opContains (self, k : [c8])-> bool {
+        k in self._content
+    }
+
+    /**
+     * @returns: the number of element in the dict
+     */
+    @field
+    pub fn len (self)-> usize {
+        self._content.len
+    }
+
+    impl Streamable {
+
+        /**
+         * Dictionnary are printable
+         */
+        pub over toStream (self, dmut stream : &StringStream) -> void {
+            stream:.write ("Dict ("s8);
+            let mut k = 0us;
+            for i, j in self._content {
+                if k != 0us { stream:.write (", "s8); }
+                stream:.write (i):.write (" => "s8):.write (j);
+                k += 1us;
+            }
+            stream:.write (")"s8);
+        }
+    }
+}

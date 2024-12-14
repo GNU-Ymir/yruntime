@@ -1,0 +1,64 @@
+in errors;
+
+use core::exception;
+use core::types::{array, info};
+
+/**
+ * Exception thrown when a conversion fails. This class contains two fields giving the information of the cast that was tried.
+ * @example :
+ * ===============
+ * class @abstract X { /* full definition omitted */ }
+ * class Y over X { /* full definition omitted */ }
+ * class Z over X { /* full definition omitted */ }
+ *
+ * /*
+ *  * Dummy function that verify wether the parameter is of Type &Y
+ *  */
+ * fn enforce_Y  (a : &X)
+ *     throws std::conv::CastFailure
+ * {
+ *    match (a) {
+ *        _ : &Y => { // Indeed it is
+ *             println ("Success");
+ *        }
+ *        _ => { // it is not a &Y
+ *          // conversion from typeof (a) to &Y failed.
+ *          throw copy CastFailure (a::typeinfo, Y::typeinfo);
+ *        }
+ *     }
+ * }
+ *
+ * fn main () {
+ *     enforce_Y (Z::new ()); // this enforcing will fail
+ * } catch {
+ *     // as expected it failed CastFailure (TypeInfo (..., Z), TypeInfo (..., Y))
+ *     x : &CastFailure => println (x);
+ * }
+ * ===============
+ */
+pub class CastFailure over core::exception::Exception {
+
+    // the type that is transformed
+    pub let from : TypeInfo;
+
+    // the type to which the transformation was tried
+    pub let to : TypeInfo;
+
+    /**
+     * @params:
+     *    - from: the type that is transformed
+     *    - to: the type to which the transformation was tried
+     */
+    pub self (from : TypeInfo, to : TypeInfo) with from = from, to = to {}
+
+    impl std::stream::Streamable {
+
+        /**
+         * Just print the error to stdout
+         */
+        pub over toStream (self, dmut stream : &std::stream::StringStream) {
+            self.__super.toStream (alias stream);
+        }
+
+    }
+}

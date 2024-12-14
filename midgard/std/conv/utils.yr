@@ -1,0 +1,90 @@
+in utils;
+
+use std::conv::errors;
+use std::traits;
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ===================================          FLOAT CONV          ===================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+pub extern (C) fn _yrt_f32_to_string (f : f32, prec : u32)-> dmut [c8];
+pub extern (C) fn _yrt_f64_to_string (f : f64, prec : u32)-> dmut [c8];
+pub extern (C) fn _yrt_f80_to_string (f : f80, prec : u32)-> dmut [c8];
+pub extern (C) fn _yrt_fsize_to_string (f : fsize, prec : u32)-> dmut [c8];
+
+pub extern (C) fn _yrt_f32_to_string_exp (f : f32, prec : u32)-> dmut [c8];
+pub extern (C) fn _yrt_f64_to_string_exp (f : f64, prec : u32)-> dmut [c8];
+pub extern (C) fn _yrt_f80_to_string_exp (f : f80, prec : u32)-> dmut [c8];
+pub extern (C) fn _yrt_fsize_to_string_exp (f : fsize, prec : u32)-> dmut [c8];
+
+pub extern (C) fn _yrt_string_to_f32 (s : [c8], ref mut succ : bool)-> f32;
+pub extern (C) fn _yrt_string_to_f64 (s : [c8], ref mut succ : bool)-> f64;
+pub extern (C) fn _yrt_string_to_f80 (s : [c8], ref mut succ : bool)-> f80;
+pub extern (C) fn _yrt_string_to_fsize (s : [c8], ref mut succ : bool)-> fsize;
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ====================================          INT CONV          ====================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+
+pub fn if (isIntegral!{U} && isChar!{C}) to {C, U} (a : U, base : U) -> C {
+    match a {
+        0us => { return '0'; }
+        1us => { return '1'; }
+        2us => { if base < 3us { panic; } return '2'; }
+        3us => { if base < 4us { panic; } return '3'; }
+        4us => { if base < 5us { panic; } return '4'; }
+        5us => { if base < 6us { panic; } return '5'; }
+        6us => { if base < 7us { panic; } return '6'; }
+        7us => { if base < 8us { panic; } return '7'; }
+        8us => { if base < 9us { panic; } return '8'; }
+        9us => { if base < 10us { panic; } return '9'; }
+        _ => {
+            if (a < 10 || a > 36 || base <= a) {
+                panic;
+            }
+
+            return cast!C (cast!c8 (cast!u8 ('a') + cast!u8 (a - 10)));
+        }
+    }
+}
+
+pub fn if (isIntegral!{T} && isChar!{C}) to {T, C} (a : C, base : T) -> T
+    throws std::conv::errors::CastFailure
+{
+    match a {
+        '0' => { return 0; }
+        '1' => { return 1; }
+        '2' => { return 2; }
+        '3' => { return 3; }
+        '4' => { return 4; }
+        '5' => { return 5; }
+        '6' => { return 6; }
+        '7' => { return 7; }
+        '8' => { return 8; }
+        '9' => { return 9; }
+        _ => {
+            let ret = if (a >= 'a' && a <= 'z') {
+                cast!T (cast!u8 (a) - cast!u8 ('a')) + 10
+            } else if (a >= 'A' && a <= 'Z') {
+                cast!T (cast!u8 (a) - cast!u8 ('A')) + 10
+            } else {
+                throw copy CastFailure (c8::typeinfo, usize::typeinfo);
+            };
+
+            if (base > ret) {
+                return ret;
+            }
+
+            throw copy CastFailure (c8::typeinfo, usize::typeinfo);
+        }
+    }
+}
