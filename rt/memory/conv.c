@@ -6,9 +6,13 @@
 
 #include <stdio.h>
 
-double _yrt_u64_to_double (uint64_t x) {
-    return (double) x;
-}
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ======================================          HASH          ======================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
 
 uint64_t _yrt_ptr_to_u64 (void * x) {
 	return (uint64_t) x;
@@ -27,44 +31,136 @@ uint64_t _yrt_dg_to_u64 (void * closure, void * ptr) {
     return res;
 }
 
-double _yrt_i64_to_double (int64_t x) {
-    return (double) x;
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ================================          FLOAT TO STRING          =================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+
+_yrt_slice_t  _yrt_f32_to_string (float f, uint32_t prec) {
+    int nb = snprintf (NULL, 0, "%.*f", prec, f);
+
+	_yrt_slice_t result;
+	_yrt_alloc_slice_no_set (&result, nb + 1, 1);	 // + 1 for the null char
+    snprintf (result.data, nb+1, "%.*f", prec, f);
+
+    return result;
 }
 
-float _yrt_u32_to_float (uint32_t x) {
-    return (float) x;
+_yrt_slice_t  _yrt_f64_to_string (double f, uint32_t prec) {
+    int nb = snprintf (NULL, 0, "%.*lf", prec, f);
+
+	_yrt_slice_t result;
+	_yrt_alloc_slice_no_set (&result, nb + 1, 1);	 // + 1 for the null char
+    snprintf (result.data, nb+1, "%.*lf", prec, f);
+
+    return result;
 }
 
-float _yrt_i32_to_float (int32_t x) {
-    return (float) x;
+_yrt_slice_t  _yrt_f80_to_string (long double f, uint32_t prec) {
+    int nb = snprintf (NULL, 0, "%.*Lf", prec, f);
+
+	_yrt_slice_t result;
+	_yrt_alloc_slice_no_set (&result, nb + 1, 1);	 // + 1 for the null char
+    snprintf (result.data, nb+1, "%.*Lf", prec, f);
+
+    return result;
 }
 
-uint64_t _yrt_double_to_u64 (double x) {
-    return (uint64_t) x;
+_yrt_slice_t  _yrt_fsize_to_string (long double f, uint32_t prec) {
+    int nb = snprintf (NULL, 0, "%.*Lf", prec, f);
+
+	_yrt_slice_t result;
+	_yrt_alloc_slice_no_set (&result, nb + 1, 1);	 // + 1 for the null char
+    snprintf (result.data, nb+1, "%.*Lf", prec, f);
+
+    return result;
 }
 
-int64_t _yrt_double_to_i64 (double x) {
-    return (uint64_t) x;
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ==============================          FLOAT EXP TO STRING          ===============================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+_yrt_slice_t  _yrt_f32_to_string_exp (float f, uint32_t prec) {
+    int nb = snprintf (NULL, 0, "%.*e", prec, f);
+
+	_yrt_slice_t result;
+	_yrt_alloc_slice_no_set (&result, nb + 1, 1);	 // + 1 for the null char
+    snprintf (result.data, nb+1, "%.*e", prec, f);
+
+    return result;
 }
 
-uint32_t _yrt_float_to_u32 (float x) {
-    return (unsigned int) x;
+_yrt_slice_t  _yrt_f64_to_string_exp (double f, uint32_t prec) {
+    int nb = snprintf (NULL, 0, "%.*le", prec, f);
+
+	_yrt_slice_t result;
+	_yrt_alloc_slice_no_set (&result, nb + 1, 1);	 // + 1 for the null char
+    snprintf (result.data, nb+1, "%.*le", prec, f);
+
+    return result;
 }
 
-int32_t _yrt_float_to_i32 (float x) {
-    return (int) x;
+_yrt_slice_t  _yrt_f80_to_string_exp (long double f, uint32_t prec) {
+    int nb = snprintf (NULL, 0, "%.*Le", prec, f);
+
+	_yrt_slice_t result;
+	_yrt_alloc_slice_no_set (&result, nb + 1, 1);	 // + 1 for the null char
+    snprintf (result.data, nb+1, "%.*Le", prec, f);
+
+    return result;
 }
 
-float _yrt_s8_to_float (_yrt_slice_t arr, char * succ) {
+_yrt_slice_t  _yrt_fsize_to_string_exp (long double f, uint32_t prec) {
+    int nb = snprintf (NULL, 0, "%.*Le", prec, f);
+
+	_yrt_slice_t result;
+	_yrt_alloc_slice_no_set (&result, nb + 1, 1);	 // + 1 for the null char
+    snprintf (result.data, nb+1, "%.*Le", prec, f);
+
+    return result;
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ================================          STRING TO FLOAT          =================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+
+float _yrt_string_to_f32 (_yrt_slice_t arr, uint8_t * succ) {
     char* endf;
     float res = strtof (arr.data, &endf);
     *succ = (errno != ERANGE) && endf == (arr.data + arr.len);
     return res;
 }
 
-double _yrt_s8_to_double (_yrt_slice_t arr, char * succ) {
+double _yrt_string_to_f64 (_yrt_slice_t arr, uint8_t * succ) {
     char* endf;
     double res = strtod (arr.data, &endf);
+    *succ = (errno != ERANGE) && endf == (arr.data + arr.len);
+    return res;
+}
+
+long double _yrt_string_to_f80 (_yrt_slice_t arr, uint8_t * succ) {
+    char* endf;
+    double res = strtold (arr.data, &endf);
+    *succ = (errno != ERANGE) && endf == (arr.data + arr.len);
+    return res;
+}
+
+long double _yrt_string_to_fsize (_yrt_slice_t arr, uint8_t * succ) {
+    char* endf;
+    double res = strtold (arr.data, &endf);
     *succ = (errno != ERANGE) && endf == (arr.data + arr.len);
     return res;
 }
@@ -72,31 +168,10 @@ double _yrt_s8_to_double (_yrt_slice_t arr, char * succ) {
 /*!
  * ====================================================================================================
  * ====================================================================================================
- * =================================          UTF32 TO UTF8          ==================================
+ * ================================          UTF CONVERSIONS          =================================
  * ====================================================================================================
  * ====================================================================================================
  */
-
-_yrt_slice_t _yrt_to_utf8_slice (_yrt_slice_t array) {
-    uint64_t len = 0;
-    for (uint64_t i = 0 ; i < array.len ; i++) {
-		int nb = 0;
-		char buf [5];
-		_yrt_to_utf8 (((uint32_t*) array.data) [i], buf, &nb);
-		len += nb;
-    }
-
-	_yrt_slice_t result;
-	_yrt_alloc_slice_no_set (&result, len, 1);
-	uint32_t offset = 0;
-    for (unsigned long i = 0 ; i < array.len; i++) {
-		int nb = 0;
-		_yrt_to_utf8 (((uint32_t *) array.data) [i], result.data + offset, &nb);
-		offset += nb;
-    }
-
-    return result;
-}
 
 char* _yrt_to_utf8 (unsigned int code, char chars[5], int * nb) {
     if (code <= 0x7F) {
@@ -189,44 +264,3 @@ uint32_t _yrt_to_utf32 (char* text, size_t * byte_count) {
 }
 
 
-_yrt_slice_t _yrt_to_utf32_slice (_yrt_slice_t array) {
-    uint64_t len = 0;
-    for (uint64_t i = 0 ; i < array.len ;) {
-		size_t nb = 0;
-		_yrt_to_utf32 (array.data + i, &nb);
-		i += nb;
-		len += 1;
-    }
-
-	_yrt_slice_t result;
-	_yrt_alloc_slice_no_set (&result, len, 1);
-    int j = 0;
-    for (uint64_t i = 0 ; i < array.len ;) {
-		size_t nb = 0;
-		((uint32_t*) result.data) [j] = _yrt_to_utf32 (array.data + i, &nb);
-		i += nb;
-		j += 1;
-    }
-
-    return result;
-}
-
-_yrt_slice_t _yrt_double_to_s8 (double x, int prec) {
-	int nb = snprintf (NULL, 0, "%.*lf", prec, x);
-
-	_yrt_slice_t result;
-	_yrt_alloc_slice_no_set (&result, nb + 1, 1);	 // + 1 for the null char
-    snprintf (result.data, nb+1, "%.*lf", prec, x);
-
-    return result;
-}
-
-_yrt_slice_t _yrt_double_to_s8_exp (double x, int prec) {
-    int nb = snprintf (NULL, 0, "%.*e", prec, x);
-
-	_yrt_slice_t result;
-	_yrt_alloc_slice_no_set (&result, nb + 1, 1);	 // + 1 for the null char
-    snprintf (result.data, nb+1, "%.*e", prec, x);
-
-    return result;
-}

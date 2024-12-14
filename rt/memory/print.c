@@ -100,28 +100,6 @@ void _yrt_print_error (char * format) {
     fprintf (stderr, "%s", format);
 }
 
-uint32_t _yrt_getwchar () {
-    char c[5];
-    int ig = scanf ("%c", &c[0]);
-    size_t size = utf8_codepoint_size (c[0]);
-    for (int i = 1 ; i < (int) size ; i++) {
-	int ig_ = scanf ("%c", &c[i]);
-    }
-
-    size_t nb;
-    return _yrt_to_utf32 (c, &nb);
-}
-
-uint32_t _yrt_getwchar_in_file (FILE * file) {
-    char c[5];
-    c[0] = fgetc (file);
-    size_t size = utf8_codepoint_size (c[0]);
-    for (int i = 1 ; i < (int) size; i ++)
-	c[i + 1] = fgetc (file);
-
-    size_t nb;
-    return _yrt_to_utf32 (c, &nb);
-}
 
 void _yrt_fflush_stdout () {
     fflush (stdout);

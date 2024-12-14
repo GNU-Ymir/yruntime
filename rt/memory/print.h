@@ -18,8 +18,6 @@ void _yrt_eprintf80 (long double x);
 void _yrt_eprintfsize (long double x);
 void _yrt_print_error (char * format);
 
-uint32_t _yrt_getwchar ();
-uint32_t _yrt_getwchar_in_file (FILE * file);
 void _yrt_fflush_stdout ();
 
 
