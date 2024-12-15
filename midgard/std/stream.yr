@@ -1,9 +1,5 @@
 in stream;
 
-mod Runtime {F, T} {
-    pub extern (C) fn _yrt_unsafe_cast (x : F)-> dmut T;
-}
-
 prv enum : usize
 | DEFAULT_ALLOC_SIZE = 16us
 | DEFAULT_ENTABING_SIZE = 1us
@@ -53,11 +49,8 @@ pub trait Streamable {
      *     - stream: the stream in which the class instance will be written
      */
     pub fn toStream (self, dmut stream : &StringStream)-> void {
-        cte if is!{typeof (self)}{entity E} {
-            stream:.write (self.__typeid__, "(");
-            self.__stream__streamContent (alias stream);
-        } else {
-            let vd = Runtime!{typeof (self), *void}::_yrt_unsafe_cast (self);
+        cte if is!{typeof (self)}{class E} {
+            let vd = etc::runtime::memory::Runtime!{typeof (self), *void}::_yrt_unsafe_cast (self);
             stream:.write (self.__typeid__, "(");
             if let Err () = __PRINT_SET__ [vd]? {
                 __PRINT_SET__ [vd] = ();
@@ -68,6 +61,9 @@ pub trait Streamable {
             }
 
             stream:.write (")");
+        } else {
+            stream:.write (self.__typeid__, "(");
+            self.__stream__streamContent (alias stream);
         }
     }
 
@@ -204,7 +200,7 @@ pub class StringStream {
      * ===
      */
     pub fn write (mut self, c : *(void))-> dmut &StringStream {
-        let val = Runtime!{*void, usize}::_yrt_unsafe_cast (c);
+        let val = etc::runtime::memory::Runtime!{*void, usize}::_yrt_unsafe_cast (c);
         self:.write (std::conv::to!{[c8], "x"} (val));
         alias self
     }
@@ -229,7 +225,7 @@ pub class StringStream {
             c.toStream (alias self);
         } else {
             cte if is!{T}{class C} {
-                let vd = Runtime!{typeof (self), *void}::_yrt_unsafe_cast (self);
+                let vd = etc::runtime::memory::Runtime!{typeof (self), *void}::_yrt_unsafe_cast (self);
                 self:.write (c.__typeinfo.name, '(');
                 if vd !in __PRINT_SET__ {
                     __PRINT_SET__ [vd] = ();

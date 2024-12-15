@@ -1,6 +1,22 @@
 in config;
 
-use std::{io, config::data};
+use std::{io, config::_};
+
+
+class A {
+    pub let x : u32;
+
+    pub self (cfg : &Config)
+        with x = cfg ["foo"].to!{u32} ()
+        throws ConfigError
+    {
+        cfg;
+    }
+
+    pub self ()
+        with x = 10
+    {}
+}
 
 __test {
 
@@ -8,4 +24,15 @@ __test {
     a:["foo"] = copy Int (12);
 
     println (a);
+}
+
+__test {
+    let dmut z = copy Array ();
+    let dmut m = copy Dict ();
+
+    m:["foo"] = copy Int (89);
+    z:.push (m);
+
+    let result = z.to!{[&A]} ();
+    assert (result.len == 1 && result [0].x == 89);
 }

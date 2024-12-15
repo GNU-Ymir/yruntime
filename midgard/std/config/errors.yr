@@ -13,6 +13,18 @@ pub class ConfigError over core::exception::Exception {
     pub self () {}
 }
 
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ======================================          CONV          ======================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+
+/**
+ * Error thrown when a conversion failed
+ * */
 pub class ConfigConvError over ConfigError {
 
     // The element that failed at conversion
@@ -58,5 +70,64 @@ pub class ConfigConvError over ConfigError {
             }
         }
     }
+}
 
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =====================================          ARRAY          ======================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Error thrown when an array was index outside its range
+ * */
+pub class ConfigOutError over ConfigError {
+
+    // The length of the array
+    let _len : usize;
+
+    // The index of the access
+    let _index : u32;
+
+    pub self (len : usize, index : u32)
+        with _len = len
+        , _index = index
+    {}
+
+    impl stream::Streamable {
+        pub over toStream (self, dmut stream : &StringStream) {
+            stream:.write (self.__typeinfo__.name):.write (" ("s8);
+            stream:.write (self._len, " <= ", self._index, ')');
+        }
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ======================================          DICT          ======================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Error thrown when a dict is indexed by a key that it does not contain
+ * */
+pub class ConfigKeyError over ConfigError {
+
+    // The index of the access
+    let _key : [c8];
+
+    pub self (key : [c8])
+        with _key = key
+    {}
+
+    impl stream::Streamable {
+        pub over toStream (self, dmut stream : &StringStream) {
+            stream:.write (self.__typeinfo__.name):.write (" ("s8);
+            stream:.write (self._key, ')');
+        }
+    }
 }

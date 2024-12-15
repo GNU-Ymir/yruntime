@@ -3,3 +3,80 @@ in config;
 pub mod data;
 pub mod ::conv;
 pub mod errors;
+
+use std::config::data;
+
+/**
+ * The print set stores the list of classes that are already serialized, to avoid infinite loops when a class contains itself
+ * */
+lazy mut __SERIALIZE_SET__ : [*void => mut ()] = [];
+
+/**
+ * Simple trait to impl in a class to be serializable into a `Config`.
+ * @warning: Work in progress, for the moment the trait does not implement a standard behavior, but it is planned to be done.
+ * @example:
+ * ===
+ * use std::{config::_, io};
+ *
+ * class A {
+ *     pub let value : i32;
+ *
+ *     pub self (v : i32) with value = v {}
+ *
+ *     // using the default serialization method
+ *     impl Serializable;
+ * }
+ *
+ * let a = copy A (89);
+ *
+ * // transform A into &Config, and then dump it using toml format
+ * let cfg = a.to!{&Config} ();
+ * let t = toml::dump (cfg);
+ *
+ * // and into json using the same config
+ * let j = json::dump (cfg);
+ * ===
+ */
+pub trait Serializable {
+
+    /**
+     * Serialize the content of the class
+     * @warning: ignore fields that failed to be serialized
+     * */
+    prot fn __config__serializeContent (self, dmut dict : &Dict) {
+        cte if (__pragma!compile ({self::super.__config__serializeContent (alias dict);})) {
+            self::super.__config__serializeContent (alias dict);
+        }
+
+        cte for i in 0 .. typeof (self)::field_infos.len {
+            let name = cte {typeof (self)::field_infos [i].name};
+            cte if (__pragma!compile ({std::config::conv::to!{&Config} (__pragma!field (self, name));})) {
+                dict:[name] = std::config::conv::to!{&Config} (__pragma!field (self, name));
+            }
+        }
+    }
+
+    /**
+     * Transform the object into a configuration
+     * Create dictionnary containing the serializable fields (ignore the fields that cannot be serialized, e.g. function pointers)
+     */
+    pub fn serialize (self)-> &Dict {
+        cte if is!{typeof (self)}{class C} {
+            let vd = etc::runtime::memory::Runtime!{typeof (self), *void}::_yrt_unsafe_cast (self);
+            let dmut dict = copy Dict ();
+            if let Err () = __SERIALIZE_SET__ [vd]? {
+                __SERIALIZE_SET__ [vd] = ();
+                self.__config__serializeContent (alias dict);
+                __SERIALIZE_SET__:.remove (vd);
+            }
+
+            return dict;
+        } else {
+            let dmut dict = copy Dict ();
+            self.__config__serializeContent (alias dict);
+
+            return dict;
+        }
+    }
+
+}

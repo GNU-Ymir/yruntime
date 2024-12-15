@@ -21,11 +21,16 @@ in conv;
 
 use std::{traits, config::{data, errors}};
 
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ==================================          SCALAR DATAS          ==================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
 /**
  * Transform a configuration into any integer value
- * @throws:
- *   - &ConfigError: if the conversion failed.
- * @returns: the converted value.
  * @info: successfully converts Int and Float config nodes (float values are truncated).
  * @warning: does not verify overflow.
  * @example:
@@ -46,7 +51,7 @@ pub fn if isIntegral!{T} to {T, C of &Config} (cfg : C)-> T
     }
 
     if let Float (value-> f) = cfg {
-        return std::conv::to!{T} (f);
+        return cast!T (f);
     }
 
     throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__);
@@ -55,9 +60,6 @@ pub fn if isIntegral!{T} to {T, C of &Config} (cfg : C)-> T
 
 /**
  * Transform a configuration into a float value
- * @throws:
- *   - &ConfigError: if the conversion failed.
- * @returns: the converted value.
  * @info: successfully converts Int and Float config nodes
  * @example:
  * =============
@@ -68,8 +70,6 @@ pub fn if isIntegral!{T} to {T, C of &Config} (cfg : C)-> T
  * let i = copy Int (14);
  * assert (i.to!f64 () == 14.0);
  * =============
- * @throws:
- *   - &ConfigError: if the cast cannot be made
  */
 pub fn if isFloating!{T} to {T, C of &Config} (cfg : C)-> T
     throws ConfigConvError
@@ -79,7 +79,7 @@ pub fn if isFloating!{T} to {T, C of &Config} (cfg : C)-> T
     }
 
     if let Int (value-> i) = cfg {
-        return std::conv::to!{T} (i);
+        return cast!{T} (i);
     }
 
     throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__);
@@ -87,9 +87,6 @@ pub fn if isFloating!{T} to {T, C of &Config} (cfg : C)-> T
 
 /**
  * Transform a configuration into a string
- * @throws:
- *   - &ConfigError: if the conversion failed.
- * @returns: the converted value.
  * @example:
  * =============
  * let i = copy Str ("foo");
@@ -108,4 +105,483 @@ pub fn if isChar!{U} to {T of [U], U, C of &Config} (cfg : C)-> T
     }
 
     throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__);
+}
+
+/**
+ * Transform a configuration into a bool
+ * @example:
+ * =========
+ * let i = copy Bool (true);
+ * assert (i.to!{bool} ());
+ * =========
+ * */
+pub fn to {B of bool, C of &Config} (cfg : C)-> T
+    throws ConfigConvError
+{
+    if let Bool (value-> b) = cfg {
+        return b;
+    }
+
+    throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__);
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ================================          COLLECTION DATAS          ================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Transform a configuration into a slice
+ * @example:
+ * =========
+ * let dmut a = copy Array ();
+ * for i in 1 .. 4 {
+ *     a:.push (copy Int (i));
+ * }
+ *
+ * assert (a.to![i32] () == [1, 2, 3]);
+ * ========
+ * */
+pub fn if !isChar!{U} to {T of [U], U, C of &Config} (cfg : C)-> T
+    throws ConfigConvError
+{
+    if let x : &Array = cfg {
+        {
+            let dmut res : T = [];
+            for e in x[] {
+                res ~= [config::conv::to!{U} (e)];
+            }
+
+            return res;
+        } catch {
+            inn : &ConfigConvError => {
+                throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__, subError-> inn?);
+            }
+        }
+    }
+
+    throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__);
+}
+
+/**
+ * Transform a configuration into a tuple
+ * @info:
+ *     - Tranform arrays (as in a configuration they may actually encode tuples)
+ *     - only returns the T::arity first elements and ignore remainings
+ * @example:
+ * ===========
+ * let dmut a = copy Array ();
+ * a:.push (copy Int (1));
+ * a:.push (copy Str ("test")); // a is a tuple, as it contains arguments of different types
+ *
+ * assert (a.to!{(i32, [c8])} () == (1, "test"));
+ * ===========
+ * */
+pub fn if isTuple!{T} to {T, C of &Config} (cfg : C)-> T
+    throws ConfigConvError
+{
+    if let x : &Array = cfg {
+        if x.len < T::arity {
+            throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__,
+                                        subError-> (copy ConfigOutError (x.len, T::arity - 1))?);
+        }
+
+        {
+            let dmut buffer : [u8 ; T::size] = [0u8 ; T::size];
+
+            let infos = __pragma!field_infos (T);
+            cte for i in 0 .. T::arity {
+                let f = config::conv::to!{__pragma!field_type (T, i)} (x [i]);
+                etc::c::memory::memcpy (cast!{*void} (buffer.ptr + infos [i].offset), cast!{*void} (&f), typeof (f)::size);
+            }
+
+            unsafe {
+                return *(etc::runtime::memory::Runtime!{*u8, *T}::_yrt_unsafe_cast (buffer.ptr));
+            }
+        } catch {
+            inn : &ConfigError => {
+                throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__, subError-> inn?);
+            }
+        }
+    }
+
+    throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__);
+}
+
+/**
+ * Transform a configuration into a map
+ * @example:
+ * ==========
+ * let dmut d = copy Dict ();
+ * d:["foo"] = copy Int (1);
+ * d:["bar"] = copy Int (2);
+ *
+ * let m = d.to!{[[c8] => i32]} ();
+ * assert (m ["foo"] == 1 && m ["bar"] == 2);
+ * ==========
+ * */
+pub fn to {T of [[c8] => V], V, C of &Config} (cfg : C)-> T
+    throws ConfigConvError
+{
+    if let m : &Dict = cfg {
+        {
+            let mut res : [[c8] => mut V] = [];
+            for k, v in m[] {
+                res [k] = config::conv::to!{V} (v);
+            }
+
+            return res;
+        }
+    }
+
+    throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__);
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ==================================          CUSTOM TYPES          ==================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Inner function used to partially transform a configuration into collections
+ * @example:
+ * =========
+ * let dmut dict = copy Dict ();
+ * dict:["foo"] = copy Int (12);
+ * dict:["bar"] = copy Str ("test");
+ *
+ * // Dict cannot be converted into a standard type, as a map must have contain values of similar types [[c8] => V]
+ * // But we can partially transform it
+ *
+ * let result = dict.to!{[[c8] => &Config]} ();
+ * for i, j in result {
+ *   match j {
+ *      Int (value-> z) => { println (i, " => ", z); }
+ *      Str (value-> z) => { println (i, " => ", z); }
+ *      _ => {
+ *          assert (false);
+ *      }
+ *   }
+ * }
+ * =========
+ * */
+pub fn to {C of &Config} (a : C)-> C {
+    a
+}
+
+/**
+ * Transform a configuration into the record type R
+ * The point of this conversion function is to allow for conversion of collection containing records (e.g. [[c8] => [R]])
+ * @info: the record type must define a ctor taking a configuration as uniq parameter
+ * */
+pub fn to {T of R, record R, C of &Config} (cfg : C)-> T
+    throws ConfigConvError
+{
+    let result = T (cfg)?;
+    cte if (__pragma!compile ({ if let Ok () = result {} })) {
+        if let Ok (v) = result {
+            return v;
+        }
+
+        if let Err (msg) = result {
+            throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__, subError-> msg?);
+        }
+
+        throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__);
+    } else {
+        let mut _ig_ = false;
+        if (_ig_) throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__);
+
+        let Ok (v) = result;
+        return v;
+    }
+}
+
+/**
+ * Transform a configuration into the class type R
+ * The point of this conversion function is to allow for conversion of collection containing classes (e.g. [[c8] => [R]])
+ * @info: the record type must define a ctor taking a configuration as uniq parameter
+ * */
+pub fn to {T of R, class R, C of &Config} (cfg : C)-> T
+    throws ConfigConvError
+{
+    let result = (copy T (cfg))?;
+    cte if (__pragma!compile ({ if let Ok () = result {} })) {
+        if let Ok (v) = result {
+            return v;
+        }
+
+        if let Err (msg) = result {
+            throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__, subError-> msg?);
+        }
+
+        throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__);
+    } else {
+        let mut _ig_ = false;
+        if (_ig_) throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__);
+
+        let Ok (v) = result;
+        return v;
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ===============================          REVERSE CONVERSION          ===============================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Transform a int value into a configutation
+ * @warning: does not verify overflow.
+ * @example:
+ * ==========
+ * if let Int (value-> v) = (12).to!{&Config} () {
+ *    assert (v == 12);
+ * }
+ * ==========
+ * */
+pub fn if isIntegral!{T} to {C of &Config, T} (a : T)-> dmut C {
+    copy Int (cast!i64 (a))
+}
+
+/**
+ * Transform a float value into a configutation
+ * @warning: value might be truncated.
+ * @example:
+ * ==========
+ * if let Float (value-> v) = (3.14f).to!{&Config} () {
+ *    assert (v == 3.14d);
+ * }
+ * ==========
+ * */
+pub fn if isFloating!{T} to {C of &Config, T} (a : T)-> dmut C {
+    copy Float (cast!f64 (a))
+}
+
+/**
+ * Transform a string value into a configutation
+ * @info: decode utf16 and utf32 into utf8
+ * @example:
+ * ==========
+ * if let Str (value-> v) = ("Hello").to!{&Config} () {
+ *    assert (v == "Hello");
+ * }
+ * ==========
+ * */
+pub fn if isChar!{U} to {C of &Config, T of [U], U} (a : T)-> dmut C {
+    copy Str (std::conv::to!{[c8]} (a))
+}
+
+/**
+ * Transform a bool value into a configutation
+ * @example:
+ * ==========
+ * if let Bool (value-> v) = (false).to!{&Config} () {
+ *    assert (!v);
+ * }
+ * ==========
+ * */
+pub fn if is!{T}{X of bool} to {C of &Config, T} (a : T)-> dmut C {
+    copy Bool (a)
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ================================          COLLECTION DATAS          ================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Transform a slice into a configuration
+ * @example:
+ * ==========
+ * let dmut slc = copy [1, 2, 3];
+ * let array = slc.to!{&Config} ();
+ * if let x : &Array = array {
+ *    assert (x.len == 3);
+ *    assert (x [0] of &Int);
+ *    assert (x [1] of &Int);
+ *    assert (x [2] of &Int);
+ * }
+ * ==========
+ * */
+pub fn if !isChar!{U} to {C of &Config, T of [U], U} (a : T)-> dmut C {
+    let dmut result = copy Array ();
+    for i in a {
+        result:.push (std::config::conv::to!{&Config} (i));
+    }
+
+    alias result
+}
+
+/**
+ * Transform an array into a configuration
+ * @example:
+ * ==========
+ * let dmut slc = [1, 2, 3];
+ * let array = slc.to!{&Config} ();
+ * if let x : &Array = array {
+ *    assert (x.len == 3);
+ *    assert (x [0] of &Int);
+ *    assert (x [1] of &Int);
+ *    assert (x [2] of &Int);
+ * }
+ * ==========
+ * */
+pub fn if !isChar!{U} to {C of &Config, T of [U ; N], U, N : usize} (a : T)-> dmut C {
+    let dmut result = copy Array ();
+    for i in a {
+        result:.push (std::config::conv::to!{&Config} (i));
+    }
+
+    alias result
+}
+
+/**
+ * Transform a tuple into a configuration
+ * @example:
+ * ==========
+ * let dmut slc = (1, "test");
+ * let array = slc.to!{&Config} ();
+ * if let x : &Array = array {
+ *    assert (x.len == 2);
+ *    assert (x[0] of &Int);
+ *    assert (x[1] of &Str);
+ * }
+ * ==========
+ * */
+pub fn if isTuple!{T} to {C of &Config, T} (a : T)-> dmut C {
+    let dmut result = copy Array ();
+    for i in a {
+        result:.push (std::config::conv::to!{&Config} (i));
+    }
+
+    alias result
+}
+
+/**
+ * Transform a map into a configuration
+ * @example:
+ * =========
+ * let dmut mp = copy ["foo" => 12, "bar" => 89];
+ * let dict = mp.to!{&Config} ();
+ * =========
+ * */
+pub fn to {C of &Config, T of [[c8] => V], V} (m : T)-> dmut C {
+    let dmut res = copy Dict ();
+    for i, j in m {
+        res:[i] = std::config::conv::to!{&Config} (j);
+    }
+
+    alias res
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ==================================          CUSTOM TYPES          ==================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Transform an object (class/record) into a configuration
+ * @example:
+ * ===========
+ * use std::{config::_, io};
+ *
+ * class A {
+ *     pub let value : i32;
+ *
+ *     pub self (v : i32)
+ *         with value = v
+ *     {}
+ *
+ *     impl Serializable;
+ * }
+ *
+ * let a = copy A (89);
+ * // transform A into &Config, and then dump it using toml format
+ * let cfg = a.to!{&Config} ();
+ * ===========
+ * */
+pub fn if (is!{T}{class D} || is!{T}{record R}) to {C of &Config, T of R, R impl config::Serializable} (value : T)-> C {
+    return value.serialize ();
+}
+
+/**
+ * Transform an object (record/entity) into a configuration
+ * @example:
+ * ===========
+ * use std::{config::_, io};
+ *
+ * record A {
+ *     pub let value : i32;
+ *
+ *     pub self (v : i32)
+ *         with value = v
+ *     {}
+ *
+ *     impl Serializable;
+ * }
+ *
+ * let a = A (89);
+ * // transform A into &Config, and then dump it using toml format
+ * let cfg = a.to!{&Config} ();
+ * ===========
+ * */
+pub fn if (is!{T}{entity E} || is!{T}{record R}) to {C of &Config, T of R, R impl config::Serializable} (ref value : T)-> C {
+    return value.serialize ();
+}
+
+/**
+ * Transform an object (record/entity) that is not serializable into a configuration
+ * @info: returns an empty dictionnary
+ * @example:
+ * ===========
+ * use std::{config::_, io};
+ *
+ * record A {
+ *     pub self () {}
+ * }
+ *
+ * let a = A ();
+ * // transform A into &Config, and then dump it using toml format
+ * let cfg = a.to!{&Config} ();
+ * ===========
+ * */
+pub fn if (is!{T}{entity E} || is!{T}{record R}) to {C of &Config, T} (ref value : T)-> C {
+    return copy Dict ();
+}
+
+/**
+ * Transform an object (class/record) that is not serializable into a configuration
+ * @info: returns an empty dictionnary
+ * @example:
+ * ===========
+ * use std::{config::_, io};
+ *
+ * class A {
+ *     pub self () {}
+ * }
+ *
+ * let a = copy A ();
+ * // transform A into &Config, and then dump it using toml format
+ * let cfg = a.to!{&Config} ();
+ * ===========
+ * */
+pub fn if (is!{T}{class D} || is!{T}{record R}) to {C of &Config, T} (value : T)-> C {
+    value;
+    return copy Dict ();
 }
