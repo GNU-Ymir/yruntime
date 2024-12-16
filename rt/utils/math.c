@@ -7,7 +7,3 @@
 float _yrt_sqrt (float x) {
     return sqrt (x);
 }
-
-void _yrt_init_rand () {
-    srand (time (NULL));
-}
