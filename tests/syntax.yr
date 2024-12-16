@@ -1,0 +1,67 @@
+use std::syntax::tokenizer;
+
+__test {
+    let mut tzer = Tokenizer!{c8} (tokens-> ["(", ")", "=>", ",", " ", "="]);
+    let str = "(x, y) => x = y";
+    let lst = tzer.tokenize (str);
+    assert (lst == ["(", "x", ",", " ", "y", ")", " ", "=>", " ", "x", " ", "=", " ", "y"]);
+}
+
+__test {
+    let mut tzer = Tokenizer!{c8} (tokens-> copy ["(", ")", "=>", ",", " ", "="]);
+    let str = "(x, y) => x = y";
+    let lst = tzer.tokenize (str);
+    assert (lst == ["(", "x", ",", " ", "y", ")", " ", "=>", " ", "x", " ", "=", " ", "y"]);
+}
+
+__test {
+    let mut tzer = Tokenizer!{c8} ();
+    tzer:.insert ("+");
+    tzer:.insert ("+=");
+    tzer:.insert (" ");
+
+    let lst = tzer.tokenize ("x += y");
+    assert (lst == ["x", " ", "+=", " ", "y"]);
+}
+
+
+__test {
+    let mut tzer = Tokenizer!{c8} (tokens-> ["+", " "]);
+    let mut str = "fst + scd";
+    let mut len = tzer.next (str)._0;
+    assert (len == 3u64); // "fst"
+
+    str = str [len .. $];
+    len = tzer.next (str)._0;
+    assert (len == 1u64); // " "
+
+    str = str [len .. $];
+    len = tzer.next (str)._0;
+    assert (len == 1u64); // "+"
+
+    str = str [len .. $];
+    len = tzer.next (str)._0;
+    assert (len == 1u64); // " "
+
+    str = str [len .. $];
+    len = tzer.next (str)._0;
+    assert (len == 3u64); // "scd"
+
+    str = str [len .. $];
+    len = tzer.next (str)._0;
+    assert (len == 0u64);
+}
+
+__test {
+    let mut tzer = Tokenizer!{c8} (tokens-> ["+=", "+"]);
+    tzer:.insert (" ", isSkip-> true);
+    tzer:.insert ("#", isComment-> "\n");
+
+    let lst = tzer.tokenizeWithFlags ("x += #");
+
+    // Second token is a space token, and it was marked as skippable
+    assert (lst[1]._0 == " " && lst[1]._1 == true);
+
+    // Last token is '#' token, and it was flagged as being a comment, ending with '\n'
+    assert (lst[$ - 1us]._0 == "#" && lst[$ - 1us]._2 == "\n");
+}
