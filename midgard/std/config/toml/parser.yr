@@ -1,0 +1,317 @@
+/**
+ * Toml parser to parse a toml string and generate a configuration
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in parser;
+
+use std::{syntax::_, stream};
+use std::{config::_, char};
+
+
+/**
+ * The list of tokens that can be found inside a Toml file
+ *
+ */
+enum
+| LCRO   = "["
+| RCRO   = "]"
+| LACC   = "{"
+| RACC   = "}"
+| EQUALS = "="
+| COMA   = ","
+| QUOTE  = "'"
+| DQUOTE = "\""
+| ESCAPE = "\\"
+ -> TomlTokens;
+
+
+/**
+ * A toml parser that consumes an utf8 string and generate a configuration
+ * */
+pub record TomlParser {
+
+    // The lexer used to split the toml content
+    let dmut _lex : &Lexer!{c8};
+
+    // The tokenizer for name and int values
+    let mut _nameTzer : Tokenizer!{c8};
+
+    /**
+     * @params:
+     *    - content: the content of the toml configuration file
+     * */
+    pub self (content : [c8])
+        with _lex = copy Lexer!{c8} (content,
+                                     tokens-> copy TomlTokens::__members__)
+        , _nameTzer = Tokenizer!{c8} ()
+    {
+        self._nameTzer:.insert (".", isSkip-> true);
+    }
+
+    /**
+     * Parse the content of the toml
+     * @returns: the configuration contained in the toml
+     * */
+    pub fn parse (mut self)-> &Dict
+        throws std::syntax::errors::SyntaxError
+    {
+        let dmut result = copy Dict ();
+        loop {
+            let (tok, l, c) = self._lex:.next ();
+            // End of file
+            if tok.len == 0 {
+                break;
+            }
+
+            // Global dict entry
+            else if tok == TomlTokens::LCRO {
+                let (name, lName, cName) = self._lex:.next ();
+                let names = self._nameTzer.tokenizeWithoutSkips (name);
+                if (names.len == 0) {
+                    throw copy SyntaxError ("Unexpected '" ~ name ~ "'", lName, cName);
+                }
+
+                let mut currC = cName;
+                for n in names {
+                    self.assertIsIdentifier (n, lName, currC);
+                    currC += n.len + 1; // dot
+                }
+
+                self:.assertRead (["]"]);
+                result = self.insertInPath (result, names, self:.parseDict (isGlobal-> true));
+            }
+
+            // Global var
+            else {
+                self.assertIsIdentifier (tok, l, c);
+                self:.assertRead (["="]);
+                result:[tok] = self:.parseValue ();
+            }
+        }
+
+        result
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =================================          INNER PARSING          ==================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Parse a value in the toml
+     * */
+    prv fn parseValue (mut self)-> &Config
+        throws SyntaxError
+    {
+        let (begin, l, c) = self._lex:.next ();
+        match begin {
+            "{"        => return self:.parseDict (isGlobal-> false);
+            "["        => return self:.parseArray ();
+            "false"    => return copy Bool (false);
+            "true"     => return copy Bool (false);
+            "'"        => return self:.parseString (begin, l, c);
+             "\""      => return self:.parseString (begin, l, c);
+            _          => return self:.parseIntOrFloat (begin, l, c);
+        }
+    }
+
+    /**
+     * Parse a dictionnary in the toml string
+     * @params:
+     *    - isGlobal: true iif reading a global dictionnary
+     * */
+    prv fn parseDict (mut self, isGlobal : bool = false)-> &Dict
+        throws SyntaxError
+    {
+        let dmut result = copy Dict ();
+        loop {
+            let cursor = self._lex.getCursor ();
+            let (name, l, c) = self._lex:.next ();
+            if isGlobal && (name == "[" || name.len == 0) {  // read the next global dict
+                self._lex:.rewind (expand cursor); // rewind the read
+                break;
+            }
+
+            self.assertIsIdentifier (name, l, c);
+            self:.assertRead (["="]);
+
+            result:[name] = self:.parseValue ();
+
+            if (!isGlobal) {
+                let (n, _, _) = self:.assertRead ([",", "}"]);
+                if (n == "}") break; // read the end of a local dict
+            }
+        }
+
+        result
+    }
+
+    /**
+     * Parse an array value
+     * */
+    prv fn parseArray (mut self)-> &Array
+        throws SyntaxError
+    {
+        let dmut result = copy Array ();
+
+        let cursor = self._lex.getCursor ();
+        let (b, _, _) = self._lex:.next (); // check if we have an empty array
+        if (b == "]") return result;
+        else {
+            self._lex:.rewind (expand cursor); // rewind the read
+        }
+
+        loop {
+            result:.push (self:.parseValue ());
+            let (n, _, _) = self:.assertRead ([",", "]"]);
+            if (n == "]") break;
+        }
+
+        result
+    }
+
+    /**
+     * Parse a int or float value
+     * @params:
+     *     - val: the value
+     *     - l: the line
+     *     - c: the column
+     * */
+    prv fn parseIntOrFloat (mut self, val : [c8], l : usize, c : usize)-> &Config
+        throws SyntaxError
+    {
+        {
+            if let Ok () = std::algorithm::searching::find (val, '.') {
+                return copy Float (std::conv::to!{f64} (val));
+            }
+
+            return copy Int (std::conv::to!{i64} (val));
+        } catch {
+            _ => throw copy SyntaxError ("Unexpected '" ~ val ~ "'", l, c);
+        }
+    }
+
+    /**
+     * Parse a string value
+     * @params:
+     *    - beg: the openning token
+     *    - l: the line
+     *    - c: the col
+     * */
+    prv fn parseString (mut self, beg : [c8], l : usize, c : usize)-> &Config
+        throws SyntaxError
+    {
+        self._lex:.setSkipTokens (false);
+        self._lex:.setSkipComments (false);
+        let dmut result = copy StringStream ();
+        loop {
+            let (n, _, _) = self._lex:.next ();
+            if (n == beg) { break; }
+            if n.len == 0 {
+                self._lex:.setSkipTokens (true);
+                self._lex:.setSkipComments (true);
+                throw copy SyntaxError ("Unterminated string literal", l, c);
+            }
+
+            result:.write (n);
+        }
+
+        self._lex:.setSkipTokens (true);
+        self._lex:.setSkipComments (true);
+
+        copy Str (result[])
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          PRIVATE          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Read next token and ensure it can be found in the list of accepted tokens
+     * @params:
+     *    - lst: the list of accepted tokens
+     *    - canEof: iif true eof is also accepted
+     * */
+    prv fn assertRead {N : usize} (mut self, lst : [[c8] ; N])-> ([c8], usize, usize)
+        throws SyntaxError
+    {
+        let (wd, l, c) = self._lex:.next ();
+        for i in lst {
+            if i == wd { return (wd, l, c); }
+        }
+
+        let dmut err = copy StringStream ();
+        err:.write ("read '", wd, "' when excepting ", lst);
+
+        throw copy SyntaxError (err[], l, c);
+    }
+
+    /**
+     * Assert a read string is an identifier
+     * */
+    prv fn assertIsIdentifier (self, id : [c8], line : usize, col : usize)
+        throws SyntaxError
+    {
+        let mut oneAlpha = false;
+        for z in id {
+            if !isAlpha (z) && !isDigit (z) && z != '_' && z != '-' {
+                throw copy SyntaxError ("Unexpected '" ~ id ~ "'", line, col);
+            }
+
+            if isAlpha (z) {
+                oneAlpha = true;
+            }
+        }
+
+        if (!oneAlpha) {
+            throw copy SyntaxError ("Unexpected '" ~ id ~ "'", line, col);
+        }
+    }
+
+    /**
+     * Insert a value at a specific path
+     * @params:
+     *    - dict: the old configuration
+     *    - path: the path of insertion
+     *    - value: the value to insert
+     * */
+    prv fn insertInPath (self, dict : &Dict, path : [[c8]], value : &Config)-> dmut &Dict {
+        if path.len == 1 {
+            let dmut res = copy Dict ();
+            for k, v in dict[] {
+                res:[k] = v;
+            }
+            res:[path [0]] = value;
+            return alias res;
+        }
+
+        let dmut res = copy Dict ();
+        let mut found = false;
+        for k, v in dict[] {
+            if let d : &Dict = v && k == path [0] {
+                res:[k] = self.insertInPath (d, path [1 .. $], value);
+                found = true;
+            }
+
+            else {
+                res:[k] = v;
+            }
+        }
+
+        if !found {
+            res:[path [0]] = self.insertInPath (copy Dict (), path [1 .. $], value);
+        }
+
+        return alias res;
+    }
+
+}

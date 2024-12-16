@@ -1,0 +1,186 @@
+/**
+ * Toml dumper to dump a toml string from a configuration
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in dumper;
+
+use std::{syntax::_, stream};
+use std::{config::_, char};
+
+
+/**
+ * A toml dumper that produces an utf8 string from a configuration
+ * */
+pub record TomlDumper {
+
+    // The root node of the config to dump
+    let _root : &Config;
+
+    /**
+     * @params:
+     *    - root: the configuration to dump
+     * */
+    pub self (root : &Config)
+        with _root = root
+    {}
+
+    /**
+     * Dump the configuration to an utf8 string
+     * */
+    pub fn dump (self)-> [c8] {
+        let dmut res = copy StringStream ();
+        self.dump (self._root, alias res, isGlobal-> true, -1);
+
+        res[]
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          PRIVATES          ====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Dump the configuration to the stream
+     * @params:
+     *    - c: the configuration to dump
+     *    - stream: the string to fill
+     * */
+    prv fn dump (self, c : &Config, dmut stream : &StringStream, isGlobal : bool, indent : i32) {
+        match c {
+            d : &Dict => {
+                if indent == -1 {
+                    self.dumpSuperDict (d, baseName-> "", alias stream);
+                } else if isGlobal {
+                    self.dumpGlobalDict (d, alias stream, indent);
+                } else {
+                    self.dumpLocalDict (d, alias stream, indent);
+                }
+            }
+            a : &Array => {
+                self.dumpArray (a, alias stream, indent);
+            }
+            Int (value-> i) => { stream:.write (i); }
+            Float (value-> f) => { stream:.write (f); }
+            Str (value-> s) => { stream:.write ('"', s, '"'); }
+            Bool (value-> b) => {
+                if b { stream:.write ("true"); }
+                else {
+                    stream:.write ("false");
+                }
+            }
+        }
+    }
+
+    /**
+     * Dump a super dict (root of a toml file)
+     * @params:
+     *    - d: the dict to dump
+     *    - baseName: the basename of the current entry
+     *    - stream: the stream to fill
+     * */
+    prv fn dumpSuperDict (self, d : &Dict, baseName : [c8], dmut stream : &StringStream) {
+        let dmut inner = copy StringStream ();
+        let dmut superStream = copy StringStream ();
+
+        for k, v in d[] match v {
+            iD : &Dict => {
+                let mut others = false;
+                for _, iV in iD[] { // check wether the inner dict contains only dictionnaries
+                    if (iV !of Dict) {
+                        others = true;
+                        break;
+                    }
+                }
+
+                if (others) {
+                    inner:.write ("\n[", baseName, k, "]\n");
+                    self.dumpGlobalDict (iD, alias inner, 0);
+                } else {
+                    self.dumpSuperDict (iD, baseName ~ k ~ ".", alias inner);
+                }
+            }
+            _ => {
+                superStream:.write (k, " = ");
+                self.dump (v, alias superStream, false, 0);
+                superStream:.write ("\n");
+            }
+        }
+
+        stream:.write (superStream[]);
+        stream:.write (inner[]);
+    }
+
+    /**
+     * Dump a global dictionnary (inside a super dict)
+     * @params:
+     *   - d: the dict to dump
+     *   - stream: the stream to fill
+     *   - indent: the current indentation
+     * */
+    prv fn dumpGlobalDict (self, d : &Dict, dmut stream : &StringStream, indent : i32) {
+        let mut z = 0us;
+        for k, v in d[] {
+            if z != 0 for _ in 0 .. indent {
+                stream:.write (" ");
+            }
+
+            stream:.write (k, " = ");
+            self.dump (v, alias stream, false, indent + cast!i32 (k.len) + 3);
+            stream:.write ("\n");
+            z += 1;
+        }
+    }
+
+    /**
+     * Dump a dictionnary found after a '='
+     * @params:
+     *    - d: the dict to dump
+     *    - stream: the stream to fill
+     *    - indent: the current indentation
+     * */
+    prv fn dumpLocalDict (self, d : &Dict, dmut stream : &StringStream, indent : i32) {
+        stream:.write ('{');
+        let mut z = 0us;
+        for k, v in d[] {
+            if z != 0 { stream:.write (", "); }
+
+            stream:.write (k, " = ");
+            self.dump (v, alias stream, false, indent + cast!i32 (k.len) + 3);
+        }
+        stream:.write ("}");
+    }
+
+    /**
+     * Dump an array value
+     * */
+    prv fn dumpArray (self, a : &Array, dmut stream : &StringStream, indent : i32) {
+        stream:.write ('[');
+        let mut returned = false;
+        for i, v in a[] {
+            if i != 0 {
+                stream:.write (", ");
+                if returned {
+                    stream:.write ("\n");
+                    for _ in 0 .. indent { stream:.write (" "); }
+                }
+            }
+
+            match v {
+                Array () => { returned = true; }
+                Str () => { returned = true; }
+                Dict () => { returned = true; }
+                _ => { returned = false; }
+            }
+
+            self.dump (v, alias stream, false, indent + 1);
+        }
+
+        stream:.write ("]");
+    }
+
+}

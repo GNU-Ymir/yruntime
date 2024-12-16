@@ -222,6 +222,33 @@ pub record if isChar!{C} Tokenizer {C} {
     }
 
     /**
+     * Splits the string using the list of token registered in the tokenizer
+     * @info: remove the skip tokens from the result
+     * @returns: the string splitted according to the tokens
+     * @example:
+     * =========
+     * let mut tzer = Tokenizer!{c8} (tokens-> ["+=", "+"]);
+     * tzer:.insert (" ", isSkip-> true)
+     *
+     * let lst = tzer.tokenize ("x += y");
+     * assert (lst == ["x", "+=", "y"]);
+     * =========
+     * */
+    pub fn tokenizeWithoutSkips (self, str : [C])-> [[C]] {
+        let mut res : [[C]] = [];
+        let mut aux = str;
+        while aux.len > 0 {
+            let (len, isSkip, _) = self.next (aux);
+            if (!isSkip) {
+                res ~= [aux [0 .. len]];
+            }
+            aux = aux [len .. $];
+        }
+
+        res
+    }
+
+    /**
      * Splits the string using the list of token registered in the tokenizer with the flags of the token
      * @returns: a slice of elements :
      *    - .0: the token content

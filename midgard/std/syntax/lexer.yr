@@ -185,8 +185,8 @@ pub class if isChar!{C} Lexer {C} {
      * ====
      * @complexity: O (1), no copy is made, the content is just a slice
      */
-    pub fn getContent (self)-> [C] {
-        self._content
+    pub fn getCursor (self)-> ([C], usize, usize) {
+        (self._content, self._line, self._col)
     }
 
     /**
@@ -226,6 +226,7 @@ pub class if isChar!{C} Lexer {C} {
      *    - ._2: the col of the beginning of the word (0 if no word was ref, EOF)
      */
     pub fn next (mut self)-> ([C], usize, usize) {
+        if (self._content == []) return ("", 0us, 0us);
         loop {
             let (wd, isSkip, isComment) = self._tzer.next (self._content);
             if wd != 0 {
@@ -359,6 +360,20 @@ pub class if isChar!{C} Lexer {C} {
      */
     pub fn setSkipComments (mut self, d : bool) -> void {
         self._doComments = d;
+    }
+
+    /**
+     * Set the content of the lexer.
+     * This function is used to rewind to a previous configuration, for branching grammar for example
+     * @params:
+     *   - content: the content to set
+     *   - line: the line position
+     *   - col: the column position
+     * */
+    pub fn rewind (mut self, content : [C], line : usize, col : usize) {
+        self._content = content;
+        self._line = line;
+        self._col = col;
     }
 
     /**
