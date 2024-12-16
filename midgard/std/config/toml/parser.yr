@@ -9,7 +9,6 @@ in parser;
 use std::{syntax::_, stream};
 use std::{config::_, char};
 
-
 /**
  * The list of tokens that can be found inside a Toml file
  *
@@ -218,7 +217,25 @@ pub record TomlParser {
                 throw copy SyntaxError ("Unterminated string literal", l, c);
             }
 
-            result:.write (n);
+            if n == TomlTokens::ESCAPE {
+                let (af, _, _) = self._lex:.nextChar ();
+                match af {
+                    "a" => { result:.write ("\a"); }
+                    "b" => { result:.write ("\b"); }
+                    "f" => { result:.write ("\f"); }
+                    "n" => { result:.write ("\n"); }
+                    "r" => { result:.write ("\r"); }
+                    "t" => { result:.write ("\t"); }
+                    "v" => { result:.write ("\v"); }
+                    "\\" => { result:.write ("\\"); }
+                    "\'" => { result:.write ("'"); }
+                    "\"" => { result:.write ("\""); }
+                    "u" => { self:.parseUnicode (alias result); }
+                    _ => throw copy SyntaxError ("Undefined escape sequence : \\" ~ af, l, c);
+                }
+            } else {
+                result:.write (n);
+            }
         }
 
         self._lex:.setSkipTokens (true);
@@ -234,6 +251,30 @@ pub record TomlParser {
      * ====================================================================================================
      * ====================================================================================================
      */
+
+    /**
+     * Parse an unicode in a string
+     * @example: "\u{0x1F3B5}"
+     * */
+    prv fn parseUnicode (mut self, dmut stream : &StringStream)
+        throws SyntaxError
+    {
+        self:.assertRead (["{"]);
+        let (code, l, c) = self._lex:.next ();
+        let i = {
+            cast!c32 (std::conv::to!{u32, "x"} (code))
+        } catch {
+            _ => throw copy SyntaxError ("expected hexa code (not '" ~ code ~ "')", l, c);
+        }
+
+        self:.assertRead (["}"]);
+        let dmut res : [c8 ; 4] = ['\u{0}' ; 4];
+        let nbProduced = std::conv::utf::toUtf8 (i, ref res);
+
+        for z in 0 .. nbProduced {
+            stream:.write (res [z]);
+        }
+    }
 
     /**
      * Read next token and ensure it can be found in the list of accepted tokens

@@ -1,0 +1,115 @@
+/**
+ * Json parsing and dumping utils
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in json;
+
+mod ::parser;
+mod ::dumper;
+
+use std::config::json::{parser, dumper};
+use std::config::data;
+
+/**
+ * Parse a json content string
+ * @returns: the read configuration
+ * @throws:
+ *    - SyntaxError: if the json is malformed
+ * */
+pub fn parse (content : [c8])-> &Config
+    throws std::syntax::errors::SyntaxError
+{
+    let mut parser = JsonParser (content);
+    return parser:.parse ();
+}
+
+
+/**
+ * Dump a configuration in a utf8 string in json format
+ * @params:
+ *    - content: the configuration to dump
+ * @returns: an utf8 string in json format
+ * */
+pub fn dump (content : &Config)-> [c8] {
+    let mut dumper = JsonDumper (content);
+    return dumper.dump ();
+}
+
+
+
+/**
+ * Macro that can be used to write json like content directly in Ymir.
+ * @example:
+ * =====================
+ * let x = json#{
+ *     "fst" : {
+ *           "foo" : {"bar" : "baz"},
+ *           "scd" : [1, "inner", 2.0f, 3]
+ *     }
+ * };
+ *
+ * let j = json#{
+ *     "id": "file",
+ *     "value": "File",
+ *     "popup": {
+ *         // Ignored comments
+ *         "menuitem": [
+ *            {"value": "New", "onclick": "CreateNewDoc()"},
+ *            {"value": "Open", "onclick": "OpenDoc()"},
+ *            {"value": "Close", "onclick": "CloseDoc()"}]
+ *     }
+ * };
+ *
+ * =====================
+ *
+ */
+pub macro json {
+    self (a=(dictEntry) b=("," inner=dictEntry)* (" " | "\n" | "\t" | "\r")*) skips (" " | "\n" | "\t" | "\r") {
+        {
+            let dmut d_#{__index} = copy Dict ();
+            let v_#{__index}_base = #{a};
+            d_#{__index}:[v_#{__index}_base._0] = v_#{__index}_base._1;
+            #(for x in b) {{
+                let v_#{__index} = #{x::inner};
+                d_#{__index}:[v_#{__index}._0] = v_#{__index}._1;
+            }}
+            d_#{__index}
+        }
+    }
+
+    fn dict ("{" a=(dictEntry) b=("," inner=dictEntry)* "}") skips (" " | "\n" | "\t" | "\r") {
+        {
+            let dmut d_#{__index} = copy Dict ();
+            let v_#{__index}_base = #{a};
+            d_#{__index}:[v_#{__index}_base._0] = v_#{__index}_base._1;
+            #(for x in b) {{
+                let v_#{__index} = #{x::inner};
+                d_#{__index}:[v_#{__index}._0] = v_#{__index}._1;
+            }}
+
+            d_#{__index}
+        }
+    }
+
+    fn emptyDict ("{" "}") skips (" " | "\n" | "\t" | "\r") {
+        {
+            copy Dict ()
+        }
+    }
+
+    fn array ("[" a=(array | dict | value) b=("," inner=(array | dict | value))* "]") skips (" " | "\n" | "\t" | "\r") {
+        {
+            let dmut array_#{__index} = copy Array ();
+            array_#{__index}:.push (#{a});
+            #(for i in b) {
+                array_#{__index}:.push (#{i::inner});
+            }
+            array_#{__index}
+        }
+    }
+
+    fn dictEntry (key=__str ":" value=(array | dict | value)) skips (" " | "\n" | "\t" | "\r") {(std::conv::to!{[c8]} (#{key}), #{value})}
+    fn value (a=__expr) skips (" " | "\n" | "\t" | "\r") {std::config::conv::to!{&Config} (#{a})}
+}
