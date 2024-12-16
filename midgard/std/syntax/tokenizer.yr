@@ -1,0 +1,293 @@
+/**
+ * This module implements the Tokenizer class that splits a string into a list of token.
+ * The Tokenizer always splits according to the longest tokens, for example if the tokens `"+=>"`, `"+="`, `"+"` and `" "` are defined, the string `"+=> x"` will be splitted in 3 tokens `"+=>"`, `" "` and `"x"`.
+ * This implementation uses an index tree to store the tokens, where each node is a single char. Tokenizer should be used for simple grammar, for complex branching decision a Lexer should be preferred - in practice the lexer uses a Tokenizer, but with more abstractions, facilitating the work and making sure no tokenization are made when not needed.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @example
+ * ===
+ * use std::syntax::tokenizer;
+ *
+ * // using a tokenizer, tokens can be multiple letter long, and there can be collisions between tokens
+ * // For example, the token '=' and '=>' won't be a problem for the tokenizer
+ * let mut tzer = Tokenizer!{c8} (tokens-> ["(", ")", "=>", ",", " ", "="]);
+ * let str = "(x, y) => x = y";
+ *
+ * // Transform the string into a list of tokens
+ * let lst = tzer.tokenize (str);
+ *
+ * // the tokenized str, contains the token '=>' and '=', that are correctly rendered in the splitted array
+ * assert (lst == ["(", "x", ",", " ", "y", ")", " ", "=>", " ", "x", " ", "=", " ", "y"]);
+ * ===
+ */
+
+in tokenizer;
+
+mod ::node;
+use std::traits;
+
+
+/**
+ * A tokenizer is an enhanced string splitter, that splits strings using tokens instead of just chars
+ * Tokenizer are really usefull for grammar visitor, and can be associated with Lexers pretty easily
+ * @example:
+ * ============
+ * // using a tokenizer, tokens can be multiple letter long, and there can be collision between tokens
+ * // For example, the token '=' and '=>' won't be a problem for the tokenizer
+ * let mut tzer = Tokenizer!{c8} (tokens-> ["("s8, ")"s8, "=>"s8, ","s8, "="s8, "+"s8, "*"s8]);
+ * // set a skip token
+ * tzer:.insert (" ", isSkip-> true);
+ *
+ * // insert a comment token
+ * tzer:.insert ("#", isComment-> "#");
+ *
+ * let mut cursor : usize = 0;
+ * let str = "(x, y) => # this is a comment # x + y * 2";
+ * loop {
+ *    let (len, isSkip, isComment) = tzer.next (str [cursor .. $]);
+ *    if len != 0 {
+ *        println (str [cursor .. cursor + len], ' ', isSkip, ' ', isComment);
+ *    } else break;
+ * }
+ * ============
+ */
+pub record if isChar!{C} Tokenizer {C} {
+
+    // The tokens heads of the tokenizer
+    let dmut _heads : [&(node::Node!{C})] = [];
+
+    /**
+     * Create a new tokenizer, with a set of tokens
+     * @params:
+     *   - tokens: the list of token that will split the string
+     * @example:
+     * ============
+     * let mut tzer = Tokenizer!{c8} (tokens-> copy ["(", ")", "=>", ":", "<", ">", ",", " "]);
+     * let str = "(x, y) => x > y";
+     * let lst = tzer.tokenize (str);
+     * assert (lst == ["(", "x", ",", " ", "y", ")", " ", "=>", " ", "x", " ", ">", " ", "y"]);
+     * ============
+     */
+    pub self (tokens : [[C]] = []) {
+        for i in tokens {
+            self:.insert (i, isSkip-> false, isComment-> "");
+        }
+    }
+
+    /**
+     * Create a new tokenizer, with a set of tokens
+     * @params:
+     *   - tokens: the list of token that will split the string
+     * @example:
+     * ============
+     * let mut tzer = Tokenizer!{c8} (tokens-> ["(", ")", "=>", ":", "<", ">", ",", " "]);
+     * let str = "(x, y) => x > y";
+     * let lst = tzer.tokenize (str);
+     * assert (lst == ["(", "x", ",", " ", "y", ")", " ", "=>", " ", "x", " ", ">", " ", "y"]);
+     * ============
+     */
+    pub self {N : usize} (tokens : [[C] ; N]) {
+        for i in tokens {
+            self:.insert (i, isSkip-> false, isComment-> "");
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ===================================          INSERTION          ====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Insert a new token in the tokenizer
+     * @params:
+     *    - token: the token to insert
+     *    - isSkip: true iif the token is a skippable token
+     *    - isComment: the closing token if the token is a open comment token
+     * @example:
+     * ================
+     * let mut tzer = Tokenizer!{c8} ();
+     * tzer:.insert ("+");
+     * tzer:.insert ("+=");
+     * tzer:.insert (" ");
+     *
+     * let lst = tzer.tokenize ("x += y");
+     * assert (lst == ["x", " ", "+=", " ", "y"]);
+     * ================
+     * */
+    pub fn insert (mut self, token : [C], isSkip : bool = false, isComment : [C] = "") {
+        if token.len != 0 {
+            for i in 0 .. self._heads.len {
+                if self._heads [i].key == token [0] {
+                    self._heads [i]:.insert (token [1 .. $], isSkip-> isSkip, isComment-> isComment);
+                    return;
+                }
+            }
+
+            let dmut n = copy node::Node!{C} (token [0]);
+            n:.insert (token [1 .. $], isSkip-> isSkip, isComment-> isComment);
+            self._heads ~= [alias n];
+            std::algorithm::sorting::sort (alias self._heads, |x, y| => { x.key < y.key });
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          CUTTING          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+
+    /**
+     * Find the size of the next token in a string, or the number of char before reaching the next token
+     * @params:
+     *    - str: a string to read
+     * @returns:
+     *   - .0: the length of the next token inside the str
+     *   - .1: true iif the token is a skip token
+     *   - .2: if the token is a comment opening token, it returns the comment closing token, "" otherwise
+     * @example:
+     * ============
+     * let mut tzer = Tokenizer!{c8} (tokens-> ["+", " "]);
+     * let mut str = "fst + scd";
+     * let mut len = tzer.next (str)._0;
+     * assert (len == 3u64); // "fst"
+     *
+     * str = str [len .. $];
+     * len = tzer.next (str)._0;
+     * assert (len == 1u64); // " "
+     *
+     * str = str [len .. $];
+     * len = tzer.next (str)._0;
+     * assert (len == 1u64); // "+"
+     *
+     * str = str [len .. $];
+     * len = tzer.next (str)._0;
+     * assert (len == 1u64); // " "
+     *
+     * str = str [len .. $];
+     * len = tzer.next (str)._0;
+     * assert (len == 3u64); // "scd"
+     *
+     * str = str [len .. $];
+     * len = tzer.next (str)._0;
+     * assert (len._0 == 0u64);
+     * ============
+     * */
+    pub fn next (self, str : [C])-> (usize, bool, [c8]) {
+        for s in 0 .. str.len {
+            if let Ok (i) = self.find (str [s]) {
+                // does not start with a token, and a token was found at index s
+                if s != 0 { return (s, false, ""); }
+
+                let (len, isSkip, isComment) = self._heads [i].len (str [1 .. $]); // get the length of the token
+                // if the len is 0, then it is not really a token, it just start like one
+                if len != 0 {
+                    return (len, isSkip, isComment);
+                }
+            }
+        }
+
+        // no token in str
+        (str.len, false, "")
+    }
+
+    /**
+     * Splits the string using the list of token registered in the tokenizer
+     * @info: ignore the flags of the tokens (cf. self.tokenizeWithFlags)
+     * @returns: the string splitted according to the tokens
+     * @example:
+     * =========
+     * let mut tzer = Tokenizer!{c8} (tokens-> ["+=", "+", " "]);
+     *
+     * let lst = tzer.tokenize ("x += y");
+     * assert (lst == ["x", " ", "+=", " ", "y"]);
+     * =========
+     * */
+    pub fn tokenize (self, str : [C])-> [[C]] {
+        let mut res : [[C]] = [];
+        let mut aux = str;
+        while aux.len > 0 {
+            let (len, _, _) = self.next (aux);
+            res ~= [aux [0 .. len]];
+            aux = aux [len .. $];
+        }
+
+        res
+    }
+
+    /**
+     * Splits the string using the list of token registered in the tokenizer with the flags of the token
+     * @returns: a slice of elements :
+     *    - .0: the token content
+     *    - .1: true iif the token is flagged as a skip token
+     *    - .2: true iif this is a comment openning token, the token closing the comment
+     * @example:
+     * =========
+     * let mut tzer = Tokenizer!{c8} (tokens-> ["+=", "+"]);
+     * tzer:.insert (" ", isSkip-> true);
+     * tzer:.insert ("#", isComment-> "\n");
+     *
+     * let lst = tzer.tokenizeWithFlags ("x += #");
+     *
+     * // Second token is a space token, and it was marked as skippable
+     * assert (lst[1]._0 == " " && lst[1]._1 == true);
+     *
+     * // Last token is '#' token, and it was flagged as being a comment, ending with '\n'
+     * assert (lst[$ - 1us]._0 == "#" && lst[$ - 1us]._2 == "\n");
+     * =========
+     * */
+    pub fn tokenizeWithFlags (self, str : [C])-> [([C], bool, [C])] {
+        let mut res : [([C], bool, [C])] = [];
+        let mut aux = str;
+        while aux.len > 0 {
+            let (len, isSkip, isComment) = self.next (aux);
+            res ~= [(aux [0 .. len], isSkip, isComment)];
+            aux = aux [len .. $];
+        }
+
+        res
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          PRIVATES          ====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Search a token head in the list of token heads
+     * @params:
+     *    - c: the start of the token
+     * @returns: the token index or none
+     * */
+    prv fn find (self, c : C)-> (usize)? {
+        if self._heads.len == 0 {
+            return none;
+        }
+
+        let mut begin = 0us, mut end = self._heads.len - 1;
+        while begin <= end {
+            let center = (begin + end) / 2;
+            if self._heads [center].key == c {
+                return (center)?;
+            } else {
+                if c > self._heads [center].key {
+                    begin = center + 1;
+                } else {
+                    end = center - 1;
+                }
+            }
+        }
+
+        none
+    }
+
+}

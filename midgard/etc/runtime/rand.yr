@@ -1,0 +1,33 @@
+in rand;
+
+
+/**
+ * C function used to generate a random number
+ * */
+pub extern (C) fn rand ()-> i32;
+
+/**
+ * Set the random number seed
+ * */
+pub extern (C) fn srand (seed : u32);
+
+// Global variable used to check wether rand was initialized
+lazy dmut __HAS_SEED__ : [bool] = copy [false];
+
+/**
+ * Initialize the random number generation
+ * */
+pub fn init () {
+    if (!__HAS_SEED__ [0]) {
+        __HAS_SEED__ [0] = true;
+        srand (etc::c::time::time (null));
+    }
+}
+
+/**
+ * Set a seed for the random number generator
+ * */
+pub fn setSeed (seed : u32) {
+    __HAS_SEED__ [0] = true;
+    srand (seed);
+}

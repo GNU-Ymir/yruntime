@@ -1,0 +1,60 @@
+/**
+ * This module implements functions to randomly select an number.
+ * @authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in rand;
+
+use etc::runtime::rand;
+use std::traits;
+
+/**
+ * @returns: a random number uniformly selected between low and high
+ * @example:
+ * ===
+ * // Select a number between 1 and 10 with uniform probability
+ * let i = uniform (1, 10);
+ *
+ * assert (i >= 1 && i <= 10);
+ * ===
+ */
+pub fn if isInteger!{T} uniform {T} (low : T, high : T)-> T {
+    runtime::rand::init ();
+
+    let x = cast!{T} (runtime::rand::rand ());
+    (x * (high - low)) % (high - low) + low
+}
+
+
+/**
+ * @returns: an random number uniformly selected between low and high
+ * @example:
+ * ===
+ * // Select a number between 1 and 10 with uniform probability
+ * let f = uniform (1.0, 10.0);
+ *
+ * assert (f >= 1.0 && f <= 10.0);
+ * ===
+ */
+pub fn if isFloating!{T} uniform {T} (low : T, high : T)-> T {
+    let x = rand!{T} ();
+    (x * (high - low)) % (high - low)  + low
+}
+
+/**
+ * @returns: an random number uniformly selected between 0 and 1.
+ * @example:
+ * ===
+ * // Select a number between 0 and 1 with uniform probability
+ * let f = rand!f32 ();
+ *
+ * assert (f >= 0.0f && f <= 1.0f);
+ * ===
+ */
+pub fn if isFloating!{T} rand {T} ()-> T {
+    runtime::rand::init ();
+
+    let i = runtime::rand::rand ();
+    return cast!{T} (i) / cast!{T} (typeof (i)::max);
+}

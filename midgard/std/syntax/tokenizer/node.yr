@@ -1,0 +1,186 @@
+/**
+ * Internal implementation of tokenizer
+ *
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+in node;
+
+use std::traits;
+
+/**
+ * A node of a tokenizer, that stores information about tokens
+ */
+@final
+pub class if isChar!{C} Node {C} {
+
+    // The current value of the node
+    let _key : C;
+
+    // True iif this node is the end of a token
+    let mut _isToken : bool;
+
+    // True iif this is a skip token
+    let mut _isSkip : bool;
+
+    // The closing of the comment if this is a comment
+    let mut _isComment : [C];
+
+    // The list of continuation of the token
+    let dmut _next : [&Node!{C}] = [];
+
+    /**
+     * @params:
+     *    - key: the value of the node
+     *    - isToken: true iif this node is located at the end of a token
+     *    - isSkip: true iif this node is located at the end of a skip token
+     *    - isComment: the closing string iif this is is a closing token
+     * */
+    pub self (key : C)
+        with _key = key
+        , _isToken = false
+        , _isSkip = false
+        , _isComment = ""
+    {}
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ===================================          INSERTION          ====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Insert sub tokens accepted tokens
+     * @params:
+     *     - str: the rest to read to create a valid token
+     * @example:
+     * ==============
+     * // let say that "[+]" is a token, but "[" is not, nor is "[+"
+     * let dmut node = copy Node ('[');
+     * node:.insert ("+]");
+     * println (node); // [:false, +:false, ]:true
+     * // In that configuration the only token that will be accepted is "[+]"
+     * assert (node.len ("[+]") == 3); // accepted
+     * assert (node.len ("[") == 0u64); // not accepted
+     * assert (node.len ("[+") == 0u64); // not accepted
+     *
+     * // Now we want to accept "[-]"
+     * node = node:.insert ("-]");
+     * // and simply "["
+     * node = node:.insert ("");
+     * println (node); // [:true,
+     *                 //     +:false, ]:true
+     *                 //     -: false, ]:true
+     *
+     * assert (node.len ("[+]") == 3); // still accepted
+     * assert (node.len ("[") == 1u64); // accepted this time
+     * assert (node.len ("[+") == 1u64); // accept only the '['
+     * assert (node.len ("[-]") == 3); // accepted
+     * assert (node.len ("[-") == 1u64); // accept only the '['
+     * ==============
+     * */
+    pub fn insert (mut self, str : [C], isSkip : bool, isComment : [C]) {
+        if str.len == 0 {
+            self._isToken = true;
+            self._isSkip = isSkip;
+            self._isComment = isComment;
+            return;
+        }
+
+        for i in 0 .. self._next.len {
+            if (self._next [i]._key == str [0]) {
+                self._next [i]:.insert (str [1 .. $], isSkip, isComment);
+                return;
+            }
+        }
+
+        let dmut n = copy Node!{C} (str [0]);
+        n:.insert (str [1 .. $], isSkip, isComment);
+
+        self._next ~= [alias n];
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ======================================          FIND          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Read the start of the string for an eventual token
+     * @returns:
+     *    - .0: the length of the token at the beginning of the string content
+     *    - .1: true iif this is a skip token
+     *    - .2: the closing token iif this is a comment token
+     * @example:
+     * =================
+     * let mut node = copy Node!{c8} ('+', isToken-> true);
+     * node:.insert ("=");
+     *
+     * // Our grammar accepts the tokens, "+" and "+="
+     * assert (node.len ("+")._0 == 1u64); // "+" is accepted
+     * assert (node.len ("+=")._0 == 2u64); // "+=" is accepted
+     * assert (node.len (" +=")._0 == 0u64); // " +=" is not accepted
+     * assert (node.len ("+ and some rest")._0 == 1u64); // "+" is accepted
+     * =================
+     */
+    pub fn len (self, content : [C])-> (usize, bool, [c8]) {
+        if content.len == 0 {
+            if self._isToken {
+                return (1us, self._isSkip, self._isComment);
+            } else return (0us, false, "");
+        }
+
+        for i in 0 .. self._next.len {
+            if self._next [i]._key == content [0] {
+                let (subLen, isSkip, isComment) = self._next [i].len (content [1 .. $]);
+                if subLen != 0 {
+                    return (subLen + 1, isSkip, isComment);
+                }
+            }
+        }
+
+        if self._isToken {
+            return (1, self._isSkip, self._isComment);
+        }
+
+        return (0, false, "");
+    } 
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          GETTERS          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * @returns: the key of the node
+     * */
+    @field
+    pub fn key (self)-> C {
+        self._key
+    }
+
+    /**
+     * @returns: true if this is a skip token
+     * */
+    @field
+    pub fn isSkip (self)-> bool {
+        self._isSkip
+    }
+
+    /**
+     * @returns: the closing token iif this is a opening comment token
+     * */
+    @field
+    pub fn closing (self)-> [C] {
+        self._isComment
+    }
+
+}
