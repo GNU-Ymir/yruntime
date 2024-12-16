@@ -1,32 +1,37 @@
 /**
  * Some utility functions on ASCII and Unicode characters.
- * There are two sets of functions, verifications `isX` and conversions `toX`.
+ * There are two sets of functions, checks `isX` and conversions `toX`.
  * @Authors: Emile Cadorel
  * @License: GPLv3
  */
 
 in char;
 
-/**
- * @returns: true if `c` is a punctuation
+use std::traits;
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ===================================          COMPARISON          ===================================
+ * ====================================================================================================
+ * ====================================================================================================
  */
-
-pub fn isPunctuation (c : c32)-> bool {
-    let u = cast!u8 (cast!c8 (c));
-    if (u < 0x20) return u == 0xa;
-    if (u >= 0x20 && u <= 0x2f) return true;
-    if (u >= 0x3a && u <= 0x40) return true;
-    if (u >= 0x5b && u <= 0x60) return true;
-    if (u >= 0x7b && u <= 0x7e) return true;
-
-    false
-}
 
 /**
  * @returns: true if `c` is a punctuation
  */
-pub fn isPunctuation (c : c8)-> bool {
-    let u = cast!u8 (c);
+pub fn if isChar!{C} isPunctuation {C} (c : C)-> bool {
+    let u = cte if (!is!{C}{X of c8}) {
+        let dmut res : [c8 ; 4] = ['\u{0}' ; 4];
+        if (std::conv::utf::toUtf8 (c, ref res) != 1) {
+            return false;
+        }
+
+        cast!u8 (res [0])
+    } else {
+        cast!u8 (c)
+    };
+
     if (u < 0x20) return u == 0xa;
     if (u >= 0x20 && u <= 0x2f) return true;
     if (u >= 0x3a && u <= 0x40) return true;
@@ -39,179 +44,211 @@ pub fn isPunctuation (c : c8)-> bool {
 /**
  * @returns: true if `c` is a letter in A..Z, a..z
  */
-pub fn isAlpha (c : c32)-> bool {
-    if c >= 'A' && c <= 'Z' { return true; }
-    if c >= 'a' && c <= 'z' { return true; }
-    false
-}
+pub fn if isChar!{C} isAlpha {C} (c : C)-> bool {
+    let u = cte if (!is!{C}{X of c8}) {
+        let dmut res : [c8 ; 4] = ['\u{0}' ; 4];
+        if (std::conv::utf::toUtf8 (c, ref res) != 1) {
+            return false;
+        }
 
-/**
- * @returns: true if `c` is a letter in A ... Z, a ... z
- */
-pub fn isAlpha (c : c8)-> bool {
-    if c >= 'A' && c <= 'Z' { return true; }
-    if c >= 'a' && c <= 'z' { return true; }
+        res [0]
+    } else {
+        c
+    };
+
+    if u >= 'A' && u <= 'Z' { return true; }
+    if u >= 'a' && u <= 'z' { return true; }
+
     false
 }
 
 /**
  * @returns: true if `c` is a lower case letter a ... z
  */
-pub fn isLower (c : c32)-> bool {
-    if c >= 'a' && c <= 'z' { true }
-    else { false }
-}
+pub fn if isChar!{C} isLower {C} (c : C)-> bool {
+    let u = cte if (!is!{C}{X of c8}) {
+        let dmut res : [c8 ; 4] = ['\u{0}' ; 4];
+        if (std::conv::utf::toUtf8 (c, ref res) != 1) {
+            return false;
+        }
 
-/**
- * @returns: true if `c` is a lower case letter a ... z
- */
-pub fn isLower (c : c8)-> bool {
-    if c >= 'a' && c <= 'z' { true }
-    else { false }
-}
+        res [0]
+    } else {
+        c
+    };
 
-/**
- * @returns: true if `c` is an upper case letter A ... Z
- */
-pub fn isUpper (c : c32)-> bool {
-    if c >= 'A' && c <= 'Z' { true }
-    else { false }
+    if u >= 'a' && u <= 'z' { return true; }
+
+    false
 }
 
 /**
  * @returns: true if `c` is an upper case letter A ... Z
  */
-pub fn isUpper (c : c8)-> bool {
-    if c >= 'A' && c <= 'Z' { true }
-    else { false }
+pub fn if isChar!{C} isUpper {C} (c : C)-> bool {
+    let u = cte if (!is!{C}{X of c8}) {
+        let dmut res : [c8 ; 4] = ['\u{0}' ; 4];
+        if (std::conv::utf::toUtf8 (c, ref res) != 1) {
+            return false;
+        }
+
+        res [0]
+    } else {
+        c
+    };
+
+    if u >= 'A' && u <= 'Z' { return true; }
+
+    false
 }
 
 /**
  * @returns: true if `c` is ascii char (in range 0 ... 0x7f)
  */
-pub fn isAscii (c : c32)-> bool {
-    if c <= cast!c32 (cast!c8 (0x7fu8)) { true }
-    else { false }
-}
-
-/**
- * @returns: true
- */
-pub fn isAscii (_ : c8)-> bool {
-    true
+pub fn if isChar!{C} isAscii {C} (c : C)-> bool {
+    cte if (!is!{C}{X of c8}) {
+        let dmut res : [c8 ; 4] = ['\u{0}' ; 4];
+        return std::conv::utf::toUtf8 (c, ref res) == 1;
+    } else {
+        return true;
+    }
 }
 
 /**
  * @returns: true if `c` is a digit 0..9
  */
-pub fn isDigit (c : c32)-> bool {
-    if c >= '0' && c <= '9' { true }
-    else { false }
-}
+pub fn if isChar!{C} isDigit {C} (c : C)-> bool {
+    let u = cte if (!is!{C}{X of c8}) {
+        let dmut res : [c8 ; 4] = ['\u{0}' ; 4];
+        if (std::conv::utf::toUtf8 (c, ref res) != 1) {
+            return false;
+        }
 
-/**
- * @returns: true if `c` is a digit in decimal 0 ... 9
- */
-pub fn isDigit (c : c8)-> bool {
-    if c >= '0' && c <= '9' { true }
-    else { false }
-}
+        res [0]
+    } else {
+        c
+    };
 
-/**
- * @returns: true if `c` is a digit in base 8 (0 ... 7)
- */
-pub fn isOctalDigit (c : c32)-> bool {
-    if c >= '0' && c <= '7' { true }
-    else { false }
+    if u >= '0' && u <= '9' { return true; }
+
+    false
 }
 
 /**
  * @returns: true if `c` is a digit in base 8 (0 ... 7)
  */
-pub fn isOctalDigit (c : c8)-> bool {
-    if c >= '0' && c <= '7' { true }
-    else { false }
+pub fn if isChar!{C} isOctalDigit {C} (c : C)-> bool {
+    let u = cte if (!is!{C}{X of c8}) {
+        let dmut res : [c8 ; 4] = ['\u{0}' ; 4];
+        if (std::conv::utf::toUtf8 (c, ref res) != 1) {
+            return false;
+        }
+
+        res [0]
+    } else {
+        c
+    };
+
+    if u >= '0' && u <= '7' { return true; }
+
+    false
 }
 
 /**
  * @returns: true if `c` is a digit in base 16 (0 ... 9, A ... F, a ... f)
  */
-pub fn isHexDigit (c : c32)-> bool {
-    if c >= '0' && c <= '9' { true }
-    else if c >= 'A' && c <= 'F' { true }
-    else if c >= 'a' && c <= 'f' { true }
-    else { false }
-}
+pub fn if isChar!{C} isHexDigit {C} (c : C)-> bool {
+    let u = cte if (!is!{C}{X of c8}) {
+        let dmut res : [c8 ; 4] = ['\u{0}' ; 4];
+        if (std::conv::utf::toUtf8 (c, ref res) != 1) {
+            return false;
+        }
 
-/**
- * @returns: true if `c` is a digit in base 16 (0 ... 9, A ... F, a ... f)
- */
-pub fn isHexDigit (c : c8)-> bool {
-    if c >= '0' && c <= '9' { true }
-    else if c >= 'A' && c <= 'F' { true }
-    else if c >= 'a' && c <= 'f' { true }
-    else { false }
-}
+        res [0]
+    } else {
+        c
+    };
 
-/**
- * @returns: true if `c` is a white char (space, tab, vertical tab, form feed, carriage return and linefeed character)
- */
-pub fn isWhite (c : c32)-> bool {
-    if c == ' ' { true }
-    else if c == '\t' { true }
-    else if c == '\v' { true }
-    else if c == '\f' { true }
-    else if c == '\n' { true }
-    else if c == '\r' { true }
-    else { false }
+    if u >= '0' && u <= '9' { return true; }
+    if u >= 'A' && u <= 'F' { return true; }
+    if u >= 'a' && u <= 'f' { return true; }
+
+    false
 }
 
 /**
  * @returns: true if `c` is a white char (space, tab, vertical tab, form feed, carriage return and linefeed character)
  */
-pub fn isWhite (c : c8)-> bool {
-    if c == ' ' { true }
-    else if c == '\t' { true }
-    else if c == '\v' { true }
-    else if c == '\f' { true }
-    else if c == '\n' { true }
-    else if c == '\r' { true }
-    else { false }
+pub fn if isChar!{C} isWhite {C} (c : C)-> bool {
+    let u = cte if (!is!{C}{X of c8}) {
+        let dmut res : [c8 ; 4] = ['\u{0}' ; 4];
+        if (std::conv::utf::toUtf8 (c, ref res) != 1) {
+            return false;
+        }
+
+        res [0]
+    } else {
+        c
+    };
+
+    if u == ' ' { return true; }
+    if u == '\t' { return true; }
+    if u == '\v' { return true; }
+    if u == '\f' { return true; }
+    if u == '\n' { return true; }
+    if u == '\r' { return true; }
+
+    false
 }
 
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ===================================          CONVERSION          ===================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
 
 /**
  * @returns: `c` to lower case if it was an upper case letter, untransformed `c` otherwise
  */
-pub fn toLower (c : c32)-> c32 {
-    if c >= 'A' && c <= 'Z' {
-        cast!c32 (cast!u32 (c) - cast!u32 ('A'c32) + 'a'c32)
-    } else { c }
-}
+pub fn if isChar!{C} toLower {C} (c : C)-> C {
+    let u = cte if (!is!{C}{X of c8}) {
+        let dmut res : [c8 ; 4] = ['\u{0}' ; 4];
+        if (std::conv::utf::toUtf8 (c, ref res) != 1) {
+            return c;
+        }
 
-/**
- * @returns: `c` to lower case if it was an upper case letter, untransformed `c` otherwise
- */
-pub fn toLower (c : c8)-> c8 {
-    if c >= 'A' && c <= 'Z' {
-        cast!c8 (cast!u8 (c) - cast!u8 ('A') + 'a')
-    } else { c }
+        res [0]
+    } else {
+        c
+    };
+
+    if u >= 'A' && u <= 'Z' {
+        return cast!C (cast!u8 (u) - cast!u8 ('A') + 'a');
+    }
+
+    return c;
 }
 
 /**
  * @returns: `c` to upper case if it was a lower case letter, untransformed `c` otherwise
  */
-pub fn toUpper (c : c32)-> c32 {
-    if c >= 'a' && c <= 'z' {
-        cast!c32 (cast!u32 (c) - cast!u32 ('a'c32) + 'A'c32)
-    } else { c }
-}
+pub fn if isChar!{C} toUpper {C} (c : C)-> C {
+    let u = cte if (!is!{C}{X of c8}) {
+        let dmut res : [c8 ; 4] = ['\u{0}' ; 4];
+        if (std::conv::utf::toUtf8 (c, ref res) != 1) {
+            return c;
+        }
 
-/**
- * @returns: `c` to upper case if it was a lower case letter, untransformed `c` otherwise
- */
-pub fn toUpper (c : c8)-> c8 {
-    if c >= 'a' && c <= 'z' {
-        cast!c8 (cast!u8 (c) - cast!u8 ('a') + 'A')
-    } else { c }
+        res [0]
+    } else {
+        c
+    };
+
+    if u >= 'a' && u <= 'z' {
+        return cast!C (cast!u8 (u) - cast!u8 ('a') + 'A');
+    }
+
+    return c;
 }
