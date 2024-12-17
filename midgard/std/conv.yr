@@ -739,16 +739,19 @@ pub fn if (isSigned!{T} && isChar!{U} && isIntegral!{N}) to {T, base : N, F of [
 
     let mut j : T = 1;
     let mut res : T = 0;
-    for i in str.len .. 0us {
-        if (i == 1us && str [i - 1us] == '-') {
-            res = -res;
-        } else {
-            res += (j * std::conv::utils::to!{T} (str [i - 1us], cast!T (base)));
+    {
+        for i in str.len .. 0us {
+            if (i == 1us && str [i - 1us] == '-') {
+                res = -res;
+            } else {
+                res += (j * std::conv::utils::to!{T} (str [i - 1us], cast!T (base)));
+            }
+
+            j *= base;
         }
-
-        j *= base;
+    } catch {
+        _ => throw copy CastFailure (F::typeinfo, T::typeinfo);
     }
-
     res
 }
 

@@ -44,12 +44,19 @@ pub class CastFailure over core::exception::Exception {
     // the type to which the transformation was tried
     pub let to : TypeInfo;
 
+    // The sub error that may explain the reason of the failed cast
+    pub let sub : (&Exception)?;
+
     /**
      * @params:
      *    - from: the type that is transformed
      *    - to: the type to which the transformation was tried
      */
-    pub self (from : TypeInfo, to : TypeInfo) with from = from, to = to {}
+    pub self (from : TypeInfo, to : TypeInfo, subError : (&Exception)? = none)
+        with from = from
+        , to = to
+        , sub = subError
+    {}
 
     impl std::stream::Streamable {
 
@@ -57,8 +64,15 @@ pub class CastFailure over core::exception::Exception {
          * Just print the error to stdout
          */
         pub over toStream (self, dmut stream : &std::stream::StringStream) {
-            self.__super.toStream (alias stream);
-        }
+            stream:.write (self.__typeinfo__.name);
+            stream:.write ("(", self.from.name, " => ", self.to.name, ")");
 
+            if let Ok (sub) = self.sub {
+                stream:.writeln (""):.write (" => "s8):.write ("\t"s8):.write (sub);
+            } else if (self.hasTrace ()) {
+                stream:.writeln (""):.write (":"s8):.write (self.getStackTrace ());
+            }
+        }
     }
+
 }

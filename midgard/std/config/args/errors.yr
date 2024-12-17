@@ -1,0 +1,113 @@
+/**
+ * Error module for the errors that can occur when parsing command line options
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in errors;
+
+use core::{types::info, exception};
+use std::stream;
+
+/**
+ * Error thrown during command line parsing
+ * */
+@abstract
+pub class CommandLineError over core::exception::Exception {
+    pub self () {}
+}
+
+/**
+ * Error thrown when an help flag is found during command line argument parsing
+ * */
+@final
+pub class HelpRequestError over CommandLineError {
+    pub self () {}
+}
+
+/**
+ * Error thrown when command line parser is incorrectly configured
+ * */
+@final
+pub class InvalidCommandLine over CommandLineError {
+    pub self () {}
+}
+
+
+/**
+ * Error thrown when an argument is missing in command line
+ * */
+@final
+pub class MissingArgument over CommandLineError {
+    let _key : [c8];
+
+    pub self (key : [c8])
+        with _key = key
+    {}
+
+    impl stream::Streamable {
+        pub over toStream (self, dmut stream : &StringStream) {
+            stream:.write (self.__typeinfo__.name):.write (" ("s8);
+            stream:.write (self._key, ')');
+
+            if (self.hasTrace ()) {
+                stream:.writeln (""):.write (":"s8):.write (self.getStackTrace ());
+            }
+        }
+    }
+}
+
+
+/**
+ * Error thrown when an argument is missing in command line
+ * */
+@final
+pub class UnknownArgument over CommandLineError {
+    let _key : [c8];
+
+    pub self (key : [c8])
+        with _key = key
+    {}
+
+    impl stream::Streamable {
+        pub over toStream (self, dmut stream : &StringStream) {
+            stream:.write (self.__typeinfo__.name):.write (" ("s8);
+            stream:.write (self._key, ')');
+
+            if (self.hasTrace ()) {
+                stream:.writeln (""):.write (":"s8):.write (self.getStackTrace ());
+            }
+        }
+    }
+}
+
+/**
+ * Error thrown when a argument parsing fails
+ * */
+@final
+pub class MalformedArgument over CommandLineError {
+
+    // The argument being parsed
+    let _key : [c8];
+
+    // The sub error
+    let _subError : (&Exception)? = none;
+
+    pub self (key : [c8], subError : (&Exception)?)
+        with _subError = subError
+        , _key = key
+    {}
+
+    impl stream::Streamable {
+        pub over toStream (self, dmut stream : &StringStream) {
+            stream:.write (self.__typeinfo__.name):.write (" ("s8);
+            stream:.write (self._key, ')');
+
+            if let Ok (sub) = self._subError {
+                stream:.writeln (""):.write (" => "s8):.write ("\t"s8):.write (sub);
+            } else if (self.hasTrace ()) {
+                stream:.writeln (""):.write (":"s8):.write (self.getStackTrace ());
+            }
+        }
+    }
+}

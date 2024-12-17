@@ -16,65 +16,6 @@ pub class ConfigError over core::exception::Exception {
 /*!
  * ====================================================================================================
  * ====================================================================================================
- * ======================================          CONV          ======================================
- * ====================================================================================================
- * ====================================================================================================
- */
-
-
-/**
- * Error thrown when a conversion failed
- * */
-pub class ConfigConvError over ConfigError {
-
-    // The element that failed at conversion
-    let _field : [c8];
-
-    // The type from which we wanted a cast
-    let _fr : TypeInfo;
-
-    // The type to which the cast was tried
-    let _to : TypeInfo;
-
-    // The sub error
-    let _subError : (&Exception)? = none;
-
-    /**
-     * @params:
-     *     - name: the name of the field (or element) being converted
-     *     - to: the typeinfo from which the conversion was tried
-     *     - from: the typeinfo to which the conversion was tried
-     *     - subError: the root cause of the error
-     * */
-    pub self (name : [c8] = "", to : TypeInfo, from : TypeInfo, subError : (&Exception)? = none)
-        with _field = name
-        , _fr = from
-        , _to = to
-        , _subError = subError
-    {}
-
-    impl stream::Streamable {
-        pub over toStream (self, dmut stream : &StringStream) {
-            stream:.write (self.__typeinfo__.name):.write (" ("s8);
-            stream:.write (self._fr.name):.write ("-> "s8):.write (self._to.name);
-            stream:.write (")"s8);
-            if (self._field != "")
-                stream:.write (" for field : "s8):.write (self._field);
-
-            if let Ok (sub) = self._subError {
-                stream:.writeln (""):.write (" => "s8):.write ("\t"s8):.write (sub);
-            } else {
-                if (self.hasTrace ()) {
-                    stream:.writeln (""):.write (":"s8):.write (self.getStackTrace ());
-                }
-            }
-        }
-    }
-}
-
-/*!
- * ====================================================================================================
- * ====================================================================================================
  * =====================================          ARRAY          ======================================
  * ====================================================================================================
  * ====================================================================================================
@@ -83,6 +24,7 @@ pub class ConfigConvError over ConfigError {
 /**
  * Error thrown when an array was index outside its range
  * */
+@final
 pub class ConfigOutError over ConfigError {
 
     // The length of the array
@@ -100,6 +42,10 @@ pub class ConfigOutError over ConfigError {
         pub over toStream (self, dmut stream : &StringStream) {
             stream:.write (self.__typeinfo__.name):.write (" ("s8);
             stream:.write (self._len, " <= ", self._index, ')');
+
+            if (self.hasTrace ()) {
+                stream:.writeln (""):.write (":"s8):.write (self.getStackTrace ());
+            }
         }
     }
 }
@@ -115,6 +61,7 @@ pub class ConfigOutError over ConfigError {
 /**
  * Error thrown when a dict is indexed by a key that it does not contain
  * */
+@final
 pub class ConfigKeyError over ConfigError {
 
     // The index of the access
@@ -128,6 +75,10 @@ pub class ConfigKeyError over ConfigError {
         pub over toStream (self, dmut stream : &StringStream) {
             stream:.write (self.__typeinfo__.name):.write (" ("s8);
             stream:.write (self._key, ')');
+
+            if (self.hasTrace ()) {
+                stream:.writeln (""):.write (":"s8):.write (self.getStackTrace ());
+            }
         }
     }
 }

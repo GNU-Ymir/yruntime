@@ -19,7 +19,8 @@
 
 in conv;
 
-use std::{traits, config::{data, errors}};
+use std::{traits, config::data};
+use std::conv::errors;
 
 /*!
  * ====================================================================================================
@@ -44,7 +45,7 @@ use std::{traits, config::{data, errors}};
  * =============
  * */
 pub fn if isIntegral!{T} to {T, C of &Config} (cfg : C)-> T
-    throws ConfigConvError
+    throws CastFailure
 {
     if let Int (value-> i) = cfg {
         return cast!T (i);
@@ -54,7 +55,7 @@ pub fn if isIntegral!{T} to {T, C of &Config} (cfg : C)-> T
         return cast!T (f);
     }
 
-    throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__);
+    throw copy CastFailure (to-> T::typeinfo, from-> cfg.__typeinfo__);
 }
 
 
@@ -72,7 +73,7 @@ pub fn if isIntegral!{T} to {T, C of &Config} (cfg : C)-> T
  * =============
  */
 pub fn if isFloating!{T} to {T, C of &Config} (cfg : C)-> T
-    throws ConfigConvError
+    throws CastFailure
 {
     if let Float (value-> f) = cfg {
         return cast!T (f);
@@ -82,7 +83,7 @@ pub fn if isFloating!{T} to {T, C of &Config} (cfg : C)-> T
         return cast!{T} (i);
     }
 
-    throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__);
+    throw copy CastFailure (to-> T::typeinfo, from-> cfg.__typeinfo__);
 }
 
 /**
@@ -94,7 +95,7 @@ pub fn if isFloating!{T} to {T, C of &Config} (cfg : C)-> T
  * =============
  */
 pub fn if isChar!{U} to {T of [U], U, C of &Config} (cfg : C)-> T
-    throws ConfigConvError
+    throws CastFailure
 {
     if let Str (value-> s) = cfg {
         cte if is!{U}{D of c8} {
@@ -104,7 +105,7 @@ pub fn if isChar!{U} to {T of [U], U, C of &Config} (cfg : C)-> T
         }
     }
 
-    throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__);
+    throw copy CastFailure (to-> T::typeinfo, from-> cfg.__typeinfo__);
 }
 
 /**
@@ -116,13 +117,13 @@ pub fn if isChar!{U} to {T of [U], U, C of &Config} (cfg : C)-> T
  * =========
  * */
 pub fn to {B of bool, C of &Config} (cfg : C)-> T
-    throws ConfigConvError
+    throws CastFailure
 {
     if let Bool (value-> b) = cfg {
         return b;
     }
 
-    throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__);
+    throw copy CastFailure (to-> T::typeinfo, from-> cfg.__typeinfo__);
 }
 
 /*!
@@ -146,7 +147,7 @@ pub fn to {B of bool, C of &Config} (cfg : C)-> T
  * ========
  * */
 pub fn if !isChar!{U} to {T of [U], U, C of &Config} (cfg : C)-> T
-    throws ConfigConvError
+    throws CastFailure
 {
     if let x : &Array = cfg {
         {
@@ -157,13 +158,13 @@ pub fn if !isChar!{U} to {T of [U], U, C of &Config} (cfg : C)-> T
 
             return res;
         } catch {
-            inn : &ConfigConvError => {
-                throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__, subError-> inn?);
+            inn : &CastFailure => {
+                throw copy CastFailure (to-> T::typeinfo, from-> cfg.__typeinfo__, subError-> inn?);
             }
         }
     }
 
-    throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__);
+    throw copy CastFailure (to-> T::typeinfo, from-> cfg.__typeinfo__);
 }
 
 /**
@@ -181,12 +182,12 @@ pub fn if !isChar!{U} to {T of [U], U, C of &Config} (cfg : C)-> T
  * ===========
  * */
 pub fn if isTuple!{T} to {T, C of &Config} (cfg : C)-> T
-    throws ConfigConvError
+    throws CastFailure
 {
     if let x : &Array = cfg {
         if x.len < T::arity {
-            throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__,
-                                        subError-> (copy ConfigOutError (x.len, T::arity - 1))?);
+            throw copy CastFailure (to-> T::typeinfo, from-> cfg.__typeinfo__,
+                                    subError-> (copy ConfigOutError (x.len, T::arity - 1))?);
         }
 
         {
@@ -203,12 +204,12 @@ pub fn if isTuple!{T} to {T, C of &Config} (cfg : C)-> T
             }
         } catch {
             inn : &ConfigError => {
-                throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__, subError-> inn?);
+                throw copy CastFailure (to-> T::typeinfo, from-> cfg.__typeinfo__, subError-> inn?);
             }
         }
     }
 
-    throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__);
+    throw copy CastFailure (to-> T::typeinfo, from-> cfg.__typeinfo__);
 }
 
 /**
@@ -224,7 +225,7 @@ pub fn if isTuple!{T} to {T, C of &Config} (cfg : C)-> T
  * ==========
  * */
 pub fn to {T of [[c8] => V], V, C of &Config} (cfg : C)-> T
-    throws ConfigConvError
+    throws CastFailure
 {
     if let m : &Dict = cfg {
         {
@@ -237,7 +238,7 @@ pub fn to {T of [[c8] => V], V, C of &Config} (cfg : C)-> T
         }
     }
 
-    throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__);
+    throw copy CastFailure (to-> T::typeinfo, from-> cfg.__typeinfo__);
 }
 
 /*!
@@ -281,7 +282,7 @@ pub fn to {C of &Config} (a : C)-> C {
  * @info: the record type must define a ctor taking a configuration as uniq parameter
  * */
 pub fn to {T of R, record R, C of &Config} (cfg : C)-> T
-    throws ConfigConvError
+    throws CastFailure
 {
     let result = T (cfg)?;
     cte if (__pragma!compile ({ if let Ok () = result {} })) {
@@ -290,13 +291,13 @@ pub fn to {T of R, record R, C of &Config} (cfg : C)-> T
         }
 
         if let Err (msg) = result {
-            throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__, subError-> msg?);
+            throw copy CastFailure (to-> T::typeinfo, from-> cfg.__typeinfo__, subError-> msg?);
         }
 
-        throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__);
+        throw copy CastFailure (to-> T::typeinfo, from-> cfg.__typeinfo__);
     } else {
         let mut _ig_ = false;
-        if (_ig_) throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__);
+        if (_ig_) throw copy CastFailure (to-> T::typeinfo, from-> cfg.__typeinfo__);
 
         let Ok (v) = result;
         return v;
@@ -309,7 +310,7 @@ pub fn to {T of R, record R, C of &Config} (cfg : C)-> T
  * @info: the record type must define a ctor taking a configuration as uniq parameter
  * */
 pub fn to {T of R, class R, C of &Config} (cfg : C)-> T
-    throws ConfigConvError
+    throws CastFailure
 {
     let result = (copy T (cfg))?;
     cte if (__pragma!compile ({ if let Ok () = result {} })) {
@@ -318,13 +319,13 @@ pub fn to {T of R, class R, C of &Config} (cfg : C)-> T
         }
 
         if let Err (msg) = result {
-            throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__, subError-> msg?);
+            throw copy CastFailure (to-> T::typeinfo, from-> cfg.__typeinfo__, subError-> msg?);
         }
 
-        throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__);
+        throw copy CastFailure (to-> T::typeinfo, from-> cfg.__typeinfo__);
     } else {
         let mut _ig_ = false;
-        if (_ig_) throw copy ConfigConvError (to-> T::typeinfo, from-> cfg.__typeinfo__);
+        if (_ig_) throw copy CastFailure (to-> T::typeinfo, from-> cfg.__typeinfo__);
 
         let Ok (v) = result;
         return v;
@@ -581,7 +582,7 @@ pub fn if (is!{T}{entity E} || is!{T}{record R}) to {C of &Config, T} (ref value
  * let cfg = a.to!{&Config} ();
  * ===========
  * */
-pub fn if (is!{T}{class D} || is!{T}{record R}) to {C of &Config, T} (value : T)-> C {
+pub fn if (is!{T}{class D} || is!{T}{record R}) to {C of &Config} (value : T)-> C {
     value;
     return copy Dict ();
 }

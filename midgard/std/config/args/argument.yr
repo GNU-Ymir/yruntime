@@ -1,0 +1,129 @@
+in argument;
+
+use std::config::data;
+
+/**
+ * An argument created inside an argument parser
+ * */
+pub record Argument {
+
+    // The long name of the argument (e.g. 'foo')
+    let _long : [c8];
+
+    // The short name of the argument (e.g. 'f')
+    let _short : [c8];
+
+    // The comment to print in the help
+    let _comment : [c8];
+
+    // The type of the argument
+    let _type : (&Config)? = none;
+
+    // If the argument is a sub command
+    let _subCommand : (dg ([[c8]])-> (&Config)?)? = none;
+
+    // True iif needs hyphens
+    let _hyphenated : bool;
+
+    // True iif the argument must be defined
+    let _mandatory : bool = false;
+
+    /**
+     * Create a type argument
+     * @params:
+     *    - long: the long name of the argument
+     *    - short: the short name of the argument
+     *    - comment: the comment to print in the help
+     *    - type: the type of the argument
+     * */
+    pub self (long : [c8], short : [c8], comment : [c8], type : (&Config)?, hyphenated : bool, mandatory : bool = false)
+        with _long = long
+        , _short = short
+        , _comment = comment
+        , _hyphenated = hyphenated
+        , _type = type
+        , _mandatory = mandatory
+    {}
+
+    /**
+     * Create a sub command argument
+     * @params:
+     *    - long: the long name of the argument
+     *    - short: the short name of the argument
+     *    - comment: the comment to print in the help
+     *    - cmd: the sub command parser function
+     * */
+    pub self (long : [c8], short : [c8], comment : [c8], cmd : dg([[c8]])-> (&Config)?, hyphenated : bool, mandatory : bool = false)
+        with _long = long
+        , _short = short
+        , _comment = comment
+        , _hyphenated = hyphenated
+        , _subCommand = (cmd?)
+        , _mandatory = mandatory
+    {}
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          GETTERS          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * @returns: the long name of the argument
+     * */
+    @field
+    pub fn long (self)-> [c8] {
+        self._long
+    }
+
+    /**
+     * @returns: the short name of the argument
+     * */
+    @field
+    pub fn short (self)-> [c8] {
+        self._short
+    }
+
+    /**
+     * @returns: the comment of the argument
+     * */
+    @field
+    pub fn comment (self)-> [c8] {
+        self._comment
+    }
+
+    /**
+     * @returns: the type of the argument
+     * */
+    @field
+    pub fn type (self)-> (&Config)? {
+        self._type
+    }
+
+    /**
+     * @returns: the sub command type
+     * */
+    @field
+    pub fn subCommand (self)-> (dg ([[c8]])-> (&Config)?)? {
+        self._subCommand
+    }
+
+    /**
+     * @returns: true iif the argument needs hyphens
+     * */
+    @field
+    pub fn hyphenated (self)-> bool {
+        self._hyphenated
+    }
+
+    /**
+     * @returns: true iif the argument is mandatory
+     * */
+    @field
+    pub fn mandatory (self)-> bool {
+        self._mandatory
+    }
+
+}
