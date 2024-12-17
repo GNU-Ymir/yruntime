@@ -1,0 +1,173 @@
+/**
+ * This module declares classes and functions to manage IPv6 addresses.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @example:
+ * ===
+ * use std::net::_;
+ *
+ * let localhost_v6 = copy Ipv6Addr ([0, 0, 0, 0, 0, 0, 0, 1]);
+ * ===
+ */
+
+in v6;
+
+
+/**
+ * An ipv6 address
+ * */
+@final
+pub class Ipv6Addr over std::net::addr::IpAddr {
+
+    // The components of the address
+    let _content : [u16 ; 8];
+
+    /**
+     * Create a new ipv6 address `a:b:c:d:e:f:g:h`.
+     * */
+    pub self (content : [u16 ; 8])
+        with _content = content
+    {}
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          GETTERS          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * @returns: true if this is a loopback address '::1'
+     * */
+    pub over isLoopback (self)-> bool {
+        for i in 0 .. 7 {
+            if (self._content [i] != 0) return false;
+        }
+
+        return (self._content [7] == 1);
+    }
+
+    /**
+     * @returns: true if this is an unspecified address '::'
+     * */
+    pub over isUnspecified (self)-> bool {
+        for i in 0 .. 8 {
+            if (self._content [i] != 0) return false;
+        }
+
+        true
+    }
+
+    /**
+     * @returns: the eight components of the address
+     * */
+    pub fn opIndex (self)-> [u16 ; 8] {
+        self._content
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ===================================          CONVERSION          ===================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * @returns: the segment of the address encoded in bytes
+     */
+    pub fn toN (self)-> [u8 ; 16] {
+        let dmut res = [0u8 ; 16];
+        let mut j = 0us;
+        for i in 0us .. 8us {
+            res [j + 1] = cast!u8 ((self._content [i] & 0x00ffu16));
+            res [j]     = cast!u8 ((self._content [i] & 0xff00u16) >> 8u16);
+            j += 2us;
+        }
+
+        res
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ===================================          COMPARISON          ===================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * @returns: true if the two address are equal
+     * */
+    pub over opEquals (self, o : &IpAddr)-> bool {
+        if let z : &v6::Ipv6Addr = o {
+            for i in 0 .. 8 {
+                if (self._content [i] != z._content [i]) return false;
+            }
+
+            return true;
+        }
+
+        false
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ======================================          MISC          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+
+    impl std::stream::Streamable {
+
+        pub over toStream (self, dmut stream : &std::stream::StringStream) {
+            let mut current = 0us, mut longest = 0us, mut start = 0us, mut current_start = 0us;
+            for j, i in self._content {
+                if i != 0u16 { current = 0us; current_start = 8us; }
+                else {
+                    current += 1us;
+                    if (current_start == 8us) current_start = j;
+                    if (current >= longest) {
+                        start = current_start;
+                        longest = current;
+                    }
+                }
+            }
+
+            let mut j = 0us, mut wrote_number = false;
+            while j < 8us {
+                if (start == j && longest > 1us) {
+                    stream:.write ("::"s8);
+                    j += longest;
+                    wrote_number = false;
+                } else {
+                    if (wrote_number) { stream:.write (':'c8); }
+                    stream:.write (std::conv::to!{[c8], 16us} (self._content [j]));
+                    j += 1us;
+                    wrote_number = true;
+                }
+            }
+        }
+    }
+
+    impl core::types::Hashable {
+        pub over toHash (self)-> u64 {
+            let mut n1 : u64 = 0, mut n2 : u64 = 0;
+            let dmut pack1 : *u16 = cast!{*u16} (cast!{dmut *void} (&n1));
+            let dmut pack2 : *u16 = cast!{*u16} (cast!{dmut *void} (&n2));
+            unsafe {
+                for i in 0 .. 4 {
+                    pack1[i] = self._content [i];
+                    pack2[i] = self._content [i + 4];
+                }
+            }
+
+            return core::types::hash::__hash ((n1, n2));
+        }
+    }
+
+}

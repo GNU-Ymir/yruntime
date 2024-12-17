@@ -1,0 +1,152 @@
+/**
+ * This module declares classes and functions to manage IPv4 addresses.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @example:
+ * ===
+ * use std::net::_;
+ *
+ * let localhost_v4 = copy Ipv4Addr ([127, 0, 0, 1]);
+ * ===
+ */
+
+in v4;
+
+/**
+ * An ipv4 address
+ * */
+@final
+pub class Ipv4Addr over std::net::addr::IpAddr {
+
+    // The different part of the address
+    let _content : [u8 ; 4];
+
+    /**
+     * @params:
+     *    - content: the different component of the address
+     * */
+    pub self (content : [u8 ; 4])
+        with _content = content
+    {}
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          GETTERS          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * @returns: true iif this is a loopback address (in range 127.0.0.0/8)
+     * */
+    pub over isLoopback (self)-> bool {
+        self._content [0] == 127
+    }
+
+    /**
+     * @returns: true iif this is an unspecified address (0.0.0.0)
+     * */
+    pub over isUnspecified (self)-> bool {
+        if (self._content [0] != 0) return false;
+        if (self._content [1] != 0) return false;
+        if (self._content [2] != 0) return false;
+        if (self._content [3] != 0) return false;
+
+        true
+    }
+
+    /**
+     * @returns: true iif this is a private address
+     * @info: Private address are ranges in :
+     *    - 10.0.0.0/8
+     *    - 172.16.0.0/12
+     *    - 192.168.0.0/16
+     * */
+    pub fn isPrivate (self)-> bool {
+        if (self._content [0] == 10) return true;
+        if (self._content [0] == 172 && self._content [1] > 16) return true;
+        if (self._content [0] == 192 && self._content [1] == 168) return true;
+
+        false
+    }
+
+    /**
+     * @returns: the components of the address
+     * */
+    pub fn opIndex (self)-> [u8 ; 4] {
+        self._content
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ===================================          COMPARISON          ===================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * @returns: true if the two addresses are equal
+     * */
+    pub over opEquals (self, o : &IpAddr)-> bool {
+        if let v4::Ipv4Addr (_content-> c) = o {
+            if (self._content [0] != c [0]) return false;
+            if (self._content [1] != c [1]) return false;
+            if (self._content [2] != c [2]) return false;
+            if (self._content [3] != c [3]) return false;
+
+            return true;
+        }
+
+        false
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ===================================          CONVERSION          ===================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * @returns: the four part of the ip A.B.C.D in a single u32 (A << 24 | B << 16 | C << 8 | D)
+     * */
+    pub fn toN (self)-> u32 {
+        let mut n : u32 = 0u32;
+        let dmut pack : *u8 = cast!{*u8} (cast!{dmut *void} (&n));
+        unsafe {
+            pack[0] = self._content [0];
+            pack[1] = self._content [1];
+            pack[2] = self._content [2];
+            pack[3] = self._content [3];
+        }
+
+        return n;
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ======================================          MISC          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    impl std::stream::Streamable {
+        pub over toStream (self, dmut stream : &std::stream::StringStream) {
+            stream:.write (self._content [0], '.',
+                           self._content [1], '.',
+                           self._content [2], '.',
+                           self._content [3]);
+        }
+    }
+
+    impl core::types::Hashable {
+        pub over toHash (self)-> u64 {
+            return cast!u64 (self.toN ());
+        }
+    }
+}

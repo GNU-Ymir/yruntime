@@ -120,11 +120,45 @@ pub class ArgumentParser {
      */
 
     /**
-     * @returns: the usage of the argument parser in a single line
+     * Generate the error message according to the given error
      * */
-    pub fn getUsage (self)-> [c8] {
+    pub fn explain (self, err : &CommandLineError, usage : [c8] = "usage")-> [c8] {
+        match err {
+            HelpRequestError () => return self.getHelp (usage-> usage);
+            m : &MalformedArgument => {
+                return self.getUsage (usage-> usage) ~ "\n" ~ self.explainMalformed (m);
+            }
+            m : &MissingArgument => {
+                let mut result = self.getUsage (usage-> usage) ~ "\n";
+                result ~= "missing argument '" ~ m.key ~ "'";
+                return result
+            }
+            m : &UnknownArgument => {
+                let mut result = self.getUsage (usage-> usage) ~ "\n";
+                result ~= "unknown argument '" ~ m.key ~ "'";
+                return result
+            }
+        }
+
+        return std::conv::to!{[c8]} (err);
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          GETTERS          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * @returns: the usage of the argument parser in a single line
+     * @params:
+     *    - usage: the name of the executable to put in from of the usage explainer
+     * */
+    pub fn getUsage (self, usage : [c8] = "usage")-> [c8] {
         let dmut stream = copy StringStream ();
-        stream:.write ("usage ");
+        stream:.write (usage, " ");
         let mut i = 0;
         for f in self._flags {
             if i != 0 { stream:.write (" "); }
@@ -161,9 +195,59 @@ pub class ArgumentParser {
 
     /**
      * @returns: the help of the argument parser
+     * @params:
+     *    - usage: the name of the executable to put in from of the usage explainer
      * */
-    pub fn getHelp (self)-> [c8] {
-        []
+    pub fn getHelp (self, usage : [c8] = "usage")-> [c8] {
+        let dmut stream = copy StringStream ();
+        let (shortAlign, longAlign, nbMandatory, nbOptions) = self.computeHelpAlignment ();
+        let aligns = (shortAlign, longAlign);
+
+        stream:.writeln (self.getUsage (usage-> usage), "\n");
+        if (self._positions.len != 0) {
+            stream:.writeln ("positional arguments : ");
+        }
+
+        for f in self._positions {
+            self.exportHelpOption (f, alias stream, aligns, hyphenated-> false);
+        }
+
+        if (nbMandatory != 0) {
+            stream:.writeln ("mandatory arguments : ");
+        }
+        for f in self._options {
+            if (f.mandatory) {
+                self.exportHelpOption (f, alias stream, aligns);
+            }
+        }
+
+        for f in self._subCommands {
+            if (f.mandatory) {
+                self.exportHelpOption (f, alias stream, aligns, hyphenated-> f.hyphenated);
+            }
+        }
+
+        if (nbOptions != 0) {
+            stream:.writeln ("optional arguments : ");
+        }
+        for f in self._options {
+            if (!f.mandatory) {
+                self.exportHelpOption (f, alias stream, aligns);
+            }
+        }
+        for f in self._subCommands {
+            if (!f.mandatory) {
+                self.exportHelpOption (f, alias stream, aligns, hyphenated-> f.hyphenated);
+            }
+        }
+        for f in self._flags {
+            self.exportHelpOption (f, alias stream, aligns);
+        }
+        for f in self._helps {
+            self.exportHelpOption (f, alias stream, aligns);
+        }
+
+        stream[]
     }
 
     /*!
@@ -178,16 +262,16 @@ pub class ArgumentParser {
      * Add a position argument
      * @params:
      *    - name: the name used to retreive the position argument in the generated configuration (e.g. 'list').
-     *    - comment: the comments to print for help
+     *    - comments: the comments to print for help
      * @example:
      * =========
      * use std::config::_;
      *
      * let parser = ArgumentParser ()
-     *              :.position!{i64} ("A", comment-> "first int")
-     *              :.position!{i64} ("B", comment-> "second int");
-     *              :.position!{[c8]} ("C", comment-> "a string");
-     *              :.position!{f64} ("D", comment-> "a float");
+     *              :.position!{i64} ("A", comments-> "first int")
+     *              :.position!{i64} ("B", comments-> "second int");
+     *              :.position!{[c8]} ("C", comments-> "a string");
+     *              :.position!{f64} ("D", comments-> "a float");
      *
      * let args = parser.parse (["./a.out", "1", "2", "foo", "87.12"]);
      *
@@ -204,7 +288,7 @@ pub class ArgumentParser {
             copy Float (0.0)
         } else { copy Str ("") };
 
-        self._positions ~= [Argument (long-> name, short-> "", comment-> comments, type-> type?, hyphenated-> false, mandatory-> true)];
+        self._positions ~= [Argument (long-> name, short-> "", comments-> comments, type-> type?, hyphenated-> false, mandatory-> true)];
         alias self
     }
 
@@ -212,11 +296,11 @@ pub class ArgumentParser {
      * Add a list position argument
      * @params:
      *    - name: the name used to retreive the position argument in the generated configuration (e.g. 'list').
-     *    - comment: the comments to print for help
+     *    - comments: the comments to print for help
      * @example:
      * =========
      * let parser = ArgumentParser ()
-     *              :.position!{"list", [i64]} (comment-> "list of int");
+     *              :.position!{"list", [i64]} (comments-> "list of int");
      *
      * let args = parser.parse (["./a.out", "1", "2", "3"])
      *                  .to!{[[c8] => [i64]} (); // transform the configuration into a map
@@ -235,7 +319,7 @@ pub class ArgumentParser {
             lst:.push (copy Str (""));
         }
 
-        self._positions ~= [Argument (long-> name, short-> "", comment-> comments, type-> lst?, hyphenated-> false, mandatory-> true)];
+        self._positions ~= [Argument (long-> name, short-> "", comments-> comments, type-> lst?, hyphenated-> false, mandatory-> true)];
         alias self
     }
 
@@ -253,13 +337,13 @@ pub class ArgumentParser {
      *    - name: the name of the command (long name of the option to set for the sub command to be executed)
      *    - cmd: the function to call when the argument is found
      *    - short: the short name of the argument
-     *    - comment: the comments to print in the help
+     *    - comments: the comments to print in the help
      *    - hyphenated: true iif '--' are mandatory for the option to be triggered
      * @example:
      * ===============
      * fn subCmd (args : [[c8]])-> (&Config)? {
      *    let subParser = ArgumentParser ()
-     *                    :.option!{i64} ("foo", comment-> "Int value of foo");
+     *                    :.option!{i64} ("foo", comments-> "Int value of foo");
      *
      *    // needs to return an option to catch errors in a function pointer
      *    return subParser.parse (args)?;
@@ -267,14 +351,14 @@ pub class ArgumentParser {
      *
      *
      * let superCmd = ArgumentParser ()
-     *                :.sub ("sub", &subCmd, short-> "s", comment-> "sub command", hyphenated-> false);
+     *                :.sub ("sub", &subCmd, short-> "s", comments-> "sub command", hyphenated-> false);
      *
      * let cfg = superCmd.parse (["./a.out", "sub", "--foo", "78"]);
      * println (cfg ["sub"]["foo"]); // 78
      * ===============
      * */
     pub fn sub (mut self, name : [c8], cmd : dg ([[c8]])-> (&Config)?, short : [c8] = "", comments : [c8] = "", hyphenated : bool = true, mandatory : bool = false)-> dmut &ArgumentParser {
-        self._subCommands ~= [Argument (long-> name, short-> short, comment-> comments, cmd-> cmd, hyphenated-> hyphenated, mandatory-> mandatory)];
+        self._subCommands ~= [Argument (long-> name, short-> short, comments-> comments, cmd-> cmd, hyphenated-> hyphenated, mandatory-> mandatory)];
         alias self
     }
 
@@ -290,16 +374,16 @@ pub class ArgumentParser {
      * Add a option argument
      * @params:
      *    - name: the name used to retreive the option argument in the generated configuration (e.g. 'list').
-     *    - comment: the comments to print for help
+     *    - comments: the comments to print for help
      * @example:
      * =========
      * use std::config::_;
      *
      * let parser = ArgumentParser ()
-     *              :.option!{i64} ("fst", comment-> "first int")
-     *              :.option!{i64} ("scd", short-> "s", comment-> "second int");
-     *              :.option!{[c8]} ("thd", comment-> "a string");
-     *              :.option!{f64} ("fth", comment-> "a float");
+     *              :.option!{i64} ("fst", comments-> "first int")
+     *              :.option!{i64} ("scd", short-> "s", comments-> "second int");
+     *              :.option!{[c8]} ("thd", comments-> "a string");
+     *              :.option!{f64} ("fth", comments-> "a float");
      *
      * let args = parser.parse (["./a.out", "--fst", "1", "-s", "2", "--thd", "foo", "--fth", 87.12"]);
      *
@@ -316,7 +400,7 @@ pub class ArgumentParser {
             copy Float (0.0)
         } else { copy Str ("") };
 
-        self._options ~= [Argument (long-> name, short-> short, comment-> comments, type-> type?, hyphenated-> true, mandatory-> mandatory)];
+        self._options ~= [Argument (long-> name, short-> short, comments-> comments, type-> type?, hyphenated-> true, mandatory-> mandatory)];
         alias self
     }
 
@@ -324,12 +408,12 @@ pub class ArgumentParser {
      * Add a list option argument
      * @params:
      *    - name: the name used to retreive the option argument in the generated configuration (e.g. 'list').
-     *    - comment: the comments to print for help
+     *    - comments: the comments to print for help
      *    - short: the short name of the option
      * @example:
      * =========
      * let parser = ArgumentParser ()
-     *              :.option!{[i64]} ("list", short-> "-l", comment-> "list of int");
+     *              :.option!{[i64]} ("list", short-> "-l", comments-> "list of int");
      *
      * let args = parser.parse (["./a.out", "-l", 1", "2", "3"])
      *                  .to!{[[c8] => [i64]} (); // transform the configuration into a map
@@ -348,7 +432,7 @@ pub class ArgumentParser {
             lst:.push (copy Str (""));
         }
 
-        self._options ~= [Argument (long-> name, short-> short, comment-> comments, type-> lst?, hyphenated-> true, mandatory-> mandatory)];
+        self._options ~= [Argument (long-> name, short-> short, comments-> comments, type-> lst?, hyphenated-> true, mandatory-> mandatory)];
         alias self
     }
 
@@ -365,11 +449,11 @@ pub class ArgumentParser {
      * @params:
      *    - name: the name of the flag
      *    - short: the short name of the flag
-     *    - comment: the comments to display in the help
+     *    - comments: the comments to display in the help
      * @example:
      * =============
      * let parser = ArgumentParser ()
-     *              :.flag ("foo", short-> "f", comment-> "a flag");
+     *              :.flag ("foo", short-> "f", comments-> "a flag");
      *
      * let args1 = parser.parse (["./a.out", "-f"]);
      * // flag inserted in the result dictionnary and set to true
@@ -380,7 +464,7 @@ pub class ArgumentParser {
      * assert (args2 ["foo"].to!{bool} () == false);
      * */
     pub fn flag (mut self, name : [c8], short : [c8] = "", comments : [c8] = "")-> dmut &ArgumentParser {
-        self._flags ~= [Argument (name, short-> short, comment-> comments, type-> none, hyphenated-> true, mandatory-> false)];
+        self._flags ~= [Argument (name, short-> short, comments-> comments, type-> none, hyphenated-> true, mandatory-> false)];
         alias self
     }
 
@@ -390,11 +474,11 @@ pub class ArgumentParser {
      * @params:
      *    - name: the name of the flag
      *    - short: the short name of the flag
-     *    - comment: the comments to display in the help
+     *    - comments: the comments to display in the help
      * @example:
      * ===========
      * let parser = ArgumentParser ()
-     *              :.help ("help", short-> "h", comment-> "print help and exit");
+     *              :.help ("help", short-> "h", comments-> "print help and exit");
      *
      * {
      *    let args1 = parser.parse (["./a.out", "-h"]);
@@ -408,7 +492,7 @@ pub class ArgumentParser {
      * ===========
      * * */
     pub fn help (mut self, name : [c8], short : [c8] = "", comments : [c8] = "")-> dmut &ArgumentParser {
-        self._helps ~= [Argument (name, short-> short, comment-> comments, type-> none, hyphenated-> true, mandatory-> false)];
+        self._helps ~= [Argument (name, short-> short, comments-> comments, type-> none, hyphenated-> true, mandatory-> false)];
         alias self
     }
 
@@ -746,8 +830,8 @@ pub class ArgumentParser {
             stream:.write ("(", o.long, ")");
         } else {
             if (!o.mandatory) stream:.write ("[");
+            if o.short != "" { stream:.write ("-", o.short, ","); }
             stream:.write ("--", o.long);
-            if o.short != "" { stream:.write (",-", o.short); }
             if (!isFlag && !isSub) {
                 stream:.write (" ");
                 self.exportUsageType (o, alias stream);
@@ -775,4 +859,156 @@ pub class ArgumentParser {
             }
         }
     }
+
+    /**
+     * Compute the alignment of the arguments in the command line help
+     * @returns:
+     *    - .0: the alignment of short elements
+     *    - .1: the alignment of long elements
+     *    - .2: the number of mandatory elements
+     *    - .3: the number of optional elements
+     * */
+    prv fn computeHelpAlignment (self)-> (u32, u32, u32, u32) {
+        let mut longAlign = 0u32, mut shortAlign = 0u32;
+        let mut nbOptions = 0u32, mut nbMandatory = 0u32;
+        for i in self._positions {
+            if cast!u32 (i.long.len) > longAlign {
+                longAlign = cast!u32 (i.long.len);
+            }
+        }
+
+        for i in self._options {
+            if cast!u32 (i.long.len + 2) > longAlign { // -short, --long + 4 space before and after
+                longAlign = cast!u32 (i.long.len + 2);
+            }
+
+            if (i.short != "" && cast!u32 (i.short.len + 1) > shortAlign) {
+                shortAlign = cast!u32 (i.short.len + 1);
+            }
+
+            if (i.mandatory) nbMandatory += 1;
+            else nbOptions += 1;
+        }
+
+        for i in self._flags {
+            if cast!u32 (i.long.len + 2) > longAlign { // -short, --long + 4 space before and after
+                longAlign = cast!u32 (i.long.len + 2);
+            }
+
+            if (i.short != "" && cast!u32 (i.short.len + 1) > shortAlign) {
+                shortAlign = cast!u32 (i.short.len + 1);
+            }
+
+            nbOptions += 1;
+        }
+
+        for i in self._helps {
+            if cast!u32 (i.long.len + 2) > longAlign { // -short, --long + 4 space before and after
+                longAlign = cast!u32 (i.long.len + 2);
+            }
+
+            if (i.short != "" && cast!u32 (i.short.len + 1) > shortAlign) {
+                shortAlign = cast!u32 (i.short.len + 1);
+            }
+
+            nbOptions += 1;
+        }
+
+        for i in self._subCommands {
+            if cast!u32 (i.long.len + 2) > longAlign {
+                longAlign = cast!u32 (i.long.len + 2);
+            }
+
+            if (i.short != "" && cast!u32 (i.short.len + 1) > shortAlign) {
+                shortAlign = cast!u32 (i.short.len + 1);
+            }
+
+            if (i.mandatory) nbMandatory += 1;
+            else nbOptions += 1;
+        }
+
+        (shortAlign + 2, longAlign + 2, nbMandatory, nbOptions)
+    }
+
+    /**
+     * Export the helper of an option to the stream
+     * @params:
+     *    - o: the option to export
+     *    - stream: the stream to fill
+     *    - aligns: the short and long alignements
+     *    - hyphenated: add hyphens before option name
+     * */
+    prv fn exportHelpOption (self, o : Argument, dmut stream : &StringStream, aligns : (u32, u32), hyphenated : bool = true) {
+        for _ in 0 .. 4 {
+            stream:.write (" ");
+        }
+
+        let written = if (hyphenated && o.short.len != 0) {
+            stream:.write ("-", o.short, ",");
+            cast!u32 (o.short.len + 2)
+        } else { 0 };
+
+        for _ in written .. aligns.0 {
+            stream:.write (" ");
+        }
+
+        if (hyphenated) {
+            stream:.write ("--", o.long);
+        } else {
+            stream:.write ("  ", o.long);
+        }
+
+        for _ in cast!u32 (o.long.len + 2) .. aligns.1 {
+            stream:.write (" ");
+        }
+
+        stream:.writeln (o.comments);
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ===================================          EXPLAINING          ===================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Explain an malformed error
+     * */
+    prv fn explainMalformed (self, m : &MalformedArgument)-> [c8] {
+        let dmut stream = copy StringStream ();
+        stream:.write ("error parsing argument '", m.key, "'");
+        let mut subError = m.subError;
+
+        while let Ok (sub) = subError {
+            stream:.write (":\n\t=> ");
+            match sub {
+                innerM : &MalformedArgument => {
+                    stream:.write ("error parsing argument '", innerM.key, "'");
+                    subError = innerM.subError;
+                }
+                im : &MissingArgument => {
+                    stream:.write ("missing argument '" ~ im.key ~ "'");
+                    break;
+                }
+                im : &UnknownArgument => {
+                    stream:.write ("unknown argument '" ~ im.key ~ "'");
+                    break;
+                }
+                c : &CastFailure => {
+                    stream:.write ("incompatible types : ", c.from.name, " => ", c.to.name);
+                    break;
+                }
+                _ => {
+                    stream:.write (sub);
+                    break;
+                }
+            }
+        }
+
+        stream[]
+    }
+
+
 }
