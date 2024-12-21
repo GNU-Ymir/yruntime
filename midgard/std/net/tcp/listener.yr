@@ -1,0 +1,330 @@
+/**
+ * This module implements the class 'TcpListener', to create a basic TCP server
+ * and accept clients remote connections.
+ *
+ * @Authors: Emile Cadorel
+ * @Licence: GPLv3
+ */
+
+in listener;
+
+use std::net::{addr, addr::_, tcp::_};
+use etc::c::socket;
+use etc::runtime::errno;
+
+
+@final
+pub class TcpListener {
+
+    // The socket on which the listener listens
+    let mut _sockFd : i32 = 0;
+
+    // The address bounded by the listener
+    let mut _addr : SockAddr;
+
+    // True if accepting ipv4 connections
+    let mut _isV4 : bool = false;
+
+    /**
+     * Create a tcp listener
+     * @params:
+     *    - addr: the address to bind, defining the remote addresses that are accepted by the listener
+     *    - backlog: the maximum length to which the queue of pending connections may grow
+     * @example:
+     * ===========
+     * let dmut server = copy TcpListener (SockAddr (Ipv4::UNSPECIFIED, 8080));
+     * loop {
+     *    let dmut client = server:.accept ();
+     *    client:.sendRaw ("Hello !\n");
+     *    client:.dispose ();
+     * }
+     * ===========
+     * */
+    pub self (addr : SockAddr, backlog : u32 = 10)
+        with _addr = addr
+        throws TcpError
+    {
+        if let SockAddr (ip-> ip : &Ipv6Addr, port-> p) = addr {
+            self._isV4 = false;
+            self:.bindV6 (ip, p, backlog);
+        }
+
+        else if let SockAddr (ip-> ip : &Ipv4Addr, port-> p) = addr {
+            self._isV4 = true;
+            self:.bindV4 (ip, p, backlog);
+        }
+
+        else {
+            throw copy TcpError (TcpErrorCode::ADDR_TYPE, "unknown address type " ~ (addr.ip.__typeinfo__.name));
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          GETTERS          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * @returns: the address bound by the listener
+     * */
+    @field
+    pub fn addr (self)-> SockAddr {
+        self._addr
+    }
+
+    /**
+     * @returns: the handle of the tcp listener
+     * @warning: for low level management only
+     * */
+    pub fn getHandle (self)-> i32 {
+        self._sockFd
+    }
+
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =====================================          ACCEPT          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * When for a new client connection
+     * @returns: the TcpStream used to communicate with the client
+     * @example:
+     * =============
+     * pub fn greets_client (dmut client : &TcpStream) {
+     *    // Communicate with the client
+     *    client:.sendRaw ("Hello !!\n");
+     * }
+     *
+     * let dmut server = copy TcpListener (SockAddrV4::new (Ipv4::LOCALHOST, 4000u16));
+     * loop {
+     *    let dmut client = server:.accept (); // accept blocks until a client is connected
+     *    println ("New client connected : ", client);
+     *    greets_client (alias client);
+     *
+     *    client:.dispose ();
+     * }
+     * */
+    pub fn accept (mut self)-> dmut &TcpStream
+        throws TcpError
+    {
+        if self._isV4 {
+            return self:.acceptV4 ();
+        }
+
+        else {
+            return self:.acceptV6 ();
+        }
+    }
+
+    /**
+     * Accept a new connection inside an ipv4 listener
+     * @returns: the connected client
+     * */
+    prv fn acceptV4 (mut self)-> dmut &TcpStream
+        throws TcpError
+    {
+        let mut client = sockaddr_in ();
+        let mut len = sockaddr_in::size;
+
+        errno (ErrnoValue::NONE);
+        let sock = socket::accept (self._sockFd, alias &client, alias &len);
+        if sock <= 0 {
+            let err = errno ();
+            let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
+
+            throw copy TcpError (TcpErrorCode::ACCEPT, "failed to accept client : (errno = " ~ errStr ~ ")");
+        }
+
+        copy TcpStream (sock, self.readClientAddr (client))
+    }
+
+    /**
+     * Accept a new connection inside an ipv6 listener
+     * @returns: the connected client
+     * */
+    prv fn acceptV6 (mut self)-> dmut &TcpStream
+        throws TcpError
+    {
+        let mut client = sockaddr_in6 ();
+        let mut len = sockaddr_in6::size;
+
+        errno (ErrnoValue::NONE);
+        let sock = socket::accept (self._sockFd, alias &client, alias &len);
+        if sock <= 0 {
+            let err = errno ();
+            let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
+
+            throw copy TcpError (TcpErrorCode::ACCEPT, "failed to accept client : (errno = " ~ errStr ~ ")");
+        }
+
+        copy TcpStream (sock, self.readClientAddr (client))
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ================================          ADDRESS READING          =================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Read the client address from the accepted sockaddr_in structure
+     * @returns: the ipv4 address of the client
+     * */
+    prv fn readClientAddr (self, addr : sockaddr_in)-> SockAddr
+        throws TcpError
+    {
+        if (addr.sin_family != AddressFamily::AF_INET) {
+            throw copy TcpError (TcpErrorCode::ADDR_TYPE, "malformed client address");
+        }
+
+        let h = addr.sin_addr.s_addr;
+        let pack : *u8 = cast!{*u8} (cast!{*void} (&h));
+        let ip = unsafe {
+            copy Ipv4Addr ([pack [0], pack [1], pack [2], pack [3]])
+        };
+
+        SockAddr (ip, ntohs (addr.sin_port))
+    }
+
+    /**
+     * Read the client address from the accepted sockaddr_in structure
+     * @returns: the ipv6 address of the client
+     * */
+    prv fn readClientAddr (self, addr : sockaddr_in6)-> SockAddr
+        throws TcpError
+    {
+        if addr.sin6_family != AddressFamily::AF_INET6 {
+            throw copy TcpError (TcpErrorCode::ADDR_TYPE, "malformed client address");
+        }
+
+        let dmut h = addr.sin6_addr.s6_addr;
+        for i in (0 .. 16).stepBy (2) {
+            let swap = h [i];
+            h [i] = h [i + 1];
+            h [i + 1] = swap;
+        }
+
+        let pack : *u16 = cast!{*u16} (cast!{*void} (h.ptr));
+        let ip = unsafe {
+            copy Ipv6Addr ([pack [0], pack [1],  pack [2], pack [3],
+                            pack [4], pack [5], pack [6], pack [7]])
+        };
+
+        SockAddr (ip, ntohs (addr.sin6_port))
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          BIND V4          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Bind an ipv4 address and start listening on it
+     * */
+    prv fn bindV4 (mut self, addr : &Ipv4Addr, port : u16, backlog : u32)
+        throws TcpError
+    {
+        errno (ErrnoValue::NONE);
+        self._sockFd = socket::socket (AddressFamily::AF_INET, SocketType::SOCK_STREAM, 0);
+        if self._sockFd <= 0 {
+            let err = errno ();
+            let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
+
+            throw copy TcpError (TcpErrorCode::SOCKET_CREATION, "failed to create socket : (errno = " ~ errStr ~ ")");
+        }
+
+        let ina = in_addr (s_addr-> addr.toN ());
+        let mut servaddr = sockaddr_in (sin_family-> AddressFamily::AF_INET,
+                                        sin_addr-> ina,
+                                        sin_port-> htons (port));
+
+        if socket::bind (self._sockFd, &servaddr, cast!u32 (sockaddr_in::size)) != 0 {
+            let err = errno ();
+            let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
+
+            throw copy TcpError (TcpErrorCode::BIND, "failed to bind : (errno = " ~ errStr ~ ")");
+        }
+
+
+        if socket::listen (self._sockFd, cast!i32 (backlog)) != 0 {
+            let err = errno ();
+            let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
+
+            throw copy TcpError (TcpErrorCode::BIND, "failed to listen : (errno = " ~ errStr ~ ")");
+        }
+
+        if port == 0 {
+            let mut len = sockaddr_in::size;
+            let r = socket::getsockname (self._sockFd, alias &servaddr, alias &len);
+            if r == 0 {
+                self._addr = SockAddr (addr, servaddr.sin_port);
+            }
+        }
+    }
+    
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          BIND V6          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Bind an ipv6 address and start listening on it
+     * */
+    prv fn bindV6 (mut self, addr : &Ipv6Addr, port : u16, backlog : u32)
+        throws TcpError
+    {
+        errno (ErrnoValue::NONE);
+        self._sockFd = socket::socket (AddressFamily::AF_INET6, SocketType::SOCK_STREAM, 0);
+        if self._sockFd <= 0 {
+            let err = errno ();
+            let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
+
+            throw copy TcpError (TcpErrorCode::SOCKET_CREATION, "failed to create socket : (errno = " ~ errStr ~ ")");
+        }
+
+        let ina = in6_addr (s6_addr-> addr.toN ());
+        let mut servaddr = sockaddr_in6 (sin6_family-> AddressFamily::AF_INET6,
+                                         sin6_port-> htons (port),
+                                         sin6_addr-> ina);
+
+
+        if socket::bind (self._sockFd, &servaddr, cast!u32 (sockaddr_in6::size)) != 0 {
+            let err = errno ();
+            let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
+
+            throw copy TcpError (TcpErrorCode::BIND, "failed to bind : (errno = " ~ errStr ~ ")");
+        }
+
+
+        if socket::listen (self._sockFd, cast!i32 (backlog)) != 0 {
+            let err = errno ();
+            let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
+
+            throw copy TcpError (TcpErrorCode::BIND, "failed to listen : (errno = " ~ errStr ~ ")");
+        }
+
+        if port == 0 {
+            let mut len = sockaddr_in6::size;
+            let r = socket::getsockname (self._sockFd, alias &servaddr, alias &len);
+            if r == 0 {
+                self._addr = SockAddr (addr, servaddr.sin6_port);
+            }
+        }
+    }
+
+}
