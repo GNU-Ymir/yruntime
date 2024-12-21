@@ -1,0 +1,531 @@
+/**
+ * This class implement a tcp stream used to send remote message
+ * @Authors: Emile Cadorel
+ * @Licence: GPLv3
+ * <hr>
+ * */
+
+in stream;
+
+use std::net::{addr, addr::_, tcp::errors};
+use etc::c::socket;
+use etc::runtime::errno;
+
+use std::traits;
+
+/**
+ * A tcp stream is a tcp connection from a client to a server, or a server to a client.
+ * It can be acquired directly by construction, or using a TcpListener when accepting clients.
+ * @example:
+ * ===============
+ * pub fn greets_client (dmut client : &TcpStream) {
+ *    // Communicate with the client
+ *    client:.rawSend ("Hello !!"s8);
+ * }
+ *
+ * let dmut server = copy TcpListener (SockAddr ("127.0.0.1", 8080));
+ * loop {
+ *    // Accept creates a TcpStream to a connected client
+ *    let dmut client = server:.accept ();
+ *    println ("New client connected : ", client);
+ *    greets_client (client);
+ *
+ *    // Closing the connection to the client
+ *    client:.dispose ();
+ * }
+ * ===============
+ *
+ * A TcpStream is also used on the client side to connect to a tcp server.
+ * @example:
+ * ===
+ * let dmut client = copy TcpStream (SockAddr ("127.0.0.1", 8080));
+ * println ("Message from server : ", client:.rawReceive!{c8} (8us));
+ *
+ * // client is automatically closed when garbabe collected
+ * // but it is recommanded to close it manually to avoid opening too many sockets
+ * client:.dispose ();
+ * ===
+ */
+@final
+pub class TcpStream {
+
+    // Set to true when the socket fails
+    let mut _error : bool = false;
+
+    // The file descriptor of the socket
+    let mut _sockFd : i32 = 0;
+
+    // The ip address to which the stream is connected
+    let mut _addr : SockAddr;
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =====================================          CTORS          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Create a empty tcp stream
+     * */
+    pub self empty ()
+        with _addr = SockAddr (Ipv4::UNSPECIFIED, 0)
+    {}
+
+    /**
+     * Create a tcp stream with an already opened socket (e.g. for tcp listener)
+     * */
+    pub self (sock : i32, addr : SockAddr)
+        with _sockFd = sock
+        , _addr = addr
+    {}
+
+    /**
+     * Connect the stream to 'addr'
+     * @example:
+     * ==========
+     * use std::net::tcp::_;
+     *
+     * let addr = SockAddr (Ipv4::LOCALHOST, 8080);
+     * let dmut client = copy TcpStream (addr);
+     *
+     * client:.rawSend ("Ping !");
+     * client:.dispose ();
+     * ==========
+     * */
+    pub self connect (addr : SockAddr)
+        with _addr = addr
+        throws TcpError
+    {
+        if let SockAddr (ip-> ip : &Ipv6Addr, port-> p) = addr {
+            self:.connectV6 (ip, p);
+        }
+
+        else if let SockAddr (ip-> ip : &Ipv4Addr, port-> p) = addr {
+            self:.connectV4 (ip, p);
+        }
+
+        else {
+            throw copy TcpError (TcpErrorCode::ADDR_TYPE, "unknown address type " ~ (addr.ip.__typeinfo__.name));
+        }
+    }
+
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          GETTERS          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * @returns: the address to which the stream is connected
+     * */
+    @field
+    pub fn addr (self)-> SockAddr {
+        self._addr
+    }
+
+    /**
+     * @returns: the file descriptor of the socket
+     * @warning: for low level management only
+     * */
+    pub fn getHandle (self)-> i32 {
+        self._sockFd
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          SENDING          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Send a raw bytes to the stream
+     * @params:
+     *    - val: the value to send
+     * @throws:
+     *    - TcpError: if the sending failed
+     * */
+    pub fn if isScalar!{T} send {T} (mut self, val : T)
+        throws TcpError
+    {
+        self:.innerSendRaw (cast!{*u8} (cast!{*void} (&val)), cast!u32 (T::size));
+    }
+
+    /**
+     * Send raw bytes to the stream
+     * @params:
+     *    - val: the value to send
+     * @throws:
+     *    - TcpError: if the sending failed
+     * */
+    pub fn if isTuple!{T} send {T} (mut self, val : T)
+        throws TcpError
+    {
+        for i in val {
+            self:.send (i);
+        }
+    }
+
+    /**
+     * Send a slice to the stream
+     * @params:
+     *    - val: the value to send
+     * @throws:
+     *    - TcpError: if the sending failed
+     *
+     * @info: Send the slice with metadatas to make it reconstructible on the other end without additional informations.
+     * @example:
+     * =========
+     * // With serialization
+     * stream:.send (copy [1, 2, 3, 4]);
+     * client:.receive!{[i32]} () == [1, 2, 3, 4];
+     * =========
+     * */
+    pub fn send {T of [U], U} (mut self, val : T)
+        throws TcpError
+    {
+        self:.send (val.len);
+        for i in val {
+            self:.send (i);
+        }
+    }
+
+    /**
+     * Send a slice to the stream
+     * @params:
+     *    - val: the value to send
+     * @throws:
+     *    - TcpError: if the sending failed
+     *
+     * @info: Send only the bytes of the slice without metadatas to make it reconstructible.
+     * @example:
+     * =========
+     * // Without serialization
+     * stream:.sendRaw (copy [1, 2, 3, 4]);
+     *
+     * let dmut result = copy [0 ; 4];
+     * client:.receiveRaw (alias result); // raw receive of the data in the slice
+     * ========
+     * */
+    pub fn if isScalar!{U} sendRaw {T of [U], U} (mut self, val : T)
+        throws TcpError
+    {
+        self:.innerSendRaw (cast!{*u8} (cast!{*void} (val.ptr)), cast!u32 (val.len));
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ===================================          RECEIVING          ====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Receive a raw bytes to the stream
+     * @returns: the received value
+     * @throws:
+     *    - TcpError: if the receiving failed
+     * */
+    pub fn if isScalar!{T} receive {T} (mut self)-> T
+        throws TcpError
+    {
+        let mut t : T = T::init;
+        self:.innerReceiveRaw (cast!{*u8} (cast!{*void} (&t)), cast!u32 (T::size));
+    }
+
+    /**
+     * Receive raw bytes to the stream
+     * @params:
+     *    - val: the value to receive
+     * @throws:
+     *    - TcpError: if the receiveing failed
+     * */
+    pub fn if isTuple!{T} receive {T} (mut self)-> T
+        throws TcpError
+    {
+        let dmut buffer : [u8 ; T::size] = [0u8 ; T::size];
+        let infos = __pragma!field_infos (T);
+        cte for i in 0 .. T::arity {
+            let f = self:.receive!{__pragma!field_type (T, i)} ();
+            etc::c::memory::memory (cast!{*void} (buffer.ptr + infos [i].offset), cast!{*void} (&f), typeof (f)::size);
+        }
+
+        unsafe {
+            return *(etc::runtime::memory::Runtime!{*u8, *T}::_yrt_unsafe_cast (buffer.ptr));
+        }
+    }
+
+    /**
+     * Send a slice to the stream
+     * @params:
+     *    - val: the value to send
+     *    - limit: the limit of the slice that can be received (accepting anything <= 'limit')
+     * @throws:
+     *    - TcpError: if the receiving failed
+     *
+     * @info: Send the slice with metadatas to make it reconstructible on the other end without additional informations.
+     * @example:
+     * =========
+     * // With serialization
+     * stream:.send (copy [1, 2, 3, 4]);
+     *
+     * // Setting a receive limit of 8, refusing anything bigger to avoid big memory allocation from network requests
+     * client:.receive!{[i32]} (limit-> 8) == [1, 2, 3, 4];
+     * =========
+     * */
+    pub fn receive {T of [U], U} (mut self, limit : usize = 1024)-> mut [mut U]
+        throws TcpError
+    {
+        let len = self:.receive!{usize} ();
+        if len > limits {
+            let a = std::conv::to!{[c8]} (limit);
+            let b = std::conv::to!{[c8]} (len);
+            throw copy TcpError (TcpErrorCode::SOCKET_CLOSED, "Slice reception too big : " ~ a ~ " < " ~ b);
+        }
+
+        let mut result : [mut U] = core::types::array::allocArray!{U} (len);
+        for i in val {
+            result [i] = self:.receive!{U} ();
+        }
+
+        alias result
+    }
+
+    /**
+     * Raw receive of a pre allocated slice of data
+     * @params:
+     *    - val: the value to receive
+     * @throws:
+     *    - TcpError: if the reception failed
+     *
+     * @info: Receive only the bytes of the slice
+     * @example:
+     * =========
+     * // Without serialization
+     * stream:.sendRaw (copy [1, 2, 3, 4]);
+     *
+     * let dmut result = copy [0 ; 4];
+     * client:.receiveRaw (alias result); // raw receive of the data in a preallocated slice
+     * ========
+     * */
+    pub fn if isScalar!{U} receiveRaw {T of [U], U} (mut self, dmut result : T)
+        throws TcpError
+    {
+        self:.innerReceiveRaw (cast!{*u8} (cast!{*void} (result.ptr)), cast!u32 (result.len));
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          CLOSING          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Dispose the stream by closing the socket
+     * */
+    pub fn dispose (mut self) {
+        if self._sockFd > 0 {
+            socket::shutdown (self._sockFd, ShutdownCodes::SHUT_RDWR);
+
+            let ling = linger (1, 0);
+            socket::setsockopt (self._sockFd, // free the port of the socket
+                                SocketOptions::SOL_SOCKET,
+                                SocketOptions::SO_LINGER,
+                                cast!{*void} (&ling),
+                                cast!u32 (linger::size));
+
+            socket::close (self._sockFd);
+
+            self._sockFd = 0;
+            self._addr = SockAddr (Ipv4::UNSPECIFIED, 0);
+            self._error = false;
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ======================================          MISC          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    impl std::stream::Streamable {
+        pub over toStream (self, dmut stream : &std::stream::StringStream) {
+            stream:.write (self.__typeinfo__.name):.write (" (");
+            if self._sockFd == 0 || self._error {
+                stream:.write ("CLOSED)");
+            } else {
+                stream:.write ("OPEN-> ", self._addr, ")");
+            }
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ======================================          DTOR          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+
+    __dtor (mut self) {
+        self:.dispose ();
+    }
+
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =================================          CONNECTION V4          ==================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Connect the stream to an ipv4 address
+     * */
+    prv fn connectV4 (mut self, addr : &Ipv4Addr, port : u16)
+        throws TcpError
+    {
+        errno (ErrnoValue::NONE);
+        self._sockFd = socket::socket (AddressFamily::AF_INET, SocketType::SOCK_STREAM, 0);
+        if self._sockFd <= 0 {
+            let err = errno ();
+            let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
+
+            throw copy TcpError (TcpErrorCode::SOCKET_CREATION, "failed to create socket : (errno = " ~ errStr ~ ")");
+        }
+
+        let ina = in_addr (s_addr-> addr.toN ());
+        let servaddr = sockaddr_in (sin_family-> AddressFamily::AF_INET,
+                                    sin_addr-> ina,
+                                    sin_port-> htons (port));
+
+        errno (ErrnoValue::NONE);
+        if socket::connect (self._sockFd, &servaddr, cast!u32 (sockaddr_in::size)) != 0 {
+            let err = errno ();
+            let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
+
+            throw copy TcpError (TcpErrorCode::CONNECT, "failed to connect : (errno = " ~ errStr ~ ")");
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =================================          CONNECTION V6          ==================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Connect the stream to an ipv6 address
+     * */
+    prv fn connectV6 (mut self, addr : &Ipv6Addr, port : u16)
+        throws TcpError
+    {
+        errno (ErrnoValue::NONE);
+        self._sockFd = socket::socket (AddressFamily::AF_INET6, SocketType::SOCK_STREAM, 0);
+        if self._sockFd <= 0 {
+            let err = errno ();
+            let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
+
+            throw copy TcpError (TcpErrorCode::SOCKET_CREATION, "failed to create socket : (errno = " ~ errStr ~ ")");
+        }
+
+        let ina = in6_addr (s6_addr-> addr.toN ());
+        let servaddr = sockaddr_in6 (sin6_family-> AddressFamily::AF_INET6,
+                                     sin6_port-> htons (port),
+                                     sin6_addr-> ina);
+
+        if socket::connect (self._sockFd, &servaddr, cast!u32 (sockaddr_in6::size)) != 0 {
+            let err = errno ();
+            let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
+
+            throw copy TcpError (TcpErrorCode::SOCKET_CREATION, "failed to connect : (errno = " ~ errStr ~ ")");
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =================================          INNER SENDING          ==================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Send raw datas to the stream
+     * */
+    prv fn innerSendRaw (mut self, val : *u8, len : u32)
+        throws TcpError
+    {
+        if self._sockFd == 0 || self._error {
+            throw copy TcpError (TcpErrorCode::SOCKET_CLOSED, "Remote connection closed");
+        }
+
+        let mut lenToSend = len;
+        let mut cur : *u8 = val;
+        while lenToSend != 0 {
+            errno (ErrnoValue::NONE);
+            let sent = socket::send (self._sockFd, cast!{*void} (cur), lenToSend, 0);
+            if sent < 1 {
+                self._error = true;
+                let err = errno ();
+                let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
+
+                throw copy TcpError (TcpErrorCode::SOCKET_CLOSED, "failed to send : (errno = " ~ errStr ~ ")");
+            }
+
+            lenToSend -= cast!u32 (sent);
+            cur += cast!usize (sent);
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ================================          INNER RECEIVING          =================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Raw receive of datas from the stream
+     * */
+    prv fn innerReceiveRaw (mut self, val : *u8, len : u32)
+        throws TcpError
+    {
+        if self._sockFd == 0 || self._error {
+            throw copy TcpError (TcpErrorCode::SOCKET_CLOSED, "Remote connection closed");
+        }
+
+        let mut cur : *u8 = val;
+        let mut lenToRecv = len;
+        while lenToRecv != 0 {
+            errno (ErrnoValue::NONE);
+            let recv = socket::recv (self._sockFd, cast!{*void} (cur), lenToRecv, 0);
+            if recv < 1 {
+                self._error = true;
+                let err = errno ();
+                let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
+
+                throw copy TcpError (TcpErrorCode::SOCKET_CLOSED, "failed to receive : (errno = " ~ errStr ~ ")");
+            }
+
+            cur += cast!usize (recv);
+            lenToRecv -= cast!u32 (recv);
+        }
+    }
+}
