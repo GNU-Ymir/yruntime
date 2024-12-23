@@ -1,0 +1,367 @@
+/**
+ * Private internal module implementing the formatters
+ *
+ * @Authors: Emile Cadorel
+ * @Licence: GPLv3
+ * <hr>
+ *
+ * */
+
+
+in implem;
+
+use std::{traits, stream};
+use std::format::errors;
+
+/**
+ * Format a tuple into the stream
+ * */
+pub fn if isTuple!{T} format {T} (str : [c8], ref a : T, dmut stream : &StringStream)
+    throws FormatError
+{
+    let mut i = 0us, mut current = 0us;
+    {
+        while i < str.len {
+            if str [i] == '{' && str.len > i + 1 {
+                if str [i + 1] == '}' {
+                    formatValue!{T} (a, alias stream, current, i);
+                    current += 1;
+                    i += 1;
+                }
+
+                else if str [i + 1] == ':' {
+                    let (endI, current_) = specialFormat (str [i + 2 .. $], a, alias stream, current, i);
+                    current = current_ + 1;
+                    i += endI + 2;
+                    if (str [i] != '}') throw copy FormatError (current, "Expected '}', not " ~ str [i .. i + 1]);
+                }
+
+                else if str [i + 1] == '{' {
+                    stream:.write (str [i]);
+                    i += 1;
+                }
+
+                else {
+                    let (arg, endI) = getInt (str [i + 1 .. $]);
+                    i += endI + 1;
+                    if (str [i] == '}') formatValue!{T} (a, alias stream, cast!usize (arg), i);
+                    else if str [i] == ':' {
+                        let (endI_, _) = specialFormat!{T} (str [i + 1 .. $], a, alias stream, cast!usize (arg), i, explicitIndex-> true);
+                        i += endI_ + 1;
+                        if (str [i] != '}') throw copy FormatError (current, "Expected '}', not " ~ str [i .. i + 1]);
+                    } else {
+                        throw copy FormatError (current, "Expected '}' or ':', not " ~ str [i .. i + 1]);
+                    }
+                }
+            } else {
+                stream:.write (str [i]);
+            }
+            i += 1;
+        }
+    } catch {
+        x : &FormatError => throw x;
+        err => throw copy FormatError (current, "", subError-> err?);
+    }
+}
+
+
+/**
+ * Format with a special formatter (using a ':' and not just '{}')
+ * */
+fn specialFormat {T} (str : [c8], ref a : T, dmut stream : &StringStream, index : usize, explicitIndex : bool = false, globalIndex : usize)-> (usize, usize)
+    throws FormatError
+{
+    let (fill, align, paramWidth, width, i_) = extractAlign (str);
+    let (sign, j_) = if (str [i_] == '+') { (true, i_ + 1) } else { (false, i_) };
+    let (type, k_) = if (str [j_ .. $].len > 1 && isType (str [j_])) {
+        (str [j_], j_ + 1)
+    } else {
+        ('\u{0}', j_)
+    };
+
+    let (prec, paramPrec, l_) = if (str [k_ .. $].len > 2 && str [k_] == '.') {
+        if (str [k_ + 1] == '*') {
+            (0u32, true, k_ + 2)
+        } else {
+            let (w, z_) = getInt (str [k_ + 1 .. $]);
+            (w, false, k_ + 1 + z_)
+        }
+    } else {
+        (0u32, false, k_)
+    };
+
+    let used = if explicitIndex { 0us
+    } else if (paramWidth && paramPrec) { 2us
+    } else if (paramPrec || paramWidth) { 1us
+    } else { 0us };
+
+    formatValue!{T} (a,
+                     alias stream,
+                     fill,
+                     align,
+                     sign,
+                     type,
+                     width,
+                     paramWidth,
+                     prec,
+                     paramPrec,
+                     index + used,
+                     globalIndex);
+
+    (l_, index + used + 1)
+} catch {
+    x : &FormatError => throw x;
+    err => throw copy FormatError (index, "", subError-> err?);
+}
+
+/**
+ * Extract the alignement of the format
+ * @params:
+ *    - str: the string format
+ * @returns:
+ *    - .0: the filling char
+ *    - .1: the align char
+ *    - .2: true if using an index element for the width
+ *    - .3: the size of the alignement (applicable only iif .2 == false)
+ *    - .4: the number of chars read
+ * */
+fn extractAlign (str : [c8])-> (c8, c8, bool, u32, usize)
+    throws std::conv::errors::CastFailure
+{
+    if str.len > 1 && (str [0] == '<' || str [0] == '^' || str [0] == '>') {
+        if str.len > 2 && str [1] >= '0' && str [1] <= '9' {
+            let (len, end) = getInt (str [1 .. $]);
+            return (' ', str [0], false, len, end + 1us);
+        } else if str.len > 2 && str [1] == '*' {
+            return (' ', str [0], true, 0, 2);
+        }
+
+        return (' ', str [0], false, 0, 1);
+    }
+
+    if str.len > 2 && (str [1] == '<' || str [1] == '^' || str [1] == '>') {
+        if str.len > 3 && (str [2] >= '0' && str [2] <= '9') {
+            let (len, end) = getInt (str [2 .. $]);
+            return (str [0], str [1], false, len, end + 2us);
+        } else if str.len > 3 && str [2] == '*' {
+            return (str [0], str [1], true, 0, 3);
+        }
+
+        return (str [0], str [1], false, 0, 2);
+    }
+
+    ('\u{0}', '\u{0}', false, 0, 0)
+}
+
+/**
+ * @returns: true if the char is a type defining char
+ * */
+fn isType (c : c8)-> bool {
+    match c {
+        'o' => { true }
+        'x' => { true }
+        'b' => { true }
+        'e' => { true }
+        'X' => { true }
+        _ => { false }
+    }
+}
+
+/**
+ * Write a value from the tuple in the stream
+ * @params:
+ *    - a: the tuple containing the values to format
+ *    - stream: the stream
+ *    - index: the index in the tuple
+ *    - globalIndex: the index of the formatter
+ * */
+fn if isTuple!{T} formatValue {T} (ref a : T, dmut stream : &StringStream, index : usize, globalIndex : usize)
+    throws FormatError
+{
+    if (index > T::arity) throw copy FormatError (globalIndex, "No argument " ~ std::conv::to!{[c8]} (index));
+    for i, j in a {
+        if i == index {
+            stream:.write (j);
+            return;
+        }
+    }
+}
+
+/**
+ * Write a value from the tuple in the stream with special formatting
+ * @params:
+ *    - a: the tuple containing the values to format
+ *    - stream: the stream
+ *    - index: the index in the tuple
+ *    - globalIndex: the index of the formatter
+ * */
+fn if isTuple!{T} formatValue {T} (ref a : T, dmut stream : &StringStream, fill : c8, align : c8, sign : bool, type : c8, width : u32, startWidth : bool, prec : u32, startPrec : bool, index : usize, globalIndex : usize)
+    throws FormatError
+{
+    if (index > T::arity) throw copy FormatError (globalIndex, "No argument " ~ std::conv::to!{[c8]} (index));
+    let mut gotWidth = false, mut gotPrec = false, mut resWidth = width, mut resPrec = prec;
+
+    for j, x in a {
+        if startWidth && !startPrec && j == index - 1 {
+            cte if !isIntegral!{typeof (x)} throw copy FormatError (globalIndex, "Alignment width (at position " ~ std::conv::to!{[c8]} (index - 1us) ~ " must be an integer");
+            else {
+                resWidth = cast!u32 (x);
+                gotWidth = true;
+            }
+        }
+
+        else if startWidth && startPrec && j == index - 2 {
+            cte if !isIntegral!{typeof (x)} throw copy FormatError (globalIndex, "Alignment width (at position " ~ std::conv::to!{[c8]} (index - 2us) ~ " must be an integer");
+            else {
+                resWidth = cast!u32 (x);
+                gotWidth = true;
+            }
+        }
+
+        else if startPrec && j == index - 1 {
+            cte if !isIntegral!{typeof (x)} throw copy FormatError (globalIndex, "Precision (at position " ~ std::conv::to!{[c8]} (index - 1us) ~ " must be an integer");
+            else {
+                resPrec = cast!u32 (x);
+                gotPrec = true;
+            }
+        }
+
+        else if j == index {
+            if startWidth && !gotWidth throw copy FormatError (globalIndex, "Undefined alignment width for argument at position " ~ std::conv::to!{[c8]} (index));
+            if startPrec && !gotPrec throw copy FormatError (globalIndex, "Undefined precision for argument at position " ~ std::conv::to!{[c8]} (index));
+
+            let elem = {
+                convertValue (x, sign, type, resPrec)
+            } catch {
+                err => throw copy FormatError (globalIndex, "", subError-> err?);
+            };
+
+            if elem.len < resWidth {
+                formatAlign (alias stream, elem, align, cast!usize (resWidth), fill);
+            } else {
+                stream:.write (elem);
+            }
+
+            return;
+        }
+    }
+}
+
+/**
+ * Write the element following a given alignement
+ * @params:
+ *    - stream: the stream to fill
+ *    - elem: the content to write
+ *    - align: the char defining the kind of alignement
+ *    - width: the width of the alignement
+ *    - fill: the char used to align
+ * */
+fn formatAlign (dmut stream : &StringStream, elem : [c8], align : c8, width : usize, fill : c8) {
+    if align == '<' {
+        stream:.write (elem);
+        for _ in elem.len .. width {
+            stream:.write (fill);
+        }
+    }
+
+    else if align == '>' {
+        for _ in 0 .. (width - elem.len) {
+            stream:.write (fill);
+        }
+        stream:.write (elem);
+    }
+
+    else {
+        let toAdd = width + 1 - elem.len;
+        for _ in 0 .. toAdd / 2 {
+            stream:.write (fill);
+        }
+        stream:.write (elem);
+        for _ in 0 .. toAdd - (toAdd / 2) {
+            stream:.write (fill);
+        }
+    }
+}
+
+
+/**
+ * Convert a float value according to a formatter
+ * @params:
+ *    - value: the value to convert
+ * */
+fn if isFloating!{T} convertValue {T} (value : T, sign : bool, type : c8, prec : u32)-> [c8]
+    throws AssertError
+{
+    let m_prec = if (prec == 0) { 5u32 } else { prec };
+    let mut res = "";
+    match type {
+        '\u{0}' => { res = std::conv::to!{[c8]} (value, prec-> m_prec); }
+        'e' => { res = std::conv::to!{[c8], "e"} (value, prec-> m_prec); }
+        _ => {
+            throw copy AssertError ("Invalid type format " ~ copy [type] ~ " for type " ~ T::typeid);
+        }
+    }
+
+    if sign && value > cast!{T} (0.0) { return "+" ~ res; }
+    else {
+        res
+    }
+}
+
+/**
+ * Convert a unsigned int value according to a formatter
+ * @params:
+ *    - value: the value to convert
+ * */
+fn if isIntegral!{T} convertValue {T} (value : T, sign : bool, type : c8, prec : u32)-> [c8]
+    throws AssertError
+{
+    if prec > 0u32 { throw copy AssertError ("Precision only applies on floating types"); }
+    let mut res = "";
+    match type {
+        '\u{0}' => { res = std::conv::to!{[c8]} (value); }
+        'b' => { res = std::conv::to!{[c8], "b"} (value); }
+        'o' => { res = std::conv::to!{[c8], "o"} (value); }
+        'x' => { res = std::conv::to!{[c8], "x"} (value); }
+        'X' => {
+            res = std::conv::to!{[c8], "x"} (value, upper-> true);
+        }
+        _ => {
+            throw copy AssertError ("Invalid type format " ~ copy [type] ~ " for type " ~ T::typeid);
+        }
+    }
+
+    if sign && value > cast!{T} (0) { return copy "+" ~ res; }
+    else {
+        res
+    }
+}
+
+/**
+ * Convert a string according to a formatter
+ * @params:
+ *    - value: the value to convert
+ * */
+fn convertValue {T} (value : T, sign : bool, type : c8, prec : u32)-> [c8]
+    throws AssertError
+{
+    if prec > 0u32     throw copy AssertError ("Precision only applies on floating types");
+    if type != '\u{0}' throw copy AssertError ("Invalid type format " ~ copy [type] ~ " for type " ~ T::typeid);
+    if sign            throw copy AssertError ("Sign only applies on floating and int types");
+
+    return std::conv::to!{[c8]} (value);
+}
+
+
+/**
+ * Read an int the beginning of the string
+ * */
+fn getInt (str : [c8])-> (u32, usize)
+    throws std::conv::errors::CastFailure
+{
+    for i in 0 .. str.len {
+        if str [i] < '0' || str [i] > '9' { return (std::conv::to!{u32} (str [0 .. i]), i); }
+    }
+
+    return (std::conv::to!{u32} (str), str.len);
+}

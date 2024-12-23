@@ -1,0 +1,50 @@
+/**
+ * This module implement the error classes thrown when formatting is invalid.
+ *
+ * @Authors: Emile Cadorel
+ * @Licence: GPLv3
+ * <hr>
+ *
+ * */
+
+in errors;
+
+@final
+pub class FormatError over core::exception::Exception {
+
+    // The index of the formatter in the format string
+    pub let index : usize;
+
+    // The message explaining the error
+    pub let msg : [c8];
+
+    // The sub error adding explaination
+    pub let sub : (&core::exception::Exception)? = none;
+
+    /**
+     * @params:
+     *   - index: the index of the formatter producing an error in the format string
+     *   - msg: the message explaining the error
+     * */
+    pub self (index : usize, msg : [c8], subError : (&core::exception::Exception)? = none)
+        with index = index
+        , msg = msg
+        , sub = subError
+    {}
+
+    impl std::stream::Streamable {
+        pub over toStream (self, dmut stream : &std::stream::StringStream) {
+            stream:.write (self.__typeinfo__.name);
+            stream:.write ("(Invalid formatter ", self.index);
+            if (self.msg != "") stream:.write (", ", self.msg);
+            stream:.write (")");
+
+            if let Ok (sub) = self.sub {
+                stream:.writeln (""):.write (" => "s8):.write ("\t"s8):.write (sub);
+            } else if (self.hasTrace ()) {
+                stream:.writeln (""):.write (":"s8):.write (self.getStackTrace ());
+            }
+        }
+    }
+
+}

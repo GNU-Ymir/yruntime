@@ -35,7 +35,7 @@ pub extern (C) fn _yrt_string_to_fsize (s : [c8], ref mut succ : bool)-> fsize;
  */
 
 
-pub fn if (isIntegral!{U} && isChar!{C}) to {C, U} (a : U, base : U) -> C {
+pub fn if (isIntegral!{U} && isChar!{C}) to {C, U} (a : U, base : U, upper : bool) -> C {
     match a {
         0us => { return '0'; }
         1us => { return '1'; }
@@ -52,7 +52,12 @@ pub fn if (isIntegral!{U} && isChar!{C}) to {C, U} (a : U, base : U) -> C {
                 panic;
             }
 
-            return cast!C (cast!c8 (cast!u8 ('a') + cast!u8 (a - 10)));
+            let c = cast!C (cast!c8 (cast!u8 ('a') + cast!u8 (a - 10)));
+            if (upper) {
+                return std::char::toUpper (c);
+            }
+
+            c
         }
     }
 }

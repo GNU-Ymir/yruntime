@@ -125,9 +125,9 @@ pub fn if (isUnsigned!{F} && isChar!{U}) to {T of [U], U, F} (a : F) -> dmut T {
  * assert (x == "0xc" && y == "0x36f");
  * ==========
  */
-pub fn if (isUnsigned!{F} && isChar!{U}) to {T of [U], U, "x", F} (a : F) -> dmut T {
+pub fn if (isUnsigned!{F} && isChar!{U}) to {T of [U], U, "x", F} (a : F, upper : bool = false) -> dmut T {
     let dmut res : T = copy cast!{T} ("0x");
-    res ~= to!{T, 16, F} (a);
+    res ~= to!{T, 16, F} (a, upper-> upper);
     alias res
 }
 
@@ -157,7 +157,7 @@ pub fn if (isUnsigned!{F} && isChar!{U}) to {T of [U], U, "b", F} (a : F) -> dmu
  * ==========
  */
 pub fn if (isUnsigned!{F} && isChar!{U}) to {T of [U], U, "o", F} (a : F) -> dmut T {
-    let dmut res : T = copy cast!{T} ("0x");
+    let dmut res : T = copy cast!{T} ("0o");
     res ~= to!{T, 8, F} (a);
     alias res
 }
@@ -175,7 +175,7 @@ pub fn if (isUnsigned!{F} && isChar!{U}) to {T of [U], U, "o", F} (a : F) -> dmu
  * assert (x == "11" && y == "2cf");
  * ==========
  */
-pub fn if (isUnsigned!{I} && isChar!{C} && isIntegral!{N}) to {T of [C], C, base : N, I, N} (a : I) -> dmut T {
+pub fn if (isUnsigned!{I} && isChar!{C} && isIntegral!{N}) to {T of [C], C, base : N, I, N} (a : I, upper : bool = false) -> dmut T {
     cte assert (36 >= base, "Maximum base is 36");
 
     if (a == 0) {
@@ -192,7 +192,7 @@ pub fn if (isUnsigned!{I} && isChar!{C} && isIntegral!{N}) to {T of [C], C, base
     let dmut res = core::types::array::allocArray!(C) (len);
     let mut j : I = 1;
     for i in len .. 0us {
-        res [i - 1us] = std::conv::utils::to!C ((a / j) % cast!{I} (base), cast!{I} (base));
+        res [i - 1us] = std::conv::utils::to!C ((a / j) % cast!{I} (base), cast!{I} (base), upper-> upper);
         j *= cast!{I} (base);
     }
 
@@ -231,8 +231,8 @@ pub fn if (isSigned!{F} && isChar!{U}) to {T of [U], U, F} (a : F) -> dmut [U] {
  * assert (x == "0xc" && y == "0x36f");
  * ==========
  */
-pub fn if (isSigned!{F} && isChar!{U}) to {T of [U], U, "x", F} (a : F) -> dmut [U] {
-    let dmut res = to!{T, 16, F} (a);
+pub fn if (isSigned!{F} && isChar!{U}) to {T of [U], U, "x", F} (a : F, upper : bool = false) -> dmut [U] {
+    let dmut res = to!{T, 16, F} (a, upper-> upper);
     if (res.len > 0 && res [0] == '-') {
         let dmut res2 : [U] = copy cast!{T} ("-0x");
         res2 ~= res [1 .. $];
@@ -308,7 +308,7 @@ pub fn if (isSigned!{F} && isChar!{U}) to {T of [U], U, "o", F} (a : F) -> dmut 
  * assert (x == "-15" aa y == "-9d0k");
  * ===========
  */
-pub fn if (isSigned!{I} && isChar!{C} && isIntegral!{N}) to {T of [C], C, base : N, I, N} (a : I) -> dmut T {
+pub fn if (isSigned!{I} && isChar!{C} && isIntegral!{N}) to {T of [C], C, base : N, I, N} (a : I, upper : bool = false) -> dmut T {
     cte assert (36 >= base, "Maximum base is 36 < " ~ base);
 
     if (a == 0)  {
@@ -328,7 +328,7 @@ pub fn if (isSigned!{I} && isChar!{C} && isIntegral!{N}) to {T of [C], C, base :
     if (!sign) {
         let dmut res = core::types::array::allocArray!(C)(len);
         for i in len .. 0us {
-            res [i - 1us] = std::conv::utils::to!C ((a / j) % cast!I (base), cast!I (base));
+            res [i - 1us] = std::conv::utils::to!C ((a / j) % cast!I (base), cast!I (base), upper);
             j *= cast!I (base);
         }
 
@@ -338,7 +338,7 @@ pub fn if (isSigned!{I} && isChar!{C} && isIntegral!{N}) to {T of [C], C, base :
         res [0] = '-';
 
         for i in len .. 0us {
-            res [i] = std::conv::utils::to!C ((-a / j) % cast!I (base), cast!I (base));
+            res [i] = std::conv::utils::to!C ((-a / j) % cast!I (base), cast!I (base), upper);
             j *= cast!I (base);
         }
 
@@ -468,15 +468,15 @@ pub fn if (isChar!{U} && isFloating!{F}) to {T of [U], U, F} (a : F, prec : u32 
  * assert (f_s == "1.2983e+01" && d_s == "8.2e+04");
  * ===========
  */
-pub fn if (isChar!{U} && isFloating!{F}) to {T of [U], U, "e", F} (a : F, prec : u32 = 6u32) -> T {
+pub fn if (isChar!{U} && isFloating!{F}) to {T of [U], U, "e", F} (a : F, prec : u32 = 6u32) -> dmut T {
     let dmut str8 = cte if is!{F}{X of f32} {
-        utils::_yrt_f32_to_string_exp (U::size, cast!fsize (a), prec)
+        utils::_yrt_f32_to_string_exp (a, prec)
     } else cte if is!{F}{X of f64} {
-        utils::_yrt_f64_to_string_exp (U::size, cast!fsize (a), prec)
+        utils::_yrt_f64_to_string_exp (a, prec)
     } else cte if is!{F}{X of f80} {
-        utils::_yrt_f80_to_string_exp (U::size, cast!fsize (a), prec)
+        utils::_yrt_f80_to_string_exp (a, prec)
     } else {
-        utils::_yrt_fsize_to_string_exp (U::size, cast!fsize (a), prec)
+        utils::_yrt_fsize_to_string_exp (a, prec)
     };
 
     cte if is!{U}{X of c8} {
