@@ -1,7 +1,7 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.1)
 PROJECT(Midgard C)
 SET(CMAKE_C_COMPILER "/usr/bin/gyc")
-SET (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -fPIC -nostdinc -nomidgardlib")
+SET (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -fPIC") # -nostdinc -nomidgardlib")
 
 FILE (
   GLOB_RECURSE
