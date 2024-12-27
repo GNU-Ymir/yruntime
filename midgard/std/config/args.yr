@@ -281,16 +281,46 @@ pub class ArgumentParser {
      * assert (args ["D"].to!{f64} () == 87.12);
      * =========
      * */
-    pub fn if (isIntegral!{T} || isFloating!{T} || is!{T}{X of [c8]}) position {T} (mut self, name : [c8], comments : [c8] = "")-> dmut &ArgumentParser {
+    pub fn if (isIntegral!{T} || isFloating!{T}) position {T} (mut self, name : [c8], comments : [c8] = "")-> dmut &ArgumentParser {
         let type = cte if isSigned!{T} {
             copy Int (0)
-        } else cte if isFloating!{T} {
+        } else {
             copy Float (0.0)
-        } else { copy Str ("") };
+        }
 
         self._positions ~= [Argument (long-> name, short-> "", comments-> comments, type-> type?, hyphenated-> false, mandatory-> true)];
         alias self
     }
+
+    /**
+     * Add a position argument
+     * @params:
+     *    - name: the name used to retreive the position argument in the generated configuration (e.g. 'list').
+     *    - comments: the comments to print for help
+     * @example:
+     * =========
+     * use std::config::_;
+     *
+     * let parser = ArgumentParser ()
+     *              :.position!{i64} ("A", comments-> "first int")
+     *              :.position!{i64} ("B", comments-> "second int");
+     *              :.position!{[c8]} ("C", comments-> "a string");
+     *              :.position!{f64} ("D", comments-> "a float");
+     *
+     * let args = parser.parse (["./a.out", "1", "2", "foo", "87.12"]);
+     *
+     * assert (args ["A"].to!{i64} () == 1);
+     * assert (args ["B"].to!{i64} () == 2);
+     * assert (args ["C"].to!{[c8]} () == "foo");
+     * assert (args ["D"].to!{f64} () == 87.12);
+     * =========
+     * */
+    pub fn position {T of [U], U of c8} (mut self, name : [c8], comments : [c8] = "")-> dmut &ArgumentParser {
+        let type = copy Str ("");
+        self._positions ~= [Argument (long-> name, short-> "", comments-> comments, type-> type?, hyphenated-> false, mandatory-> true)];
+        alias self
+    }
+
 
     /**
      * Add a list position argument
@@ -393,12 +423,42 @@ pub class ArgumentParser {
      * assert (args ["D"].to!{f64} () == 87.12);
      * =========
      * */
-    pub fn if (isIntegral!{T} || isFloating!{T} || is!{T}{X of [c8]}) option {T} (mut self, name : [c8], short : [c8] = "", comments : [c8] = "", mandatory : bool = false)-> dmut &ArgumentParser {
+    pub fn if (isIntegral!{T} || isFloating!{T}) option {T} (mut self, name : [c8], short : [c8] = "", comments : [c8] = "", mandatory : bool = false)-> dmut &ArgumentParser {
         let type = cte if isSigned!{T} {
             copy Int (0)
-        } else cte if isFloating!{T} {
+        } else {
             copy Float (0.0)
-        } else { copy Str ("") };
+        }
+
+        self._options ~= [Argument (long-> name, short-> short, comments-> comments, type-> type?, hyphenated-> true, mandatory-> mandatory)];
+        alias self
+    }
+
+    /**
+     * Add a option argument
+     * @params:
+     *    - name: the name used to retreive the option argument in the generated configuration (e.g. 'list').
+     *    - comments: the comments to print for help
+     * @example:
+     * =========
+     * use std::config::_;
+     *
+     * let parser = ArgumentParser ()
+     *              :.option!{i64} ("fst", comments-> "first int")
+     *              :.option!{i64} ("scd", short-> "s", comments-> "second int");
+     *              :.option!{[c8]} ("thd", comments-> "a string");
+     *              :.option!{f64} ("fth", comments-> "a float");
+     *
+     * let args = parser.parse (["./a.out", "--fst", "1", "-s", "2", "--thd", "foo", "--fth", 87.12"]);
+     *
+     * assert (args ["A"].to!{i64} () == 1);
+     * assert (args ["B"].to!{i64} () == 2);
+     * assert (args ["C"].to!{[c8]} () == "foo");
+     * assert (args ["D"].to!{f64} () == 87.12);
+     * =========
+     * */
+    pub fn option {T of [U], U of c8} (mut self, name : [c8], short : [c8] = "", comments : [c8] = "", mandatory : bool = false)-> dmut &ArgumentParser {
+        let type = copy Str ("")
 
         self._options ~= [Argument (long-> name, short-> short, comments-> comments, type-> type?, hyphenated-> true, mandatory-> mandatory)];
         alias self
