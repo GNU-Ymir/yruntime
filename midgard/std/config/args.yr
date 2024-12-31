@@ -186,7 +186,7 @@ pub class ArgumentParser {
 
         for f in self._subCommands {
             if i != 0 { stream:.write (" "); }
-            self.exportUsageOption (f, alias stream, isSub-> true);
+            self.exportUsageOption (f, alias stream, isSub-> true, hyphenated-> f.hyphenated);
             i += 1;
         }
 
@@ -458,7 +458,7 @@ pub class ArgumentParser {
      * =========
      * */
     pub fn option {T of [U], U of c8} (mut self, name : [c8], short : [c8] = "", comments : [c8] = "", mandatory : bool = false)-> dmut &ArgumentParser {
-        let type = copy Str ("")
+        let type = copy Str ("");
 
         self._options ~= [Argument (long-> name, short-> short, comments-> comments, type-> type?, hyphenated-> true, mandatory-> mandatory)];
         alias self
@@ -884,14 +884,18 @@ pub class ArgumentParser {
     /**
      * Export an option into usage
      * */
-    prv fn exportUsageOption (self, o : Argument, dmut stream : &StringStream, isFlag : bool = false, isSub : bool = false, isPositional : bool = false) {
+    prv fn exportUsageOption (self, o : Argument, dmut stream : &StringStream, isFlag : bool = false, isSub : bool = false, isPositional : bool = false, hyphenated : bool = true) {
         if (isPositional) {
             self.exportUsageType (o, alias stream);
             stream:.write ("(", o.long, ")");
         } else {
             if (!o.mandatory) stream:.write ("[");
             if o.short != "" { stream:.write ("-", o.short, ","); }
-            stream:.write ("--", o.long);
+            if (hyphenated) {
+                stream:.write ("--");
+            }
+
+            stream:.write (o.long);
             if (!isFlag && !isSub) {
                 stream:.write (" ");
                 self.exportUsageType (o, alias stream);
