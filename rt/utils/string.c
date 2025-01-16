@@ -8,36 +8,31 @@
 
 _yrt_slice_t str_from_int (int32_t value) {
     unsigned int len = snprintf (NULL, 0, "%d", value);
-    char * alloc = malloc (len);
-    sprintf (alloc, "%d", value);
+    char * alloc = malloc (len + 1);
+    snprintf (alloc, len + 1, "%d", value);
+    alloc [len] = 0;
 
     _yrt_slice_t result;
-    result = str_create_len (alloc, len);
+    result = str_copy_len (alloc, len);
     free (alloc);
 
     return result;
 }
 
 _yrt_slice_t str_from_char (char value) {
-    unsigned int len = snprintf (NULL, 0, "%c", value);
-    char * alloc = malloc (len + 1);
-    sprintf (alloc, "%c", value);
-    alloc [len] = 0;
-
     _yrt_slice_t result;
-    result = str_create_len (alloc, len);
-    free (alloc);
-
+    result = str_copy_len (&value, 1);
     return result;
 }
 
 _yrt_slice_t str_from_ptr (void* value) {
     unsigned int len = snprintf (NULL, 0, "%p", value);
-    char * alloc = malloc (len);
-    sprintf (alloc, "%p", value);
+    char * alloc = malloc (len + 1);
+    snprintf (alloc, len + 1, "%p", value);
+    alloc [len] = 0;
 
     _yrt_slice_t result;
-    result = str_create_len (alloc, len);
+    result = str_copy_len (alloc, len);
     free (alloc);
 
     return result;

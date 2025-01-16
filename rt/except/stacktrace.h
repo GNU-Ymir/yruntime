@@ -51,4 +51,18 @@ _yrt_slice_t _yrt_exc_get_stack_trace ();
 _yrt_slice_t _yrt_exc_resolve_stack_trace (_yrt_slice_t syms);
 
 
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =========================          IN core::reflect from midgard          ==========================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Update the elf loader, and search for a symbol from its address
+ */
+struct _yrt_reflect_symbol_t _yrt_reflect_find_symbol_from_addr_with_elf_name (void * addr, _yrt_slice_t name);
+
 #endif // STACKTRACE_H_

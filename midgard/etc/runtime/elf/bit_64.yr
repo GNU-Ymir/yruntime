@@ -1,0 +1,307 @@
+in bit_64;
+
+use etc::c::{process, env, memory};
+use etc::runtime::{elf, exception};
+
+use std::{io, fs::_};
+use std::algorithm::{sorting, searching};
+
+def EI_MAG0 = 0
+def EI_MAG1 = 1
+def EI_MAG2 = 2
+def EI_MAG3 = 3
+def EI_CLASS = 4
+def EI_NIDENT = 16
+
+record Elf64_Ehdr {
+    pub let e_ident : [c8 ; EI_NIDENT] = ['\u{0}' ; EI_NIDENT];
+    pub let e_type : u16 = 0;
+    pub let e_machine : u16 = 0;
+    pub let e_version : u32 = 0;
+    pub let e_entry : usize = 0;
+    pub let e_phoff : usize = 0;
+    pub let e_shoff : usize = 0;
+    pub let e_flags : u32 = 0;
+    pub let e_ehsize : u16 = 0;
+    pub let e_phentsize : u16 = 0;
+    pub let e_phnum : u16 = 0;
+    pub let e_shentsize : u16 = 0;
+    pub let e_shnum : u16 = 0;
+    pub let e_shstrndx : u16 = 0;
+
+    pub self () {}
+}
+
+record Elf64_Shdr {
+    pub let sh_name : u32 = 0;
+    pub let sh_type : u32 = 0;
+    pub let sh_flags : u32 = 0;
+    pub let sh_addr : usize = 0;
+    pub let sh_offset : usize = 0;
+    pub let sh_size : u64 = 0;
+    pub let sh_link : u32 = 0;
+    pub let sh_info : u32 = 0;
+    pub let sh_addralign : u64 = 0;
+    pub let sh_entsize : u64 = 0;
+    pub self () {}
+}
+
+record Elf64_Sym {
+    pub let st_name : u32 = 0;
+    pub let st_info : u8 = 0;
+    pub let st_other : u8 = 0;
+    pub let st_shndx : u16 = 0;
+    pub let st_value : u64 = 0;
+    pub let st_size : u64 = 0;
+    pub self () {}
+}
+
+enum
+| SHT_NULL = 0u32
+| SHT_PROGBITS = 1u32
+| SHT_SYMTAB = 2u32
+| SHT_STRTAB = 3u32
+| SHT_RELA = 4u32
+| SHT_HASH = 5u32
+| SHT_DYNAMIC = 6u32
+| SHT_NOTE = 7u32
+| SHT_NOBITS = 8u32
+| SHT_REL = 9u32
+| SHT_SHLIB = 10u32
+| SHT_DYNSYM = 11u32
+| SHT_LOPROC = 1879048192u32
+| SHT_HIPROC = 2147483647u32
+| SHT_LOUSER = 2147483648u32
+| SHT_HIUSER = 2415919103u32
+ -> SectionType;
+
+enum
+| STT_NOTYPE = 0u32
+| STT_OBJECT = 1u32
+| STT_FUNC = 2u32
+| STT_SECTION = 3u32
+| STT_FILE = 4u32
+| STT_LOPROC = 13u32
+| STT_HIPROC = 15u32
+| STB_LOCAL = 0u32
+| STB_GLOBAL = 1u32
+| STB_WEAK = 2u32
+| STB_LOPROC = 13u32
+| STB_HIPROC = 15u32
+ -> SymbolInfo;
+
+
+@final
+pub class ELF64Loader over ELFLoader {
+
+    // The list of elf files that are already loaded
+    let mut _readElf : [[c8] => mut ()] = [];
+
+    // The page mapping of the program
+    let mut _pageMapping : [[c8] => mut ()] = [];
+
+    // The list of found symbols
+    let mut _symbols : [[c8] => mut ReflectSymbol] = [];
+
+    // The list of address symbols sorted by the ptrs
+    let mut _addrSymbols : [mut ReflectSymbol] = [];
+
+    pub self () {}
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          UPDATING          ====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Update the elf loading and register the reflect symbols
+     * */
+    pub over update (mut self) {
+        self:.listMapFiles ();
+        let mut updated = false;
+        for k in self._pageMapping if k !in self._readElf {
+            self:.readElf (k);
+            self._readElf [k] = ();
+            updated = true;
+        }
+
+        if updated {
+            // we sort the address symbols to make search faster
+            self._addrSymbols = sort (alias self._addrSymbols, |a, b| => { a.ptr < b.ptr });
+        }
+    }
+
+    /**
+     * Update the elf loader using a specific elf file
+     * */
+    pub over update (mut self, name : [c8]) {
+        if name !in self._readElf {
+            self:.readElf (name);
+            self._readElf [name] = ();
+            self._addrSymbols = sort (alias self._addrSymbols, |a, b| => { a.ptr < b.ptr });
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ===================================          DISPOSING          ====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    pub over clear (mut self) {
+        self._readElf = [];
+        self._pageMapping = [];
+        self._symbols = [];
+        self._addrSymbols = [];
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          FINDING          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    pub over find (self, name : [c8])-> ReflectSymbol {
+        if name in self._symbols {
+            if let Ok (r) = self._symbols [name]? {
+                return r;
+            }
+        }
+
+        return ReflectSymbol (ReflectSymbolType::NONE, 0, 0, "");
+    }
+
+    pub over find (self, addr : usize)-> ReflectSymbol {
+        if self._symbols.len == 0 return ReflectSymbol (ReflectSymbolType::NONE, 0, 0, "");
+
+        let mut l = 0is, mut r = cast!isize (self._symbols.len - 1us);
+        while l <= r {
+            let m = ((l + r) / 2);
+
+            let curr = self._addrSymbols [m];
+            if curr.ptr + curr.size < addr {
+                l = m + 1;
+            } else if curr.ptr > addr {
+                r = m - 1;
+            } else return curr;
+        }
+
+        return ReflectSymbol (ReflectSymbolType::NONE, 0, 0, "");
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =================================          LIST MAP FILES          =================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * List the elf files that are loaded by this program
+     * */
+    @final
+    fn listMapFiles (mut self) {
+        let pid = getpid ();
+        let mapFile = "/proc/" ~ std::conv::to!{[c8]} (pid) ~ "/maps";
+
+        {
+            let dmut f = File::open (Path (mapFile), read-> true);
+            while let line = f:.readUntil ("\n") && line != "" {
+                if let Ok (i) = rfind (line, ' ') {
+                    let filename = line [i + 1 .. $ - 1];
+                    if filename.len > 1 && filename [0] != '[' {
+                        self._pageMapping [filename] = ();
+                    }
+                }
+            }
+        } catch {
+            err => {
+                eprintln (err);
+                _yrt_exc_panic_no_trace ();
+            }
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ==================================          ELF READING          ===================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Read an elf file and register the symbols that can be found in it
+     * */
+    fn readElf (mut self, filename : [c8]) {
+        let dmut file = File::open (Path (filename), read-> true);
+        let content = file:.readBytesAll ();
+        unsafe {
+            let hdr = cast!{*Elf64_Ehdr} (cast!{*void} (content.ptr));
+            if hdr [0].e_ident [EI_MAG0] != cast!{c8} (127u8) return;
+            if hdr [0].e_ident [EI_MAG1] != '\u{0x45}' return;
+            if hdr [0].e_ident [EI_MAG2] != '\u{0x4c}' return;
+            if hdr [0].e_ident [EI_MAG3] != '\u{0x46}' return;
+            if hdr [0].e_ident [EI_CLASS] != '\u{0x2}' return;
+
+            let shdr = cast!{*Elf64_Shdr} (cast!{*void} (content.ptr + hdr [0].e_shoff));
+            for i in 0 .. hdr [0].e_shnum {
+                let section = shdr [i];
+                if section.sh_type == SectionType::SHT_DYNSYM || section.sh_type == SectionType::SHT_SYMTAB {
+                    let size = cast!usize (section.sh_size) / Elf64_Sym::size;
+                    let syms = cast!{*Elf64_Sym} (cast!{*void} (content.ptr + section.sh_offset));
+                    let link = shdr [section.sh_link];
+                    let names = cast!{*c8} (cast!{*void} (content.ptr + link.sh_offset));
+
+                    self:.appendSymbols (syms, size, names);
+                }
+            }
+        }
+    } catch {
+        FsError () => {}
+    }
+
+    /**
+     * Append the symbols from an elf section
+     * */
+    fn appendSymbols (mut self, syms : *Elf64_Sym, nb : usize, names : *c8) {
+        for i in 0 .. nb {
+            unsafe {
+                let sym = syms [i];
+                let name = &names [sym.st_name];
+                if (sym.st_info & SymbolInfo::STT_FUNC != 0 && sym.st_value != 0) {
+                    if name [0] == '_' && name [1] == 'Y' {
+                        let realName = std::conv::fromStringZ (name);
+                        let refl = ReflectSymbol (ReflectSymbolType::FUNCTION,
+                                                  ptr-> cast!usize (sym.st_value),
+                                                  size-> cast!usize (sym.st_size),
+                                                  name-> realName);
+                        self._symbols [realName] = refl;
+                        self._addrSymbols ~= [refl];
+                    }
+                }
+
+                else if (sym.st_info & SymbolInfo::STT_OBJECT != 0 && sym.st_value != 0) {
+                    let len = strlen (name);
+                    if len > 4 && name [0] == '_' && name [1] == 'Y' && name [len - 2] == 'V' && name [len - 1] == 'T' {
+                        let realName = std::conv::fromStringZ (name);
+                        let refl = ReflectSymbol (ReflectSymbolType::VTABLE,
+                                                  ptr-> cast!usize (sym.st_value),
+                                                  size-> cast!usize (sym.st_size),
+                                                  name-> realName);
+                        self._symbols [realName] = refl;
+                        self._addrSymbols ~= [refl];
+                    }
+                }
+            }
+        }
+    }
+}

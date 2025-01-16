@@ -12,6 +12,7 @@ int _yrt_demangle_number (char * data, int * current) {
 		nb = nb * 10 + (*data - '0');
 		data ++;
     }
+
     return nb;
 }
 					  
@@ -27,20 +28,21 @@ _yrt_slice_t _yrt_demangle_symbol (char * data, uint64_t len) {
 		int nb = _yrt_demangle_number (data + current, &current);
 		if (nb != 0) {
 			if (i != 0) {
-				_yrt_slice_t tmp = str_create_len ("::", len);
-				_yrt_append_slice (&ret, &tmp, 1);
+				_yrt_slice_t tmp = str_create ("::");
+				_yrt_append_slice (&ret, &tmp, sizeof (uint8_t));
 			}
 
-			_yrt_slice_t tmp = str_create_len (data + current, nb);
-			_yrt_append_slice (&ret, &tmp, 1);
+			_yrt_slice_t tmp = str_copy_len (data + current, nb);
+			_yrt_append_slice (&ret, &tmp, sizeof (uint8_t));
+
 			current += nb;
 			i += 1;
 		} else break;
     }
 
-    if (data [current] == 'F') {
-		_yrt_slice_t tmp = str_create_len (" (...)", 6);
-		_yrt_append_slice (&ret, &tmp, 1);
+    if (data [current] == 'F' || data [current] == 'M' || data [current] == 'C') {
+		_yrt_slice_t tmp = str_create (" (...)");
+		_yrt_append_slice (&ret, &tmp, sizeof (uint8_t));
     } 
     
     return ret;    
@@ -58,10 +60,10 @@ _yrt_slice_t _yrt_mangle_path (_yrt_slice_t data) {
     while (i < data.len) {
 		if (((uint8_t*) data.data) [i] == ':') {
 			_yrt_slice_t tmp = str_from_int (current);
-			_yrt_append_slice (&str, &tmp, 1);
+			_yrt_append_slice (&str, &tmp, sizeof (uint8_t));
 
 			tmp = str_create_len (data.data + start, current);
-			_yrt_append_slice (&str, &tmp, 1);
+			_yrt_append_slice (&str, &tmp, sizeof (uint8_t));
 			start += current + 2; // skip ::
 			current = 0;
 			i += 1;
@@ -74,10 +76,10 @@ _yrt_slice_t _yrt_mangle_path (_yrt_slice_t data) {
 
     if (current != 0) {
 		_yrt_slice_t tmp = str_from_int (current);
-		_yrt_append_slice (&str, &tmp, 1);
+		_yrt_append_slice (&str, &tmp, sizeof (uint8_t));
 
 		tmp = str_create_len (data.data + start, current);
-		_yrt_append_slice (&str, &tmp, 1);
+		_yrt_append_slice (&str, &tmp, sizeof (uint8_t));
     }
 
 	return str;

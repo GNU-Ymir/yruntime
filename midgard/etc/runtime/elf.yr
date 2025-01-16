@@ -1,0 +1,51 @@
+in elf;
+
+mod ::bit_64;
+mod ::empty;
+
+use etc::runtime::elf::_;
+
+pub lazy dmut __ELF_LOADER__ : &ELFLoader = __version x86_64 {
+    copy ELF64Loader ()
+} else { // other elf loaders are not implemented
+    copy EmptyELFLoader ()
+};
+
+@abstract
+pub class ELFLoader {
+    pub self () {}
+    pub fn update (mut self);
+    pub fn update (mut self, elfName : [c8]);
+    pub fn clear (mut self);
+
+    /**
+     * Find the symbol in the table from its name
+     * */
+    pub fn find (self, name : [c8])-> ReflectSymbol;
+
+    /**
+     * Find the symbol in the table from its addr
+     * @info: returns the first symbol whose ptr >= 'addr' and ptr + size <= 'addr'
+     * */
+    pub fn find (self, addr : usize)-> ReflectSymbol;
+}
+
+pub enum
+| FUNCTION = 1
+| VTABLE   = 2
+| NONE     = 3
+ -> ReflectSymbolType;
+
+pub record ReflectSymbol {
+    pub let type : ReflectSymbolType;
+    pub let ptr : usize;
+    pub let size : usize;
+    pub let name : [c8];
+
+    pub self (type : ReflectSymbolType, ptr : usize, size : usize, name : [c8])
+        with type = type
+        , ptr = ptr
+        , size = size
+        , name = name
+    {}
+}
