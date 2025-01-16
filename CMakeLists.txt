@@ -55,25 +55,25 @@ add_custom_target (lib_debug ALL
 
 add_custom_target (midgard_tests ALL
   COMMENT "Building midgard tests"
-  COMMAND ${CMAKE_YMIR_COMPILER} ${CMAKE_YMIR_DEBUG_FLAGS} ${CMAKE_CURRENT_SOURCE_DIR}/tests/__lib__.yr -fversion=DEBUG_LIB  -o ${CMAKE_CURRENT_BINARY_DIR}/midgard_tests -funittest -nostdinc -nomidgardlib -I ${CMAKE_CURRENT_SOURCE_DIR}/midgard -lgc  ${CMAKE_CURRENT_BINARY_DIR}/libgymidgard-bootstrap-debug.a ${CMAKE_CURRENT_BINARY_DIR}/libgymidgard-bootstrap-tests.a  ${CMAKE_CURRENT_BINARY_DIR}/libgymidgard-bootstrap-debug.a
+  COMMAND ${CMAKE_YMIR_COMPILER} ${CMAKE_YMIR_DEBUG_FLAGS} ${CMAKE_CURRENT_SOURCE_DIR}/tests/__lib__.yr -fversion=DEBUG_LIB  -o ${CMAKE_CURRENT_BINARY_DIR}/midgard_tests -funittest -nostdinc -nomidgardlib -I ${CMAKE_CURRENT_SOURCE_DIR}/midgard -lgc  ${CMAKE_CURRENT_BINARY_DIR}/libgymidgard-debug.a ${CMAKE_CURRENT_BINARY_DIR}/libgymidgard-tests.a  ${CMAKE_CURRENT_BINARY_DIR}/libgymidgard-debug.a
 )
 
 
-add_library (gymidgard-bootstrap-release STATIC ${SRC_CORE_C} ${SRC_STD_C} ${SRC_RUNTIME} ${CMAKE_CURRENT_BINARY_DIR}/__lib_release_.o)
-add_library (gymidgard-bootstrap-debug STATIC ${SRC_CORE_C} ${SRC_STD_C} ${SRC_RUNTIME} ${CMAKE_CURRENT_BINARY_DIR}/__lib_debug_.o)
-add_library (gymidgard-bootstrap-tests STATIC ${SRC_UNITTEST} ${CMAKE_CURRENT_BINARY_DIR}/__lib_test_.o)
+add_library (gymidgard-release STATIC ${SRC_CORE_C} ${SRC_STD_C} ${SRC_RUNTIME} ${CMAKE_CURRENT_BINARY_DIR}/__lib_release_.o)
+add_library (gymidgard-debug STATIC ${SRC_CORE_C} ${SRC_STD_C} ${SRC_RUNTIME} ${CMAKE_CURRENT_BINARY_DIR}/__lib_debug_.o)
+add_library (gymidgard-tests STATIC ${SRC_UNITTEST} ${CMAKE_CURRENT_BINARY_DIR}/__lib_test_.o)
 
 add_library (runtime STATIC ${SRC_RUNTIME})
 
-add_dependencies (gymidgard-bootstrap-release lib_release)
-add_dependencies (gymidgard-bootstrap-debug lib_debug)
-add_dependencies (gymidgard-bootstrap-tests lib_tests)
-add_dependencies (midgard_tests gymidgard-bootstrap-debug gymidgard-bootstrap-tests gymidgard-bootstrap-release)
+add_dependencies (gymidgard-release lib_release)
+add_dependencies (gymidgard-debug lib_debug)
+add_dependencies (gymidgard-tests lib_tests)
+add_dependencies (midgard_tests gymidgard-debug gymidgard-tests gymidgard-release)
 
-target_include_directories (gymidgard-bootstrap-release PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/)
-target_include_directories (gymidgard-bootstrap-debug PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/)
+target_include_directories (gymidgard-release PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/)
+target_include_directories (gymidgard-debug PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/)
 target_include_directories (runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/)
 
-install (TARGETS gymidgard-bootstrap-debug DESTINATION /usr/lib/)
-install (TARGETS gymidgard-bootstrap-release DESTINATION /usr/lib/)
-install (TARGETS gymidgard-bootstrap-tests DESTINATION /usr/lib/)
+install (TARGETS gymidgard-debug DESTINATION /usr/lib/)
+install (TARGETS gymidgard-release DESTINATION /usr/lib/)
+install (TARGETS gymidgard-tests DESTINATION /usr/lib/)
