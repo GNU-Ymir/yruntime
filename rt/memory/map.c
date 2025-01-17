@@ -29,22 +29,14 @@ void _yrt_map_empty (_yrt_map_t * mp, _yrt_map_info_t * info) {
 }
 
 void _yrt_dup_map (_yrt_map_t * result, _yrt_map_info_t * info, _yrt_map_t * old) {
+    _yrt_map_empty (result, info);
     if (old == NULL || old-> data == NULL || old-> len == 0 || old-> data-> len == 0) {
-        _yrt_map_empty (result, info);
         return;
     }
 
-    result-> minfo = info;
-    result-> loaded = 0;
-    result-> len = 0;
-
-    if (result-> data == NULL) {
-        result-> data = (_yrt_map_entry_slice_t*) GC_malloc (sizeof (_yrt_map_entry_slice_t));
-    }
-
     result-> data-> len = old-> data-> len;
-    result-> data-> entries = (_yrt_map_entry_t**) GC_malloc ((result-> data-> len) * sizeof (_yrt_map_entry_t*));
-    memset (result-> data-> entries, 0, (result-> data-> len) * sizeof (_yrt_map_entry_t*));
+    result-> data-> entries = (_yrt_map_entry_t**) GC_malloc ((old-> data-> len) * sizeof (_yrt_map_entry_t*));
+    memset (result-> data-> entries, 0, (old-> data-> len) * sizeof (_yrt_map_entry_t*));
 
     _yrt_map_copy_entries (result, old);
 }
