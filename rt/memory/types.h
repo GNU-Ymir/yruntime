@@ -51,10 +51,14 @@ typedef struct _yrt_map_info_t {
     uint64_t valueSize;
 } _yrt_map_info_t;
 
+typedef struct _yrt_map_entry_slice_t {
+    _yrt_map_entry_t ** entries;
+    uint64_t len;
+} _yrt_map_entry_slice_t;
+
 typedef struct _yrt_map_t {
     _yrt_map_info_t * minfo;
-    _yrt_map_entry_t ** data;
-    uint64_t allocLen; // the length of the data array
+    _yrt_map_entry_slice_t * data;
     uint64_t loaded; // The number of entries used
     uint64_t len; // The number of elements in the map
 } _yrt_map_t;
