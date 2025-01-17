@@ -181,11 +181,9 @@ void _yrt_map_fit (_yrt_map_t * mp, uint64_t newSize) {
     }
 
     _yrt_map_t result;
-    result.data = mp-> data;
-    if (result.data == NULL) {
-        result.data = (_yrt_map_entry_slice_t*) GC_malloc (sizeof (_yrt_map_entry_slice_t));
-    }
+    _yrt_map_entry_slice_t data;
 
+    result.data = &data;
     result.data-> len = newSize;
     result.data-> entries = (_yrt_map_entry_t**) GC_malloc (newSize * sizeof (_yrt_map_entry_t*));
     memset (result.data-> entries, 0, newSize * sizeof (_yrt_map_entry_t*));
@@ -195,7 +193,11 @@ void _yrt_map_fit (_yrt_map_t * mp, uint64_t newSize) {
     result.len = 0;
 
     _yrt_map_copy_entries (&result, mp);
-    *mp = result;
+    mp-> loaded = result.loaded;
+    mp-> len = result.len;
+    mp-> len = result.len;
+    mp-> data-> len = data.len;
+    mp-> data-> entries = data.entries;
 }
 
 void _yrt_map_copy_entries (_yrt_map_t * result, _yrt_map_t * old) {
