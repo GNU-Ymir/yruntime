@@ -5,11 +5,18 @@ mod ::empty;
 
 use etc::runtime::elf::_;
 
-pub lazy dmut __ELF_LOADER__ : &ELFLoader = __version x86_64 {
-    copy ELF64Loader ()
-} else { // other elf loaders are not implemented
-    copy EmptyELFLoader ()
-};
+pub lazy dmut __ELF_LOADER__ : &ELFLoader = createLoader ();
+
+/**
+ * Create an new ELF loader
+ * */
+pub fn createLoader ()-> dmut &ELFLoader {
+    __version x86_64 {
+        copy ELF64Loader ()
+    } else { // other elf loaders are not implemented
+        copy EmptyELFLoader ()
+    }
+}
 
 @abstract
 pub class ELFLoader {
@@ -28,12 +35,18 @@ pub class ELFLoader {
      * @info: returns the first symbol whose ptr >= 'addr' and ptr + size <= 'addr'
      * */
     pub fn find (self, addr : usize)-> ReflectSymbol;
+
+    /**
+     * @returns: the list of symbol
+     * */
+    pub fn getSymbols (self)-> [[c8] => ReflectSymbol];
 }
 
 pub enum
 | FUNCTION = 1
 | VTABLE   = 2
-| NONE     = 3
+| OBJECT   = 3
+| NONE     = 4
  -> ReflectSymbolType;
 
 pub record ReflectSymbol {

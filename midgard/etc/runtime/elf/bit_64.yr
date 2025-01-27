@@ -196,6 +196,10 @@ pub class ELF64Loader over ELFLoader {
         return ReflectSymbol (ReflectSymbolType::NONE, 0, 0, "");
     }
 
+    pub over getSymbols (self)-> [[c8] => ReflectSymbol] {
+        self._symbols
+    }
+
     /*!
      * ====================================================================================================
      * ====================================================================================================
@@ -277,8 +281,9 @@ pub class ELF64Loader over ELFLoader {
             unsafe {
                 let sym = syms [i];
                 let name = &names [sym.st_name];
-                if (sym.st_info & SymbolInfo::STT_FUNC != 0 && sym.st_value != 0) {
-                    if name [0] == '_' && name [1] == 'Y' {
+                if (sym.st_info & SymbolInfo::STT_FUNC != 0) {
+                    let len = strlen (name);
+                    if len > 2 && name [0] == '_' && name [1] == 'Y' {
                         let realName = std::conv::fromStringZ (name);
                         let refl = ReflectSymbol (ReflectSymbolType::FUNCTION,
                                                   ptr-> cast!usize (sym.st_value),
@@ -289,11 +294,19 @@ pub class ELF64Loader over ELFLoader {
                     }
                 }
 
-                else if (sym.st_info & SymbolInfo::STT_OBJECT != 0 && sym.st_value != 0) {
+                else if (sym.st_info & SymbolInfo::STT_OBJECT != 0) {
                     let len = strlen (name);
                     if len > 4 && name [0] == '_' && name [1] == 'Y' && name [len - 2] == 'V' && name [len - 1] == 'T' {
                         let realName = std::conv::fromStringZ (name);
                         let refl = ReflectSymbol (ReflectSymbolType::VTABLE,
+                                                  ptr-> cast!usize (sym.st_value),
+                                                  size-> cast!usize (sym.st_size),
+                                                  name-> realName);
+                        self._symbols [realName] = refl;
+                        self._addrSymbols ~= [refl];
+                    } else if len > 2 && name [0] == '_' && name [1] == 'Y' {
+                        let realName = std::conv::fromStringZ (name);
+                        let refl = ReflectSymbol (ReflectSymbolType::OBJECT,
                                                   ptr-> cast!usize (sym.st_value),
                                                   size-> cast!usize (sym.st_size),
                                                   name-> realName);

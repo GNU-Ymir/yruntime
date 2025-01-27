@@ -180,7 +180,7 @@ _yrt_slice_t _yrt_exc_resolve_stack_trace (_yrt_slice_t syms) {
     messages = backtrace_symbols (syms.data, (uint32_t) syms.len);
     result = str_create ("╭  Stack trace :");
 
-    for (uint32_t i = 2 ; i < syms.len ; i++) {
+    for (uint32_t i = 2 ; i < syms.len - 5 ; i++) {
         size_t p = 0;
         char filename [245];
         while(messages[i][p] != '(' && messages[i][p] != 0) {
@@ -201,7 +201,7 @@ _yrt_slice_t _yrt_exc_resolve_stack_trace (_yrt_slice_t syms) {
             ref_sym = _yrt_reflect_find_symbol_from_addr_with_elf_name (sym, resolvedC8);
         }
 
-        if (ref_sym.type != NONE) {
+        if (ref_sym.type == FUNCTION) {
             file.data = NULL;
 
             _yrt_resolve_address (resolved, ref_sym.ptr, &file, &line);
@@ -242,7 +242,7 @@ _yrt_slice_t _yrt_exc_resolve_stack_trace (_yrt_slice_t syms) {
             _yrt_append_slice (&result, &tmp, sizeof (uint8_t));
             tmp = str_from_int (i - 1);
             _yrt_append_slice (&result, &tmp, sizeof (uint8_t));
-            tmp = str_create ("in ??\n│     ╘═> \e[32m");
+            tmp = str_create (" in ??\n│     ╘═> \e[32m");
             _yrt_append_slice (&result, &tmp, sizeof (uint8_t));
             tmp = str_create (filename);
             _yrt_append_slice (&result, &tmp, sizeof (uint8_t));

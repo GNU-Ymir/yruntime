@@ -1,10 +1,10 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.22)
 PROJECT(Midgard C)
 
-set(CMAKE_YMIR_COMPILER "gyc")
-set(CMAKE_YMIR_RELEASE_FLAGS "-fPIC" "-nostdinc" "-nomidgardlib" "-fdoc" "-O3" "-I${CMAKE_CURRENT_SOURCE_DIR}/midgard/")
-set(CMAKE_YMIR_DEBUG_FLAGS "${CMAKE_YMIR_RELEASE_FLAGS}" "-fversion=DEBUG_LIB" "-g")
-set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS}  -fPIC -O3")
+set(CMAKE_YMIR_COMPILER "gyc") #/home/emile/ymir/bootstrap/gyc/gcc-install/bin/gyc")
+set(CMAKE_YMIR_RELEASE_FLAGS "-fPIC" "-nostdinc" "-nomidgardlib" "-fdoc" "-O3" "-fv" "-I${CMAKE_CURRENT_SOURCE_DIR}/midgard/")
+set(CMAKE_YMIR_DEBUG_FLAGS "${CMAKE_YMIR_RELEASE_FLAGS}" "-fversion=DEBUG_LIB" "-g" "-fv")
+set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS}  -fPIC -O3 -g")
 
 
 FILE (
