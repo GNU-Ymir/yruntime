@@ -105,6 +105,18 @@ pub class TaskPool {
     }
 
     /**
+     * Clear the tasks that have been submitted
+     * */
+    pub fn clear (mut self) {
+        atomic self {
+            let len = self._mails.len;
+            self._mails:.clear ();
+            self._finished += len;
+            if (self._finished == self._submitted) self._ready:.post ();
+        }
+    }
+
+    /**
      * Stop all running threads in the task pool without waiting for all tasks to be completed
      * */
     pub fn dispose (mut self) {

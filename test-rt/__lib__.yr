@@ -3,6 +3,7 @@ mod utils;
 use std::io;
 // use std::collection::map;
 use core::exception::_;
+use std::{config::_, algorithm::searching, fs::path};
 
 use utils::colors;
 
@@ -21,25 +22,73 @@ fn fake_throw (b : bool)
     assert (b);
 }
 
-prv extern (C) fn _yrt_run_unittests_impl  (args : [[c8]]) -> i32 {
-    _yrt_force_debug ();
-    args;
-    for z, f in __UNITTEST_MAP__ {
-        {
-            println ("[RUN] : ", z);
-            println ("====================================");
-            fake_throw (true);
-            f ();
-            println ("====================================");
-            println ('[', Colors::GREEN, "SUCCESS", Colors::RESET, "] : ", z);
-        } catch {
-            err : &Exception => {
-                println ("====================================");
-                println ('[', Colors::RED, "FAILURE", Colors::RESET, "] : ", z);
 
-                println (" --> ", err);
+prv fn passFilter (name : [c8], filter : [c8])-> bool {
+    if filter.len > 1 && filter [$ - 1] == '*' {
+        return name.startsWith (filter [0 .. $ - 1]);
+    }
+
+    return Path (filter, sep-> "::") == Path (name, sep-> "::").parent ().parent (); // remove __test::id
+}
+
+prv extern (C) fn _yrt_run_unittests_impl  (args : [[c8]]) -> i32 {
+
+    let parser = (copy ArgumentParser ())
+        :.help ("help", short-> "h", comments-> "print this help and exit")
+        :.option!{[c8]} ("filter", short-> "f", comments-> "unittest filter")
+        :.flag ("stop-first", short-> "sf", comments-> "stop after first test failure");
+
+    let (filter, hasFilter, stopFirstError) = {
+        let ret = parser.parse (args);
+        let (f, h) = if let Ok (Str (value-> f)) = ret ["filter"]? {
+            (f, true)
+        } else {
+            ("", false)
+        };
+
+        let stop = if let Ok (Bool (value-> b)) = ret ["stop-first"]? {
+            b
+        } else {
+            false
+        };
+
+        (f, h, stop)
+    } catch {
+        err => {
+            std::io::eprintln (parser.explain (err));
+            return -1;
+        }
+    }
+
+    _yrt_force_debug ();
+
+    let mut failed = false;
+    for z, f in __UNITTEST_MAP__ {
+        if !hasFilter || passFilter (z, filter) {
+            {
+                println ("[RUN] : ", z);
+                println ("====================================");
+                fake_throw (true);
+                f ();
+                println ("====================================");
+                println ('[', Colors::GREEN, "SUCCESS", Colors::RESET, "] : ", z);
+            } catch {
+                err : &Exception => {
+                    println ("====================================");
+                    println ('[', Colors::RED, "FAILURE", Colors::RESET, "] : ", z);
+
+                    println (" --> ", err);
+                    if (stopFirstError) return -1;
+
+                    failed = true;
+                }
             }
         }
     }
-    0
+
+    if failed {
+        -1
+    } else {
+        0
+    }
 }
