@@ -17,7 +17,7 @@ use std::traits;
  * A tcp stream is a tcp connection from a client to a server, or a server to a client.
  * It can be acquired directly by construction, or using a TcpListener when accepting clients.
  * @example:
- * ===============
+ * ```
  * pub fn greets_client (dmut client : &TcpStream) {
  *    // Communicate with the client
  *    client:.rawSend ("Hello !!"s8);
@@ -33,18 +33,18 @@ use std::traits;
  *    // Closing the connection to the client
  *    client:.dispose ();
  * }
- * ===============
+ * ```
  *
  * A TcpStream is also used on the client side to connect to a tcp server.
  * @example:
- * ===
+ * ```
  * let dmut client = copy TcpStream (SockAddr ("127.0.0.1", 8080));
  * println ("Message from server : ", client:.rawReceive!{c8} (8us));
  *
  * // client is automatically closed when garbabe collected
  * // but it is recommanded to close it manually to avoid opening too many sockets
  * client:.dispose ();
- * ===
+ * ```
  */
 @final
 pub class TcpStream {
@@ -77,7 +77,7 @@ pub class TcpStream {
     /**
      * Connect the stream to 'addr'
      * @example:
-     * ==========
+     * ```
      * use std::net::tcp::_;
      *
      * let addr = SockAddr (Ipv4::LOCALHOST, 8080);
@@ -85,7 +85,7 @@ pub class TcpStream {
      *
      * client:.rawSend ("Ping !");
      * client:.dispose ();
-     * ==========
+     * ```
      * */
     pub self connect (addr : SockAddr)
         with _addr = addr
@@ -174,11 +174,11 @@ pub class TcpStream {
      *
      * @info: Send the slice with metadatas to make it reconstructible on the other end without additional informations.
      * @example:
-     * =========
+     * ```
      * // With serialization
      * stream:.send (copy [1, 2, 3, 4]);
      * client:.receive!{[i32]} () == [1, 2, 3, 4];
-     * =========
+     * ```
      * */
     pub fn send {T of [U], U} (mut self, val : T)
         throws TcpError
@@ -198,13 +198,13 @@ pub class TcpStream {
      *
      * @info: Send only the bytes of the slice without metadatas to make it reconstructible.
      * @example:
-     * =========
+     * ```
      * // Without serialization
      * stream:.sendRaw (copy [1, 2, 3, 4]);
      *
      * let dmut result = copy [0 ; 4];
      * client:.receiveRaw (alias result); // raw receive of the data in the slice
-     * ========
+     * ```
      * */
     pub fn if isScalar!{U} sendRaw {T of [U], U} (mut self, val : T)
         throws TcpError
@@ -265,13 +265,13 @@ pub class TcpStream {
      *
      * @info: Send the slice with metadatas to make it reconstructible on the other end without additional informations.
      * @example:
-     * =========
+     * ```
      * // With serialization
      * stream:.send (copy [1, 2, 3, 4]);
      *
      * // Setting a receive limit of 8, refusing anything bigger to avoid big memory allocation from network requests
      * client:.receive!{[i32]} (limit-> 8) == [1, 2, 3, 4];
-     * =========
+     * ```
      * */
     pub fn receive {T of [U], U} (mut self, limit : usize = 1024)-> mut [mut U]
         throws TcpError
@@ -300,13 +300,13 @@ pub class TcpStream {
      *
      * @info: Receive only the bytes of the slice
      * @example:
-     * =========
+     * ```
      * // Without serialization
      * stream:.sendRaw (copy [1, 2, 3, 4]);
      *
      * let dmut result = copy [0 ; 4];
      * client:.receiveRaw (alias result); // raw receive of the data in a preallocated slice
-     * ========
+     * ```
      * */
     pub fn if isScalar!{U} receiveRaw {T of [U], U} (mut self, dmut result : T)
         throws TcpError

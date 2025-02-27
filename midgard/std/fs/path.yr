@@ -4,7 +4,7 @@
  * @License: GPLv3
  * <hr>
  * @example:
- * ===
+ * ```
  * use std::fs::path;
  *
  * // Path are created from string, containing a path
@@ -38,7 +38,7 @@
  *
  * // Or by using a custom separator
  * assert (m.toStr (sep-> "::") == "std::fs::path");
- * ===
+ * ```
  */
 in path;
 
@@ -62,7 +62,7 @@ pub record Path {
      * @warning: the path does not keep track of the separator, it is up to the user to maintain a consistence with the separators (cf. self::push).
      * @complexity: O(n * m), where n is the number of char `path` and m the number of char in the separator
      * @example:
-     * =========
+     * ```
      * use std::fs::path;
      *
      * // Create a path using the standard separator '/' ('\\' on windows)
@@ -70,7 +70,7 @@ pub record Path {
      *
      * // parts lists the different component of the path
      * assert (path.parts () == ["foo", "bar", "baz.txt"]);
-     * =========
+     * ```
      */
     pub self (path : [c8], sep : [c8] = __version WINDOWS { "\\" } else { "/" }) {
         let mut last = 0us;
@@ -102,7 +102,7 @@ pub record Path {
      * Transform the path into a string.
      * @complexity: O(n), where n is the number of char in the parts of the path
      * @example:
-     * ============
+     * ```
      * use std::fs::path;
      *
      * let path = Path ("/foo/test.txt");
@@ -112,7 +112,7 @@ pub record Path {
      *
      * // Or using a custom separator '!'
      * assert (path.toStr (sep-> "!") == "!foo!test.txt");
-     * ============
+     * ```
      */
     pub fn toStr (self, sep : [c8] = "/")-> [c8] {
         let dmut stream = copy std::stream::StringStream ();
@@ -132,14 +132,14 @@ pub record Path {
      *   - o: another path
      * @complexity: O(n), where n is the number of char in the parts of the path
      * @example:
-     * ===
+     * ```
      * use std::fs::path;
      *
      * let p = Path ("/some/root/dir");
      * let p2 = Path ("/");
      *
      * assert (p != p2 && p == p2.push ("some/root/dir"));
-     * ===
+     * ```
      */
     pub fn opEquals (self, ref o : Path)-> bool {
         self._parts == o._parts
@@ -151,14 +151,14 @@ pub record Path {
      *   - o: another path
      * @complexity: O(n), where n is the number of char in the parts of the path
      * @example:
-     * ===
+     * ```
      * use std::fs::path;
      *
      * let p = Path ("/some/root/dir");
      * let p2 = Path ("/");
      *
      * assert (p != p2 && p == p2.push ("some/root/dir"));
-     * ===
+     * ```
      */
     pub fn opEquals (self, o : Path)-> bool {
         self._parts == o._parts
@@ -172,7 +172,7 @@ pub record Path {
      * @warning: the separator of the current path is not kept in memory, it is up to the user to maintain a consistence with the separators.
      * @complexity: O(k + (n x m)), where k is the number of parts in the self path, and n being the number of char in the path string, and m being the number of char in the sep string
      * @example:
-     * ===========
+     * ```
      * use std::fs::path;
      *
      * let mut path = Path ("/");
@@ -186,7 +186,7 @@ pub record Path {
      * ipath = ipath.push ("some::dir/some::file", sep-> "/");
      *
      * assert (ipath.parts () == ["std", "fs", "path", "some::dir", "some::file"]);
-     * ===========
+     * ```
      */
     pub fn push (self, path : [c8], sep : [c8] = __version WINDOWS { "\\" } else { "/" })-> Path {
         let mut result = self;
@@ -216,7 +216,7 @@ pub record Path {
      * @returns: a new Path being the concatenation of the two paths
      * @complexity: O(k + l), where k is the number of parts in the self path, and l the number of parts in the path to push
      * @example:
-     * ===========
+     * ```
      * use std::fs::path;
      *
      * let mut path = Path ("/");
@@ -228,7 +228,7 @@ pub record Path {
      * path = path.push (Path ("test.txt"));
      *
      * assert (path.toStr () == "/foo/bar/test.txt");
-     * ===========
+     * ```
      */
     pub fn push (self, ref path : Path) -> Path {
         let dmut aux = self;
@@ -246,7 +246,7 @@ pub record Path {
      * @returns: a new Path being the concatenation of the two paths
      * @complexity: O(k + l), where k is the number of parts in the self path, and l the number of parts in the path to push
      * @example:
-     * ===========
+     * ```
      * use std::fs::path;
      *
      * let mut path = Path ("/");
@@ -258,7 +258,7 @@ pub record Path {
      * path = path.push (Path ("test.txt"));
      *
      * assert (path.toStr () == "/foo/bar/test.txt");
-     * ===========
+     * ```
      */
     pub fn push (self, path : Path) -> Path {
         let dmut aux = self;
@@ -273,7 +273,7 @@ pub record Path {
      * @returns: the parts composing the path.
      * @complexity: O(1)
      * @example:
-     * ==========
+     * ```
      * use std::fs::path;
      *
      * // Create an absolute path
@@ -287,7 +287,7 @@ pub record Path {
      *
      * // It is a relative path, it does not contain an empty string at first index of parts
      * assert (rel.parts () == [".", "some", "relative", "dir", "test.txt"]);
-     * ==========
+     * ```
      */
     pub fn parts (self)-> [[c8]] {
         self._parts
@@ -298,7 +298,7 @@ pub record Path {
      * @warning: empty paths are considered relative
      * @complexity: O(1)
      * @example:
-     * ===
+     * ```
      * use std::fs::path;
      * use std::env; // for currentDir
      *
@@ -310,7 +310,7 @@ pub record Path {
      * // One can create an absolute path from a relative path using std::env::currentDir ()
      * let absFromRel = env::currentDir ().push (rel);
      * assert (absFromRel.isAbsolute ());
-     * ===
+     * ```
      */
     pub fn isAbsolute (self)-> bool {
         if (self._parts.len > 0us) {
@@ -325,7 +325,7 @@ pub record Path {
      * @warning: an empty path is different from a absolute path pointing to root, as it contains not part when a root directory contains only one part being an empty string
      * @complexity: O(1)
      * @example:
-     * ===
+     * ```
      * use std::fs::path;
      *
      * let root = Path ("/");
@@ -348,7 +348,7 @@ pub record Path {
      * let notEmpty = empty1.push (".");
      * assert (!notEmpty.isEmpty () && notEmpty == cwd);
      *
-     * ===
+     * ```
      */
     pub fn isEmpty (self)-> bool {
         self._parts.len == 0us
@@ -361,7 +361,7 @@ pub record Path {
      *     - parents of root path and of paths containing only one element, are empty paths.
      * @complexity: O(k - 1), with k being the number of parts in the path
      * @example:
-     * ===========
+     * ```
      * use std::fs::path;
      *
      * let path = Path ("/foo/bar/baz.txt");
@@ -374,7 +374,7 @@ pub record Path {
      * // A root path has an empty parent directory (empty does not mean root, it means empty)
      * let root = Path ("/");
      * assert (root.parent ().toStr () == "" && root.parent ().isEmpty ());
-     * ===========
+     * ```
      */
     pub fn parent (self)-> Path {
         if (self._parts.len == 0us) {
@@ -389,7 +389,7 @@ pub record Path {
      * @warning: does not verify that it actually points to a file, you can assume that it just returns self.parts ()[$ - 1us] when self.parts().len != 0us, and empty otherwise.
      * @complexity: O(1)
      * @example:
-     * =============
+     * ```
      * use std::fs::path;
      *
      * let path = Path ("/foo/bar/baz.txt");
@@ -400,7 +400,7 @@ pub record Path {
      * // In case of empty path the file is simply empty
      * let empty = Path ("/").parent ();
      * assert (empty.file () == "");
-     * =============
+     * ```
      */
     pub fn file (self)-> [c8] {
         if (self._parts.len > 0us) {
@@ -417,7 +417,7 @@ pub record Path {
      *    - it returns an empty string if the path is empty.
      * @complexity: O(1)
      * @example:
-     * =============
+     * ```
      * use std::fs::path;
      *
      * let path = Path ("/foo/bar/baz.txt");
@@ -431,7 +431,7 @@ pub record Path {
      * // Empty path root is undefined, but for convinience it just return an empty string
      * let empty = Path ("/").parent ();
      * assert (empty.root () == "");
-     * =============
+     * ```
      */
     pub fn root (self)-> [c8] {
         if (self._parts.len > 0us) {
@@ -447,7 +447,7 @@ pub record Path {
      * @returns: a new path where the extension of the file has been removed.
      * @complexity: O(n + k) with n being the len of the file part of the path, and k being the number of component of the path
      * @example:
-     * ============
+     * ```
      * use std::fs::path;
      *
      * let path = Path ("/foo/bar/baz.txt");
@@ -469,7 +469,7 @@ pub record Path {
      *
      * // Using a custom token as extension delimiter, to remove ::txt extension
      * assert (path4.stripExtension (sep-> "::").file () == "baz");
-     * ============
+     * ```
      */
     pub fn stripExtension (self, sep : [c8] = ".")-> Path {
         if (self._parts.len == 0us) { return self; }
@@ -497,7 +497,7 @@ pub record Path {
      * @returns: the extension of the file of the path.
      * @complexity: O(n) with n being the len of the file part of the path
      * @example:
-     * ==============
+     * ```
      * use std::fs::path;
      *
      * let path = Path ("/foo/bar/baz.txt");
@@ -513,7 +513,7 @@ pub record Path {
      * // A custom extension separator can be used
      * let path4 = Path ("/foo/bar/baz::txt");
      * assert (path4.extension (sep-> "::") == "txt");
-     * ==============
+     * ```
      */
     pub fn extension (self, sep : [c8] = ".")-> [c8] {
         let file = self.file ();
@@ -537,7 +537,7 @@ pub record Path {
      *    - sep: the separator to use when adding the extension ("." by default)
      * @complexity: O(n + k), where n is the len of the file part of the path, and k is the number of parts in the path
      * @example:
-     * ============
+     * ```
      * use std::fs::path;
      *
      * let path = Path ("/foo/bar/baz").addExtension ("txt");
@@ -549,7 +549,7 @@ pub record Path {
      * // empty path are not empty after adding an extension to them
      * let empty = Path ("").parent ().addExtension ("empty");
      * assert (empty.file  () == ".empty");
-     * ============
+     * ```
      */
     pub fn addExtension (self, ext : [c8], sep : [c8] = ".")-> Path {
         if (self._parts.len > 0) {
@@ -573,7 +573,7 @@ pub record Path {
      * @returns: a new path with the prefix removed.
      * @complexity: O (k), where k is the number of parts in the self path
      * @example:
-     * =====================
+     * ```
      * use std::fs::path;
      *
      * let root = Path ("/foo/bar");
@@ -584,7 +584,7 @@ pub record Path {
      *
      * // Create a new relative path from "./"
      * assert (cwd.push (relativePath).toStr () == "./baz/file.txt");
-     * =====================
+     * ```
      */
     pub fn removePrefix (self, prefix : Path)-> Path {
         if (self._parts.len < prefix._parts.len) return self;
@@ -604,7 +604,7 @@ pub record Path {
      * @warning: an empty path is considered to be the prefix of every possible paths
      * @complexity: O(k), where k is the number of parts in the self path
      * @example:
-     * ===
+     * ```
      * use std::fs::path;
      *
      * let root = Path ("/some/absolute/path");
@@ -615,7 +615,7 @@ pub record Path {
      *
      * // A path is a prefix of itself
      * assert (root.isPrefix (root) && rel.isPrefix (rel));
-     * ===
+     * ```
      */
     pub fn isPrefix (self, subPath : Path)-> bool {
         if (self._parts.len > subPath._parts.len) return false;
@@ -633,7 +633,7 @@ pub record Path {
      * @returns: A parent path that is common to self and other
      * @complexity: O(k), where k is the minimum number of parts in the self path and other path
      * @example:
-     * ===
+     * ```
      * use std::fs::path;
      *
      * let abs1 = Path ("/some/absolute/path/leading/to/dir/1");
@@ -657,7 +657,7 @@ pub record Path {
      *
      * // In that case it is still a prefix to root nor cwd
      *  assert (root.commonPrefix (cwd).isPrefix (root));
-     * ===
+     * ```
      */
     pub fn commonPrefix (self, other : Path)-> Path {
         let min = std::algorithm::comparison::min (self._parts.len, other._parts.len);
@@ -683,7 +683,7 @@ pub record Path {
      * @info: does nothing if `self` is empty.
      * @complexity: O(k), where k is the number of parts in the self path
      * @example:
-     * ====================
+     * ```
      * use std::fs::path;
      *
      * let p = Path ("/path/to/somewhere");
@@ -691,7 +691,7 @@ pub record Path {
      *
      * assert (p.removeRoot ().toStr () == "path/to/somewhere");
      * assert (d.removeRoot ().toStr () == "to/somewhere");
-     * ====================
+     * ```
      */
     pub fn removeRoot (self)-> Path {
         if (self._parts.len != 0us) {

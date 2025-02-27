@@ -23,7 +23,7 @@ use std::time::instant;
  * @throws:
  *   - FsError: if there was an error in the creation of the directory, cf FsErrorCode
  * @example:
- * ========================
+ * ```
  * use std::fs::{sys, path};
  *
  * createDir (Path ("./some/dir"));
@@ -36,7 +36,7 @@ use std::time::instant;
  * // Permission of created directory can be defined
  * createDir (Path ("./some/dir/small_permissions"), permission-> 0o600);
  * assert (isDir (Path ("./some/dir/small_permissions")));
- * ========================
+ * ```
  */
 pub fn createDir (path : Path, recursive : bool = false, permission : i32 = 0o775)
     throws FsError
@@ -72,7 +72,7 @@ pub fn createDir (path : Path, recursive : bool = false, permission : i32 = 0o77
  *     - true if the directory exists and is accessible
  *     - false if it does not exists or if it not a directory or current user does not have permission to access it
  * @example:
- * ========================
+ * ```
  * import std::fs::sys;
  * import std::fs::path; // for Path
  *
@@ -81,7 +81,7 @@ pub fn createDir (path : Path, recursive : bool = false, permission : i32 = 0o77
  * } else {
  *    println ("Directory does not exists");
  * }
- * ========================
+ * ```
  */
 pub fn isDir (path : Path)-> bool {
     let dir = opendir (path.toStr ().toStringZ ());
@@ -107,13 +107,13 @@ pub fn isDir (path : Path)-> bool {
  *          + the path is not a directory
  *          + other reasons
  * @example:
- * ========================
+ * ```
  * use std::fs::{sys, path};
  *
  * removeDir (Path ("./some/dir"));
  * assert (!isDir (Path ("./some/dir")));
  * assert (isDir (Path ("./some")));
- * ========================
+ * ```
  */
 pub fn removeDir (path : Path, recursive : bool = false)
     throws FsError
@@ -154,12 +154,12 @@ pub fn removeDir (path : Path, recursive : bool = false)
  *      + Permission denied (either reading or writing)
  *      + other reasons
  * @example:
- * =====================
+ * ```
  * use std::fs::{sys, path};
  *
  * copyDir (Path ("./some/dir"), Path ("/tmp/some/other/dir"), recursive-> true, create-> true);
  * assert (isDir (Path ("/tmp/some/other/dir")));
- * =====================
+ * ```
  */
 pub fn copyDir (src : Path, dst : Path, recursive : bool = false, create : bool = false)
     throws FsError
@@ -185,14 +185,14 @@ pub fn copyDir (src : Path, dst : Path, recursive : bool = false, create : bool 
 /**
  * @returns: an iterator over the entries of a directory
  * @example:
- * ===
+ * ```
  * import std::fs::{sys, path};
  *
  * // List entries of a directory
  * for entry in readDir (Path ("./some/dir")) {
  *     println (entry);
  * }
- * ===
+ * ```
  */
 pub fn readDir (path : Path)-> FsEntry
     throws FsError
@@ -233,12 +233,12 @@ pub fn tempDirectory (root : Path = Path ("/tmp"), prefix : [c8] = "")-> Path
  *         + permission denied
  *         + path is invalid
  * @example:
- * =================
+ * ```
  * use std::fs::{sys, path};
  *
  * createFile (Path ("./some/dir/file.txt"));
  * assert (isFile (Path ("./some/dir/file.txt"));
- * =================
+ * ```
  */
 pub fn createFile (path : Path)
     throws FsError
@@ -256,7 +256,7 @@ pub fn createFile (path : Path)
  * @returns: the instant of last modification of a file
  * @throws: FsError, if the path does not refer to a file
  * @example:
- * ============
+ * ```
  * use std::fs::{sys, path};
  *
  * let path1 = Path ("./some/dir/file.txt");
@@ -265,7 +265,7 @@ pub fn createFile (path : Path)
  * if (fileDate (path1) > fileDate (path2)) {
  *     println ("Path ", path2, " is older than ", path1);
  * }
- * ============
+ * ```
  */
 pub fn fileDate (path : Path)-> std::time::instant::Instant
     throws FsError
@@ -287,13 +287,13 @@ pub fn fileDate (path : Path)-> std::time::instant::Instant
  *    - true if the file exists and is a file
  *    - false if the file does not exists or is not a file, or the current user does not have permission to access it
  * @example:
- * =================
+ * ```
  * use std::fs::_;
  *
  * if (isFile (Path ("./some/dir/file.txt"))) {
  *     println ("File exists");
  * }
- * =================
+ * ```
  */
 pub fn isFile (path : Path)-> bool {
     etc::c::files::access (path.toStr ().toStringZ (), AccessMode::F_OK) == 0
@@ -305,13 +305,13 @@ pub fn isFile (path : Path)-> bool {
  *    - path: the path of the file, absolute or relative to cwd
  * @returns: true if the file exists and is writable
  * @example:
- * =================
+ * ```
  * use std::fs::_;
  *
  * if (isWritable (Path ("./some/dir/file.txt")) {
  *     println ("File is writable");
  * }
- * =================
+ * ```
  */
 pub fn isWritable (path : Path)-> bool {
     etc::c::files::access (path.toStr ().toStringZ (), AccessMode::W_OK) == 0
@@ -323,13 +323,13 @@ pub fn isWritable (path : Path)-> bool {
  *    - path: the path of the file, absolute or relative to cwd
  * @returns: true if the file exists and is readable
  * @example:
- * =================
+ * ```
  * use std::fs::_;
  *
  * if (isReadable (Path ("./some/dir/file.txt")) {
  *     println ("File is readable");
  * }
- * =================
+ * ```
  */
 pub fn isReadable (path : Path)-> bool {
     etc::c::files::access (path.toStr ().toStringZ (), AccessMode::R_OK) == 0
@@ -341,13 +341,13 @@ pub fn isReadable (path : Path)-> bool {
  *    - path: the path of the file, absolute or relative to cwd
  * @returns: true if the file exists and is executable
  * @example:
- * =================
+ * ```
  * use std::fs::_;
  *
  * if (isExecutable (Path ("./some/dir/file.txt")) {
  *     println ("File is readable");
  * }
- * =================
+ * ```
  */
 pub fn isExecutable (path : Path)-> bool {
     etc::c::files::access (path.toStr ().toStringZ (), AccessMode::X_OK) == 0
@@ -387,7 +387,7 @@ pub fn removeFile (path : Path)
  *      + permission denied
  *      + this is not a file
  * @example:
- * ===
+ * ```
  * use std::fs::{sys, path};
  *
  * assert (isFile (Path ("./some/dir/file.txt")));
@@ -395,7 +395,7 @@ pub fn removeFile (path : Path)
  *
  * copyFile (Path ("./some/dir/file.txt"), Path ("./some/other/dir/copy.txt"));
  * assert (isFile (Path ("./some/other/dir/copy.txt")));
- * ===
+ * ```
  */
 pub fn copyFile (src : Path, dst : Path)
     throws FsError
