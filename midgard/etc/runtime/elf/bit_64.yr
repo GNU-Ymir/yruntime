@@ -129,8 +129,9 @@ pub class ELF64Loader over ELFLoader {
         }
 
         if updated {
+            let dmut lst = copy [j for _, j in self._symbols];
             // we sort the address symbols to make search faster
-            self._addrSymbols = sort (alias self._addrSymbols, |a, b| => { a.ptr < b.ptr });
+            self._addrSymbols = sort (alias lst, |a, b| => { a.ptr < b.ptr });
         }
     }
 
@@ -141,7 +142,9 @@ pub class ELF64Loader over ELFLoader {
         if name !in self._readElf {
             self:.readElf (name);
             self._readElf [name] = ();
-            self._addrSymbols = sort (alias self._addrSymbols, |a, b| => { a.ptr < b.ptr });
+
+            let dmut lst = copy [j for _, j in self._symbols];
+            self._addrSymbols = sort (alias lst, |a, b| => { a.ptr < b.ptr });
         }
     }
 
@@ -181,7 +184,7 @@ pub class ELF64Loader over ELFLoader {
     pub over find (self, addr : usize)-> ReflectSymbol {
         if self._symbols.len == 0 return ReflectSymbol (ReflectSymbolType::NONE, 0, 0, "");
 
-        let mut l = 0is, mut r = cast!isize (self._symbols.len - 1us);
+        let mut l = 0is, mut r = cast!isize (self._addrSymbols.len - 1us);
         while l <= r {
             let m = ((l + r) / 2);
 
@@ -190,7 +193,9 @@ pub class ELF64Loader over ELFLoader {
                 l = m + 1;
             } else if curr.ptr > addr {
                 r = m - 1;
-            } else return curr;
+            } else {
+                return curr;
+            }
         }
 
         return ReflectSymbol (ReflectSymbolType::NONE, 0, 0, "");
@@ -289,8 +294,8 @@ pub class ELF64Loader over ELFLoader {
                                                   ptr-> cast!usize (sym.st_value),
                                                   size-> cast!usize (sym.st_size),
                                                   name-> realName);
+
                         self._symbols [realName] = refl;
-                        self._addrSymbols ~= [refl];
                     }
                 }
 
@@ -302,16 +307,16 @@ pub class ELF64Loader over ELFLoader {
                                                   ptr-> cast!usize (sym.st_value),
                                                   size-> cast!usize (sym.st_size),
                                                   name-> realName);
+
                         self._symbols [realName] = refl;
-                        self._addrSymbols ~= [refl];
                     } else if len > 2 && name [0] == '_' && name [1] == 'Y' {
                         let realName = std::conv::fromStringZ (name);
                         let refl = ReflectSymbol (ReflectSymbolType::OBJECT,
                                                   ptr-> cast!usize (sym.st_value),
                                                   size-> cast!usize (sym.st_size),
                                                   name-> realName);
+
                         self._symbols [realName] = refl;
-                        self._addrSymbols ~= [refl];
                     }
                 }
             }

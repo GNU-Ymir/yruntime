@@ -33,7 +33,7 @@
  */
 in signal;
 
-pub record Signal {
+pub record Signal {T of ()} {
 
     // List of connected function pointers
     let dmut _foos : [(dg ()-> void) => ()] = copy [];
@@ -129,7 +129,10 @@ pub record Signal {T...} {
      * */
     pub fn emit (self, values : T) {
         for f, _ in self._foos {
-            f (expand values);
+            cte if ((T,)::arity == 1) { f (values); }
+            else {
+                f (expand values);
+            }
         }
     }
 

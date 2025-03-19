@@ -144,22 +144,22 @@ pub record Instant {
      * ```
      */
     pub fn opBinary {"-"} (self, right : Duration)-> Instant {
-        if (right.negative) {
-            self.opBinary!{"+"} (Duration (right.sec, right.usec))
+        if (right.isNegative ()) {
+            self.opBinary!{"+"} (Duration (right.getSec (), right.getUSec ()))
         } else {
-            if (self.sec < right.sec) {
+            if (self.sec < right.getSec ()) {
                 Instant (0u64, 0u64)
-            } else if (self.usec > right.usec) {
-                Instant (self.sec - right.sec, left.usec - right.usec)
+            } else if (self.usec > right.getUSec ()) {
+                Instant (self.sec - right.getSec (), self.usec - right.getUSec ())
             } else {
-                if (self.sec == right.sec) {
+                if (self.sec == right.getSec ()) {
                     Instant (0u64, 0u64)
                 } else {
-                    let usec = right.usec - self.usec;
+                    let usec = right.getUSec () - self.usec;
                     if (usec != 0u64) {
-                        Instant (self.sec - right.sec - 1u64, (1_000_000u64 - usec))
+                        Instant (self.sec - right.getSec () - 1u64, (1_000_000u64 - usec))
                     } else {
-                        Instant (self.sec - right.sec, 0u64)
+                        Instant (self.sec - right.getSec (), 0u64)
                     }
                 }
             }
@@ -188,14 +188,14 @@ pub record Instant {
      * ```
      */
     pub fn opBinary {"+"} (self, right : Duration)-> Instant {
-        if (right.negative) {
-            self.opBinary!{"+"} (Duration (right.sec, right.usec))
+        if (right.isNegative ()) {
+            self.opBinary!{"+"} (Duration (right.getSec (), right.getUSec ()))
         } else {
-            if (self.usec + right.usec > 1_000_000u64) {
-                let usec = (self.usec + right.usec) % 1_000_000u64;
-                Instant (1u64 + self.sec + right.sec, usec)
+            if (self.usec + right.getUSec () > 1_000_000u64) {
+                let usec = (self.usec + right.getUSec ()) % 1_000_000u64;
+                Instant (1u64 + self.sec + right.getSec (), usec)
             } else {
-                Instant (self.sec + right.sec, self.usec + right.usec)
+                Instant (self.sec + right.getSec (), self.usec + right.getUSec ())
             }
         }
     }
