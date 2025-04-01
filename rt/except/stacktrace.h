@@ -31,7 +31,7 @@ char* _yrt_resolve_path (const char* filename, char* resolved, int size);
  *    - func: the name of the function
  *    - line: the line of the symbol
  */
-int _yrt_resolve_address (const char * filename, void* addr, _yrt_slice_t * file, int* line);
+int _yrt_resolve_address (const char * filename, void* addr, struct _yrt_reflect_symbol_t ref, _yrt_slice_t * file, int* line);
 
 #endif
 

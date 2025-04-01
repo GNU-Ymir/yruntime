@@ -1,0 +1,160 @@
+/**
+ * This module defines some common mathematical constants and functions.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in math;
+
+use std::traits;
+
+/**
+ * τ = 2 * π.
+ */
+pub def TAU =        6.28318530717958647692l;
+
+/**
+ * π
+ */
+pub def PI =         3.14159265358979323846l;
+
+/**
+ * π / 2.
+ */
+pub def PI_2 =       1.57079632679489661923l;
+
+/**
+ * π / 4.
+ */
+pub def PI_4 =       0.785398163397448309616l;
+
+/**
+ * 1 / π.
+ */
+pub def M_1_PI =     0.318309886183790671538l;
+
+/**
+ * 2 / π.
+ */
+pub def M_2_PI =     2.0l*M_1_PI;
+
+
+mod internal {
+    pub extern (C) fn roundf (x : f32)-> f32;
+    pub extern (C) fn round (x : f64)-> f64;
+    pub extern (C) fn roundl (x : f80)-> f80;
+    pub extern (C) fn roundl (x : fsize)-> fsize;
+
+    pub extern (C) fn asinf (x : f32)-> f32;
+    pub extern (C) fn sinf (x : f32)-> f32;
+    pub extern (C) fn asin (x : f64)-> f64;
+    pub extern (C) fn sin (x : f64)-> f64;
+    pub extern (C) fn asinl (x : f80)-> f80;
+    pub extern (C) fn sinl (x : f80)-> f80;
+    pub extern (C) fn asinl (x : fsize)-> fsize;
+    pub extern (C) fn sinl (x : fsize)-> fsize;
+
+
+    pub extern (C) fn acosf (x : f32)-> f32;
+    pub extern (C) fn cosf (x : f32)-> f32;
+    pub extern (C) fn acos (x : f64)-> f64;
+    pub extern (C) fn cos (x : f64)-> f64;
+    pub extern (C) fn acosl (x : f80)-> f80;
+    pub extern (C) fn cosl (x : f80)-> f80;
+    pub extern (C) fn acosl (x : fsize)-> fsize;
+    pub extern (C) fn cosl (x : fsize)-> fsize;
+
+    pub extern (C) fn atanf (x : f32)-> f32;
+    pub extern (C) fn atan2f (x : f32, y : f32)-> f32;
+    pub extern (C) fn tanf (x : f32)-> f32;
+    pub extern (C) fn atan (x : f64)-> f64;
+    pub extern (C) fn atan2 (x : f64, y : f64)-> f64;
+    pub extern (C) fn tan (x : f64)-> f64;
+    pub extern (C) fn atanl (x : f80)-> f80;
+    pub extern (C) fn atan2l (x : f80, y : f80)-> f80;
+    pub extern (C) fn tanl (x : f80)-> f80;
+    pub extern (C) fn atanl (x : fsize)-> fsize;
+    pub extern (C) fn atan2l (x : fsize, y : fsize)-> fsize;
+    pub extern (C) fn tanl (x : fsize)-> fsize;
+}
+
+/**
+ * @returns: `x` rounded to `nb` numbers after the decimal point.
+ */
+pub fn if isFloating!{T} round {T} (x : T, nb : u32)-> T {
+    let p = cast!T (10is ^^ cast!isize (nb));
+    cte if is!{T}{U of f32} { internal::roundf (x * p) / p }
+    else cte if is!{T}{U of f64} { internal::round (x * p) / p }
+    else cte if is!{T}{U of f80} { internal::roundl (x * p) / p }
+    else { internal::roundl (x * p) / p }
+}
+
+/**
+ * @returns: arc sin value of `x` expressed in radians.
+ */
+pub fn if isFloating!{T} asin {T} (x : T)-> T {
+    cte if is!{T}{U of f32} { internal::asinf (x) }
+    else cte if is!{T}{U of f64} { internal::asin (x) }
+    else cte if is!{T}{U of f80} { internal::asinl (x) }
+    else { internal::asinl (x) }
+}
+
+/**
+ * @returns: sin value of `x` expressed in radians.
+ */
+pub fn if isFloating!{T} sin {T} (x : T)-> T {
+    cte if is!{T}{U of f32} { internal::sinf (x) }
+    else cte if is!{T}{U of f64} { internal::sin (x) }
+    else cte if is!{T}{U of f80} { internal::sinl (x) }
+    else { internal::sinl (x) }
+}
+
+/**
+ * @returns: arc cos value of `x` expressed in radians.
+ */
+pub fn if isFloating!{T} acos {T} (x : T)-> T {
+    cte if is!{T}{U of f32} { internal::acosf (x) }
+    else cte if is!{T}{U of f64} { internal::acos (x) }
+    else cte if is!{T}{U of f80} { internal::acosl (x) }
+    else { internal::acosl (x) }
+}
+
+/**
+ * @returns: cos value of `x` expressed in radians.
+ */
+pub fn if isFloating!{T} cos {T} (x : T)-> T {
+    cte if is!{T}{U of f32} { internal::cosf (x) }
+    else cte if is!{T}{U of f64} { internal::cos (x) }
+    else cte if is!{T}{U of f80} { internal::cosl (x) }
+    else { internal::cosl (x) }
+}
+
+/**
+ * @returns: arc tan value of `x` expressed in radians.
+ */
+pub fn if isFloating!{T} atan {T} (x : T)-> T {
+    cte if is!{T}{U of f32} { internal::atanf (x) }
+    else cte if is!{T}{U of f64} { internal::atan (x) }
+    else cte if is!{T}{U of f80} { internal::atanl (x) }
+    else { internal::atanl (x) }
+}
+
+/**
+ * @returns: tan value of `x` expressed in radians.
+ */
+pub fn if isFloating!{T} tan {T} (x : T)-> T {
+    cte if is!{T}{U of f32} { internal::tanf (x) }
+    else cte if is!{T}{U of f64} { internal::tan (x) }
+    else cte if is!{T}{U of f80} { internal::tanl (x) }
+    else { internal::tanl (x) }
+}
+
+/**
+ * @returns: arc tan2 value of `x` / `y` expressed in radians.
+ */
+pub fn if isFloating!{T} tan {T} (x : T, y : T)-> T {
+    cte if is!{T}{U of f32} { internal::atan2f (x, y) }
+    else cte if is!{T}{U of f64} { internal::atan2 (x, y) }
+    else cte if is!{T}{U of f80} { internal::atan2l (x, y) }
+    else { internal::atan2l (x, y) }
+}

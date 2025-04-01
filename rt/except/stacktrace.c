@@ -94,7 +94,7 @@ int _yrt_find_dwarf_die (Dwarf_Debug obj, uint64_t addr, Dwarf_Die * die) {
     return 1;
 }
 
-void _yrt_find_in_dwarf (const char * filename, void * addr, _yrt_slice_t * file, int * line) {
+void _yrt_find_in_dwarf (const char * filename, void * addr, void * start, void * end, _yrt_slice_t * file, int * line) {
     Dwarf_Debug dbg = 0;
     int res = DW_DLV_ERROR;
     Dwarf_Error error;
@@ -120,6 +120,10 @@ void _yrt_find_in_dwarf (const char * filename, void * addr, _yrt_slice_t * file
         goto end_die;
     }
 
+    uint64_t vaddr = (uint64_t) addr;
+    uint64_t vstart = (uint64_t) start;
+    uint64_t vend = (uint64_t) end;
+
     Dwarf_Unsigned lineno;
     Dwarf_Addr lineaddr;
     uint64_t result = nlines;
@@ -129,11 +133,21 @@ void _yrt_find_in_dwarf (const char * filename, void * addr, _yrt_slice_t * file
     for (uint64_t n = 0; n < nlines; n++) {
         /* Retrieve the virtual address for this line. */
         if (dwarf_lineaddr(lines [n], &lineaddr, &error) == 0) {
-            int dist = abs ((uint64_t) addr - lineaddr);
-            if (dist < max) {
-                max = dist;
-                result = n;
-                if (dist == 0) break;
+            if (lineaddr >= vstart && lineaddr <= vend) { // in the correct function
+                if (vaddr > lineaddr && (vaddr - lineaddr) < max) {
+                    max = (vaddr - lineaddr);
+                    result = n;
+                }
+
+                if (vaddr < lineaddr && (lineaddr - vaddr) < max) {
+                    max = (lineaddr - vaddr);
+                    result = n;
+                }
+
+                else if (vaddr == lineaddr) {
+                    result = n;
+                    break;
+                }
             }
         }
     }
@@ -163,11 +177,14 @@ end:
     close(fd);
 }
 
-int _yrt_resolve_address (const char * filename, void* addr, _yrt_slice_t * file, int* line) {
+int _yrt_resolve_address (const char * filename, void* addr, struct _yrt_reflect_symbol_t ref, _yrt_slice_t * file, int* line) {
     *file = str_empty ();
     *line = 0;
 
-    _yrt_find_in_dwarf (filename, addr, file, line);
+    void * start = ref.ptr;
+    void * end = ref.ptr + ref.size;
+
+    _yrt_find_in_dwarf (filename, addr, start, end, file, line);
     return 0;
 }
 
@@ -204,7 +221,7 @@ _yrt_slice_t _yrt_exc_resolve_stack_trace (_yrt_slice_t syms) {
         if (ref_sym.type == FUNCTION) {
             file.data = NULL;
 
-            _yrt_resolve_address (resolved, ref_sym.ptr, &file, &line);
+            _yrt_resolve_address (resolved, sym, ref_sym, &file, &line);
             if (file.data != NULL) {
                 tmp = str_create ("\n╞═ bt ╕ #");
             } else {
@@ -218,6 +235,7 @@ _yrt_slice_t _yrt_exc_resolve_stack_trace (_yrt_slice_t syms) {
             int need_break = 0;
             if (ref_sym.name.data != NULL) {
                 _yrt_slice_t name = _yrt_demangle_symbol (ref_sym.name.data, ref_sym.name.len);
+
                 tmp = str_create (" in function \e[33m");
                 _yrt_append_slice (&result, &tmp, sizeof (uint8_t));
                 _yrt_append_slice (&result, &name, sizeof (uint8_t));
