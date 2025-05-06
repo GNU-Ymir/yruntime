@@ -6,7 +6,7 @@
 
 in sys;
 
-use etc::runtime::{errno, env};
+use etc::runtime::{errno, env, files};
 use etc::c::{dirent, files, memory};
 
 use std::{io, stream, conv};
@@ -68,6 +68,7 @@ pub fn createDir (path : Path, recursive : bool = false, permission : i32 = 0o77
  * Check for the existence of a directory
  * @params:
  *    - path: the path to the directory to access, absolute or relative to cwd
+ *    - followLink: if path is a link follow it and check wether the path pointed by it is a directory
  * @returns:
  *     - true if the directory exists and is accessible
  *     - false if it does not exists or if it not a directory or current user does not have permission to access it
@@ -83,14 +84,8 @@ pub fn createDir (path : Path, recursive : bool = false, permission : i32 = 0o77
  * }
  * ```
  */
-pub fn isDir (path : Path)-> bool {
-    let dir = opendir (path.toStr ().toStringZ ());
-    if (dir != null) {
-        closedir (dir);
-        true
-    } else {
-        false
-    }
+pub fn isDir (path : Path, followLink : bool = true)-> bool {
+    _yrt_is_dir (path.toStr ().toStringZ (), followLink)
 }
 
 /**
@@ -121,7 +116,9 @@ pub fn removeDir (path : Path, recursive : bool = false)
     if (isDir (path)) {
         if (recursive) {
             for i in readDir (path) match i {
-                FsEntry (kind-> FsEntryKind::FILE, path-> p) => { removeFile (p); }
+                FsEntry (kind-> FsEntryKind::FILE, path-> p) => {
+                    removeFile (p);
+                }
                 FsEntry (kind-> FsEntryKind::DIR, path-> p) => {
                     removeDir (p, recursive-> true);
                 }
@@ -270,19 +267,19 @@ pub fn createFile (path : Path)
 pub fn fileDate (path : Path)-> std::time::instant::Instant
     throws FsError
 {
-    let mut fileStat = etc::c::files::stat_t ();
-    let f = etc::c::files::stat (path.toStr ().toStringZ (), alias &fileStat);
-    if (f != 0) {
-        throw copy FsError (errors::to!{FsErrorCode} (errno ()), path.toStr ());
+    let mut sec : i64 = 0, mut nsec : u64 = 0;
+    if (!_yrt_file_date (path.toStr ().toStringZ (), &sec, &nsec)) {
+        throw copy FsError (FsErrorCode::NOT_FOUND, path.toStr ());
     }
 
-    Instant (fileStat.st_mtime, 0u64)
+    Instant (cast!u64 (sec), nsec)
 }
 
 /**
  * Check the existence of a file.
  * @params:
  *    - path: the path of the file, absolute or relative to cwd
+ *    - followLink: if path is a link follow it and check wether the path pointed by it is a file
  * @returns:
  *    - true if the file exists and is a file
  *    - false if the file does not exists or is not a file, or the current user does not have permission to access it
@@ -295,8 +292,28 @@ pub fn fileDate (path : Path)-> std::time::instant::Instant
  * }
  * ```
  */
-pub fn isFile (path : Path)-> bool {
-    etc::c::files::access (path.toStr ().toStringZ (), AccessMode::F_OK) == 0
+pub fn isFile (path : Path, followLink : bool = true)-> bool {
+    _yrt_is_file (path.toStr ().toStringZ (), followLink)
+}
+
+/**
+ * Check the existence of a link
+ * @params:
+ *    - path: the path of the link, absolute or relative to cwd
+ * @returns:
+ *    - true if the link exists and is a link
+ *    - false if the link does not exists or is not a link, or the current user does not have permission to access it
+ * @example:
+ * ```
+ * use std::fs::_;
+ *
+ * if (isLink (Path ("./some/dir/file.lnk"))) {
+ *     println ("Link exists");
+ * }
+ * ```
+ */
+pub fn isLink (path : Path)-> bool {
+    _yrt_is_link (path.toStr ().toStringZ ())
 }
 
 /**
@@ -314,7 +331,7 @@ pub fn isFile (path : Path)-> bool {
  * ```
  */
 pub fn isWritable (path : Path)-> bool {
-    etc::c::files::access (path.toStr ().toStringZ (), AccessMode::W_OK) == 0
+    _yrt_is_writable (path.toStr ().toStringZ ())
 }
 
 /**
@@ -332,7 +349,7 @@ pub fn isWritable (path : Path)-> bool {
  * ```
  */
 pub fn isReadable (path : Path)-> bool {
-    etc::c::files::access (path.toStr ().toStringZ (), AccessMode::R_OK) == 0
+    _yrt_is_readable (path.toStr ().toStringZ ())
 }
 
 /**
@@ -350,7 +367,7 @@ pub fn isReadable (path : Path)-> bool {
  * ```
  */
 pub fn isExecutable (path : Path)-> bool {
-    etc::c::files::access (path.toStr ().toStringZ (), AccessMode::X_OK) == 0
+    _yrt_is_executable (path.toStr ().toStringZ ())
 }
 
 /**
@@ -418,12 +435,8 @@ pub fn copyFile (src : Path, dst : Path)
 pub fn removeFsEntry (path : Path)
     throws FsError
 {
-    if (!isDir (path) && !isFile (path)) {
-        if unlink (path.toStr ().toStringZ ()) == -1 {
-            throw copy FsError (errors::to!{FsErrorCode} (errno ()), path.toStr ())
-        }
-    } else {
-        throw copy FsError (FsErrorCode::PERMISSION_DENIED, path.toStr ())
+    if remove (path.toStr ().toStringZ ()) == -1 {
+        throw copy FsError (errors::to!{FsErrorCode} (errno ()), path.toStr ())
     }
 }
 

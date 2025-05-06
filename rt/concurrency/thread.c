@@ -186,7 +186,7 @@ void _yrt_atomic_monitor_exit (void* object) {
     pthread_mutex_unlock (lock);
 }
 
-unsigned int _yrt_get_nprocs () {
+uint32_t _yrt_get_nprocs () {
 #ifdef __linux__
     return get_nprocs ();
 #endif
@@ -195,4 +195,8 @@ unsigned int _yrt_get_nprocs () {
     GetSystemInfo(&sysinfo);
     return sysinfo.dwNumberOfProcessors;
 #endif
+}
+
+uint64_t _yrt_thread_self_id () {
+    return pthread_self ();
 }
