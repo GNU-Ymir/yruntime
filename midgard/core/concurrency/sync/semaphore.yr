@@ -43,6 +43,17 @@ extern (C) fn _yrt_thread_sem_wait (id : *sem_t);
  */
 extern (C) fn _yrt_thread_sem_wait_timeout (id : *sem_t, sec : u64, nsec : u64)-> bool;
 
+
+/**
+ * Wait for a semaphore to be triggered
+ * @params:
+ *    - sem: the semaphore
+ *    - sec: the epoch instant in second
+ *    - nsec: the epoch instant in micro seconds
+ * @returns: true if the semaphore was posted, false if timedout
+ */
+extern (C) fn _yrt_thread_sem_wait_instant (id : *sem_t, sec : u64, nsec : u64)-> bool;
+
 /**
  * Emit a new entry in the semaphore
  * @params:
@@ -97,6 +108,15 @@ pub class Semaphore {
         } else {
             _yrt_thread_sem_wait_timeout (&self._sem, timeout.getSec (), timeout.getUSec ())
         }
+    }
+
+    /**
+     * Wait for the semaphore to be posted
+     * @params:
+     *    - timeout: the instant in the future defining the timeout
+     * */
+    pub fn wait (mut self, timeout : std::time::instant::Instant)-> bool {
+        _yrt_thread_sem_wait_instant (&self._sem, timeout.sec, timeout.usec)
     }
 
     /**

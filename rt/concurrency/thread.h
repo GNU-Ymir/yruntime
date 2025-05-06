@@ -183,6 +183,15 @@ int32_t _yrt_thread_sem_get (sem_t * sem);
 uint8_t _yrt_thread_sem_wait_timeout (sem_t * sem, uint64_t sec, uint64_t nsec);
 
 /**
+ * Wait for a semaphore to be triggered or timeout
+ * @params:
+ *    - sem: the semaphore
+ *    - sec: the epoch instant timeout in second
+ *    - nsec: the epoch instant timeout in micro second
+ */
+uint8_t _yrt_thread_sem_wait_instant (sem_t * sem, uint64_t sec, uint64_t nsec);
+
+/**
  * Emit a new entry in the semaphore
  * @params:
  *    - sem: the semaphore to post

@@ -6,6 +6,10 @@
 
 in socket;
 
+pub record sockaddr {
+    pub let mut sin_family : u16;
+}
+
 pub record sockaddr_in {
     pub let mut sin_family : u16;
     pub let mut sin_port   : u16;
@@ -41,6 +45,16 @@ pub record sockaddr_in6 {
         , sin6_addr = sin6_addr
         , sin6_scope_id = sin6_scope_id
     {}
+}
+
+pub record ifaddrs {
+    pub let ifa_next : *ifaddrs = null;
+    pub let ifa_name : *c8 = null;
+    pub let ifa_flags : u32 = 0;
+    pub let ifa_addr : *sockaddr = null;
+    pub let ifa_netmask : *sockaddr = null;
+
+    pub self () {}
 }
 
 pub record in_addr {
@@ -113,6 +127,8 @@ pub extern (C) fn recv (sock : i32, ptr : *(void), size : u32, flag : i32)-> i32
 pub extern (C) fn close (sock : i32);
 
 pub extern (C) fn shutdown (sock : i32, how : ShutdownCodes);
+pub extern (C) fn getifaddrs (ifa : *(*ifaddrs))-> i32;
+pub extern (C) fn freeifaddrs (ifa : *ifaddrs);
 
 pub enum : u32
 | SOCK_STREAM	 = 1u32

@@ -152,6 +152,22 @@ uint8_t _yrt_thread_sem_wait_timeout (sem_t * sem, uint64_t sec, uint64_t nsec) 
     } while (1);
 }
 
+
+uint8_t _yrt_thread_sem_wait_instant (sem_t * sem, uint64_t sec, uint64_t nsec) {
+    struct timespec ts;
+    ts.tv_sec = sec;
+    ts.tv_nsec = nsec;
+
+    do {
+        int ret = sem_timedwait (sem, &ts);
+        if (ret != 0) {
+            if (errno != EINTR) { return 0; } // GC might trigger interruption signal
+        } else {
+            return 1;
+        }
+    } while (1);
+}
+
 void _yrt_thread_sem_post (sem_t * sem) {
     sem_post (sem);
 }
