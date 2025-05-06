@@ -5,6 +5,7 @@
 #include <unistd.h> 
 #include <sys/types.h> 
 #include <string.h> 
+#include <errno.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -127,21 +128,28 @@ void _yrt_thread_sem_wait (sem_t * sem) {
     sem_wait (sem);
 }
 
-uint8_t _yrt_thread_sem_wait_timeout (sem_t * sem, float timeout) {
+uint8_t _yrt_thread_sem_wait_timeout (sem_t * sem, uint64_t sec, uint64_t nsec) {
     struct timespec ts;
     if (clock_gettime (CLOCK_REALTIME, &ts) == -1) {
         return 0;
     }
 
-    ts.tv_sec += (uint64_t) timeout;
-    ts.tv_nsec += (uint64_t) (timeout * 1000000000) % 1000000000;
+    ts.tv_sec += sec;
+    ts.tv_nsec += nsec;
 
     if (ts.tv_nsec > 1000000000) {
         ts.tv_nsec -= 1000000000;
         ts.tv_sec += 1;
     }
 
-    return sem_timedwait (sem, &ts) == 0;
+    do {
+        int ret = sem_timedwait (sem, &ts);
+        if (ret != 0) {
+            if (errno != EINTR) { return 0; } // GC might trigger interruption signal
+        } else {
+            return 1;
+        }
+    } while (1);
 }
 
 void _yrt_thread_sem_post (sem_t * sem) {

@@ -177,9 +177,10 @@ int32_t _yrt_thread_sem_get (sem_t * sem);
  * Wait for a semaphore to be triggered or timeout
  * @params:
  *    - sem: the semaphore
- *    - timeout: the timeout in second (<= 0 means no timeout)
+ *    - sec: the timeout in second
+ *    - nsec: the timeout in micro second
  */
-uint8_t _yrt_thread_sem_wait_timeout (sem_t * sem, float timeout);
+uint8_t _yrt_thread_sem_wait_timeout (sem_t * sem, uint64_t sec, uint64_t nsec);
 
 /**
  * Emit a new entry in the semaphore
