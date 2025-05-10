@@ -1,0 +1,107 @@
+
+in utils;
+
+use std::{time::_, net::_,
+          traits, conv::errors, config::_};
+
+use std::concurrency::actor::sys::message;
+
+/**
+ * Job sent to an actor system
+ * */
+pub record Job {
+    pub let kind : Protocol = Protocol::NONE;
+    pub let data : [u8];
+    pub let origin : SockAddr;
+    pub let msg : (ActorMessage)?;
+    pub let start : Instant;
+
+    pub self (data : [u8] = [], origin : SockAddr, msg : (ActorMessage)? = none, start : Instant)
+        with data = data
+        , origin = origin
+        , msg = msg
+        , start = start
+    {}
+
+
+    pub fn isPacket (self)-> bool {
+        if let Ok () = self.msg {
+            return false;
+        }
+
+        true
+    }
+}
+
+/**
+ * Response to a request sent throw an actor message
+ * */
+pub record Response {
+    let mut reqId : u64;
+    let content : (&Config)?;
+
+    pub self (reqId : u64, content : (&Config)?)
+        with reqId = reqId
+        , content = content
+    {}
+}
+
+/**
+ * Empty class defined to allocate a mutex
+ * */
+pub class Sync {
+    pub self () {}
+}
+
+/**
+ * Read a scalar type in a packet
+ * */
+pub fn if isScalar!{T} read {T} (ref mut buffer : [u8])-> T
+    throws CastFailure
+{
+    if (buffer.len >= T::size) {
+        let ret = cast!{*T} (buffer.ptr);
+        buffer = buffer [T::size .. $];
+
+        unsafe {
+            ret [0]
+        }
+    } else throw copy CastFailure (typeof (buffer)::typeinfo, T::typeinfo);
+}
+
+/**
+ * Read a slice of scalar type in a packet
+ * */
+pub fn if isScalar!{U} read {T of [U], U} (ref mut buffer : [u8], len : u32)-> T
+    throws CastFailure
+{
+    if (buffer.len >= U::size * len) {
+        let ret = cast!{*U} (buffer.ptr);
+        buffer = buffer [cast!usize (U::size * len) .. $];
+
+        unsafe {
+            copy [ret [i] for i in 0 .. len]
+        }
+    } else throw copy CastFailure (typeof (buffer)::typeinfo, T::typeinfo);
+}
+
+
+/**
+ * Write a scalar type in a packet
+ * */
+pub fn if isScalar!{T} write {T} (ref mut buffer : [u8], value : T) {
+    let u8P : *u8 = cast!{*u8} (cast!{*void} (&value));
+    unsafe {
+        buffer ~= copy [u8P [i] for i in 0 .. T::size];
+    }
+}
+
+/**
+ * Write a slice of scalar type in a packet
+ * */
+pub fn if isScalar!{U} write {T of [U], U} (ref mut buffer : [u8], value : T) {
+    let u8P : *u8 = cast!{*u8} (cast!{*void} (value.ptr));
+    unsafe {
+        buffer ~= copy [u8P [i] for i in 0 .. (U::size * value.len)];
+    }
+}

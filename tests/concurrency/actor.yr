@@ -1,0 +1,51 @@
+in actor;
+
+
+use std::concurrency::actor;
+use std::config::_;
+use std::io;
+
+class BobActor over ActorBase {
+    // @warning: Actor is not yet attached to system in the ctor
+    pub self () {}
+
+    /**
+     * Actor is attached to a system and system is ready
+     */
+    pub over onStart (mut self) {
+        let dmut rf = self:.system:.local ("alice");
+
+        rf:.send (json#{"msg" : "Hello"})?; // send a message to Alice actor
+        // self:.kill (); // kill the actor once message is sent
+    }
+
+    pub over onQuit (mut self) {
+        println ("Killing actor : ", self._name);
+    }
+}
+
+
+class AliceActor over ActorBase {
+    pub self () {}
+
+    pub over onMessage (mut self, msg : &Config) {
+        println ("Receive a message : ", msg);
+        self:.kill (); // kill the actor once message is received
+    }
+
+    pub over onQuit (mut self) {
+        println ("Killing actor : ", self._name);
+        self:.system:.kill ();
+    }
+}
+
+
+__test {
+    let dmut sys = copy ActorSystem ();
+    sys:.add ("alice", copy AliceActor ());
+    sys:.add ("bob", copy BobActor ());
+
+    sys:.start (); // start the actor system
+    sys:.join (); // Wait for all the actors to die
+
+}

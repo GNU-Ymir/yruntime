@@ -1,0 +1,78 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ */
+
+in reference;
+
+use std::concurrency::actor::{sys, errors, request};
+
+use std::{config::_, net::_, time::_};
+use core::concurrency::sync::_;
+
+/**
+ * A reference to a remote or a local actor
+ * A local actor is an actor that uses the same actorsystem to send and receive messages (i.e. self.addr.ip == localhost && self.addr.port == self.sys.port)
+ * */
+@final
+pub class ActorRef {
+
+    // True iif the actor is a reference to send messages through the local actorsystem
+    pub let isLocal : bool;
+
+    // The name of the actor being referenced
+    pub let name : [c8];
+
+    // The address of the actor system that will received the messages
+    pub let addr : SockAddr;
+
+    // The actor system managing the reference (local actorsystem used to send messages)
+    pub let dmut sys : &sys::ActorSystem;
+
+    /**
+     * @params:
+     *   - isLocal: true iif addr == LOCALHOST
+     * */
+    pub self (name : [c8], addr : SockAddr, dmut sys : &sys::ActorSystem)
+        with isLocal = (addr.ip.isLoopback () && (addr.port == sys.port))
+        , name = name
+        , addr = addr
+        , sys = alias sys
+    {}
+
+    /**
+     * Send a message to the actor
+     * @params:
+     *    - content: the content of the message to send
+     * @throws:
+     *    - ActorError: if the connection to the actor fails
+     * */
+    pub fn send (mut self, content : &Config)
+        throws errors::ActorError
+    {
+        if !self.sys:.sendMessage (self.addr, self.name, content, self.isLocal) {
+            throw copy errors::ActorError ("Failed to send message to " ~ self.name);
+        }
+    }
+
+    /**
+     * Send a message to the actor and expect a response
+     * @params:
+     *    - content: the content of the message to send
+     *    - timeout: the timeout in second of the response (unspecified or negative for no timeout)
+     * @returns: the future for awaiting the response
+     * @throws:
+     *   - ActorError: if the connection to the actor fails
+     * */
+    pub fn request (mut self, content : &Config, timeout : Duration = Duration (1, 0, negative-> true))-> dmut &request::ActorRqtFuture
+        throws errors::ActorError
+    {
+        if let Ok (dmut rqt) = alias self.sys:.sendRequest (self.addr, self.name, content, self.isLocal, timeout) {
+            return alias rqt;
+        }
+
+        throw copy errors::ActorError ("Failed to send message to " ~ self.name);
+    }
+
+}

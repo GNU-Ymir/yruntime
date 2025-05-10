@@ -1,0 +1,30 @@
+/**
+ * @authors: Emile Cadorel
+ * @license: GPLv3
+ */
+
+in errors;
+
+/**
+ * Error sent when error occurs in the actor system
+ * */
+@final
+pub class ActorError over core::exception::Exception {
+    pub let msg : [c8];
+
+    pub self (msg : [c8])
+        with msg = msg
+    {}
+
+    impl std::stream::Streamable {
+        pub over toStream (self, dmut stream : &std::stream::StringStream) {
+            stream:.write (self.__typeid__, " (");
+            self.__stream__streamContent (alias stream);
+            stream:.write (')');
+            if (self.trace.len != 0us) {
+                stream:.write (":\n"s8);
+                stream:.write (self.getStackTrace ());
+            }
+        }
+    }
+}

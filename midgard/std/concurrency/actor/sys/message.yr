@@ -1,0 +1,253 @@
+/**
+ * @authors: Emile Cadorel
+ * @license: GPLv3
+ */
+
+in message;
+
+use std::{traits, conv::errors};
+use std::{net::_, config::_, io};
+use std::stream;
+use actor::sys;
+
+
+pub enum : u8
+| ACTOR_MSG         = 1
+| ACTOR_REQ         = 2
+| ACTOR_RESP        = 3
+| ACTOR_RESP_FAILED = 4
+| SYSTEM_KILL_ALL   = 5
+| NONE              = 6
+ -> Protocol;
+
+enum : u8
+| DICT  = 1
+| ARRAY = 2
+| INT   = 3
+| FLOAT = 4
+| BOOL  = 5
+| STR   = 6
+ -> Types;
+
+/**
+ * Record used to serialize and deserialize messages from an actorsystem to another one
+ * */
+pub record ActorMessage {
+
+    pub let dmut sys : &sys::ActorSystem;
+    pub let kind : Protocol;
+    pub let uid : u64;
+    pub let actorName : [c8];
+    pub let addr : SockAddr;
+    pub let content : &Config;
+
+    pub self (dmut sys : &sys::ActorSystem, kind : Protocol, actorName : [c8], addr : SockAddr, content : &Config)
+        with sys = alias sys
+        , kind = kind
+        , uid = sys:.genUID ()
+        , actorName = actorName
+        , addr = addr
+        , content = content
+    {}
+
+    pub self (reqId : u64, dmut sys : &sys::ActorSystem, kind : Protocol, addr : SockAddr, content : &Config, actorName : [c8] = "")
+        with sys = alias sys
+        , kind = kind
+        , uid = reqId
+        , actorName = actorName
+        , addr = addr
+        , content = content
+    {}
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =================================          SERIALIZATION          ==================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    pub fn serialize (self)-> [u8] {
+        let dmut buffer : [u8] = [];
+        utils::write!{u8} (ref buffer, self.kind);
+
+        utils::write!{u64} (ref buffer, self.uid);
+        utils::write!{u16} (ref buffer, self.sys.port);
+        utils::write!{u32} (ref buffer, cast!u32 (self.actorName.len));
+        utils::write!{[c8]} (ref buffer, self.actorName);
+
+        self.dump (ref buffer, self.content);
+        buffer
+    }
+
+    fn dump (self, ref dmut buffer : [u8], content : &Config) {
+        match content {
+            d : &Dict => self.dumpDict (ref buffer, d);
+            a : &Array => self.dumpArray (ref buffer, a);
+            i : &Int => self.dumpInt (ref buffer, i);
+            f : &Float => self.dumpFloat (ref buffer, f);
+            s : &Str => self.dumpStr (ref buffer, s);
+            b : &Bool => self.dumpBool (ref buffer, b);
+        }
+    }
+
+    fn dumpDict (self, ref dmut buffer : [u8], d : &Dict) {
+        utils::write!{u8} (ref buffer, Types::DICT);
+        utils::write!{u32} (ref buffer, cast!u32 (d[].len));
+        for key, value in d[] {
+            utils::write!{u32} (ref buffer, cast!u32 (key.len));
+            utils::write!{[c8]} (ref buffer, key);
+            self.dump (ref buffer, value);
+        }
+    }
+
+    fn dumpArray (self, ref dmut buffer : [u8], a : &Array) {
+        utils::write!{u8} (ref buffer, Types::ARRAY);
+        utils::write!{u32} (ref buffer, cast!u32 (cast!u32 (a[].len)));
+        for value in a[] {
+            self.dump (ref buffer, value);
+        }
+    }
+
+    fn dumpInt (self, ref dmut buffer : [u8], i : &Int) {
+        utils::write!{u8} (ref buffer, Types::INT);
+        utils::write!{i64} (ref buffer, i.value);
+    }
+
+    fn dumpFloat (self, ref dmut buffer : [u8], f : &Float) {
+        utils::write!{u8} (ref buffer, Types::FLOAT);
+        utils::write!{f64} (ref buffer, f.value);
+    }
+
+    fn dumpStr (self, ref dmut buffer : [u8], s : &Str) {
+        utils::write!{u8} (ref buffer, Types::STR);
+        utils::write!{u32} (ref buffer, cast!u32 (s.value.len));
+        utils::write!{[c8]} (ref buffer, s.value);
+    }
+
+    fn dumpBool (self, ref dmut buffer : [u8], b : &Bool) {
+        utils::write!{u8} (ref buffer, Types::STR);
+        utils::write!{u8} (ref buffer, if (b.value) { 1u8 } else { 0u8 });
+    }
+
+    impl Streamable {
+        pub over toStream (self, dmut stream : &StringStream) {
+            stream:.write (self.actorName, " <-- ", self.content);
+        }
+    }
+}
+
+
+pub fn deserialize (dmut sys : &sys::ActorSystem, origin : SockAddr, content : [u8])-> ActorMessage
+    throws CastFailure
+{
+    let mut buffer = content;
+    let kind = match utils::read!{u8} (ref buffer) {
+        Protocol::ACTOR_MSG => { Protocol::ACTOR_MSG }
+        Protocol::ACTOR_REQ => { Protocol::ACTOR_REQ }
+        Protocol::ACTOR_RESP => { Protocol::ACTOR_RESP }
+        Protocol::ACTOR_RESP_FAILED => { Protocol::ACTOR_RESP_FAILED }
+        Protocol::SYSTEM_KILL_ALL => { Protocol::SYSTEM_KILL_ALL }
+        _ => { throw copy CastFailure (typeof (buffer)::typeinfo, ActorMessage::typeinfo); }
+    };
+
+    let uid = utils::read!{u64} (ref buffer);
+    let port = utils::read!{u16} (ref buffer);
+    let actorNameLen = utils::read!{u32} (ref buffer);
+    let actorName = utils::read!{[c8]} (ref buffer, actorNameLen);
+
+    let cfg = parse (ref buffer);
+
+    return ActorMessage (reqId-> uid, alias sys, kind, SockAddr (origin.ip, port), cfg, actorName-> actorName)
+}
+
+fn parse (ref mut buffer : [u8])-> &Config
+    throws CastFailure
+{
+    match utils::read!{u8} (ref buffer) {
+        Types::DICT => return parseDict (ref buffer);
+        Types::ARRAY => return parseArray (ref buffer);
+        Types::INT => return parseInt (ref buffer);
+        Types::FLOAT => return parseFloat (ref buffer);
+        Types::BOOL => return parseBool (ref buffer);
+        Types::STR => return parseStr (ref buffer);
+        _ => {
+            throw copy CastFailure (typeof (buffer)::typeinfo, Config::typeinfo);
+        }
+    }
+}
+
+fn parseDict (ref mut buffer : [u8])-> &Dict
+    throws CastFailure
+{
+    let nbEntries = utils::read!{u32} (ref buffer);
+    if nbEntries > std::unit::MemorySize::KB (10) {
+        throw copy CastFailure (typeof (buffer)::typeinfo, Dict::typeinfo);
+    }
+
+    let dmut di = copy Dict ();
+    for _ in 0 .. nbEntries {
+        let len = utils::read!{u32} (ref buffer);
+        if len > std::unit::MemorySize::KB (10) {
+            throw copy CastFailure (typeof (buffer)::typeinfo, Dict::typeinfo);
+        }
+
+        let key = utils::read!{[c8]} (ref buffer, len);
+        let value = parse (ref buffer);
+
+        di:[key] = value;
+    }
+
+    di
+}
+
+fn parseArray (ref mut buffer : [u8])-> &Array
+    throws CastFailure
+{
+    let nbEntries = utils::read!{u32} (ref buffer);
+    if nbEntries > std::unit::MemorySize::KB (10) {
+        throw copy CastFailure (typeof (buffer)::typeinfo, Dict::typeinfo);
+    }
+
+    let dmut arr = copy Array ();
+    for _ in 0 .. nbEntries {
+        let value = parse (ref buffer);
+
+        arr:.push (value);
+    }
+
+    arr
+}
+
+fn parseInt (ref mut buffer : [u8])-> &Int
+    throws CastFailure
+{
+    let value = utils::read!{i64} (ref buffer);
+    copy Int (value)
+}
+
+fn parseFloat (ref mut buffer : [u8])-> &Float
+    throws CastFailure
+{
+    let value = utils::read!{f64} (ref buffer);
+    copy Float (value)
+}
+
+fn parseBool (ref mut buffer : [u8])-> &Bool
+    throws CastFailure
+{
+    let value = utils::read!{u8} (ref buffer);
+    copy Bool (value != 0)
+}
+
+fn parseStr (ref mut buffer : [u8])-> &Str
+    throws CastFailure
+{
+    let len = utils::read!{u32} (ref buffer);
+    if len > std::unit::MemorySize::KB (10) {
+        throw copy CastFailure (typeof (buffer)::typeinfo, Str::typeinfo);
+    }
+
+    let key = utils::read!{[c8]} (ref buffer, len);
+    copy Str (key)
+}

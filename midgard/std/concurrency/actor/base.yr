@@ -1,0 +1,167 @@
+/**
+ * Module containing the base class of an actor
+ * @authors: Emile Cadorel
+ * @license: GPLv3
+ */
+
+in base;
+
+use std::config::_;
+use actor::{reference, sys};
+
+/**
+ * Base class of an actor
+ * @example:
+ * ```
+ * use std::concurrency::actor::_;
+ * use std::config::_;
+ *
+ * class BobActor over Actor {
+ *    // @warning: Actor is not yet attached to system in the ctor
+ *    pub self () {}
+ *
+ *    /**
+ *     * Actor is attached to a system and system is ready
+ *     */
+ *    pub over onStart (mut self) {
+ *        let dmut alice = self:.system:.local ("alice");
+ *
+ *        // send a message to Alice actor
+ *        alice:.send (json#{"msg" : "Hello"});
+ *        self:.kill (); // kill the actor once message is sent
+ *    }
+ *
+ *    pub over onQuit (mut self) {
+ *        println ("Killing actor : ", self._name);
+ *    }
+ * }
+ *
+ *
+ * class AliceActor over Actor {
+ *    pub self () {}
+ *
+ *    pub over onMessage (mut self, msg : &Config) {
+ *        println ("Receive a message : ", msg);
+ *        self:.kill (); // kill the actor once message is received
+ *    }
+ *
+ *    pub over onQuit (mut self) {
+ *        println ("Killing actor : ", self._name);
+ *    }
+ * }
+ *
+ *
+ * fn main () {
+ *    let dmut sys = copy ActorSystem ();
+ *    sys:.add ("alice", copy AliceActor ());
+ *    sys:.add ("bob", copy BobActor ());
+ *
+ *    sys:.start (); // start the actor system
+ *    sys:.join (); // Wait for all the actors to die
+ * }
+ * ```
+ * */
+@abstract
+pub class ActorBase {
+
+    // The name of the actor
+    let mut _name : [c8] = "";
+
+    // The system to which the actor is attached
+    let dmut _sys : (&sys::ActorSystem)? = none;
+
+
+    /**
+     * Create a new empty actor
+     * */
+    pub self () {}
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          VIRTUAL          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Method invoked when the actor is attached to a running actor system
+     * */
+    pub fn onStart (mut self) {}
+
+    /**
+     * Method invoked when a message is sent to an actor
+     * */
+    pub fn onMessage (mut self, msg : &Config) {
+        msg;
+    }
+
+    /**
+     * Method invoked when a request is sent to an actor
+     * @returns: the response of the request
+     * */
+    pub fn onRequest (mut self, msg : &Config)-> &Config {
+        msg;
+        copy Dict ()
+    }
+
+    /**
+     * Method invoked when the actor is detached from the actor system
+     * */
+    pub fn onQuit (mut self) {}
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =====================================          FINALS          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * @returns: a local reference to the actor to send messages to it
+     * */
+    @final
+    pub fn local (mut self)-> dmut &ActorRef {
+        return self:.system:.local (self._name);
+    }
+
+    /**
+     * Kill the actor
+     * */
+    @final
+    pub fn kill (mut self) {
+        self:.system:.remove (self._name, false);
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =====================================          SYSTEM          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * @returns: the actor system to which the actor is attached
+     * */
+    @field
+    pub fn system (mut self)-> dmut &sys::ActorSystem {
+        if let Ok (dmut sys) = alias self._sys {
+            return alias sys;
+        }
+
+        std::io::eprintln ("Actor not attached to an actor system!");
+        panic;
+    }
+
+    /**
+     * Attach the actor to an actor system
+     * @warning: internal function for actorsystem management
+     * */
+    pub fn attach (mut self, name : [c8], dmut sys : &sys::ActorSystem) {
+        self._name = name;
+        self._sys = (alias sys)?;
+    }
+
+}

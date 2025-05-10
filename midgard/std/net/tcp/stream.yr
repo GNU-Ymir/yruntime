@@ -8,7 +8,9 @@
 in stream;
 
 use std::net::{addr, addr::_, tcp::errors};
-use etc::c::socket;
+use std::time::dur;
+
+use etc::c::{files, socket, time};
 use etc::runtime::errno;
 
 use std::traits;
@@ -86,17 +88,23 @@ pub class TcpStream {
      * client:.rawSend ("Ping !");
      * client:.dispose ();
      * ```
+     *
+     * @params:
+     *   - addr: the address to which to connect
+     *   - timeout: the timeout of the connection
+     * @throws:
+     *    - TcpError: if the connection fails, or timeout
      * */
-    pub self connect (addr : SockAddr)
+    pub self connect (addr : SockAddr, timeout : dur::Duration = dur::seconds (2))
         with _addr = addr
         throws TcpError
     {
         if let SockAddr (ip-> ip : &Ipv6Addr, port-> p) = addr {
-            self:.connectV6 (ip, p);
+            self:.connectV6 (ip, p, timeout);
         }
 
         else if let SockAddr (ip-> ip : &Ipv4Addr, port-> p) = addr {
-            self:.connectV4 (ip, p);
+            self:.connectV4 (ip, p, timeout);
         }
 
         else {
@@ -396,7 +404,7 @@ pub class TcpStream {
     /**
      * Connect the stream to an ipv4 address
      * */
-    prv fn connectV4 (mut self, addr : &Ipv4Addr, port : u16)
+    prv fn connectV4 (mut self, addr : &Ipv4Addr, port : u16, timeout : dur::Duration)
         throws TcpError
     {
         errno (ErrnoValue::NONE);
@@ -413,12 +421,7 @@ pub class TcpStream {
                                     sin_addr-> ina,
                                     sin_port-> htons (port));
 
-        if socket::connect (self._sockFd, &servaddr, cast!u32 (sockaddr_in::size)) != 0 {
-            let err = errno ();
-            let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
-
-            throw copy TcpError (TcpErrorCode::CONNECT, "failed to connect : (errno = " ~ errStr ~ ")");
-        }
+        self:.connectWithTimeout (cast!{*sockaddr} (&servaddr), cast!u32 (sockaddr_in::size), timeout);
     }
 
     /*!
@@ -432,7 +435,7 @@ pub class TcpStream {
     /**
      * Connect the stream to an ipv6 address
      * */
-    prv fn connectV6 (mut self, addr : &Ipv6Addr, port : u16)
+    prv fn connectV6 (mut self, addr : &Ipv6Addr, port : u16, timeout : dur::Duration)
         throws TcpError
     {
         errno (ErrnoValue::NONE);
@@ -449,12 +452,81 @@ pub class TcpStream {
                                      sin6_port-> htons (port),
                                      sin6_addr-> ina);
 
-        if socket::connect (self._sockFd, &servaddr, cast!u32 (sockaddr_in6::size)) != 0 {
-            let err = errno ();
-            let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
+        self:.connectWithTimeout (cast!{*sockaddr} (&servaddr), cast!u32 (sockaddr_in6::size), timeout);
+    }
 
-            throw copy TcpError (TcpErrorCode::SOCKET_CREATION, "failed to connect : (errno = " ~ errStr ~ ")");
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ==============================          CONNECT WITH TIMEOUT          ==============================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+
+    prv fn connectWithTimeout (mut self, addr : *sockaddr, size : u32, timeout : dur::Duration)
+        throws TcpError
+    {
+        self:.setNonBlocking ();
+
+        let mut res = socket::connect (self._sockFd, addr, size);
+        if res < 0 {
+            let err = errno ();
+            let succ = (if err == ErrnoValue::EINPROGRESS {
+                let mut dur = dur_t (timeout.getSec (), timeout.getUSec ());
+                let mut myset = fd_set ();
+
+                let succ = loop {
+                    _yrt_fd_zero (alias &myset);
+                    _yrt_fd_set (self._sockFd, &myset);
+
+                    res = select (cast!u32 (self._sockFd + 1), null, cast!{*void} (&myset), null, cast!{*void} (&dur));
+                    if (res < 0 && errno () != ErrnoValue::EINTR) {
+                        break false;
+                    }
+
+                    else if res > 0 {
+                        let lon : u32 = i32::size;
+                        let mut valopt : i32 = 0;
+                        if getsockopt (self._sockFd, SocketOptions::SOL_SOCKET, SocketOptions::SO_ERROR, cast!{*void} (&valopt), &lon) < 0 {
+                            break false;
+                        }
+
+                        if valopt != 0 {
+                            break false;
+                        }
+
+                        break true;
+                    }
+
+                    else { // timeout
+                        break false;
+                    }
+                }
+
+                succ
+            } else { // error connecting
+                false
+            });
+
+            if !succ {
+                let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
+                throw copy TcpError (TcpErrorCode::SOCKET_CREATION, "failed to connect : (errno = " ~ errStr ~ ")");
+            }
         }
+
+        self:.setBlockling ();
+    }
+
+    prv fn setNonBlocking (mut self) {
+        let old = fcntl (self._sockFd, FileFlags::F_GETFL, 0);
+        fcntl (self._sockFd, FileFlags::F_SETFL, old | SocketFlag::O_NONBLOCK);
+    }
+
+    prv fn setBlockling (mut self) {
+        let old = fcntl (self._sockFd, FileFlags::F_GETFL, 0);
+        fcntl (self._sockFd, FileFlags::F_SETFL, old & !SocketFlag::O_NONBLOCK);
     }
 
     /*!

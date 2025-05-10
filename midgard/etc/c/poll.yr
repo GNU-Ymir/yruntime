@@ -1,0 +1,31 @@
+in poll;
+
+pub record epoll_event {
+    pub let mut events : u32;  /* Epoll events */
+    pub let dmut data : epoll_data_t;    /* User data variable */
+
+    pub self (events : u32 = 0, data : epoll_data_t = epoll_data_t ())
+        with events = events
+        , data = data
+    {}
+}
+
+pub union epoll_data_t {
+    pub let mut ptr : *void = null;
+    pub let mut fd : i32 = 0;
+    let mut ui32 = 0u32;
+    let mut ui64 = 0u64;
+
+    pub self () {}
+}
+
+
+pub def EPOLLIN = 1u32;
+pub def EPOLLHUP = 16u32;
+
+pub def EPOLL_CTL_ADD = 1;
+pub def EPOLL_CTL_DEL = 2;
+
+pub extern (C) fn epoll_ctl (fd : i32, op : i32, what : i32, event : *epoll_event)-> i32;
+pub extern (C) fn epoll_create1 (code : i32)-> i32;
+pub extern (C) fn epoll_wait (fd : i32, event : *epoll_event, nb : i32, ig : i32)-> i32;

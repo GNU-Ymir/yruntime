@@ -1,0 +1,180 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in unit;
+
+use std::stream;
+
+/**
+ * Memory size unit
+ * */
+pub record MemorySize {
+
+    let _bytes : usize;
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =====================================          CTORS          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    pub self B (bytes : usize)
+        with _bytes = bytes
+    {}
+
+    pub self KB (bytes : usize)
+        with _bytes = bytes * 1024us
+    {}
+
+    pub self MB (bytes : usize)
+        with _bytes = bytes * (1024us * 1024us)
+    {}
+
+    pub self GB (bytes : usize)
+        with _bytes = bytes * (1024us * 1024us * 1024us)
+    {}
+
+    pub self TB (bytes : usize)
+        with _bytes = bytes * (1024us * 1024us * 1024us * 1024us)
+    {}
+
+    pub self PB (bytes : usize)
+        with _bytes = bytes * (1024us * 1024us * 1024us * 1024us * 1024us)
+    {}
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          GETTERS          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    @field
+    pub fn bytes (self)-> usize {
+        self._bytes
+    }
+
+    @field
+    pub fn kilobytes (self)-> usize {
+        self._bytes / 1024us
+    }
+
+    @field
+    pub fn megabytes (self)-> usize {
+        self._bytes / (1024us * 1024us)
+    }
+
+    @field
+    pub fn gigabytes (self)-> usize {
+        self._bytes / (1024us * 1024us * 1024us)
+    }
+
+    @field
+    pub fn terabytes (self)-> usize {
+        self._bytes / (1024us * 1024us * 1024us * 1024us)
+    }
+
+    @field
+    pub fn petabytes (self)-> usize {
+        self._bytes / (1024us * 1024us * 1024us * 1024us * 1024us)
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ===================================          COMPARISON          ===================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    pub fn if std::traits::isIntegral!{T} opCmp {T} (self, o : T)-> i32 {
+        if (self._bytes > o) { 1 }
+        else if (self._bytes == o) { 0 }
+        else { -1 }
+    }
+
+    pub fn opCmp (self, o : MemorySize)-> i32 {
+        if (self._bytes > o._bytes) { 1 }
+        else if (self._bytes == o._bytes) { 0 }
+        else { -1 }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ==================================          ARITHMETICS          ===================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Addition of two memory size
+     * */
+    pub fn opBinary {"+"} (self, o : MemorySize)-> MemorySize {
+        MemorySize (self._bytes + o._bytes)
+    }
+
+    /**
+     * Substraction of two memory size
+     * */
+    pub fn opBinary {"-"} (self, o : MemorySize)-> MemorySize {
+        MemorySize (self._bytes - o._bytes)
+    }
+
+    /**
+     * Multiplication of two memory size
+     * */
+    pub fn opBinary {"*"} (self, o : MemorySize)-> MemorySize {
+        MemorySize (self._bytes * o._bytes)
+    }
+
+    /**
+     * Division of two memory size
+     * */
+    pub fn opBinary {"/"} (self, o : MemorySize)-> MemorySize {
+        MemorySize (self._bytes / o._bytes)
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ======================================          MISC          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    impl Streamable {
+        pub over toStream (self, dmut stream : &StringStream) {
+            if self.petabytes > 0 {
+                stream:.write (self.petabytes, "PB");
+            }
+
+            if self.terabytes > 0 {
+                stream:.write (self.terabytes % 1024, "TB");
+            }
+
+            if self.gigabytes % 1024 > 0  {
+                stream:.write (self.gigabytes % 1024, "GB");
+            }
+
+            if self.megabytes % 1024 > 0  {
+                stream:.write (self.megabytes % 1024, "MB");
+            }
+
+            if self.kilobytes % 1024 > 0  {
+                stream:.write (self.kilobytes % 1024, "MB");
+            }
+
+            if self.bytes % 1024 > 0  {
+                stream:.write (self.bytes % 1024, "B");
+            }
+        }
+    }
+
+    impl core::types::Hashable;
+}

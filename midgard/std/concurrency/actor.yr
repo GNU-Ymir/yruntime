@@ -1,0 +1,128 @@
+/**
+ * Module containing all importation needed to use the actor system
+ * @authors: Emile Cadorel
+ * @license: GPLv3
+ */
+
+in actor;
+
+mod ::sys;
+mod ::base;
+mod ::reference;
+mod ::errors;
+mod ::request;
+
+/**
+ * Actor system used to register actors and manage communications using the actor design pattern
+ * @example:
+ * ```
+ * use std::concurrency::actor;
+ *
+ * fn main () {
+ *    // Actor system accepting connection from any address on port 8080
+ *    let dmut sys = copy ActorSystem (SockAddr ("0.0.0.0", 8080));
+ *
+ *    // Add actors to the system
+ *    sys:.add ("alice", copy AliceActor ());
+ *    sys:.add ("bob", copy BobActor ());
+ *
+ *    sys:.start (); // start the actor system
+ *
+ *    // Access to a remote actor managed by a remote actor system
+ *    let dmut charlie = sys:.remote ("charlie", SockAddr ("192.168.1.10", 8081));
+ *
+ *    // send a message to charlie
+ *    charlie:.send (json#{"message" : "Hello"})?;
+ *
+ *    // Send a request expecting for a response
+ *    let dmut req = charlie:.request (json#{"message" : "I have a question?"});
+ *    println (req:.value ()?); // wait for the response
+ *
+ *    sys:.join (); // wait for the actor system to end (all actors are killed)
+ * }
+ * ```
+ */
+pub def ActorSystem    : sys::ActorSystem;
+
+
+/**
+ * Base class of an actor
+ * @example:
+ * ```
+ * use std::concurrency::actor;
+ * use std::config::_;
+ *
+ * class BobActor over Actor {
+ *    // @warning: Actor is not yet attached to system in the ctor
+ *    pub self () {}
+ *
+ *    /**
+ *     * Actor is attached to a system and system is ready
+ *     */
+ *    pub over onStart (mut self) {
+ *        let dmut alice = self:.system:.local ("alice");
+ *
+ *        // send a message to Alice actor
+ *        alice:.send (json#{"msg" : "Hello"});
+ *        self:.kill (); // kill the actor once message is sent
+ *    }
+ *
+ *    pub over onQuit (mut self) {
+ *        println ("Killing actor : ", self._name);
+ *    }
+ * }
+ *
+ *
+ * class AliceActor over Actor {
+ *    pub self () {}
+ *
+ *    pub over onMessage (mut self, msg : &Config) {
+ *        println ("Receive a message : ", msg);
+ *        self:.kill (); // kill the actor once message is received
+ *    }
+ *
+ *    pub over onQuit (mut self) {
+ *        println ("Killing actor : ", self._name);
+ *    }
+ * }
+ *
+ *
+ * fn main () {
+ *    let dmut sys = copy ActorSystem ();
+ *    sys:.add ("alice", copy AliceActor ());
+ *    sys:.add ("bob", copy BobActor ());
+ *
+ *    sys:.start (); // start the actor system
+ *    sys:.join (); // Wait for all the actors to die
+ * }
+ * ```
+ * */
+pub def ActorBase      : base::ActorBase;
+
+
+
+/**
+ * A request future is an object record used to await for the response of an actor
+ * @example:
+ * ```
+ * // Create an actor system to send and receive actor requests
+ * let dmut a = copy ActorSystem (SockAddr (Ipv4::UNSPECIFIED, 0));
+ * a:.start ();
+ *
+ * // Create a reference to a remote actor hosted on system at addr 127.0.0.1:8080
+ * let dmut alice = a:.remote ("alice", SockAddr (Ipv4::LOCALHOST, 8080));
+ *
+ * // Send a request to the remote actor
+ * let dmut d = alice:.request (json#{"key" : "truc", "value" : 90}, timeout-> dur::seconds (2));
+ *
+ * foo (); // do some other computation asynchronisely
+ *
+ * // Wait for the response (that might timeout)
+ * println ("Response : ", d:.value ()?);
+ * ```
+ * */
+pub def ActorRqtFuture : request::ActorRqtFuture;
+
+
+pub def ActorRef       : reference::ActorRef;
+pub def ActorError     : errors::ActorError;

@@ -1,0 +1,892 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ */
+in sys;
+
+mod ::utils;
+mod ::message;
+
+use actor::{base,
+            reference,
+            request,
+            errors,
+            sys::_};
+
+
+use etc::c::{files, socket, poll};
+
+use std::{time::_, config::_};
+use std::{io, net::{_, tcp::_}};
+
+use std::concurrency::mail;
+use core::concurrency::sync::_;
+use core::concurrency::pipes::_;
+
+/**
+ * Actor system used to register actors and manage communications using the actor design pattern
+ * @example:
+ * ```
+ * use std::concurrency::actor;
+ *
+ * fn main () {
+ *    // Actor system accepting connection from any address on port 8080
+ *    let dmut sys = copy ActorSystem (SockAddr ("0.0.0.0", 8080));
+ *
+ *    // Add actors to the system
+ *    sys:.add ("alice", copy AliceActor ());
+ *    sys:.add ("bob", copy BobActor ());
+ *
+ *    sys:.start (); // start the actor system
+ *
+ *    // Access to a remote actor managed by a remote actor system
+ *    let dmut charlie = sys:.remote ("charlie", SockAddr ("192.168.1.10", 8081));
+ *
+ *    // send a message to charlie
+ *    charlie:.send (json#{"message" : "Hello"})?;
+ *
+ *    // Send a request expecting for a response
+ *    let dmut req = charlie:.request (json#{"message" : "I have a question?"});
+ *    println (req:.value ()?); // wait for the response
+ *
+ *    sys:.join (); // wait for the actor system to end (all actors are killed)
+ * }
+ * ```
+ *
+ * The actor system design pattern manages multiple actors using a task pool.
+ * Actors send messages to each other asynchronously using mailboxes. There is a
+ * guarantee that an actor cannot be called by two threads in the task pool at
+ * the same time, and therefore it will handle the messages it receives one at a
+ * time. However, there is no guarantee as to the order in which messages will
+ * be received.
+ *
+ *
+ * Messages exchange by actors are serialized objects, defined in std::config;
+ *
+ * * */
+
+@final
+pub class ActorSystem {
+
+    // The list of local actors
+    let dmut _actorMutex = copy utils::Sync ();
+    let dmut _actors : [[c8] => &base::ActorBase] = copy [];
+
+    // True iif the system is running
+    let mut _isRunning = false;
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ==================================          TCP POLLING          ===================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    // The epoll list for message passing
+    let mut _epoll_fd : i32 = 0;
+
+    // The list of connected clients
+    let dmut _sockets : [i32 => &TcpStream] = copy [];
+
+    let dmut _remoteMutex = copy utils::Sync ();
+    let dmut _remotes : [SockAddr => [&TcpStream]] = copy [];
+
+    // The timeout of new connections
+    let mut _connectionTimeout : Duration = dur::seconds (2);
+
+    // The number of retries when sending messages
+    let mut _nbSendRetries : u32 = 3;
+
+    // The address of the server
+    let _addr : SockAddr;
+
+    // The tcp listener of the system
+    let dmut _listener : (&TcpListener)? = none;
+
+    // The number of threads to spawn in the task pool
+    let mut _nbJobThreads : u32;
+
+    // The polling threads
+    let dmut _pollingTh : (future-> void)? = none;
+
+    // The list of worker threads
+    let dmut _jobThreads : [usize => (future-> void)] = copy [];
+    let dmut _jobs : &MailBox!{Job} = copy MailBox!{Job} ();
+
+    // Pipe used to trigger polling loop
+    let dmut _triggerI : (&IPipe)? = none;
+    let dmut _triggerO : (&OPipe)? = none;
+
+    // The semaphore used to trigger the workers
+    let dmut _ready = copy Semaphore ();
+
+    // The semaphore used
+    let dmut _waitTask = copy Semaphore ();
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          REQUESTS          ====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    let dmut _requestMutex = copy utils::Sync ();
+
+    // Requests being resolved by that might timeout
+    let dmut _requestIds : [u64 => &request::ActorRqtFuture] = copy [];
+
+    // The last uniq id for requests
+    let mut _lastUID : u64 = 0;
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ======================================          CTOR          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Create an actor system using ipv4 protocol with a automatically selected port
+     * */
+    pub self (nbThreads : u32 = 0)
+        with self (SockAddr (Ipv4::UNSPECIFIED, 0), nbThreads-> nbThreads)
+    {}
+
+    /**
+     * @params:
+     *    - addr: the addresse range accepted by the actor system
+     *    - nbThreads: the number of threads used (0 means nb cores available on system)
+     */
+    pub self (addr : SockAddr, nbThreads : u32 = 0)
+        with _addr = addr
+        , _nbJobThreads = if (nbThreads == 0) { etc::runtime::threads::_yrt_get_nprocs () } else { nbThreads + 1 }
+    {
+        let dmut pipes : [i32 ; 2] = [0, 0];
+        if (files::pipe (pipes.ptr) == 0) {
+            self._triggerI = (copy IPipe (pipe-> pipes [0]))?;
+            self._triggerO = (copy OPipe (pipe-> pipes [1]))?;
+        }
+    }
+
+    __dtor (mut self) {
+        self:.dispose ();
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =====================================          START          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Start the actor system
+     * */
+    pub fn start (mut self)
+        throws errors::ActorError
+    {
+        if self._isRunning { return; }
+
+        self:.configureEpoll ();
+        self._pollingTh = (spawn self:.pollMain ())?;
+        self._ready:.wait ();
+
+        let dmut aux = alias self._actors;
+        for _, dmut act in alias aux {
+            act:.onStart ();
+        }
+    } catch {
+        e => {
+            throw copy errors::ActorError (std::format::format ("{}", e));
+        }
+    }
+
+    /**
+     * Wait for the actor system to stop (all actors are killed)
+     * @warning: this function returns immediately if used inside an actor
+     * */
+    pub fn join (mut self) {
+        if self.isWorkerThread () return;
+
+        if let Ok (dmut t) = self._pollingTh {
+            t.value;
+        }
+
+        self:.dispose ();
+    }
+
+    /**
+     * Send a message to kill the actor system
+     * @info: this function can be called from anywhere
+     * @example:
+     * ```
+     * class MyActor over ActorBase {
+     *   pub self () {}
+
+     *   pub over onMessage (mut self, msg : &Config) {
+     *     println ("Receive a message : ", msg);
+     *      self:.system:.kill (); // kill the actor system once message is received
+     *   }
+     *
+     *   pub over onQuit (mut self) {
+     *      println ("Killing actor : ", self._name);
+     *    }
+     * }
+     * ```
+     * */
+    pub fn kill (mut self) {
+        let msg = ActorMessage (reqId-> 0u64, alias self, Protocol::SYSTEM_KILL_ALL, SockAddr (self.ip, self.port), copy Dict ());
+        self:.sendActorMessage (msg.addr, msg, false)?;
+    }
+
+    /**
+     * Dispose the actor system and kill all the running actors
+     * @warning: this function returns immediately if used inside an actor
+     * */
+    fn dispose (mut self) {
+        self:.waitAllCompletes ();
+        self:.onSystemKill ();
+
+        self._actors = copy [];
+        self._listener = none;
+        if (self._epoll_fd != 0) {
+            etc::c::files::close (self._epoll_fd);
+            self._epoll_fd = 0;
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          POLLING          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Configure the polling descriptor
+     * */
+    fn configureEpoll (mut self)
+        throws TcpError
+    {
+        self._epoll_fd = epoll_create1 (0);
+        let dmut lst = copy TcpListener (self._addr);
+        self._listener = (alias lst)?;
+
+        if let Ok (dmut i) = alias self._triggerI {
+            i:.setNonBlocking ();
+
+            let mut event = epoll_event ();
+            event.events = EPOLLIN | EPOLLHUP;
+            event.data.fd = i.getHandle ();
+            epoll_ctl (self._epoll_fd, EPOLL_CTL_ADD, event.data.fd, &event);
+
+            event.data.fd = lst.getHandle ();
+            epoll_ctl (self._epoll_fd, EPOLL_CTL_ADD, event.data.fd, &event);
+        }
+    }
+
+    /**
+     * Main function of the polling thread
+     * */
+    fn pollMain (mut self) {
+        self._isRunning = true;
+        self._ready:.post ();
+
+        let mut event = epoll_event ();
+        while self._isRunning {
+            let event_count = epoll_wait (self._epoll_fd, &event, 1, -1);
+            if event_count == 0 {
+                return;
+            }
+
+            if let Ok (dmut l) = alias self._listener && l.getHandle () == event.data.fd {
+                {
+                    let dmut stream = l:.accept ();
+                    self:.receiveMessage (alias stream);
+                    if stream.isOpen () {
+                        self:.addPoll (alias stream);
+                    }
+                } catch {
+                    _ => {}
+                }
+            } else if let Ok (dmut i) = alias self._triggerI && i.getHandle () == event.data.fd {
+                (i:.read!u8 ())?;
+            } else {
+                if let Ok (dmut sc) = alias self._sockets [event.data.fd] {
+                    self:.receiveMessage (alias sc);
+                    if !sc.isOpen () {
+                        self:.delPoll (event.data.fd);
+                    }
+                } else {
+                    self:.delPoll (event.data.fd);
+                }
+            }
+
+        }
+    }
+
+    /**
+     * Add a new socket in the polling thread
+     * */
+    fn addPoll (mut self, dmut stream : &TcpStream) {
+        let dmut event = epoll_event ();
+        event.events = EPOLLIN | EPOLLHUP;
+        event.data.fd = stream.getHandle ();
+        epoll_ctl (self._epoll_fd, EPOLL_CTL_ADD, event.data.fd, &event);
+
+        self._sockets [stream.getHandle ()] = alias stream;
+    }
+
+    /**
+     * Delete an old socket from the polling thread
+     * */
+    fn delPoll (mut self, fd : i32) {
+        let dmut event = epoll_event ();
+        event.events = EPOLLIN | EPOLLHUP;
+        event.data.fd = fd;
+        epoll_ctl (self._epoll_fd, EPOLL_CTL_DEL, fd, &event);
+
+        self._sockets:.remove (fd);
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          MESSAGES          ====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Receive a message from a remote stream
+     * */
+    fn receiveMessage (mut self, dmut stream : &TcpStream) {
+        let dmut buffer : [u8] = [];
+        let n = Instant::now ();
+
+        {
+            let size = stream:.receive!{u32} ();
+            if (size > std::unit::MemorySize::MB (1)) {
+                stream:.dispose ();
+                return;
+            }
+
+            buffer = copy [0u8 ; size];
+            stream:.receiveRaw (alias buffer);
+        } catch {
+            _ => {
+                stream:.dispose ();
+                return;
+            }
+        }
+
+        let mut cp = buffer;
+        if let Ok (_ = Protocol::SYSTEM_KILL_ALL) = utils::read!u8 (ref cp)? {
+            self:.onSystemKill ();
+        } else {
+            self:.submitJob (Job (data-> buffer, origin-> stream.addr, n));
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          WORKERS          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Submit a new job
+     * */
+    fn submitJob (mut self, job : Job) {
+        self._jobs:.send (job);
+
+        if self._jobThreads.len != self._nbJobThreads {
+            let nb : u32 = cast!u32 (self._jobThreads.len);
+            for _ in nb .. self._nbJobThreads {
+                let dmut f = spawn self:.workerJobThread ();
+                self._ready:.wait ();
+
+                atomic self._jobs {
+                    self._jobThreads [f.tid] = f;
+                }
+            }
+        }
+
+        self._waitTask:.post ();
+    }
+
+    /**
+     * Worker thread
+     * */
+    fn workerJobThread (mut self) {
+        self._ready:.post ();
+
+        loop {
+            self._waitTask:.wait ();
+            if (!self._isRunning) break;
+
+            if let Ok (jb) = self._jobs:.receive () {
+                if jb.isPacket () {
+                    let m = message::deserialize (alias self, jb.origin, jb.data)?;
+                    if let Ok (msg) = m {
+                        self:.onSession (msg, false);
+                    }
+                } else {
+                    if let Ok (msg) = jb.msg {
+                        self:.onSession (msg, true);
+                    }
+                }
+            }
+
+        }
+
+        atomic self._jobs {
+            self._jobThreads:.remove (etc::runtime::threads::_yrt_thread_self_id ());
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          SESSION          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    fn onSession (mut self, msg : ActorMessage, local : bool) {
+        match msg.kind {
+            Protocol::ACTOR_RESP => {
+                self:.onResponse (msg, failed-> false);
+            }
+            Protocol::ACTOR_RESP_FAILED => {
+                self:.onResponse (msg, failed-> true);
+            }
+            Protocol::ACTOR_MSG => {
+                self:.onActorMsg (msg);
+            }
+            Protocol::ACTOR_REQ => {
+                self:.onActorReq (msg, local);
+            }
+        }
+    }
+
+    fn onActorMsg (mut self, msg : ActorMessage) {
+        if let Ok (dmut ac) = alias self._actors [msg.actorName] {
+            atomic ac {
+                ac:.onMessage (msg.content);
+            }
+        }
+    }
+
+    fn onActorReq (mut self, msg : ActorMessage, local : bool) {
+        if let Ok (dmut ac) = alias self._actors [msg.actorName] {
+            let result = atomic ac {
+                ac:.onRequest (msg.content)
+            };
+
+            let response = ActorMessage (reqId-> msg.uid, alias self, Protocol::ACTOR_RESP, msg.addr, result);
+            self:.sendActorMessage (msg.addr, response, local);
+        } else {
+            let response = ActorMessage (reqId-> msg.uid, alias self, Protocol::ACTOR_RESP_FAILED, msg.addr, copy Dict ());
+            self:.sendActorMessage (msg.addr, response, local);
+        }
+    }
+
+    fn onResponse (mut self, msg : ActorMessage, failed : bool) {
+        atomic self._requestMutex {
+            if let Ok (dmut req) = alias self._requestIds [msg.uid] {
+                if (Instant::now () <= req.timeout) {
+                    if (!failed) {
+                        req:.emitResponse (msg.content?);
+                    } else {
+                        req:.emitResponse (none);
+                    }
+                } // else simply ignore the request response
+
+                self._requestIds:.remove (msg.uid);
+            }
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ===================================          DISPOSING          ====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Wait for all worker threads to join
+     * @warning: discard submitted jobs that have not yet started
+     * */
+    fn waitAllCompletes (mut self) {
+        if (self.isWorkerThread ()) return;
+
+        if self._isRunning { self:.triggerExit (); }
+        if let Ok (dmut t) = self._pollingTh {
+            t.value; // wait polling threads
+        };
+
+        self._jobs:.clear ();
+        loop {
+            let nbJobs = atomic self._jobs {
+                self._jobThreads.len
+            };
+
+            if (nbJobs != 0) {
+                self._waitTask:.post ();
+            } else break;
+        }
+    }
+
+    /**
+     * Function executed on system kill event
+     * */
+    fn onSystemKill (mut self) {
+        let dmut aux = alias self._actors;
+        self._actors = copy [];
+
+        for _, dmut j in alias aux {
+            atomic j {
+                j:.onQuit ();
+            }
+        }
+
+        if (self._isRunning) { self:.triggerExit (); }
+    }
+
+    /**
+     * Trigger exit signal for polling loop
+     * */
+    fn triggerExit (mut self) {
+        self._isRunning = false;
+        if let Ok (dmut o) = alias self._triggerO {
+            o:.write (1u8)?;
+        }
+    }
+
+    /**
+     * @returns: true if the disposing thread is a working thread spawned by the system
+     * */
+    fn isWorkerThread (self)-> bool {
+        let s = etc::runtime::threads::_yrt_thread_self_id ();
+        if let Ok (t) = (self._pollingTh) && t.tid == s {
+            return true;
+        }
+
+        for _, j in self._jobThreads {
+            if j.tid == s { return true; }
+        }
+
+        false
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ================================          ACTOR REFERENCES          ================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * @returns: a reference to an actor managed by the actor system
+     * @params:
+     *    - name: the name of the actor
+     * */
+    pub fn local (mut self, name : [c8])-> dmut &reference::ActorRef {
+        match self._addr.ip {
+            Ipv4Addr () => {
+                return copy reference::ActorRef (name, SockAddr (Ipv4::LOCALHOST, self.port), alias self);
+            }
+            _ => {
+                return copy reference::ActorRef (name, SockAddr (Ipv6::LOCALHOST, self.port), alias self);
+            }
+        }
+    }
+
+    /**
+     * @returns: a reference to a remote actor managed by another actor system
+     * @info: if addr is the address of the actorsystem (ip of the current machine, and same port) a local reference is returned
+     * */
+    pub fn remote (mut self, name : [c8], addr : SockAddr)-> dmut &reference::ActorRef {
+        if (self.isLocalAddr (addr)) {
+            return self:.local (name);
+        }
+
+        return copy reference::ActorRef (name, addr, alias self)
+    }
+
+
+    /**
+     * @returns: true if the addr is a loopback address to the ActorSystem
+     * */
+    fn isLocalAddr (self, addr : SockAddr)-> bool {
+        if addr.port != self.port {
+            return false;
+        }
+
+        // No need to list ips, if this is a loopback ip
+        if addr.ip.isLoopback () return true;
+
+        // Find the ip of the machine and check wether it will loopback in the end
+        let faces = unsafe { std::env::getIpInterfaces () };
+        for _, j in faces for z in j {
+            if addr.ip == z return true;
+        }
+
+        false
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ================================          REGISTER/REMOVE          =================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Add an actor in the system
+     * @params:
+     *    - name: the name of the actor
+     *    - act: the actor to attach to the system
+     * */
+    pub fn add (mut self, name : [c8], dmut act : &actor::base::ActorBase)
+        throws errors::ActorError
+    {
+        atomic self._actorMutex {
+            if let Ok (_) = self._actors [name] {
+                throw copy errors::ActorError (std::format::format ("Already an actor named '{}'", name));
+            }
+
+            act:.attach (name, alias self);
+            self._actors [name] = alias act;
+        }
+
+        if (self._isRunning) {
+            act:.onStart ();
+        }
+    }
+
+    /**
+     * Remove an actor from the system
+     * @info: If this function can be called directly, it is prefered to call the method :.kill () from an actor instance.
+     * */
+    pub fn remove (mut self, name : [c8], lock : bool) {
+        let dmut removed = atomic self._actorMutex {
+            if let Ok (dmut act) = alias self._actors [name] {
+                self._actors:.remove (name);
+                (alias act)?
+            } else {
+                none
+            }
+        };
+
+        if let Ok (dmut act) = alias removed {
+            if lock {
+                atomic act {
+                    act:.onQuit ();
+                }
+            } else {
+                act:.onQuit ();
+            }
+        }
+
+        if self._actors.len == 0 {
+            self:.onSystemKill ();
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          GETTERS          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * @returns: the address on which the system is listening
+     * */
+    @field
+    pub fn ip (self)-> &IpAddr {
+        if let Ok (lst) = self._listener {
+            lst.addr.ip
+        } else {
+            self._addr.ip
+        }
+    }
+
+    /**
+     * @returns: the port on wich the system is listening
+     * */
+    @field
+    pub fn port (self)-> u16 {
+        if let Ok (lst) = self._listener {
+            lst.addr.port
+        } else {
+            0u16
+        }
+    }
+
+    /**
+     * @returns: a uniq message id
+     * */
+    pub fn genUID (mut self)-> u64 {
+        atomic self {
+            self._lastUID += 1;
+            self._lastUID
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          SETTERS          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Set the duration of the timeout when issuing new tcp connection to remote actor systems
+     * */
+    pub fn setConnectionTimeout (mut self, timeout : Duration) {
+        self._connectionTimeout = timeout;
+    }
+
+    /**
+     * Set the number of retries when sending a message to a remote actor system
+     * */
+    pub fn setNbSendRetries (mut self, nb : u32) {
+        self._nbSendRetries = nb;
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          SENDING          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Send a message to a remote or local actor
+     * */
+    pub fn sendMessage (mut self, addr : SockAddr, actorName : [c8], content : &Config, local : bool)-> bool {
+        let message = ActorMessage (alias self, Protocol::ACTOR_MSG, actorName, addr, content);
+        self:.sendActorMessage (addr, message, local)
+    }
+
+    /**
+     * Send a message to a remote or local actor
+     * */
+    pub fn sendRequest (mut self, addr : SockAddr, actorName : [c8], content : &Config, local : bool, timeout : Duration)-> dmut (&request::ActorRqtFuture)? {
+        let message = ActorMessage (alias self, Protocol::ACTOR_REQ, actorName, addr, content);
+
+        let t = Instant::now ();
+        let dmut sem = copy Semaphore ();
+        let dmut req = copy request::ActorRqtFuture (message.uid, alias self, alias sem, t + timeout);
+
+        self:.registerRequest (alias req);
+        if self:.sendActorMessage (addr, message, local) {
+            return (alias req)?;
+        }
+
+        self:.removeRequest (message.uid);
+        none
+    }
+
+    /**
+     * Send a message to a an actor in remote or local system
+     * */
+    fn sendActorMessage (mut self, addr : SockAddr, msg : ActorMessage, local : bool)-> bool {
+        if (local) {
+            self:.submitJob (Job (origin-> SockAddr (self._addr.ip, self.port), msg-> msg?, Instant::now ()));
+            return true;
+        }
+
+        let buffer = msg.serialize ();
+        for _ in 0 .. self._nbSendRetries {
+            if let Ok (dmut str) = alias self:.connect (addr) {
+                str:.send!{u32} (cast!u32 (buffer.len));
+                str:.sendRaw (buffer);
+
+                self:.release (addr, alias str);
+                return true;
+            } catch {
+                _ => {}
+            }
+        }
+
+        false
+    }
+
+    /**
+     * Register a request to be awaited
+     * */
+    fn registerRequest (mut self, dmut req : &request::ActorRqtFuture) {
+        atomic self._requestMutex {
+            self._requestIds [req.uid] = alias req;
+        }
+    }
+
+    /**
+     * Remove a request in the list of awaited requests
+     * */
+    pub fn removeRequest (mut self, uid : u64) {
+        atomic self._requestMutex {
+            self._requestIds:.remove (uid);
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ==================================          CONNECTIONS          ===================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Find a connected socket or create a new one to a remote actor system
+     * */
+    fn connect (mut self, addr : SockAddr)-> dmut (&TcpStream)? {
+        atomic self._remoteMutex {
+            if let Ok (ref dmut r) = ref self._remotes [addr] {
+                if r.len > 0 {
+                    let dmut back = alias r [$ - 1];
+                    r = alias (r [0 .. $ - 1]);
+                    return (alias back)?;
+                }
+            }
+        }
+
+        return (copy TcpStream::connect (addr, timeout-> self._connectionTimeout))?;
+    }
+
+    /**
+     * Release a connected socket to keep it, and avoid reconnection for each message sending
+     * */
+    fn release (mut self, addr : SockAddr, dmut sock : &TcpStream) {
+        if sock.isOpen () {
+            atomic self._remoteMutex {
+                if let Ok (ref dmut r) = ref self._remotes [addr] {
+                    r = r ~ [alias sock];
+                } else {
+                    self._remotes [addr] = copy [alias sock];
+                }
+            }
+        }
+    }
+
+}

@@ -1,0 +1,109 @@
+in request;
+
+use std::concurrency::actor::{sys, errors};
+use std::{time::_, config::_};
+use core::concurrency::sync::_;
+
+/**
+ * A request future is an object record used to await for the response of an actor
+ * @example:
+ * ```
+ * // Create an actor system to send and receive actor requests
+ * let dmut a = copy ActorSystem (SockAddr (Ipv4::UNSPECIFIED, 0));
+ * a:.start ();
+ *
+ * // Create a reference to a remote actor hosted on system at addr 127.0.0.1:8080
+ * let dmut alice = a:.remote ("alice", SockAddr (Ipv4::LOCALHOST, 8080));
+ *
+ * // Send a request to the remote actor
+ * let dmut d = alice:.request (json#{"key" : "truc", "value" : 90}, timeout-> dur::seconds (2));
+ *
+ * foo (); // do some other computation asynchronisely
+ *
+ * // Wait for the response (that might timeout)
+ * println ("Response : ", d:.value ()?);
+ * ```
+ * */
+pub class ActorRqtFuture {
+
+    // The uniq id of the request being awaited
+    pub let uid : u64;
+
+    // The semaphore triggered when request is ready
+    let dmut _sem : &Semaphore;
+
+    // The actor system managing the await for the response
+    let dmut _sys : &sys::ActorSystem;
+
+    // The timeout of the request
+    let _timeout : Instant;
+
+    // The response
+    let mut _response : (&Config)? = none;
+
+    /**
+     * Create a new request future
+     * @params:
+     *    - uid: the uniq id of the request to await
+     *    - sys: the actor system managing the response
+     *    - sem: the semaphore to await
+     *    - start: the instant when the request was emitted
+     *    - timeout: the timeout of the request
+     * */
+    pub self (uid : u64, dmut sys : &sys::ActorSystem, dmut sem : &Semaphore, timeout : Instant)
+        with uid = uid
+        , _sys = alias sys
+        , _sem = alias sem
+        , _timeout = timeout
+    {}
+
+    /**
+     * Wait for the request to have a response
+     * @throws:
+     *    - ActorError:
+     *        + 1. if the request did not get an answer before timeout has expired
+     *        + 2. An answer was provided, but remote system responded with an error
+     * @returns: the content of the remote actor response
+     * */
+    pub fn value (mut self)-> &Config
+        throws errors::ActorError
+    {
+        if let Ok (resp) = self._response {
+            return resp;
+        }
+
+        if (self._sem:.wait (timeout-> self._timeout)) {
+            if let Ok (resp) = self._response {
+                return resp;
+            }
+        }
+
+        self._sys:.removeRequest (self.uid);
+        throw copy errors::ActorError ("Request timeout");
+    }
+
+    /**
+     * @returns: The time in the future before which the request is still valid and has not expired.
+     * */
+    @field
+    pub fn timeout (self)-> Instant {
+        self._timeout
+    }
+
+    /**
+     * Emit a response to the request
+     * @info: this function should only be used by the actor system
+     * */
+    pub fn emitResponse (mut self, resp : &Config?) {
+        self._response = resp;
+        self._sem:.post ();
+    }
+
+    /**
+     * Remove the request from the actor system if not awaited
+     * */
+    __dtor (mut self) {
+        self._sys:.removeRequest (self.uid);
+    }
+
+}
