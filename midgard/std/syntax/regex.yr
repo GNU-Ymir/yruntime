@@ -1,0 +1,151 @@
+/**
+ * This module implement a simple regex matcher that find matching occurence of a regex pattern in a string.
+ *
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ *
+ * @example:
+ * ```
+ * use std::syntax::regex;
+ *
+ * let dmut r = copy Regex ("@[a-zA-Z0-9_]+");
+ *
+ * let lst = r:.apply ("@alice, @bob");
+ * assert (lst.len == 2);
+ * assert (lst [0].0 == 0 && lst [0].1 == "@alice");
+ * assert (lst [1].0 == 9 && lst [1].1 == "@bob");
+ *
+ * let lst2 = r:.apply ("@charlie");
+ * assert (lst2.len == 1);
+ * assert (lst2 [0].0 == 0 && lst2 [0].1 == "@charlie");
+ * ```
+ */
+in regex;
+
+use etc::runtime::errno;
+use etc::c::regex;
+use std::syntax::errors;
+
+/**
+ * Regex class using extented POSIX regex syntax
+ * */
+pub class Regex {
+
+    pub let rule : [c8];
+    let dmut _content : (regex_t)? = none;
+
+    /**
+     * Create a regex matcher
+     * @params:
+     *    - rule: the posix regex rule to compile
+     * @throws:
+     *    - SyntaxError: if the rule is not compilable
+     * */
+    pub self (rule : [c8])
+        with rule = rule
+        throws SyntaxError
+    {
+        self:.compile ();
+    }
+
+
+    /**
+     * Apply the rule on a given text
+     * @params:
+     *    - text: the text on which to apply the regex rule
+     * @returns: the list of matching where (.0-> offset, .1-> content of matching)
+     * */
+    pub fn apply (mut self, text : [c8])-> [(usize, [c8])] {
+        let dmut result : [(usize, [c8])] = [];
+
+        if let Ok (ref dmut z) = ref self._content {
+            let mut strZ = std::conv::toStringZ (text);
+            let mut strB = strZ;
+
+            let mut current = 0us;
+            let dmut pmatch = regmatch_t ();
+
+            loop {
+                if (regexec (&z, strB, 1, &pmatch, 0) != 0) {
+                    break;
+                }
+
+                let off = current + cast!usize (pmatch.rm_so);
+                let end = current + cast!usize (pmatch.rm_eo);
+
+                result ~= [(off, text [off .. end])];
+
+                current = end;
+                strB = strZ + current;
+            }
+        }
+
+        result
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          DISPOSE          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Dispose the regex rule
+     * */
+    pub fn dispose (mut self) {
+        if let Ok (ref mut z) = ref self._content {
+            regfree (&z);
+            self._content = none;
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ======================================          DTOR          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    __dtor (mut self) {
+        self:.dispose ();
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          PRIVATE          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Compile the regex rule (using POSIX syntax)
+     * */
+    fn compile (mut self)
+        throws SyntaxError
+    {
+        if let Err () = self._content {
+            let dmut f = regex_t ();
+            let code = regcomp (&f, std::conv::toStringZ (self.rule), 1);
+            if code != 0 {
+                let errStr : [c8 ; 255] = ['\u{0}' ; 255];
+                let size = regerror (code, &f, errStr.ptr, 255);
+                let e = if size < 255 {
+                    copy errStr [0 .. size]
+                } else {
+                    copy errStr [0 .. $]
+                };
+
+                throw copy SyntaxError (e, 0, 0);
+            }
+
+            self._content = (f)?;
+        }
+    }
+
+
+}
