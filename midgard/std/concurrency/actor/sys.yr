@@ -196,13 +196,15 @@ pub class ActorSystem {
         self._pollingTh = (spawn self:.pollMain ())?;
         self._ready:.wait ();
 
-        let dmut aux = alias self._actors;
-        for _, dmut act in alias aux {
-            act:.onStart ();
+        let names = copy [name for name, _ in self._actors];
+        for name in names {
+            if let Ok (dmut act) = alias self._actors [name] {
+                act:.onStart ();
+            }
         }
     } catch {
         e => {
-            throw copy errors::ActorError (std::format::format ("{}", e));
+            throw copy errors::ActorError (std::conv::to!{[c8]} (e));
         }
     }
 
@@ -552,6 +554,7 @@ pub class ActorSystem {
      * Function executed on system kill event
      * */
     fn onSystemKill (mut self) {
+        // On system kill cannot be operated inside the polling thread
         let dmut aux = alias self._actors;
         self._actors = copy [];
 
