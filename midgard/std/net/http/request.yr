@@ -1,0 +1,409 @@
+/**
+ * Module containing the implementation for http request parsing
+ * @authors: Emile Cadorel
+ * @license: GPLv3
+ */
+
+in request;
+
+use std::net::_;
+use std::{io, fs::path, stream};
+use std::algorithm::searching;
+
+def HttpRequestBodyLimit = std::unit::MemorySize::MB (100);
+
+pub record HttpRequest {
+
+    // The kind of request (set after reading)
+    let mut _kind = header::HttpRequestKind::NONE;
+
+    // The url being called
+    let mut _url : Path = Path ("");
+
+    // The parameters passed to the request
+    let mut _params : [[c8] => mut [c8]] = copy [];
+
+    // The header of the request
+    let mut _header = header::HttpHeader ();
+
+    // The body of the request
+    let mut _body : [c8] = "";
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ======================================          CTOR          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Construct the request from a network tcp client
+     * @params:
+     *    - sock: the stream to the connected client
+     */
+    pub self (dmut sock : &TcpStream)
+        throws errors::HttpError
+    {
+        self:.read (alias sock);
+    }
+
+    /**
+     * Read the request from the incoming socket
+     * */
+    fn read (mut self, dmut sock : &TcpStream)
+        throws errors::HttpError
+    {
+        let dmut buffer = copy ['\u{0}' ; 255];
+        // The first line of http request is the method
+        self:.parseMethod (self:.readLine (alias sock, alias buffer));
+
+        // Followed by header information
+        loop {
+            let line = self:.readLine (alias sock, alias buffer);
+            if line.len == 0 {
+                break;
+            }
+
+            self:.parseHeaderLine (line);
+        }
+
+
+        // And then content value
+        if self._header.contentLength != 0 {
+            self._body = self.readContent (alias sock, self._header.contentLength);
+        }
+    }
+
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          GETTERS          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    @field
+    pub fn method (self)-> header::HttpRequestKind {
+        self._kind
+    }
+
+    @field
+    pub fn url (self)-> Path {
+        self._url
+    }
+
+    @field
+    pub fn header (self)-> header::HttpHeader {
+        self._header
+    }
+
+    @field
+    pub fn parameters (self)-> [[c8] => [c8]] {
+        self._params
+    }
+
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          PARSING          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Parse the method from the http header
+     * @params:
+     *    - line: the first line of the http request
+     * */
+    fn parseMethod (mut self, line : [c8])
+        throws errors::HttpError
+    {
+        // Parse the http method
+        let mut current = line;
+        if let Ok (pos) = find (current, ' ') {
+            match current [0 .. pos] {
+                header::HttpRequestKindNames::POST    => { self._kind = header::HttpRequestKind::POST; }
+                header::HttpRequestKindNames::GET     => { self._kind = header::HttpRequestKind::GET; }
+                header::HttpRequestKindNames::HEAD    => { self._kind = header::HttpRequestKind::HEAD; }
+                header::HttpRequestKindNames::OPTIONS => { self._kind = header::HttpRequestKind::OPTIONS; }
+                header::HttpRequestKindNames::CONNECT => { self._kind = header::HttpRequestKind::CONNECT; }
+                header::HttpRequestKindNames::TRACE   => { self._kind = header::HttpRequestKind::TRACE; }
+                header::HttpRequestKindNames::PUT     => { self._kind = header::HttpRequestKind::PUT; }
+                header::HttpRequestKindNames::PATCH   => { self._kind = header::HttpRequestKind::PATCH; }
+                header::HttpRequestKindNames::DELETE  => { self._kind = header::HttpRequestKind::DELETE; }
+                _ => {
+                    throw copy errors::HttpError (400);
+                }
+            }
+            current = current [pos + 1 .. $];
+        } else {
+            throw copy errors::HttpError (400);
+        }
+
+        // Parse the url and parameters
+        if let Ok (pos) = find (current, ' ') {
+            let (url, params) = if let Ok (params) = find (current [0 .. pos], '?') {
+                (current [0 .. params], current [params + 1 .. pos])
+            } else { (current, "") };
+
+            self._url = Path (copy url);
+            self:.parseParams (params);
+            current = current [pos + 1 .. $];
+        } else {
+            throw copy errors::HttpError (400);
+        }
+
+        // Parse http version
+        self:.parseHttpVersion (current);
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ================================          PARSE PARAMETERS          ================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Parse the parameters of the request from the parameter part of the url in the method line
+     * @params:
+     *    - paramLine: the split of the url line (everything after '?' and before ' ')
+     * @info: fills the 'self._params' dictionnary
+     * */
+    fn parseParams (mut self, paramLine : [c8])
+        throws errors::HttpError
+    {
+        let mut current = paramLine;
+        loop {
+            if let Ok (end) = find (current, '&') {
+                self:.parseParamSingle (current [0 .. end]);
+                current = current [end + 1 .. $];
+            } else {
+                self:.parseParamSingle (current);
+                break;
+            }
+        }
+    }
+
+    /**
+     * Parse a single parameter from a split of the paramLine (splitted between ' ' or '&' tokens)
+     * @info: fills the 'self._params' dictionnary
+     * */
+    fn parseParamSingle (mut self, param : [c8])
+        throws errors::HttpError
+    {
+        if let Ok (eq) = find (param, '=') {
+            let key = copy param [0 .. eq];
+            let value = copy param [eq + 1 .. $];
+            self._params [key] = value;
+        } else if param.len != 0 {
+            throw copy errors::HttpError (400);
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ==================================          HTTP VERSION          ==================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    fn parseHttpVersion (mut self, line : [c8])
+        throws errors::HttpError
+    {
+        if let Ok (pos) = find (line, '/') {
+            if line [0 .. pos] != "HTTP" throw copy errors::HttpError (400);
+            match line [pos + 1 .. $] {
+                "0.9" => { self._header.version = header::HttpVersion::V0_9; }
+                "1.0" => { self._header.version = header::HttpVersion::V1_0; }
+                "1.1" => { self._header.version = header::HttpVersion::V1_1; }
+                "2"   => { self._header.version = header::HttpVersion::V2_0; }
+                "3"   => { self._header.version = header::HttpVersion::V3_0; }
+                 _    => { self._header.version = header::HttpVersion::UNSPECIFIED; }
+            }
+        } else {
+            throw copy errors::HttpError (400);
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ==================================          HEADER LINE          ===================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Parse a header line
+     * @params:
+     *    - header: the header line to parse
+     * */
+    fn parseHeaderLine (mut self, line : [c8])
+        throws errors::HttpError
+    {
+        if let Ok (pos) = find (line, ':') {
+            match line [0 .. pos] {
+                header::HttpHeaderBasics::ACCEPT => { self._header.accept = self.trim (line [pos + 1 .. $]); }
+                header::HttpHeaderBasics::ACCEPT_CHARSET => { self._header.acceptCharset = self.trim (line [pos + 1 .. $]); }
+                header::HttpHeaderBasics::ACCEPT_ENCODING => { self._header.acceptEncoding = self.trim (line [pos + 1 .. $]); }
+                header::HttpHeaderBasics::ACCEPT_LANG => { self._header.acceptLanguage = self.trim (line [pos + 1 .. $]); }
+                header::HttpHeaderBasics::CONTENT_LENGTH => {
+                    {
+                        self._header.contentLength = std::conv::to!{u32} (self.trim (line [pos + 1 .. $]));
+                    } catch {
+                        _ => { throw copy errors::HttpError (400); }
+                    }
+                }
+                header::HttpHeaderBasics::CONTENT_TYPE => { self._header.contentType = self.trim (line [pos + 1 .. $]); }
+                header::HttpHeaderBasics::HOST => {
+                    {
+                        let hst = self.trim (line [pos + 1 .. $]);
+                        if let Ok (port) = find (hst, ':') {
+                            self._header.host = SockAddr (std::net::addr::conv::to!{&IpAddr} (hst [0 .. port]),
+                                                          std::conv::to!{u16} (hst [port + 1 .. $]));
+                        } else {
+                            self._header.host = SockAddr (Ipv4::UNSPECIFIED, 0);
+                        }
+                    } catch {
+                        _ => {
+                            throw copy errors::HttpError (400);
+                        }
+                    }
+                }
+                header::HttpHeaderBasics::ORIGIN => { self._header.origin = self.trim (line [pos + 1 .. $]); }
+                header::HttpHeaderBasics::PRIORITY => { self._header.priority = self.trim (line [pos + 1 .. $]); }
+                header::HttpHeaderBasics::USER_AGENT => { self._header.userAgent = self.trim (line [pos + 1 .. $]); }
+                key => {
+                    self._header.unmanaged [copy key] = self.trim (line [pos + 1 .. $]);
+                }
+            }
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          READING          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Read a line in the http request
+     * @params:
+     *     - buffer: a preallocated buffer to improve reading speed
+     * */
+    fn readLine (mut self, dmut sock : &TcpStream, dmut buffer : [c8])-> dmut [c8]
+        throws errors::HttpError
+    {
+        let dmut res = alias buffer;
+        let mut i = 0us, mut one = 0;
+        loop {
+            let c = {
+                sock:.receive!{c8} ()
+            } catch {
+                _ => throw copy errors::HttpError (400);
+            };
+
+            if c == '\n' && one != 0 { break; }
+            if c == '\r' { one += 1; }
+            else {
+                if i >= buffer.len {
+                    res ~= [c];
+                } else {
+                    res [i] = c;
+                }
+
+                i += 1;
+            }
+
+            if i > std::unit::MemorySize::KB (2) {
+                throw copy errors::HttpError (400);
+            }
+        }
+
+        alias res [0 .. i]
+    }
+
+    /**
+     * Trim a string by removing spaces in front and back of the string
+     * */
+    fn trim (self, line : [c8])-> [c8] {
+        if line.len == 0 { return line; }
+
+        let mut fst = 0us, mut end = 0us, mut started = false;
+        for i, c in line {
+            if !std::char::isWhite (c) {
+                if !started { fst = i; started = true; }
+                else { end = i; }
+            } 
+        }
+
+        copy line [fst .. end + 1]
+    }
+
+    /**
+     * Read the content part from the request
+     * @params:
+     *    - sock: the socket sending the data
+     *    - len: the length of the body
+     * @returns: the body
+     * @throws:
+     *   - AssertError: if read failed
+     * */
+    fn readContent (self, dmut sock : &TcpStream, len : u32)-> [c8]
+        throws errors::HttpError
+    {
+        if len > HttpRequestBodyLimit {
+            throw copy errors::HttpError (413);
+        }
+
+        {
+            let dmut buffer = copy ['\u{0}' ; len];
+            sock:.receiveRaw (alias buffer);
+
+            return buffer;
+        } catch {
+            _ => {
+                throw copy errors::HttpError (400);
+            }
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ======================================          MISC          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    impl Streamable {
+        pub over toStream (self, dmut stream : &StringStream) {
+            stream:.write ("HttpRequest (");
+            stream:.write (self._kind);
+            stream:.write (" => ");
+            stream:.write (self._url);
+            stream:.write ("?");
+            stream:.write (self._params);
+            stream:.entabing (txt-> " ");
+            stream:.write (")\nHeader => {\n");
+            stream:.entabing (txt-> " ");
+            stream:.write (self._header);
+            stream:.detabing ();
+            stream:.write ("}\nBody => {\n ");
+            stream:.entabing (txt-> " ");
+            stream:.write (self._body);
+            stream:.detabing ();
+            stream:.write ("\n}\n");
+            stream:.detabing ();
+        }
+    }
+
+}

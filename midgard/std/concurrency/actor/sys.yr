@@ -18,7 +18,7 @@ use actor::{base,
 use etc::c::{files, socket, poll};
 
 use std::{time::_, config::_};
-use std::{io, net::{_, tcp::_}};
+use std::{io, net::_};
 
 use std::concurrency::mail;
 use core::concurrency::sync::_;
@@ -859,10 +859,10 @@ pub class ActorSystem {
      * */
     fn connect (mut self, addr : SockAddr)-> dmut (&TcpStream)? {
         atomic self._remoteMutex {
-            if let Ok (ref dmut r) = ref self._remotes [addr] {
+            if let Ok (dmut r) = alias self._remotes [addr] {
                 if r.len > 0 {
                     let dmut back = alias r [$ - 1];
-                    r = alias (r [0 .. $ - 1]);
+                    self._remotes [addr] = alias (r [0 .. $ - 1]);
                     return (alias back)?;
                 }
             }
@@ -877,8 +877,8 @@ pub class ActorSystem {
     fn release (mut self, addr : SockAddr, dmut sock : &TcpStream) {
         if sock.isOpen () {
             atomic self._remoteMutex {
-                if let Ok (ref dmut r) = ref self._remotes [addr] {
-                    r = r ~ [alias sock];
+                if let Ok (dmut r) = alias self._remotes [addr] {
+                    self._remotes [addr] = r ~ [alias sock];
                 } else {
                     self._remotes [addr] = copy [alias sock];
                 }

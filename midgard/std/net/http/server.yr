@@ -1,0 +1,503 @@
+/**
+ * Module containing the implementation of the Http server
+ * @authors: Emile Cadorel
+ * @license: GPLv3
+ */
+
+in server;
+
+use std::net::_;
+use std::{io, fs::path};
+
+use std::concurrency::mail;
+use core::concurrency::sync::_;
+use core::concurrency::pipes::_;
+
+use etc::c::{files, socket, poll};
+
+/**
+ * Multi threaded http server, managing client request using a task pool
+ * */
+pub class HttpServer {
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ==================================          TCP POLLING          ===================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    // True iif the system is running
+    let mut _isRunning = false;
+
+    // The epoll list for message passing
+    let mut _epoll_fd : i32 = 0;
+
+    // The listening address
+    let _addr : SockAddr;
+
+    // The listener thread
+    let dmut _pollingTh : (future-> void)? = none;
+
+    // The tcp listener of the server
+    let dmut _listener : (&TcpListener)? = none;
+
+    // The number of threads to spawn in the task pool
+    let _nbJobThreads : u32;
+
+    // The list of worker threads
+    let dmut _jobThreads : [usize => (future-> void)] = copy [];
+
+    // The list of jobs
+    let dmut _jobs = copy MailBox!{dmut &TcpStream} ();
+
+    // Pipe used to trigger polling loop
+    let dmut _triggerI : (&IPipe)? = none;
+    let dmut _triggerO : (&OPipe)? = none;
+
+    // The semaphore used to trigger the workers
+    let dmut _ready = copy Semaphore ();
+
+    // The semaphore used
+    let dmut _waitTask = copy Semaphore ();
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =====================================          ROUTES          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    // The list of rout
+    let mut _routes : [Path => mut (u32, dg (request::HttpRequest)-> response::HttpResponse)] = copy [];
+
+    // Method called on 404 not found
+    let mut _on404 : (dg (request::HttpRequest)-> response::HttpResponse)? = none;
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ======================================          CTOR          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * @params:
+     *    - nbThreads: the number of worker thread in the task pool
+     * @info: if nbThreads == 0, sets the number of cores available on the host machine
+     * */
+    pub self (nbThreads : u32 = 0)
+        with self (SockAddr (Ipv4::UNSPECIFIED, 0), nbThreads-> nbThreads)
+    {}
+
+
+    /**
+     * @params:
+     *    - addr: the addresses accepted by the tcp listener
+     *    - nbThreads: the number of worker thread in the task pool
+     * @info: if nbThreads == 0, sets the number of cores available on the host machine
+     */
+    pub self (addr : SockAddr, nbThreads : u32 = 0)
+        with _addr = addr
+        , _nbJobThreads = if (nbThreads == 0) { etc::runtime::threads::_yrt_get_nprocs () } else { nbThreads + 1 }
+    {
+        let dmut pipes : [i32 ; 2] = [0, 0];
+        if (files::pipe (pipes.ptr) == 0) {
+            self._triggerI = (copy IPipe (pipe-> pipes [0]))?;
+            self._triggerO = (copy OPipe (pipe-> pipes [1]))?;
+        }
+    }
+
+    __dtor (mut self) {
+        self:.dispose ();
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =====================================          ROUTES          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Set a route
+     * @example:
+     * ```
+     * fn onAdd (rqt : HttpRequest)-> HttpResponse {
+     *    println ("/add route : ", rqt);
+     *    HttpResponse (200)
+     * }
+     *
+     * fn onGet (rqt : HttpRequest)-> HttpResponse {
+     *    println ("/get route : ", rqt);
+     *    HttpResponse (200)
+     * }
+     *
+     * let dmut server = copy HttpServer ();
+     * server:.route (Path ("/get"), &onGet); // Default method is GET
+     * server:.route (Path ("/add"), &onAdd, method-> HttpRequestKind::POST | HttpRequestKind::GET);
+     * ```
+     * */
+    pub fn route (mut self, path : Path, sig : dg (request::HttpRequest)-> response::HttpResponse, method : u32 = header::HttpRequestKind::GET) {
+        self._routes [path] = (method, sig);
+    }
+
+    /**
+     * Remove a route
+     * @example
+     * ```
+     * let dmut server = copy HttpServer ();
+     * server:.route (Path ("/get"), &onGet); // Default method is GET
+     *
+     * server:.del (Path ("/get")); // no longer answer the /get route
+     * * ```
+     * */
+    pub fn del (mut self, path : Path) {
+        self._routes:.remove (path);
+    }
+
+    /**
+     * Set the function to call on routing problem, instead of returning simple empty 404 response
+     * */
+    pub fn setOn404 (mut self, sig : dg (request::HttpRequest)-> response::HttpResponse) {
+        self._on404 = (sig)?;
+    }
+
+    /**
+     * Reset the function to call on routing problem, reseting default behavior
+     * */
+    pub fn delOn404 (mut self) {
+        self._on404 = none;
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =====================================          START          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Start the http server
+     * */
+    pub fn start (mut self)
+        throws errors::HttpError
+    {
+        if self._isRunning { return; }
+
+        self:.configureEpoll ();
+        self._pollingTh = (spawn self:.pollMain ())?;
+        self._ready:.wait ();
+    } catch {
+        e => {
+            throw copy errors::HttpError (500, msg-> std::conv::to!{[c8]} (e));
+        }
+    }
+
+    /**
+     * Wait for the http server to stop
+     * @warning: this function returns immediately if used inside a job function
+     * */
+    pub fn join (mut self) {
+        if self.isWorkerThread () return;
+
+        if let Ok (h) = self._pollingTh {
+            h.value;
+        }
+
+        self:.dispose ();
+    }
+
+    /**
+     * Kill the http server
+     * @example:
+     * ```
+     * use std::net::http;
+     *
+     * fn quit (_ : HttpRequest)-> HttpResponse {
+     *     if let Ok (dmut g) = alias __GLOBAL_SERVER__ {
+     *        g:.kill (); // Kill the server
+     *     }
+     *
+     *     HttpResponse (200)
+     * }
+     *
+     *
+     * let dmut server = copy HttpServer ();
+     *
+     * // add a route that once reach kills the server
+     * server:.addRoute (HttpRequestKind::POST, "/quit", &killServer);
+     *
+     * __GLOBAL_SERVER__ = (alias server)?;
+     * server:.start (); // start the server
+     * server:.join (); // And wait until it is killed
+     * ```
+     * */
+    pub fn kill (mut self) {
+        self:.triggerExit ();
+    }
+
+    /**
+     * Dispose the http server
+     * */
+    fn dispose (mut self) {
+        self:.kill ();
+        self:.waitAllCompletes ();
+        self._listener = none;
+
+        if self._epoll_fd != 0 {
+            etc::c::files::close (self._epoll_fd);
+            self._epoll_fd = 0;
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          POLLING          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Configure the polling descriptor
+     * */
+    fn configureEpoll (mut self)
+        throws TcpError
+    {
+        self._epoll_fd = epoll_create1 (0);
+        let dmut lst = copy TcpListener (self._addr);
+        self._listener = (alias lst)?;
+
+        if let Ok (dmut i) = alias self._triggerI {
+            i:.setNonBlocking ();
+
+            let mut event = epoll_event ();
+            event.events = EPOLLIN | EPOLLHUP;
+            event.data.fd = i.getHandle ();
+            epoll_ctl (self._epoll_fd, EPOLL_CTL_ADD, event.data.fd, &event);
+
+            event.data.fd = lst.getHandle ();
+            epoll_ctl (self._epoll_fd, EPOLL_CTL_ADD, event.data.fd, &event);
+        }
+    }
+
+    /**
+     * Main function of the polling thread
+     * */
+    fn pollMain (mut self) {
+        self._isRunning = true;
+        self._ready:.post ();
+
+        let mut event = epoll_event ();
+        while self._isRunning {
+            let event_count = epoll_wait (self._epoll_fd, &event, 1, -1);
+            if event_count == 0 {
+                return;
+            }
+
+            if let Ok (dmut l) = alias self._listener && l.getHandle () == event.data.fd {
+                {
+                    let dmut stream = l:.accept ();
+                    self:.submitJob (alias stream);
+                } catch {
+                    _ => {}
+                }
+            } else if let Ok (dmut i) = alias self._triggerI && i.getHandle () == event.data.fd {
+                if let Ok (1) = i:.read!u8 ()? {
+                    self._isRunning = false;
+                    break;
+                }
+            }
+        }
+    }
+
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          WORKERS          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Submit a new job
+     * */
+    fn submitJob (mut self, dmut sock : &TcpStream) {
+        self._jobs:.send (alias sock);
+        if self._jobThreads.len != self._nbJobThreads {
+            let nb : u32 = cast!u32 (self._jobThreads.len);
+            for _ in nb .. self._nbJobThreads {
+                let dmut f = spawn self:.workerJobThread ();
+                self._ready:.wait ();
+
+                atomic self._jobs {
+                    self._jobThreads [f.tid] = f;
+                }
+            }
+        }
+
+        self._waitTask:.post ();
+
+    }
+
+    /**
+     * Main function of the worker thread
+     * */
+    fn workerJobThread (mut self) {
+        self._ready:.post ();
+
+        loop {
+            self._waitTask:.wait ();
+            if (!self._isRunning) break;
+
+            if let Ok (dmut sock) = alias self._jobs:.receive () {
+                let resp = {
+                    let rqt = request::HttpRequest (alias sock);
+                    self.onRequest (rqt)
+                } catch {
+                    err => {
+                        let mut resp = response::HttpResponse (err.code);
+                        resp.header.version = header::HttpVersion::V1_1;
+                        resp
+                    }
+                };
+
+                resp.send (alias sock)?;
+                sock:.dispose ()?;
+            }
+        }
+
+        atomic self._jobs {
+            self._jobThreads:.remove (etc::runtime::threads::_yrt_thread_self_id ());
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          SESSION          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    fn onRequest (self, rqt : request::HttpRequest)-> response::HttpResponse {
+        if let Ok ((method, sig)) = self._routes [rqt.url] {
+            if method & rqt.method != 0b000000000 {
+                sig (rqt)
+            }
+
+            else {
+                let dmut ret = response::HttpResponse (405);
+                ret.header.version = rqt.header.version;
+                ret
+            }
+        } else {
+            if let Ok (on404) = self._on404 {
+                on404 (rqt)
+            } else {
+                let dmut ret = response::HttpResponse (404);
+                ret.header.version = rqt.header.version;
+                ret
+            }
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ===================================          DISPOSING          ====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Wait for all worker threads to join
+     * @warning: discard submitted jobs that have not yet started
+     * */
+    fn waitAllCompletes (mut self) {
+        if (self.isWorkerThread ()) return;
+
+        if self._isRunning { self:.triggerExit (); }
+        if let Ok (dmut t) = self._pollingTh {
+            t.value; // wait polling threads
+        };
+
+        self._jobs:.clear ();
+        loop {
+            let nbJobs = atomic self._jobs {
+                self._jobThreads.len
+            };
+
+            if (nbJobs != 0) {
+                self._waitTask:.post ();
+            } else break;
+        }
+    }
+
+    /**
+     * Trigger exit signal for polling loop
+     * */
+    fn triggerExit (mut self) {
+        if let Ok (dmut o) = alias self._triggerO {
+            o:.write (1u8)?;
+        }
+    }
+
+    /**
+     * @returns: true if the disposing thread is a working thread spawned by the system
+     * */
+    fn isWorkerThread (self)-> bool {
+        let s = etc::runtime::threads::_yrt_thread_self_id ();
+        if let Ok (t) = (self._pollingTh) && t.tid == s {
+            return true;
+        }
+
+        for _, j in self._jobThreads {
+            if j.tid == s { return true; }
+        }
+
+        false
+    }
+
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          GETTERS          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * @returns: the address on which the system is listening
+     * */
+    @field
+    pub fn ip (self)-> &IpAddr {
+        if let Ok (lst) = self._listener {
+            lst.addr.ip
+        } else {
+            self._addr.ip
+        }
+    }
+
+    /**
+     * @returns: the port on wich the system is listening
+     * */
+    @field
+    pub fn port (self)-> u16 {
+        if let Ok (lst) = self._listener {
+            lst.addr.port
+        } else {
+            0u16
+        }
+    }
+
+
+}

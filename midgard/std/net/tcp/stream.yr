@@ -80,7 +80,7 @@ pub class TcpStream {
      * Connect the stream to 'addr'
      * @example:
      * ```
-     * use std::net::tcp::_;
+     * use std::net::tcp;
      *
      * let addr = SockAddr (Ipv4::LOCALHOST, 8080);
      * let dmut client = copy TcpStream (addr);
@@ -97,7 +97,7 @@ pub class TcpStream {
      * */
     pub self connect (addr : SockAddr, timeout : dur::Duration = dur::seconds (2))
         with _addr = addr
-        throws TcpError
+        throws errors::TcpError
     {
         if let SockAddr (ip-> ip : &Ipv6Addr, port-> p) = addr {
             self:.connectV6 (ip, p, timeout);
@@ -108,7 +108,7 @@ pub class TcpStream {
         }
 
         else {
-            throw copy TcpError (TcpErrorCode::ADDR_TYPE, "unknown address type " ~ (addr.ip.__typeinfo__.name));
+            throw copy errors::TcpError (errors::TcpErrorCode::ADDR_TYPE, "unknown address type " ~ (addr.ip.__typeinfo__.name));
         }
     }
 
@@ -160,7 +160,7 @@ pub class TcpStream {
      *    - TcpError: if the sending failed
      * */
     pub fn if isScalar!{T} send {T} (mut self, val : T)
-        throws TcpError
+        throws errors::TcpError
     {
         self:.innerSendRaw (cast!{*u8} (cast!{*void} (&val)), cast!u32 (T::size));
     }
@@ -173,7 +173,7 @@ pub class TcpStream {
      *    - TcpError: if the sending failed
      * */
     pub fn if isTuple!{T} send {T} (mut self, val : T)
-        throws TcpError
+        throws errors::TcpError
     {
         for i in val {
             self:.send (i);
@@ -196,7 +196,7 @@ pub class TcpStream {
      * ```
      * */
     pub fn send {T of [U], U} (mut self, val : T)
-        throws TcpError
+        throws errors::TcpError
     {
         self:.send (val.len);
         for i in val {
@@ -222,7 +222,7 @@ pub class TcpStream {
      * ```
      * */
     pub fn if isScalar!{U} sendRaw {T of [U], U} (mut self, val : T)
-        throws TcpError
+        throws errors::TcpError
     {
         self:.innerSendRaw (cast!{*u8} (cast!{*void} (val.ptr)), cast!u32 (val.len));
     }
@@ -242,7 +242,7 @@ pub class TcpStream {
      *    - TcpError: if the receiving failed
      * */
     pub fn if isScalar!{T} receive {T} (mut self)-> T
-        throws TcpError
+        throws errors::TcpError
     {
         let mut t : T = T::init;
         self:.innerReceiveRaw (cast!{*u8} (cast!{*void} (&t)), cast!u32 (T::size));
@@ -257,7 +257,7 @@ pub class TcpStream {
      *    - TcpError: if the receiveing failed
      * */
     pub fn if isTuple!{T} receive {T} (mut self)-> T
-        throws TcpError
+        throws errors::TcpError
     {
         let dmut buffer : [u8 ; T::size] = [0u8 ; T::size];
         let infos = __pragma!field_infos (T);
@@ -290,13 +290,13 @@ pub class TcpStream {
      * ```
      * */
     pub fn receive {T of [U], U} (mut self, limit : usize = 1024)-> mut [mut U]
-        throws TcpError
+        throws errors::TcpError
     {
         let len = self:.receive!{usize} ();
         if len > limit {
             let a = std::conv::to!{[c8]} (limit);
             let b = std::conv::to!{[c8]} (len);
-            throw copy TcpError (TcpErrorCode::SOCKET_CLOSED, "Slice reception too big : " ~ a ~ " < " ~ b);
+            throw copy errors::TcpError (errors::TcpErrorCode::SOCKET_CLOSED, "Slice reception too big : " ~ a ~ " < " ~ b);
         }
 
         let mut result : [mut U] = core::types::array::allocArray!{U} (len);
@@ -325,7 +325,7 @@ pub class TcpStream {
      * ```
      * */
     pub fn if isScalar!{U} receiveRaw {T of [U], U} (mut self, dmut result : T)
-        throws TcpError
+        throws errors::TcpError
     {
         self:.innerReceiveRaw (cast!{*u8} (cast!{*void} (result.ptr)), cast!u32 (result.len));
     }
@@ -405,7 +405,7 @@ pub class TcpStream {
      * Connect the stream to an ipv4 address
      * */
     prv fn connectV4 (mut self, addr : &Ipv4Addr, port : u16, timeout : dur::Duration)
-        throws TcpError
+        throws errors::TcpError
     {
         errno (ErrnoValue::NONE);
         self._sockFd = socket::socket (AddressFamily::AF_INET, SocketType::SOCK_STREAM, 0);
@@ -413,7 +413,7 @@ pub class TcpStream {
             let err = errno ();
             let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
 
-            throw copy TcpError (TcpErrorCode::SOCKET_CREATION, "failed to create socket : (errno = " ~ errStr ~ ")");
+            throw copy errors::TcpError (errors::TcpErrorCode::SOCKET_CREATION, "failed to create socket : (errno = " ~ errStr ~ ")");
         }
 
         let ina = in_addr (s_addr-> addr.toN ());
@@ -436,7 +436,7 @@ pub class TcpStream {
      * Connect the stream to an ipv6 address
      * */
     prv fn connectV6 (mut self, addr : &Ipv6Addr, port : u16, timeout : dur::Duration)
-        throws TcpError
+        throws errors::TcpError
     {
         errno (ErrnoValue::NONE);
         self._sockFd = socket::socket (AddressFamily::AF_INET6, SocketType::SOCK_STREAM, 0);
@@ -444,7 +444,7 @@ pub class TcpStream {
             let err = errno ();
             let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
 
-            throw copy TcpError (TcpErrorCode::SOCKET_CREATION, "failed to create socket : (errno = " ~ errStr ~ ")");
+            throw copy errors::TcpError (errors::TcpErrorCode::SOCKET_CREATION, "failed to create socket : (errno = " ~ errStr ~ ")");
         }
 
         let ina = in6_addr (s6_addr-> addr.toN ());
@@ -466,7 +466,7 @@ pub class TcpStream {
 
 
     prv fn connectWithTimeout (mut self, addr : *sockaddr, size : u32, timeout : dur::Duration)
-        throws TcpError
+        throws errors::TcpError
     {
         self:.setNonBlocking ();
 
@@ -512,7 +512,7 @@ pub class TcpStream {
 
             if !succ {
                 let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
-                throw copy TcpError (TcpErrorCode::SOCKET_CREATION, "failed to connect : (errno = " ~ errStr ~ ")");
+                throw copy errors::TcpError (errors::TcpErrorCode::SOCKET_CREATION, "failed to connect : (errno = " ~ errStr ~ ")");
             }
         }
 
@@ -541,10 +541,10 @@ pub class TcpStream {
      * Send raw datas to the stream
      * */
     prv fn innerSendRaw (mut self, val : *u8, len : u32)
-        throws TcpError
+        throws errors::TcpError
     {
         if self._sockFd == 0 || self._error {
-            throw copy TcpError (TcpErrorCode::SOCKET_CLOSED, "Remote connection closed");
+            throw copy errors::TcpError (errors::TcpErrorCode::SOCKET_CLOSED, "Remote connection closed");
         }
 
         let mut lenToSend = len;
@@ -557,7 +557,7 @@ pub class TcpStream {
                 let err = errno ();
                 let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
 
-                throw copy TcpError (TcpErrorCode::SOCKET_CLOSED, "failed to send : (errno = " ~ errStr ~ ")");
+                throw copy errors::TcpError (errors::TcpErrorCode::SOCKET_CLOSED, "failed to send : (errno = " ~ errStr ~ ")");
             }
 
             lenToSend -= cast!u32 (sent);
@@ -577,10 +577,10 @@ pub class TcpStream {
      * Raw receive of datas from the stream
      * */
     prv fn innerReceiveRaw (mut self, val : *u8, len : u32)
-        throws TcpError
+        throws errors::TcpError
     {
         if self._sockFd == 0 || self._error {
-            throw copy TcpError (TcpErrorCode::SOCKET_CLOSED, "Remote connection closed");
+            throw copy errors::TcpError (errors::TcpErrorCode::SOCKET_CLOSED, "Remote connection closed");
         }
 
         let mut cur : *u8 = val;
@@ -593,7 +593,7 @@ pub class TcpStream {
                 let err = errno ();
                 let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
 
-                throw copy TcpError (TcpErrorCode::SOCKET_CLOSED, "failed to receive : (errno = " ~ errStr ~ ")");
+                throw copy errors::TcpError (errors::TcpErrorCode::SOCKET_CLOSED, "failed to receive : (errno = " ~ errStr ~ ")");
             }
 
             cur += cast!usize (recv);

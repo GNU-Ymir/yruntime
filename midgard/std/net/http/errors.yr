@@ -1,0 +1,37 @@
+/**
+ *
+ * @Authors: Emile Cadorel
+ * @Licence: GPLv3
+ */
+
+in errors;
+
+/**
+ * Error message thrown when an error occurs during the management of client request/responses
+ * */
+pub class HttpError over core::exception::Exception {
+
+    // The error code thrown (expect a valid HttpResponseCode)
+    pub let code : u32;
+
+    // The message of the error
+    pub let msg : [c8];
+
+    pub self (code : u32, msg : [c8] = "")
+        with code = code
+        , msg = msg
+    {}
+
+    impl std::stream::Streamable {
+        pub over toStream (self, dmut stream : &std::stream::StringStream) {
+            stream:.write (self.__typeinfo__.name);
+            if (self.trace.len != 0u64) {
+                stream:.write (" ("):.write (self.code):.write (") : "):.writeln (self.msg);
+                stream:.write (self.getStackTrace ());
+            } else {
+                stream:.write (" ("):.write (self.code):.write (") : "):.writeln (self.msg);
+            }
+        }
+    }
+
+}

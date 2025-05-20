@@ -1,0 +1,68 @@
+/**
+ * Module containing all importation needed to use the http server
+ * @authors: Emile Cadorel
+ * @license: GPLv3
+ */
+
+in http;
+
+mod ::request;
+mod ::response;
+mod ::header;
+mod ::errors;
+mod ::server;
+
+
+pub def HttpRequestKind : header::HttpRequestKind;
+pub def HttpVersion : header::HttpVersion;
+pub def HttpHeader : header::HttpHeader;
+
+/**
+ * Record containing the content of an http request from a client
+ * */
+pub def HttpRequest : request::HttpRequest;
+
+
+/**
+ * Record containing the content of an http response to a client
+ * */
+pub def HttpResponse : response::HttpResponse;
+pub def HttpResponseCode : response::HttpResponseCode;
+
+/**
+ * Http server answering client http requests
+ * @example:
+ * ```
+ * use std::net::_; // http, tcp, and address
+ *
+ * fn onHome (rqt : HttpRequest)-> HttpResponse {
+ *    println ("Resquesting home : ", rqt);
+ *    HttpResponse (200, body-> "OK");
+ * }
+ *
+ * fn onLogin (rqt : HttpRequest)-> HttpResponse {
+ *    println ("Resquesting login : ", rqt);
+ *    match (rqt.parameters ["user"], parameters ["password"]) {
+ *       (Ok ("alice"), Ok ("password")) => {
+ *           return HttpResponse (200, body-> "Logged in");
+ *       }
+ *    }
+ *
+ *    HttpResponse (403)
+ * }
+ *
+ * fn main () {
+ *    let dmut server = HttpServer (SockAddr (Ipv4::UNSPECIFIED, 8080)); // accept connection coming from anywhere
+ *
+ *    server:.route (Path ("/home"), &onHome);
+ *    server:.route (Path ("/login"), &onLogin, method-> HttpRequestKind::POST);
+ *
+ *    server:.start (); // treat client requests
+ *    server:.join (); // wait until server is killed (indefinitely in that example)
+ * } catch {
+ *     err : &HttpError => eprintln (err);
+ * }
+ * ```
+ * */
+pub def HttpServer : server::HttpServer;
+pub def HttpError : errors::HttpError;

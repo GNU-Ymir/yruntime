@@ -12,7 +12,6 @@ use std::net::{addr, addr::_, tcp::_};
 use etc::c::socket;
 use etc::runtime::errno;
 
-
 @final
 pub class TcpListener {
 
@@ -42,7 +41,7 @@ pub class TcpListener {
      * */
     pub self (addr : SockAddr, backlog : u32 = 10)
         with _addr = addr
-        throws TcpError
+        throws errors::TcpError
     {
         if let SockAddr (ip-> ip : &Ipv6Addr, port-> p) = addr {
             self._isV4 = false;
@@ -55,7 +54,7 @@ pub class TcpListener {
         }
 
         else {
-            throw copy TcpError (TcpErrorCode::ADDR_TYPE, "unknown address type " ~ (addr.ip.__typeinfo__.name));
+            throw copy errors::TcpError (errors::TcpErrorCode::ADDR_TYPE, "unknown address type " ~ (addr.ip.__typeinfo__.name));
         }
     }
 
@@ -112,8 +111,8 @@ pub class TcpListener {
      * }
      * ```
      * */
-    pub fn accept (mut self)-> dmut &TcpStream
-        throws TcpError
+    pub fn accept (mut self)-> dmut &stream::TcpStream
+        throws errors::TcpError
     {
         if self._isV4 {
             return self:.acceptV4 ();
@@ -128,8 +127,8 @@ pub class TcpListener {
      * Accept a new connection inside an ipv4 listener
      * @returns: the connected client
      * */
-    prv fn acceptV4 (mut self)-> dmut &TcpStream
-        throws TcpError
+    prv fn acceptV4 (mut self)-> dmut &stream::TcpStream
+        throws errors::TcpError
     {
         let mut client = sockaddr_in ();
         let mut len = sockaddr_in::size;
@@ -140,18 +139,18 @@ pub class TcpListener {
             let err = errno ();
             let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
 
-            throw copy TcpError (TcpErrorCode::ACCEPT, "failed to accept client : (errno = " ~ errStr ~ ")");
+            throw copy errors::TcpError (errors::TcpErrorCode::ACCEPT, "failed to accept client : (errno = " ~ errStr ~ ")");
         }
 
-        copy TcpStream (sock, self.readClientAddr (client))
+        copy stream::TcpStream (sock, self.readClientAddr (client))
     }
 
     /**
      * Accept a new connection inside an ipv6 listener
      * @returns: the connected client
      * */
-    prv fn acceptV6 (mut self)-> dmut &TcpStream
-        throws TcpError
+    prv fn acceptV6 (mut self)-> dmut &stream::TcpStream
+        throws errors::TcpError
     {
         let mut client = sockaddr_in6 ();
         let mut len = sockaddr_in6::size;
@@ -162,10 +161,10 @@ pub class TcpListener {
             let err = errno ();
             let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
 
-            throw copy TcpError (TcpErrorCode::ACCEPT, "failed to accept client : (errno = " ~ errStr ~ ")");
+            throw copy errors::TcpError (errors::TcpErrorCode::ACCEPT, "failed to accept client : (errno = " ~ errStr ~ ")");
         }
 
-        copy TcpStream (sock, self.readClientAddr (client))
+        copy stream::TcpStream (sock, self.readClientAddr (client))
     }
 
     /*!
@@ -181,10 +180,10 @@ pub class TcpListener {
      * @returns: the ipv4 address of the client
      * */
     prv fn readClientAddr (self, addr : sockaddr_in)-> SockAddr
-        throws TcpError
+        throws errors::TcpError
     {
         if (addr.sin_family != AddressFamily::AF_INET) {
-            throw copy TcpError (TcpErrorCode::ADDR_TYPE, "malformed client address");
+            throw copy errors::TcpError (errors::TcpErrorCode::ADDR_TYPE, "malformed client address");
         }
 
         let h = addr.sin_addr.s_addr;
@@ -201,10 +200,10 @@ pub class TcpListener {
      * @returns: the ipv6 address of the client
      * */
     prv fn readClientAddr (self, addr : sockaddr_in6)-> SockAddr
-        throws TcpError
+        throws errors::TcpError
     {
         if addr.sin6_family != AddressFamily::AF_INET6 {
-            throw copy TcpError (TcpErrorCode::ADDR_TYPE, "malformed client address");
+            throw copy errors::TcpError (errors::TcpErrorCode::ADDR_TYPE, "malformed client address");
         }
 
         let dmut h = addr.sin6_addr.s6_addr;
@@ -235,7 +234,7 @@ pub class TcpListener {
      * Bind an ipv4 address and start listening on it
      * */
     prv fn bindV4 (mut self, addr : &Ipv4Addr, port : u16, backlog : u32)
-        throws TcpError
+        throws errors::TcpError
     {
         errno (ErrnoValue::NONE);
         self._sockFd = socket::socket (AddressFamily::AF_INET, SocketType::SOCK_STREAM, 0);
@@ -243,7 +242,7 @@ pub class TcpListener {
             let err = errno ();
             let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
 
-            throw copy TcpError (TcpErrorCode::SOCKET_CREATION, "failed to create socket : (errno = " ~ errStr ~ ")");
+            throw copy errors::TcpError (errors::TcpErrorCode::SOCKET_CREATION, "failed to create socket : (errno = " ~ errStr ~ ")");
         }
 
         let ina = in_addr (s_addr-> addr.toN ());
@@ -255,7 +254,7 @@ pub class TcpListener {
             let err = errno ();
             let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
 
-            throw copy TcpError (TcpErrorCode::BIND, "failed to bind : (errno = " ~ errStr ~ ")");
+            throw copy errors::TcpError (errors::TcpErrorCode::BIND, "failed to bind : (errno = " ~ errStr ~ ")");
         }
 
 
@@ -263,7 +262,7 @@ pub class TcpListener {
             let err = errno ();
             let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
 
-            throw copy TcpError (TcpErrorCode::BIND, "failed to listen : (errno = " ~ errStr ~ ")");
+            throw copy errors::TcpError (errors::TcpErrorCode::BIND, "failed to listen : (errno = " ~ errStr ~ ")");
         }
 
         if port == 0 {
@@ -287,7 +286,7 @@ pub class TcpListener {
      * Bind an ipv6 address and start listening on it
      * */
     prv fn bindV6 (mut self, addr : &Ipv6Addr, port : u16, backlog : u32)
-        throws TcpError
+        throws errors::TcpError
     {
         errno (ErrnoValue::NONE);
         self._sockFd = socket::socket (AddressFamily::AF_INET6, SocketType::SOCK_STREAM, 0);
@@ -295,7 +294,7 @@ pub class TcpListener {
             let err = errno ();
             let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
 
-            throw copy TcpError (TcpErrorCode::SOCKET_CREATION, "failed to create socket : (errno = " ~ errStr ~ ")");
+            throw copy errors::TcpError (errors::TcpErrorCode::SOCKET_CREATION, "failed to create socket : (errno = " ~ errStr ~ ")");
         }
 
         let ina = in6_addr (s6_addr-> addr.toN ());
@@ -308,7 +307,7 @@ pub class TcpListener {
             let err = errno ();
             let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
 
-            throw copy TcpError (TcpErrorCode::BIND, "failed to bind : (errno = " ~ errStr ~ ")");
+            throw copy errors::TcpError (errors::TcpErrorCode::BIND, "failed to bind : (errno = " ~ errStr ~ ")");
         }
 
 
@@ -316,7 +315,7 @@ pub class TcpListener {
             let err = errno ();
             let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
 
-            throw copy TcpError (TcpErrorCode::BIND, "failed to listen : (errno = " ~ errStr ~ ")");
+            throw copy errors::TcpError (errors::TcpErrorCode::BIND, "failed to listen : (errno = " ~ errStr ~ ")");
         }
 
         if port == 0 {
