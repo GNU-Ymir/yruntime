@@ -196,9 +196,12 @@ pub class ActorSystem {
         self._pollingTh = (spawn self:.pollMain ())?;
         self._ready:.wait ();
 
-        let names = copy [name for name, _ in self._actors];
+        let names = atomic self._actorMutex {
+            copy [name for name, _ in self._actors]
+        };
+
         for name in names {
-            if let Ok (dmut act) = alias self._actors [name] {
+            if let Ok (dmut act) = alias atomic self._actorMutex { alias self._actors [name] }{
                 act:.onStart ();
             }
         }
@@ -223,8 +226,10 @@ pub class ActorSystem {
     }
 
     /**
-     * Send a message to kill the actor system
-     * @info: this function can be called from anywhere
+     * Kill all actors present in the actor system
+     * @warning: if an actor is added afterwards (or by another message) the system won't effectively exit,
+     * and would have to be killed again.
+     * For example: if an actor add an new actor instance during its 'onQuit' method, the actor system won't send kill message to that new actor
      * @example:
      * ```
      * class MyActor over ActorBase {
@@ -242,8 +247,15 @@ pub class ActorSystem {
      * ```
      * */
     pub fn kill (mut self) {
-        let msg = ActorMessage (reqId-> 0u64, alias self, Protocol::SYSTEM_KILL_ALL, SockAddr (self.ip, self.port), copy Dict ());
-        self:.sendActorMessage (msg.addr, msg, false)?;
+        atomic self._actorMutex {
+            for _, dmut act in alias self._actors {
+                act:.kill ();
+            }
+        }
+
+        if self._actors.len == 0 {
+            self:.triggerExit ();
+        }
     }
 
     /**
@@ -251,10 +263,14 @@ pub class ActorSystem {
      * @warning: this function returns immediately if used inside an actor
      * */
     fn dispose (mut self) {
+        if self.isWorkerThread () { return; }
+        self:.kill ();
         self:.waitAllCompletes ();
-        self:.onSystemKill ();
 
-        self._actors = copy [];
+        atomic self._actorMutex {
+            self._actors = copy [];
+        }
+
         self._listener = none;
         if (self._epoll_fd != 0) {
             etc::c::files::close (self._epoll_fd);
@@ -318,7 +334,10 @@ pub class ActorSystem {
                     _ => {}
                 }
             } else if let Ok (dmut i) = alias self._triggerI && i.getHandle () == event.data.fd {
-                (i:.read!u8 ())?;
+                if let Ok (Protocol::SYSTEM_KILL_ALL) = i:.read!u8 ()? {
+                    self._isRunning = false;
+                    break;
+                }
             } else {
                 if let Ok (dmut sc) = alias self._sockets [event.data.fd] {
                     self:.receiveMessage (alias sc);
@@ -329,7 +348,6 @@ pub class ActorSystem {
                     self:.delPoll (event.data.fd);
                 }
             }
-
         }
     }
 
@@ -388,12 +406,7 @@ pub class ActorSystem {
             }
         }
 
-        let mut cp = buffer;
-        if let Ok (_ = Protocol::SYSTEM_KILL_ALL) = utils::read!u8 (ref cp)? {
-            self:.onSystemKill ();
-        } else {
-            self:.submitJob (Job (data-> buffer, origin-> stream.addr, n));
-        }
+        self:.submitJob (Job (data-> buffer, origin-> stream.addr, n));
     }
 
     /*!
@@ -477,6 +490,9 @@ pub class ActorSystem {
             Protocol::ACTOR_REQ => {
                 self:.onActorReq (msg, local);
             }
+            Protocol::ACTOR_KILL => {
+                self:.onActorKill (msg);
+            }
         }
     }
 
@@ -488,8 +504,24 @@ pub class ActorSystem {
         }
     }
 
+    fn onActorKill (mut self, msg : ActorMessage) {
+        if let Ok (dmut ac) = alias atomic self._actorMutex { alias self._actors [msg.actorName] } {
+            atomic ac {
+                ac:.onQuit ();
+            }
+
+            atomic self._actorMutex {
+                self._actors:.remove (msg.actorName);
+            };
+
+            if self._actors.len == 0 {
+                self:.triggerExit ();
+            }
+        }
+    }
+
     fn onActorReq (mut self, msg : ActorMessage, local : bool) {
-        if let Ok (dmut ac) = alias self._actors [msg.actorName] {
+        if let Ok (dmut ac) = alias atomic self._actorMutex { alias self._actors [msg.actorName] }{
             let result = atomic ac {
                 ac:.onRequest (msg.content)
             };
@@ -551,29 +583,11 @@ pub class ActorSystem {
     }
 
     /**
-     * Function executed on system kill event
-     * */
-    fn onSystemKill (mut self) {
-        // On system kill cannot be operated inside the polling thread
-        let dmut aux = alias self._actors;
-        self._actors = copy [];
-
-        for _, dmut j in alias aux {
-            atomic j {
-                j:.onQuit ();
-            }
-        }
-
-        if (self._isRunning) { self:.triggerExit (); }
-    }
-
-    /**
      * Trigger exit signal for polling loop
      * */
     fn triggerExit (mut self) {
-        self._isRunning = false;
         if let Ok (dmut o) = alias self._triggerO {
-            o:.write (1u8)?;
+            o:.write (Protocol::SYSTEM_KILL_ALL)?;
         }
     }
 
@@ -681,35 +695,6 @@ pub class ActorSystem {
         }
     }
 
-    /**
-     * Remove an actor from the system
-     * @info: If this function can be called directly, it is prefered to call the method :.kill () from an actor instance.
-     * */
-    pub fn remove (mut self, name : [c8], lock : bool) {
-        let dmut removed = atomic self._actorMutex {
-            if let Ok (dmut act) = alias self._actors [name] {
-                self._actors:.remove (name);
-                (alias act)?
-            } else {
-                none
-            }
-        };
-
-        if let Ok (dmut act) = alias removed {
-            if lock {
-                atomic act {
-                    act:.onQuit ();
-                }
-            } else {
-                act:.onQuit ();
-            }
-        }
-
-        if self._actors.len == 0 {
-            self:.onSystemKill ();
-        }
-    }
-
     /*!
      * ====================================================================================================
      * ====================================================================================================
@@ -788,6 +773,15 @@ pub class ActorSystem {
     pub fn sendMessage (mut self, addr : SockAddr, actorName : [c8], content : &Config, local : bool)-> bool {
         let message = ActorMessage (alias self, Protocol::ACTOR_MSG, actorName, addr, content);
         self:.sendActorMessage (addr, message, local)
+    }
+
+    /**
+     * Send actor kill message to a remote or local actor
+     * */
+    pub fn sendKill (mut self, actorName : [c8])-> bool {
+        let addr = SockAddr (Ipv4::LOCALHOST, self.port);
+        let message = ActorMessage (alias self, Protocol::ACTOR_KILL, actorName, addr, copy Dict ());
+        self:.sendActorMessage (addr, message, true)
     }
 
     /**

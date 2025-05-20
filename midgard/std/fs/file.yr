@@ -63,6 +63,7 @@ use std::fs::{path, errors};
 use std::conv;
 use etc;
 use etc::runtime::errno;
+use etc::c::files;
 
 /**
  * This type is a reference to a file in the file system.
@@ -139,6 +140,59 @@ pub entity File {
         }
     }
 
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          LOCKING          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Lock the file on the system to avoid concurrent access on it
+     * */
+    pub fn lock (mut self)
+        throws FsError
+    {
+        if (self._handle == null) {
+            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+        }
+
+        let fd = fileno (self._handle);
+        if (fd == 0) {
+            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+        }
+
+        lockf (fd, FileFlags::F_LOCK, 0);
+    }
+
+    /**
+     * Unlock the file on the system to avoid concurrent access on it
+     * */
+    pub fn unlock (mut self)
+        throws FsError
+    {
+        if (self._handle == null) {
+            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+        }
+
+        let fd = fileno (self._handle);
+        if (fd == 0) {
+            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+        }
+
+        lockf (fd, FileFlags::F_ULOCK, 0);
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ===================================          READ/WRITE          ===================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    
     /**
      * Read all the content contained in the file from the current cursor position.
      * @throws:
@@ -382,6 +436,38 @@ pub entity File {
     }
 
     /**
+     * Read a pre allocated slice of data in the file
+     * @params:
+     *    - result: the value to receive
+     * @returns: the slice that was successfuly read (slice of `result`)
+     * */
+    pub fn if std::traits::isScalar!{U} readRaw {T of [U], U} (mut self, dmut result : T)-> dmut T
+        throws FsError
+    {
+        if (self._handle == null) {
+            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+        } else if (!self._read) {
+            throw copy FsError (FsErrorCode::NOT_READABLE, self._filename.toStr ());
+        }
+
+        if (!c::files::feof (self._handle)) {
+            let cursor = c::files::ftell (self._handle);
+            c::files::fseek (self._handle, 0u32, c::files::SeekWhence::SEEK_END);
+            let len = c::files::ftell (self._handle) - cursor;
+            c::files::fseek (self._handle, cursor, c::files::SeekWhence::SEEK_SET);
+
+            let canRead  = len / cast!usize (U::size);
+            let toRead = if (canRead >= result.len) { result.len } else { canRead };
+            if (toRead == 0) return [];
+
+            c::files::fread (alias cast!{dmut *void} (result.ptr), U::size, cast!u32 (toRead), alias self._handle);
+            return alias res;
+        }
+
+        []
+    }
+
+    /**
      * Write some bytes to a file.
      * @params:
      *    - text: the bytes to write in the file
@@ -412,6 +498,36 @@ pub entity File {
         c::files::fwrite (cast!{*void} (text.ptr), u8::size, cast!(u32) (text.len), alias self._handle);
     }
 
+    /**
+     * Write elements of an arbitrary type to a file.
+     * @params:
+     *    - text: the content to write in the file
+     * @throws:
+     *   - FsError: if the file is not opened, are not writable
+     * @example:
+     * ```
+     * import std::fs::file, std::fs::path;
+     *
+     * with dmut file = File::open (Path ("foo.txt"), write-> true) {
+     *      file:.writeBytes ([83u8, 111u8, 109u8, 101u8, 32u8, 84u8, 101u8, 120u8, 116u8]);
+     * } catch {
+     *      err : &FsError => {
+     *          println (err);
+     *      }
+     * }
+     * ```
+     */
+    pub fn if std::traits::isScalar!{U} writeRaw {T of [U], U} (mut self, text : T) -> void
+        throws FsError
+    {
+        if (self._handle == null) {
+            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+        } else if (!self._write && !self._append) {
+            throw copy FsError (FsErrorCode::NOT_WRITABLE, self._filename.toStr ());
+        }
+
+        c::files::fwrite (cast!{*void} (text.ptr), U::size, cast!(u32) (text.len), alias self._handle);
+    }
 
     /**
      * Move the position of the cursor of the file

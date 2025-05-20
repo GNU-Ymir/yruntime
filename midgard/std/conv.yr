@@ -182,18 +182,18 @@ pub fn if (isUnsigned!{I} && isChar!{C} && isIntegral!{N}) to {T of [C], C, base
         return copy cast!{T} ("0");
     }
 
-    let mut n = a;
+    let mut n : __pragma!unproxied (I) = a;
     let mut len = 0us;
     while n > 0 {
         len += 1;
-        n /= cast!I (base);
+        n /= cast!{typeof (n)} (base);
     }
 
     let dmut res = core::types::array::allocArray!(C) (len);
-    let mut j : I = 1;
+    let mut j : u64 = 1;
     for i in len .. 0us {
-        res [i - 1us] = std::conv::utils::to!C ((a / j) % cast!{I} (base), cast!{I} (base), upper-> upper);
-        j *= cast!{I} (base);
+        res [i - 1us] = std::conv::utils::to!C ((cast!u64 (a) / j) % cast!{typeof (n)} (base), cast!{typeof (n)} (base), upper-> upper);
+        j *= cast!{typeof (n)} (base);
     }
 
     alias res
