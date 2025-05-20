@@ -179,9 +179,7 @@ pub record HttpRequest {
      *    - paramLine: the split of the url line (everything after '?' and before ' ')
      * @info: fills the 'self._params' dictionnary
      * */
-    fn parseParams (mut self, paramLine : [c8])
-        throws errors::HttpError
-    {
+    fn parseParams (mut self, paramLine : [c8]) {
         let mut current = paramLine;
         loop {
             if let Ok (end) = find (current, '&') {
@@ -198,15 +196,14 @@ pub record HttpRequest {
      * Parse a single parameter from a split of the paramLine (splitted between ' ' or '&' tokens)
      * @info: fills the 'self._params' dictionnary
      * */
-    fn parseParamSingle (mut self, param : [c8])
-        throws errors::HttpError
-    {
+    fn parseParamSingle (mut self, param : [c8]) {
         if let Ok (eq) = find (param, '=') {
             let key = copy param [0 .. eq];
             let value = copy param [eq + 1 .. $];
             self._params [key] = value;
         } else if param.len != 0 {
-            throw copy errors::HttpError (400);
+            let key = copy param;
+            self._params [key] = "";
         }
     }
 

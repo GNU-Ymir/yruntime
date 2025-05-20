@@ -57,20 +57,20 @@ pub fn sqrt {T} (a : T)-> T {
  * */
 pub fn if (std::traits::isIntegral!{T}) ipow {T} (base : T, exp : i32)-> T {
     let mut pow = base;
-    let mut v : T = cast!T (1);
+    let mut v : __pragma!unproxied (T) = 1;
     let mut expV = exp;
 
     if (exp < cast!i32 (0)) {
-        return if (base * base != cast!T (1)) {
-            cast!T (0)
+        return if (base * base != 1) {
+            0
         } else if ((exp & 1) != 0) {
             base
         } else {
-            cast!T (1)
+            1
         };
     }
 
-    while (expV > cast!i32 (0)) {
+    while (expV > 0) {
         if (expV & 1 != 0) v *= pow;
         pow *= pow;
         expV = expV >> 1;
@@ -87,13 +87,13 @@ pub fn if (std::traits::isIntegral!{T}) ipow {T} (base : T, exp : i32)-> T {
  * ```
  * */
 pub fn if isFloating!{T}() fipow {T} (base : T, exp : i32)-> T {
-    let mut v : T = cast!T (1.0);
+    let mut v : __pragma!unproxied (T) = 1.0;
     let mut expV = exp;
-    let mut pow = if (exp < 0) {1.0/base} else {base};
+    let mut pow = if (exp < 0) {1.0 / base} else {base};
 
     if (exp < 0) expV = -expV;
 
-    while (expV > cast!i32 (0)) {
+    while (expV > 0) {
         if (expV & 1 != 0) v *= pow;
         pow *= pow;
         expV = expV >> 1;
@@ -110,16 +110,17 @@ pub fn if isFloating!{T}() fipow {T} (base : T, exp : i32)-> T {
  * ```
  * */
 pub fn ffpow {T} (base : T, exp : T, prec : f64 = 0.0000001)-> T {
-    if (exp < cast!T (0.0)) return cast!T (1.0) / ffpow!T (base, -exp, prec-> prec);
-    if (exp >= cast!T (10.0)) {
-        let r = ffpow!T (base, exp / cast!T (2.0), prec-> prec / 2.0);
+    if (exp < 0.0) return 1.0 / ffpow!{__pragma!unproxied (T)} (base, -exp, prec-> prec);
+    if (exp >= 10.0) {
+        let r = ffpow!{__pragma!unproxied (T)} (base, exp / 2.0, prec-> prec / 2.0);
         return r * r;
     }
 
-    if (exp >= cast!T (1.0)) { return base * ffpow!T (base, exp - cast!T (1.0), prec-> prec); }
+    if (exp >= 1.0) { return base * ffpow!{__pragma!unproxied (T)} (base, exp - 1.0, prec-> prec); }
     if (prec >= 1.0) { return sqrt!T (base); }
 
-    return sqrt!T (ffpow!T (base, exp * cast!T (2.0), prec-> prec * 2.0));
+    return sqrt!{__pragma!unproxied (T)} (ffpow!{__pragma!unproxied (T)} (base, exp * 2.0,
+                                                                          prec-> prec * 2.0));
 }
 
 /**
@@ -142,7 +143,7 @@ pub fn ffmod {T} (a : T, b : T)-> T {
  * */
 @inline
 pub fn fabs {T} (a : T)-> T {
-    if (a < cast!T (0.0)) {
+    if (a < 0.0) {
         -a
     } else {
         a

@@ -315,21 +315,21 @@ pub fn if (isSigned!{I} && isChar!{C} && isIntegral!{N}) to {T of [C], C, base :
         return copy cast!{T} ("0");
     }
 
-    let (mut n, mut len, sign) = if (a < 0) {
+    let (mut n : __pragma!unproxied (I), mut len, sign) = if (a < 0) {
         (-a, 0us, true)
     } else { (a, 0us, false) }
 
     while n > 0 {
         len += 1;
-        n /= cast!I (base);
+        n /= cast!{typeof (n)} (base);
     }
 
-    let mut j : I = 1;
+    let mut j : __pragma!unproxied (I) = 1;
     if (!sign) {
         let dmut res = core::types::array::allocArray!(C)(len);
         for i in len .. 0us {
-            res [i - 1us] = std::conv::utils::to!C ((a / j) % cast!I (base), cast!I (base), upper);
-            j *= cast!I (base);
+            res [i - 1us] = std::conv::utils::to!C ((cast!{typeof (n)} (a) / j) % cast!{typeof (n)} (base), cast!{typeof (n)} (base), upper);
+            j *= cast!{typeof (n)} (base);
         }
 
         return alias res;
@@ -338,8 +338,8 @@ pub fn if (isSigned!{I} && isChar!{C} && isIntegral!{N}) to {T of [C], C, base :
         res [0] = '-';
 
         for i in len .. 0us {
-            res [i] = std::conv::utils::to!C ((-a / j) % cast!I (base), cast!I (base), upper);
-            j *= cast!I (base);
+            res [i] = std::conv::utils::to!C ((cast!{typeof (n)} (-a) / j) % cast!{typeof (n)} (base), cast!{typeof (n)} (base), upper);
+            j *= cast!{typeof (n)} (base);
         }
 
         return alias res;
