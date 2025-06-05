@@ -7,7 +7,7 @@
 in request;
 
 use std::net::_;
-use std::{io, fs::path, stream};
+use std::{io, fs::path, stream, char};
 use std::algorithm::searching;
 
 def HttpRequestBodyLimit = std::unit::MemorySize::MB (100);
@@ -129,7 +129,8 @@ pub record HttpRequest {
         // Parse the http method
         let mut current = line;
         if let Ok (pos) = find (current, ' ') {
-            match current [0 .. pos] {
+            let meth = copy [toUpper (i) for i in current [0 .. pos]];
+            match meth {
                 header::HttpRequestKindNames::POST    => { self._kind = header::HttpRequestKind::POST; }
                 header::HttpRequestKindNames::GET     => { self._kind = header::HttpRequestKind::GET; }
                 header::HttpRequestKindNames::HEAD    => { self._kind = header::HttpRequestKind::HEAD; }
@@ -250,7 +251,9 @@ pub record HttpRequest {
         throws errors::HttpError
     {
         if let Ok (pos) = find (line, ':') {
-            match line [0 .. pos] {
+            let headL = copy [toLower (i) for i in line [0 .. pos]];
+
+            match headL {
                 header::HttpHeaderBasics::ACCEPT => { self._header.accept = self.trim (line [pos + 1 .. $]); }
                 header::HttpHeaderBasics::ACCEPT_CHARSET => { self._header.acceptCharset = self.trim (line [pos + 1 .. $]); }
                 header::HttpHeaderBasics::ACCEPT_ENCODING => { self._header.acceptEncoding = self.trim (line [pos + 1 .. $]); }

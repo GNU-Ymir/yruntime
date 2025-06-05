@@ -1,5 +1,7 @@
 in implem;
 
+use std::stream;
+
 /**
  * Atomic linked list storing
  * */
@@ -87,6 +89,24 @@ pub class IMailBox {T, mutable : bool} {
     @field
     pub fn len (self)-> usize {
         self._mails.len
+    }
+
+    impl Streamable {
+        pub over toStream (self, dmut stream : &StringStream) {
+            stream:.write ("MailBox {");
+            atomic self {
+                for i, m in self._mails {
+                    cte if __pragma!compile ({ stream:.write (m); }) {
+                        if i != 0 { stream:.write (", "); }
+                        stream:.write (m);
+                    } else {
+                        i;
+                        m;
+                    }
+                }
+            }
+            stream:.write ("}");
+        }
     }
 
 }

@@ -191,7 +191,9 @@ pub class HttpServer {
         if self._isRunning { return; }
 
         self:.configureEpoll ();
-        self._pollingTh = (spawn self:.pollMain ())?;
+        let th = spawn { self:.pollMain (); };
+
+        self._pollingTh = (th)?;
         self._ready:.wait ();
     } catch {
         e => {
@@ -294,24 +296,22 @@ pub class HttpServer {
         self._isRunning = true;
         self._ready:.post ();
 
-        let mut event = epoll_event ();
         while self._isRunning {
+            let mut event = epoll_event ();
             let event_count = epoll_wait (self._epoll_fd, &event, 1, -1);
-            if event_count == 0 {
-                return;
-            }
-
-            if let Ok (dmut l) = alias self._listener && l.getHandle () == event.data.fd {
-                {
-                    let dmut stream = l:.accept ();
-                    self:.submitJob (alias stream);
-                } catch {
-                    _ => {}
-                }
-            } else if let Ok (dmut i) = alias self._triggerI && i.getHandle () == event.data.fd {
-                if let Ok (1) = i:.read!u8 ()? {
-                    self._isRunning = false;
-                    break;
+            if event_count > 0 {
+                if let Ok (dmut l) = alias self._listener && l.getHandle () == event.data.fd {
+                    {
+                        let dmut stream = l:.accept ();
+                        self:.submitJob (alias stream);
+                    } catch {
+                        _ => {}
+                    }
+                } else if let Ok (dmut i) = alias self._triggerI && i.getHandle () == event.data.fd {
+                    if let Ok (1) = i:.read!u8 ()? {
+                        self._isRunning = false;
+                        break;
+                    }
                 }
             }
         }
@@ -331,6 +331,7 @@ pub class HttpServer {
      * */
     fn submitJob (mut self, dmut sock : &TcpStream) {
         self._jobs:.send (alias sock);
+
         if self._jobThreads.len != self._nbJobThreads {
             let nb : u32 = cast!u32 (self._jobThreads.len);
             for _ in nb .. self._nbJobThreads {

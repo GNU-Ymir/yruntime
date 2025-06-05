@@ -48,12 +48,8 @@ pub class ActorRef {
      * @throws:
      *    - ActorError: if the connection to the actor fails
      * */
-    pub fn send (mut self, content : &Config)
-        throws errors::ActorError
-    {
-        if !self.sys:.sendMessage (self.addr, self.name, content, self.isLocal) {
-            throw copy errors::ActorError ("Failed to send message to " ~ self.name);
-        }
+    pub fn send (mut self, content : &Config) {
+        self.sys:.sendMessage (self.addr, self.name, content, self.isLocal);
     }
 
     /**
@@ -65,14 +61,8 @@ pub class ActorRef {
      * @throws:
      *   - ActorError: if the connection to the actor fails
      * */
-    pub fn request (mut self, content : &Config, timeout : Duration = Duration (1, 0, negative-> true))-> dmut &request::ActorRqtFuture
-        throws errors::ActorError
-    {
-        if let Ok (dmut rqt) = alias self.sys:.sendRequest (self.addr, self.name, content, self.isLocal, timeout) {
-            return alias rqt;
-        }
-
-        throw copy errors::ActorError ("Failed to send message to " ~ self.name);
+    pub fn request (mut self, content : &Config, timeout : Duration = Duration (2, 0, negative-> false))-> dmut &request::ActorRqtFuture {
+        return self.sys:.sendRequest (self.addr, self.name, content, self.isLocal, timeout);
     }
 
 }

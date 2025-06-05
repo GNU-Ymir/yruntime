@@ -70,11 +70,14 @@ pub class ActorBase {
     // The system to which the actor is attached
     let dmut _sys : (&sys::ActorSystem)? = none;
 
+    // False iif the actor is not locked uppon invokation
+    let _isAtomic : bool = true;
 
     /**
      * Create a new empty actor
      * */
     pub self () {}
+    pub self (isAtomic : bool) with _isAtomic = isAtomic {}
 
     /*!
      * ====================================================================================================
@@ -162,6 +165,14 @@ pub class ActorBase {
     pub fn attach (mut self, name : [c8], dmut sys : &sys::ActorSystem) {
         self._name = name;
         self._sys = (alias sys)?;
+    }
+
+    /**
+     * @returns: true iif the actor can treat only one message at a time
+     * */
+    @field
+    pub fn isAtomic (self)-> bool {
+        self._isAtomic
     }
 
 }

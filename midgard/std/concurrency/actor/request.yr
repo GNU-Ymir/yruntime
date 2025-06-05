@@ -79,7 +79,7 @@ pub class ActorRqtFuture {
         }
 
         self._sys:.removeRequest (self.uid);
-        throw copy errors::ActorError ("Request timeout");
+        throw copy errors::ActorError ("Request timeout - " ~ std::conv::to!{[c8]} (self.uid) ~ "(" ~ std::conv::to!{[c8]} (self._timeout) ~ ")");
     }
 
     /**
@@ -97,13 +97,6 @@ pub class ActorRqtFuture {
     pub fn emitResponse (mut self, resp : &Config?) {
         self._response = resp;
         self._sem:.post ();
-    }
-
-    /**
-     * Remove the request from the actor system if not awaited
-     * */
-    __dtor (mut self) {
-        self._sys:.removeRequest (self.uid);
     }
 
 }

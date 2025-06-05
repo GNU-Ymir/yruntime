@@ -133,7 +133,7 @@ pub record ActorMessage {
 
     impl Streamable {
         pub over toStream (self, dmut stream : &StringStream) {
-            stream:.write (self.actorName, " <-- ", self.content);
+            stream:.write (self.actorName, " <-- ", self.content, " / ", self.uid, ":", self.kind);
         }
     }
 }
@@ -149,7 +149,13 @@ pub fn deserialize (dmut sys : &sys::ActorSystem, origin : SockAddr, content : [
         Protocol::ACTOR_RESP => { Protocol::ACTOR_RESP }
         Protocol::ACTOR_RESP_FAILED => { Protocol::ACTOR_RESP_FAILED }
         Protocol::SYSTEM_KILL_ALL => { Protocol::SYSTEM_KILL_ALL }
-        _ => { throw copy CastFailure (typeof (buffer)::typeinfo, ActorMessage::typeinfo); }
+        Protocol::ACTOR_KILL => { Protocol::ACTOR_KILL }
+        k => {
+            atomic {
+                println ("K : ",  k);
+            }
+            throw copy CastFailure (typeof (buffer)::typeinfo, ActorMessage::typeinfo);
+        }
     };
 
     let uid = utils::read!{u64} (ref buffer);

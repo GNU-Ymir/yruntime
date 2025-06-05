@@ -13,7 +13,7 @@ use std::time::dur;
 use etc::c::{files, socket, time};
 use etc::runtime::errno;
 
-use std::traits;
+use std::{traits, conv};
 
 /**
  * A tcp stream is a tcp connection from a client to a server, or a server to a client.
@@ -112,6 +112,43 @@ pub class TcpStream {
         }
     }
 
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          SETTERS          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Set the timeout of the scoket send
+     * */
+    pub fn setSendTimeout (mut self, timeout : dur::Duration) {
+        if self._sockFd != 0 && !self._error {
+            let dmut tv = if timeout.isNegative () {
+                etc::c::time::dur_t (0, 0)
+            } else {
+                etc::c::time::dur_t (timeout.getSec (), timeout.getUSec () * 1000u64)
+            };
+
+            setsockopt (self._sockFd, SocketOptions::SOL_SOCKET, SocketOptions::SO_SNDTIMEO, cast!{*void} (&tv), typeof (tv)::size);
+        }
+    }
+
+    /**
+     * Set the timeout of the scoket recv
+     * */
+    pub fn setRecvTimeout (mut self, timeout : dur::Duration) {
+        if self._sockFd != 0 && !self._error {
+            let dmut tv = if timeout.isNegative () {
+                etc::c::time::dur_t (0, 0)
+            } else {
+                etc::c::time::dur_t (timeout.getSec (), timeout.getUSec () * 1000u64)
+            };
+
+            setsockopt (self._sockFd, SocketOptions::SOL_SOCKET, SocketOptions::SO_RCVTIMEO, cast!{*void} (&tv), typeof (tv)::size);
+        }
+    }
 
     /*!
      * ====================================================================================================
@@ -374,7 +411,7 @@ pub class TcpStream {
             if self._sockFd == 0 || self._error {
                 stream:.write ("CLOSED)");
             } else {
-                stream:.write ("OPEN-> ", self._addr, ")");
+                stream:.write ("OPEN-> ", self._addr, "/", self._sockFd, ")");
             }
         }
     }
@@ -387,11 +424,9 @@ pub class TcpStream {
      * ====================================================================================================
      */
 
-
-    __dtor (mut self) {
-        self:.dispose ();
-    }
-
+    // __dtor (mut self) {
+    // self:.dispose ();
+    // }
 
     /*!
      * ====================================================================================================
@@ -409,6 +444,8 @@ pub class TcpStream {
     {
         errno (ErrnoValue::NONE);
         self._sockFd = socket::socket (AddressFamily::AF_INET, SocketType::SOCK_STREAM, 0);
+
+
         if self._sockFd <= 0 {
             let err = errno ();
             let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
@@ -440,6 +477,8 @@ pub class TcpStream {
     {
         errno (ErrnoValue::NONE);
         self._sockFd = socket::socket (AddressFamily::AF_INET6, SocketType::SOCK_STREAM, 0);
+
+
         if self._sockFd <= 0 {
             let err = errno ();
             let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
@@ -515,8 +554,6 @@ pub class TcpStream {
                 throw copy errors::TcpError (errors::TcpErrorCode::SOCKET_CREATION, "failed to connect : (errno = " ~ errStr ~ ")");
             }
         }
-
-        self:.setBlockling ();
     }
 
     prv fn setNonBlocking (mut self) {
@@ -543,19 +580,19 @@ pub class TcpStream {
     prv fn innerSendRaw (mut self, val : *u8, len : u32)
         throws errors::TcpError
     {
+        let mut lenToSend = len;
+        let mut cur : *u8 = val;
         if self._sockFd == 0 || self._error {
             throw copy errors::TcpError (errors::TcpErrorCode::SOCKET_CLOSED, "Remote connection closed");
         }
 
-        let mut lenToSend = len;
-        let mut cur : *u8 = val;
         while lenToSend != 0 {
             errno (ErrnoValue::NONE);
             let sent = socket::send (self._sockFd, cast!{*void} (cur), lenToSend, 16384);
-            if sent < 1 {
-                self._error = true;
+            if sent <= 0 {
                 let err = errno ();
-                let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
+                self._error = true;
+                let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ "," ~ std::conv::to!{[c8]} (self._sockFd) ~ ")";
 
                 throw copy errors::TcpError (errors::TcpErrorCode::SOCKET_CLOSED, "failed to send : (errno = " ~ errStr ~ ")");
             }
@@ -579,19 +616,20 @@ pub class TcpStream {
     prv fn innerReceiveRaw (mut self, val : *u8, len : u32)
         throws errors::TcpError
     {
-        if self._sockFd == 0 || self._error {
-            throw copy errors::TcpError (errors::TcpErrorCode::SOCKET_CLOSED, "Remote connection closed");
-        }
-
         let mut cur : *u8 = val;
         let mut lenToRecv = len;
-        while lenToRecv != 0 {
+
+        if self._sockFd == 0 || self._error {
+            throw copy errors::TcpError (errors::TcpErrorCode::SOCKET_CLOSED, "Remote connection closed " ~ to!{[c8]} (self._sockFd));
+        }
+
+        while lenToRecv > 0 {
             errno (ErrnoValue::NONE);
             let recv = socket::recv (self._sockFd, cast!{*void} (cur), lenToRecv, 0);
-            if recv < 1 {
-                self._error = true;
+            if recv <= 0 {
                 let err = errno ();
-                let errStr = strerrno (err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
+                self._error = true;
+                let errStr = "(" ~ std::conv::to!{[c8], i32} (err) ~ "," ~ std::conv::to!{[c8]} (self._sockFd) ~ ") -- " ~ to!{[c8]} (len - lenToRecv) ~ "/" ~ to!{[c8]} (len);
 
                 throw copy errors::TcpError (errors::TcpErrorCode::SOCKET_CLOSED, "failed to receive : (errno = " ~ errStr ~ ")");
             }
