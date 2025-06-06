@@ -918,10 +918,10 @@ pub class ActorSystem {
     fn sendActorMessage (mut self, addr : SockAddr, msg : ActorMessage, local : bool) {
         if (local) {
             self:.submitJob (Job (origin-> SockAddr (self._addr.ip, self.port), msg-> msg?, Instant::now ()));
+        } else {
+            self._sendMails:.send ((msg, addr));
+            self._waitSend:.post ();
         }
-
-        self._sendMails:.send ((msg, addr));
-        self._waitSend:.post ();
     }
 
     /*!
