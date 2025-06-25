@@ -2,6 +2,7 @@
 
 #include <rt/utils/_.h>
 #include <rt/except/_.h>
+#include <rt/except/panic.h>
 
 #include <limits.h>
 #include <stdlib.h>
@@ -25,11 +26,15 @@ void bt_sighandler(int sig
 #ifdef __linux__
                    , struct sigcontext ctx
 #endif
-    )
+                   )
 {
-    fprintf (stderr, "Segfault\n");
-    exit (-1);
-    // _yrt_panic_seg_fault ();
+    static int first = 0;
+    if (first == 0) {
+        first = 1;
+        _yrt_exc_panic_seg_fault ();
+    } else {
+        _yrt_exc_panic_no_trace ();
+    }
 }
 
 void installHandler () {

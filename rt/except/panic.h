@@ -16,4 +16,9 @@ void _yrt_exc_panic (const char* file, const char * function, unsigned int line)
  */
 void _yrt_exc_panic_no_trace ();
 
+/**
+ * Terminate the program with a panic signal without computing the stack trace
+ */
+void _yrt_exc_panic_seg_fault ();
+
 #endif // PANIC_H_

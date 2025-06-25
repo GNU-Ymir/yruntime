@@ -1,0 +1,243 @@
+/**
+ * This module implements the structure `DateTime` and some utility function to encode dates.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @example:
+ * ```
+ * import std::time::_;
+ *
+ * let today = DateTime (instant::now ());
+ * println ("Today is : ", today);
+ *
+ * let gmt_today = DateTime (instant::now (), gmt-> true);
+ * println ("Today is : ", today, " in GMT");
+ * ```
+ */
+
+
+in date;
+
+use std::stream;
+use std::time::instant;
+use core::concurrency::sync::mutex;
+
+use etc::c::time;
+
+lazy dmut __DATE_MUTEX__ = copy Mutex ();
+
+pub enum
+| MONDAY    = "Mon."
+| TUESDAY   = "Tue."
+| WEDNESDAY = "Wed."
+| THURSDAY  = "Thu."
+| FRIDAY    = "Fri."
+| SATURDAY  = "Sat."
+| SUNDAY    = "Sun."
+ -> Days;
+
+pub enum
+| JANUARY   = "Jan."
+| FEBRUARY  = "Feb."
+| MARCH     = "Mar."
+| APRIL     = "Apr."
+| May       = "May."
+| JUNE      = "Jun."
+| JULY      = "Jul."
+| AUGUST    = "Aug."
+| SEPTEMBER = "Sep."
+| OCTOBER   = "Oct."
+| NOVEMBER  = "Nov."
+| DECEMBER  = "Dec."
+ -> Months;
+
+pub record DateTime {
+
+    let mut _value : tm_t = tm_t ();
+    let mut _usec : u64 = 0u64;
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =====================================          CTORS          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Create the date time from an instant
+     * */
+    pub self (instant : Instant, gmt : bool = false) {
+        let tv = etc::c::time::timeval_t (instant.sec, instant.usec);
+        if gmt {
+            __DATE_MUTEX__:.lock ();
+            self._value = unsafe { *gmtime (&tv) };
+            __DATE_MUTEX__:.unlock ();
+        } else {
+            __DATE_MUTEX__:.lock ();
+            self._value = unsafe { *localtime (&tv) };
+            __DATE_MUTEX__:.unlock ();
+        }
+
+        self._usec = instant.usec;
+    }
+
+    /**
+     * Ceeate a date using local date information
+     * @info: correct the date if invalid by setting the correct month, days, etc. (e.g., january 33th will become february 2nd) (cf. mktime of libc)
+     * */
+    pub self (usec : u64 = 0, sec : i32 = 0, min : i32 = 0, hour : i32 = 0, day : i32 = 0, month : i32 = 0, year : i32 = 0) {
+        self._value.tm_sec = sec;
+        self._value.tm_min = min;
+        self._value.tm_hour = hour;
+        self._value.tm_mday = day;
+        self._value.tm_mon = month;
+        self._value.tm_year = year;
+
+        __DATE_MUTEX__:.lock ();
+        let tv = mktime (&self._value);
+        self._value = unsafe { *localtime (&tv) };
+        __DATE_MUTEX__:.unlock ();
+
+        self._usec = usec;
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          GETTERS          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * @returns: the instant of the date
+     * */
+    pub fn instant (self)-> Instant {
+        __DATE_MUTEX__:.lock ();
+        let tv = mktime (&self._value);
+        __DATE_MUTEX__:.lock ();
+
+        Instant (tv.tv_sec, tv.tv_usec)
+    }
+
+    /**
+     * @returns: the second in the minute
+     * */
+    @field
+    pub fn second (self)-> i32 {
+        self._value.tm_sec
+    }
+
+    /**
+     * @returns: the minute in the hour
+     * */
+    @field
+    pub fn minute (self)-> i32 {
+        self._value.tm_min
+    }
+
+    /**
+     * @returns: the hour in the day
+     * */
+    @field
+    pub fn hour (self)-> i32 {
+        self._value.tm_hour
+    }
+
+    /**
+     * @returns: the day in the month
+     * */
+    @field
+    pub fn day (self)-> i32 {
+        self._value.tm_mday
+    }
+
+    /**
+     * @returns: the month in the year
+     * */
+    @field
+    pub fn month (self)-> i32 {
+        self._value.tm_mon
+    }
+
+    /**
+     * @returns: the year
+     * */
+    @field
+    pub fn year (self)-> i32 {
+        self._value.tm_year + 1900
+    }
+
+    /**
+     * @returns: the day of the week
+     * */
+    @field
+    pub fn weekDay (self)-> i32 {
+        self._value.tm_wday
+    }
+
+    /**
+     * @returns: the day in the year
+     * */
+    @field
+    pub fn yearDay (self)-> i32 {
+        self._value.tm_wday
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ======================================          MISC          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+
+    impl Streamable {
+        pub over toStream (self, dmut stream : &StringStream) {
+            if self._value.tm_mday < 10 {
+                stream:.write ("0", self._value.tm_mday);
+            } else {
+                stream:.write (self._value.tm_mday);
+            }
+
+            if self._value.tm_mon < 10 {
+                stream:.write ("/0", self._value.tm_mon);
+            } else { stream:.write ("/", self._value.tm_mon); }
+
+            if self.year > 2000 {
+                if (self.year % 2000) < 10 {
+                    stream:.write ("/0", self.year % 2000);
+                } else {
+                    stream:.write ("/", self.year % 2000);
+                }
+            } else {
+                stream:.write ("/", self.year);
+            }
+
+            if self._value.tm_hour < 10 {
+                stream:.write (" 0", self._value.tm_hour);
+            } else {
+                stream:.write (" ", self._value.tm_hour);
+            }
+
+            if self._value.tm_min < 10 {
+                stream:.write (":0", self._value.tm_min);
+            } else {
+                stream:.write (":", self._value.tm_min);
+            }
+
+            if self._value.tm_sec < 10 {
+                stream:.write (":0", self._value.tm_sec);
+            } else {
+                stream:.write (":", self._value.tm_sec);
+            }
+
+            if self._usec != 0 {
+                stream:.write (".", self._usec);
+            }
+        }
+    }
+
+}

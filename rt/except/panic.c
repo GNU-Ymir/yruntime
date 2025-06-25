@@ -45,3 +45,14 @@ void _yrt_exc_panic (const char* file, const char * function, unsigned int line)
 
     abort ();
 }
+
+void _yrt_exc_panic_seg_fault () {
+    fprintf (stderr, "Segfault - ");
+    _yrt_slice_t trace = _yrt_exc_resolve_stack_trace (_yrt_exc_get_stack_trace ());
+    if (trace.len != 0) {
+        fprintf (stderr, "%s\n", (char*) trace.data);
+    }
+
+    fprintf (stderr, "\n");
+    abort ();
+}
