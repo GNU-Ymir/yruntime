@@ -184,7 +184,12 @@ _yrt_mutex_t * _yrt_ensure_monitor (void* object) {
     _yrt_mutex_t* mut = *((_yrt_mutex_t**) object + 1); // skip the vtable
     if (mut == NULL) {
         mut = GC_malloc (sizeof (_yrt_mutex_t));
-        pthread_mutex_init (mut, NULL);
+
+        pthread_mutexattr_t attr;
+        pthread_mutexattr_init(&attr);
+        pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+
+        pthread_mutex_init (mut, &attr);
         *((_yrt_mutex_t**)object+1) = mut;
     }
     
@@ -223,4 +228,14 @@ uint32_t _yrt_get_nprocs () {
 
 uint64_t _yrt_thread_self_id () {
     return pthread_self ();
+}
+
+
+void _yrt_atomic_init () {
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+
+    pthread_mutex_init (&__monitor_mutex__, &attr);
+    pthread_mutex_init (&__global_atom__, &attr);
 }

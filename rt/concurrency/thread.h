@@ -236,4 +236,9 @@ void _yrt_atomic_monitor_enter (void * object);
 void _yrt_atomic_monitor_exit (void * lock);
 
 
+/**
+ * Initialize global monitor mutexes
+ */
+void _yrt_atomic_init ();
+
 #endif

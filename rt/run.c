@@ -91,7 +91,8 @@ int _yrt_run_main_debug (int argc, char ** argv, int(* y_main)()) {
     __YRT_DEBUG__ = 1;
     
     GC_INIT ();
-    
+
+    _yrt_atomic_init ();
     installHandler ();
     _yrt_exc_init ();
             
@@ -103,7 +104,8 @@ int _yrt_run_main (int argc, char ** argv, int(* y_main)()) {
     __YRT_DEBUG__ = 0;
 
     GC_INIT ();
-    
+
+    _yrt_atomic_init ();
     installHandler ();
     _yrt_exc_init ();
     
