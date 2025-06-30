@@ -166,7 +166,7 @@ pub fn encode {C of c16} (str : [c8])-> dmut [C] {
     let dmut codes : [c16 ; 2] = ['\u{0}' ; 2];
     let mut i = 0us;
     while i < str.len {
-        let (nbConsumed, nbProduced) = toUtf16 (str [i .. $], ref codes);
+        let (nbProduced, nbConsumed) = toUtf16 (str [i .. $], ref codes);
         for z in 0 .. nbProduced {
             result ~= [codes [z]];
         }
@@ -265,24 +265,24 @@ fn toUtf16 (content : [c8], ref dmut ret : [c16 ; 2])-> (u32, u32) {
             ret [0] = cast!c16 (high);
             ret [1] = cast!c16 (low);
 
-            return (4, 2);
+            return (2, 4);
         }
         3u32 => {
-            if (content.len < 4) return (0, cast!u32 (content.len));
+            if (content.len < 3) return (0, cast!u32 (content.len));
             let a = cast!u16 (cast!u8 (content [0]) & 0x0fu8) << 12u16;
             let b = cast!u16 (cast!u8 (content [1]) & 0x3fu8) << 6u16;
             let c = cast!u16 (cast!u8 (content [2]) & 0x3fu8);
 
             ret [0] = cast!c16 (a | b | c);
-            return (3, 1);
+            return (1, 3);
         }
         2u32 => {
-            if (content.len < 4) return (0u32, cast!u32 (content.len));
+            if (content.len < 2) return (0u32, cast!u32 (content.len));
             let a = cast!u16 (cast!u8 (content [0]) & 0x1fu8) << 6u16;
             let b = cast!u16 (cast!u8 (content [1]) & 0x3fu8);
 
             ret [0] = cast!c16 (a | b);
-            return (2, 1);
+            return (1, 2);
         }
         _ => {
             let a = cast!u16 (cast!u8 (content [0]) & 0x7fu8);
