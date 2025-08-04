@@ -129,16 +129,16 @@ pub class if isChar!{C} Lexer {C} {
     let mut _content : [C];
 
     // True iif the lexer has to skip skip tokens
-    let mut _doSkip = true;
+    let mut _doSkip : bool  = true;
 
     // True iif the lexer has to skip comments
-    let mut _doComments = true;
+    let mut _doComments : bool = true;
 
     // The current line of the cursor
-    let mut _line = 1us;
+    let mut _line : usize = 1us;
 
     // The current column of the cursor
-    let mut _col = 1us;
+    let mut _col : usize = 1us;
 
     /**
      * Create a new lexer, with a content string to split, a list of tokens, and a list of comments.
@@ -413,6 +413,10 @@ pub class if isChar!{C} Lexer {C} {
         if (buf.len < end.len) return [];
         for i in 0 .. buf.len {
             if (std::algorithm::searching::startsWith (buf [i .. $], end)) {
+                let pos = self.countNbLine (buf [i .. i + end.len], line, col);
+                line = pos._0;
+                col = pos._1;
+
                 return buf [i + end.len .. $];
             }
 
