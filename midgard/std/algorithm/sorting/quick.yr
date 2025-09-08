@@ -40,9 +40,15 @@ pub fn quicksort {U} (mut a : mut [mut U], predicate : dg (U, U)-> bool) {
             break;
         }
 
-        let temp = a [i];
-        a [i] = a [j];
-        a [j] = temp;
+        cte if __pragma!compile ({a [i] = a [j];}) {
+            let temp = a [i];
+            a [i] = a [j];
+            a [j] = temp;
+        } else { // even if U is not deeply mutable, it may be a structure containing aliasable stuff
+            let mut temp = alias a [i];
+            a [i] = alias a [j];
+            a [j] = alias temp;
+        }
 
         i += 1us;
         j -= 1us;
