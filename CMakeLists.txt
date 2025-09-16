@@ -60,21 +60,21 @@ add_custom_target (midgard_tests ALL
 )
 
 
-add_library (gymidgard-release STATIC ${SRC_CORE_C} ${SRC_STD_C} ${SRC_RUNTIME} ${CMAKE_CURRENT_BINARY_DIR}/__lib_release_.o)
-add_library (gymidgard-debug STATIC ${SRC_CORE_C} ${SRC_STD_C} ${SRC_RUNTIME} ${CMAKE_CURRENT_BINARY_DIR}/__lib_debug_.o)
-add_library (gymidgard-tests STATIC ${SRC_UNITTEST} ${CMAKE_CURRENT_BINARY_DIR}/__lib_test_.o)
+add_library (gymidgard-release_1.1 STATIC ${SRC_CORE_C} ${SRC_STD_C} ${SRC_RUNTIME} ${CMAKE_CURRENT_BINARY_DIR}/__lib_release_.o)
+add_library (gymidgard-debug_1.1 STATIC ${SRC_CORE_C} ${SRC_STD_C} ${SRC_RUNTIME} ${CMAKE_CURRENT_BINARY_DIR}/__lib_debug_.o)
+add_library (gymidgard-tests_1.1 STATIC ${SRC_UNITTEST} ${CMAKE_CURRENT_BINARY_DIR}/__lib_test_.o)
 
 add_library (runtime STATIC ${SRC_RUNTIME})
 
-add_dependencies (gymidgard-release lib_release)
-add_dependencies (gymidgard-debug lib_debug)
-add_dependencies (gymidgard-tests lib_tests)
-add_dependencies (midgard_tests gymidgard-debug gymidgard-tests gymidgard-release)
+add_dependencies (gymidgard-release_1.1 lib_release)
+add_dependencies (gymidgard-debug_1.1 lib_debug)
+add_dependencies (gymidgard-tests_1.1 lib_tests)
+add_dependencies (midgard_tests gymidgard-debug_1.1 gymidgard-tests_1.1 gymidgard-release_1.1)
 
-target_include_directories (gymidgard-release PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/)
-target_include_directories (gymidgard-debug PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/)
+target_include_directories (gymidgard-release_1.1 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/)
+target_include_directories (gymidgard-debug_1.1 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/)
 target_include_directories (runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/)
 
-install (TARGETS gymidgard-debug DESTINATION /usr/lib/)
-install (TARGETS gymidgard-release DESTINATION /usr/lib/)
-install (TARGETS gymidgard-tests DESTINATION /usr/lib/)
+install (TARGETS gymidgard-debug_1.1 DESTINATION /usr/lib/)
+install (TARGETS gymidgard-release_1.1 DESTINATION /usr/lib/)
+install (TARGETS gymidgard-tests_1.1 DESTINATION /usr/lib/)
