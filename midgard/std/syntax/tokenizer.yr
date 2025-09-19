@@ -182,14 +182,15 @@ pub record if isChar!{C} Tokenizer {C} {
     pub fn next (self, str : [C])-> (usize, bool, [c8]) {
         for s in 0 .. str.len {
             if let Ok (i) = self.find (str [s]) {
-                // does not start with a token, and a token was found at index s
-                if s != 0 { return (s, false, ""); }
+                let (len, isSkip, isComment) = self._heads [i].len (str [s + 1 .. $]); // get the length of the token
 
-                let (len, isSkip, isComment) = self._heads [i].len (str [1 .. $]); // get the length of the token
-                // if the len is 0, then it is not really a token, it just start like one
-                if len != 0 {
+                if len != 0 { // if the len is 0, then it is not really a token, it just starts like one
+                    // does not start with a token, and a token was found at index s
+                    if s != 0 { return (s, false, ""); }
+
+                    // else a token is directly found at index = 0
                     return (len, isSkip, isComment);
-                }
+		        }
             }
         }
 
