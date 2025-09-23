@@ -1,0 +1,53 @@
+in dwarf;
+
+mod ::bit_64;
+mod ::empty;
+
+
+use etc::runtime::dwarf::_;
+
+pub lazy dmut __DWARF_LOADER__ : &DwarfLoader = createLoader ();
+
+pub fn createLoader ()-> dmut &DwarfLoader {
+    __version x86_64 {
+        copy Dwarf64Loader ()
+    } else {
+        copy EmptyDwarfLoader ()
+    }
+}
+
+
+@abstract
+pub class DwarfLoader {
+    pub self () {}
+
+    /**
+     * Find the source filename and source line the nearest to the address
+     * @params:
+     *   - object: the source path to the ELF object file containing dwarf information
+     *   - addr: the address of the object to find
+     * @returns: an option containing:
+     *    - .0: the source filename
+     *    - .1: the line number
+     * */
+    pub fn find (mut self, objectFile : [c8], addr : usize)-> ([c8], usize)?;
+
+    /**
+     * Find the source filename and source line the nearest to the address, ensuring the returned location is within the function address range
+     * @params:
+     *   - object: the source path to the ELF object file containing dwarf information
+     *   - addr: the address of the object to find
+     *   - start: the start address of the function containing the debug info
+     *   - end: the end address of the function containing the debug info
+     * @returns: an option containing:
+     *    - .0: the source filename
+     *    - .1: the line number
+     * */
+    pub fn find (mut self, objectFile : [c8], addr : usize, start : usize, end : usize)-> ([c8], usize)?;
+
+    /**
+     * Clear all loaded symbols
+     * */
+    pub fn dispose (mut self);
+
+}

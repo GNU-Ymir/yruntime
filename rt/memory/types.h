@@ -145,4 +145,9 @@ typedef struct _yrt_reflect_symbol_t {
 } _yrt_reflect_symbol_t;
 
 
+typedef struct _yrt_reflect_debug_symbol_info_t {
+    struct _yrt_slice_t file;
+    uint64_t line;
+} _yrt_reflect_debug_symbol_info_t;
+
 #endif // TYPES_H_

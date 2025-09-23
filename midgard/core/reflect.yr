@@ -1,7 +1,20 @@
 in reflect;
 use etc::runtime::elf;
+use etc::runtime::dwarf;
 
 pub extern (C) fn _yrt_reflect_find_symbol_from_addr_with_elf_name (addr : usize, name : [c8])-> ReflectSymbol {
     __ELF_LOADER__:.update (name);
     return __ELF_LOADER__.find (addr);
+}
+
+pub extern (C) fn _yrt_reflect_get_debug_info (elfFile : [c8], addr : usize, symbol : ReflectSymbol)-> ([c8], usize) {
+    if let Ok ((file, line)) = __DWARF_LOADER__:.find (elfFile, addr, symbol.ptr, symbol.ptr + symbol.size) {
+        (file, line)
+    } else {
+        ("", 0)
+    }
+}
+
+pub extern (C) fn _yrt_reflect_clear_debug_info () {
+    return __DWARF_LOADER__:.dispose ();
 }

@@ -17,6 +17,7 @@ int _yrt_demangle_number (char * data, int * current) {
 }
 					  
 _yrt_slice_t _yrt_demangle_symbol (char * data, uint64_t len) {
+
     if (len <= 2 || data [0] != '_' || data [1] != 'Y') {
 		return str_create_len (data, len);
 	}
@@ -24,23 +25,24 @@ _yrt_slice_t _yrt_demangle_symbol (char * data, uint64_t len) {
 	_yrt_slice_t ret = str_empty ();
     int current = 2;
     int i = 0;
-    while (1) {
+    while (current < len) {
+
 		int nb = _yrt_demangle_number (data + current, &current);
-		if (nb != 0) {
+		if (nb != 0 && nb + current < len) {
 			if (i != 0) {
 				_yrt_slice_t tmp = str_create ("::");
 				_yrt_append_slice (&ret, &tmp, sizeof (uint8_t));
 			}
 
-			_yrt_slice_t tmp = str_copy_len (data + current, nb);
-			_yrt_append_slice (&ret, &tmp, sizeof (uint8_t));
+            _yrt_slice_t tmp = str_copy_len (data + current, nb);
+            _yrt_append_slice (&ret, &tmp, sizeof (uint8_t));
 
-			current += nb;
-			i += 1;
+            current += nb;
+            i += 1;
 		} else break;
     }
 
-    if (data [current] == 'F' || data [current] == 'M' || data [current] == 'C') {
+    if (current < len && (data [current] == 'F' || data [current] == 'M' || data [current] == 'C' || data [current] == 'T')) {
 		_yrt_slice_t tmp = str_create (" (...)");
 		_yrt_append_slice (&ret, &tmp, sizeof (uint8_t));
     } 

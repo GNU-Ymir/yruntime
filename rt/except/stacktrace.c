@@ -61,135 +61,8 @@ char* _yrt_resolve_path (const char * filename, char * resolved, int size) {
     else return NULL;
 }
 
-int _yrt_find_dwarf_die (Dwarf_Debug obj, uint64_t addr, Dwarf_Die * die) {
-    Dwarf_Die returnDie;
-    Dwarf_Error error = DW_DLE_NE;
-    Dwarf_Arange * aranges;
-    Dwarf_Signed arange_count;
-
-    Dwarf_Bool found = 0;
-    if (dwarf_get_aranges (obj, &aranges, &arange_count, &error) != DW_DLV_OK) {
-        aranges = NULL;
-    }
-
-    if (aranges) {
-        Dwarf_Arange arange;
-        if (dwarf_get_arange (aranges, arange_count, addr, &arange, &error) == DW_DLV_OK) {
-
-            Dwarf_Off cu_die_offset;
-            if (dwarf_get_cu_die_offset (arange, &cu_die_offset, &error) == DW_DLV_OK) {
-                int dwarf_res = dwarf_offdie_b (obj, cu_die_offset, 1, &returnDie, &error);
-
-                found = (dwarf_res == DW_DLV_OK);
-            }
-            dwarf_dealloc (obj, arange, DW_DLA_ARANGE);
-        }
-    }
-
-    if (found) {
-        *die = returnDie;
-        return 0;
-    }
-
-    return 1;
-}
-
-void _yrt_find_in_dwarf (const char * filename, void * addr, void * start, void * end, _yrt_slice_t * file, int * line) {
-    Dwarf_Debug dbg = 0;
-    int res = DW_DLV_ERROR;
-    Dwarf_Error error;
-    Dwarf_Handler errhand = 0;
-    Dwarf_Ptr errarg = 0;
-
-    int fd = open(filename, O_RDONLY);
-    if (fd == 0) return;
-
-    if (dwarf_init (fd, DW_DLC_READ, NULL, NULL, &dbg, &error)) {
-        goto end;
-    }
-
-
-    Dwarf_Die die;
-    if (_yrt_find_dwarf_die (dbg, (uint64_t) addr, &die)) {
-        goto end_dwarf;
-    }
-
-    Dwarf_Line * lines;
-    Dwarf_Signed nlines;
-    if (dwarf_srclines (die, &lines, &nlines, &error)) {
-        goto end_die;
-    }
-
-    uint64_t vaddr = (uint64_t) addr;
-    uint64_t vstart = (uint64_t) start;
-    uint64_t vend = (uint64_t) end;
-
-    Dwarf_Unsigned lineno;
-    Dwarf_Addr lineaddr;
-    uint64_t result = nlines;
-    uint64_t max = -1;
-    char * srcfile = NULL;
-
-    for (uint64_t n = 0; n < nlines; n++) {
-        /* Retrieve the virtual address for this line. */
-        if (dwarf_lineaddr(lines [n], &lineaddr, &error) == 0) {
-            if (lineaddr >= vstart && lineaddr <= vend) { // in the correct function
-                if (vaddr > lineaddr && (vaddr - lineaddr) < max) {
-                    max = (vaddr - lineaddr);
-                    result = n;
-                }
-
-                if (vaddr < lineaddr && (lineaddr - vaddr) < max) {
-                    max = (lineaddr - vaddr);
-                    result = n;
-                }
-
-                else if (vaddr == lineaddr) {
-                    result = n;
-                    break;
-                }
-            }
-        }
-    }
-
-    if (result != nlines) {
-        /* Retrieve the file name for this errorscriptor. */
-        if (dwarf_linesrc (lines [result], &srcfile, &error) == 0) {
-            *file = str_copy (srcfile);
-            dwarf_dealloc (dbg, srcfile, DW_DLA_STRING);
-        }
-
-        /* Retrieve the line number in the source file. */
-        if (dwarf_lineno (lines [result], &lineno, &error) == 0) {
-            *line = lineno;
-        }
-    }
-
-    dwarf_srclines_dealloc (dbg, lines, nlines);
-
-end_die:
-    dwarf_dealloc (dbg, die, DW_DLA_DIE);
-
-end_dwarf:
-    res = dwarf_finish (dbg, &error);
-
-end:
-    close(fd);
-}
-
-int _yrt_resolve_address (const char * filename, void* addr, struct _yrt_reflect_symbol_t ref, _yrt_slice_t * file, int* line) {
-    *file = str_empty ();
-    *line = 0;
-
-    void * start = ref.ptr;
-    void * end = ref.ptr + ref.size;
-
-    _yrt_find_in_dwarf (filename, addr, start, end, file, line);
-    return 0;
-}
-
 _yrt_slice_t _yrt_exc_resolve_stack_trace (_yrt_slice_t syms) {
-	_yrt_slice_t result, tmp;
+	_yrt_slice_t result;
 	memset (&result, 0, sizeof (result));
     if (__YRT_DEBUG__ != 1 && __YRT_FORCE_DEBUG__ != 1) return result;
 
@@ -209,20 +82,20 @@ _yrt_slice_t _yrt_exc_resolve_stack_trace (_yrt_slice_t syms) {
         char resolved [PATH_MAX];
         char* succ = _yrt_resolve_path (filename, resolved, PATH_MAX);
 
-        _yrt_slice_t file;
         void * sym = ((void**) syms.data)[i];
-        uint32_t line = 0;
         struct _yrt_reflect_symbol_t ref_sym;
+        struct _yrt_reflect_debug_symbol_info_t debugInfo;
+        memset (&debugInfo.file, 0, sizeof (debugInfo.file));
+
         if (succ != NULL) {
             _yrt_slice_t resolvedC8 = str_create (resolved);
             ref_sym = _yrt_reflect_find_symbol_from_addr_with_elf_name (sym, resolvedC8);
+            debugInfo = _yrt_reflect_get_debug_info (resolvedC8, sym, ref_sym);
         }
 
         if (ref_sym.type == FUNCTION) {
-            file.data = NULL;
-
-            _yrt_resolve_address (resolved, sym, ref_sym, &file, &line);
-            if (file.data != NULL) {
+            _yrt_slice_t tmp;
+            if (debugInfo.file.len != 0) {
                 tmp = str_create ("\n╞═ bt ╕ #");
             } else {
                 tmp = str_create ("\n╞═ bt ═ #");
@@ -244,19 +117,19 @@ _yrt_slice_t _yrt_exc_resolve_stack_trace (_yrt_slice_t syms) {
                 need_break = (strcmp (name.data, "main (...)") == 0);
             }
 
-            if (file.data != NULL) {
+            if (debugInfo.file.len != 0) {
                 tmp = str_create ("\n│     ╘═> \e[32m");
                 _yrt_append_slice (&result, &tmp, sizeof (uint8_t));
-                _yrt_append_slice (&result, &file, sizeof (uint8_t));
+                _yrt_append_slice (&result, &debugInfo.file, sizeof (uint8_t));
                 tmp = str_create ("\e[0m:");
                 _yrt_append_slice (&result, &tmp, sizeof (uint8_t));
-                tmp = str_from_int (line);
+                tmp = str_from_int (debugInfo.line);
                 _yrt_append_slice (&result, &tmp, sizeof (uint8_t));
             }
 
             if (need_break) break;
         } else {
-            tmp = str_create ("\n╞═ bt ╕ #");
+            _yrt_slice_t tmp = str_create ("\n╞═ bt ╕ #");
             _yrt_append_slice (&result, &tmp, sizeof (uint8_t));
             tmp = str_from_int (i - 1);
             _yrt_append_slice (&result, &tmp, sizeof (uint8_t));
@@ -269,8 +142,9 @@ _yrt_slice_t _yrt_exc_resolve_stack_trace (_yrt_slice_t syms) {
         }
     }
 
-    tmp = str_create ("\n╰\0");
+    _yrt_slice_t tmp = str_create ("\n╰\0");
     _yrt_append_slice (&result, &tmp, sizeof (uint8_t));
+    _yrt_reflect_clear_debug_info ();
 
 	return result;
 }
@@ -293,4 +167,3 @@ _yrt_slice_t _yrt_exc_get_stack_trace () {
 
 	return result;
 }
-

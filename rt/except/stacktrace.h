@@ -20,19 +20,6 @@ extern int __YRT_TEST_CODE__;
  */
 char* _yrt_resolve_path (const char* filename, char* resolved, int size);
 
-
-/**
- * Resolve the address in the obj file
- * @params:
- *    - filename: the name of the file
- *    - addr: the address of the symbol
- * @returns:
- *    - file: the name of the file
- *    - func: the name of the function
- *    - line: the line of the symbol
- */
-int _yrt_resolve_address (const char * filename, void* addr, struct _yrt_reflect_symbol_t ref, _yrt_slice_t * file, int* line);
-
 #endif
 
 /**
@@ -64,5 +51,15 @@ _yrt_slice_t _yrt_exc_resolve_stack_trace (_yrt_slice_t syms);
  * Update the elf loader, and search for a symbol from its address
  */
 struct _yrt_reflect_symbol_t _yrt_reflect_find_symbol_from_addr_with_elf_name (void * addr, _yrt_slice_t name);
+
+/**
+ * Update the dwarf loader and search for debug information
+ */
+struct _yrt_reflect_debug_symbol_info_t _yrt_reflect_get_debug_info (_yrt_slice_t name, void * addr, struct _yrt_reflect_symbol_t sym);
+
+/**
+ * Clear loaded debug information
+ */
+void _yrt_reflect_clear_debug_info ();
 
 #endif // STACKTRACE_H_
