@@ -77,6 +77,52 @@ pub class Config {
         false
     }
 
+    /**
+     * Comparison operator transform the value using conversion from std::config::conv package, and compare
+     * If the configuration is not convertible, then it return -1;
+     * @example:
+     * ```
+     * let j = json#{"foo" : 89, "bar" : [1, 2, 3]};
+     *
+     * assert (j ["foo"] < 100 && j ["foo"] >= 89);
+     * assert (j["bar"] < "truc"); // j["bar"] is an array, so not compatible with a string, returning -1 on comparison
+     * ```
+     * */
+    pub fn opCmp {T} (self, o : T)-> i32 {
+        {
+            let value = std::config::conv::to!{T} (self);
+            if value < o { return -1; }
+            if value > o { return 1; }
+            else if value == o { return 0; }
+        } catch {
+            _ => {}
+        }
+
+        return -1;
+    }
+
+    /**
+     * Comparison operator transform the value using conversion from std::config::conv package, and compare
+     * If the configuration is not convertible, then it return -1;
+     * @example:
+     * ```
+     * let j = json#{"foo" : 89, "bar" : [1, 2, 3]};
+     *
+     * assert (j ["foo"] != 100 && j ["foo"] == 89);
+     * assert (j["bar"] != "truc"); // j["bar"] is an array, so not compatible with a string, returning -1 on comparison
+     * ```
+     * */
+    pub fn opEquals {T} (self, o : T)-> bool {
+        {
+            let value = std::config::conv::to!{T} (self);
+            return value == o;
+        } catch {
+            _ => {}
+        }
+
+        return false;
+    }
+
     impl std::stream::Streamable;
 
 }

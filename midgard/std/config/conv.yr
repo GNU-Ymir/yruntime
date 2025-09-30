@@ -168,6 +168,41 @@ pub fn if !isChar!{U} to {T of [U], U, C of &Config} (cfg : C)-> T
 }
 
 /**
+ * Transform a configuration into an array
+ * @example:
+ * ```
+ * let dmut a = copy Array ();
+ * for i in 1 .. 4 {
+ *     a:.push (copy Int (i));
+ * }
+ *
+ * assert (a.to!{[i32 ; 3us]} () == [1, 2, 3]);
+ * ```
+ *
+ * @warning: transform array values that have strictly N elements
+ * */
+pub fn if !isChar!{U} to {T of [U ; N], U, N : usize, C of &Config} (cfg : C)-> T
+    throws CastFailure
+{
+    if let x : &Array = cfg {
+        {
+            if x.len < N {
+                throw copy CastFailure (to-> T::typeinfo, from-> cfg.__typeinfo__);
+            }
+
+            let dmut res : T = [config::conv::to!{U} (e) for e in x[][0 .. N]];
+            return res;
+        } catch {
+            inn : &CastFailure => {
+                throw copy CastFailure (to-> T::typeinfo, from-> cfg.__typeinfo__, subError-> inn?);
+            }
+        }
+    }
+
+    throw copy CastFailure (to-> T::typeinfo, from-> cfg.__typeinfo__);
+}
+
+/**
  * Transform a configuration into a tuple
  * @info:
  *     - Tranform arrays (as in a configuration they may actually encode tuples)
