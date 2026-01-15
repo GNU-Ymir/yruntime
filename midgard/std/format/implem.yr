@@ -96,20 +96,29 @@ fn specialFormat {T} (str : [c8], ref a : T, dmut stream : &StringStream, index 
     } else if (paramPrec || paramWidth) { 1us
     } else { 0us };
 
-    formatValue!{T} (a,
-                     alias stream,
-                     fill,
-                     align,
-                     sign,
-                     type,
-                     width,
-                     paramWidth,
-                     prec,
-                     paramPrec,
-                     index + used,
-                     globalIndex);
+    cte if isTuple!T {
+        formatValueT!{T} (a,
+                         alias stream,
+                         fill,
+                         align,
+                         sign,
+                         type,
+                         width,
+                         paramWidth,
+                         prec,
+                         paramPrec,
+                         index + used,
+                         globalIndex);
 
-    (l_, index + used + 1)
+        (l_, index + used + 1)
+    } else {
+        formatValue!{T} (a,
+                         alias stream,                         
+                         index + used,
+                         globalIndex);
+
+        (l_, index + used + 1)
+    }        
 } catch {
     x : &FormatError => throw x;
     err => throw copy FormatError (index, "", subError-> err?);
@@ -196,7 +205,7 @@ fn if isTuple!{T} formatValue {T} (ref a : T, dmut stream : &StringStream, index
  *    - index: the index in the tuple
  *    - globalIndex: the index of the formatter
  * */
-fn if isTuple!{T} formatValue {T} (ref a : T, dmut stream : &StringStream, fill : c8, align : c8, sign : bool, type : c8, width : u32, startWidth : bool, prec : u32, startPrec : bool, index : usize, globalIndex : usize)
+fn if isTuple!{T} formatValueT {T} (ref a : T, dmut stream : &StringStream, fill : c8, align : c8, sign : bool, type : c8, width : u32, startWidth : bool, prec : u32, startPrec : bool, index : usize, globalIndex : usize)
     throws FormatError
 {
     if (index > T::arity) throw copy FormatError (globalIndex, "No argument " ~ std::conv::to!{[c8]} (index));
@@ -229,8 +238,8 @@ fn if isTuple!{T} formatValue {T} (ref a : T, dmut stream : &StringStream, fill 
 
         else if j == index {
             if startWidth && !gotWidth throw copy FormatError (globalIndex, "Undefined alignment width for argument at position " ~ std::conv::to!{[c8]} (index));
-            if startPrec && !gotPrec throw copy FormatError (globalIndex, "Undefined precision for argument at position " ~ std::conv::to!{[c8]} (index));
-
+            if startPrec && !gotPrec throw copy FormatError (globalIndex, "Undefined precision for argument at position " ~ std::conv::to!{[c8]} (index));            
+            
             let elem = {
                 convertValue (x, sign, type, resPrec)
             } catch {
@@ -350,7 +359,13 @@ fn convertValue {T} (value : T, sign : bool, type : c8, prec : u32)-> [c8]
     if type != '\u{0}' throw copy AssertError ("Invalid type format " ~ copy [type] ~ " for type " ~ T::typeid);
     if sign            throw copy AssertError ("Sign only applies on floating and int types");
 
-    return std::conv::to!{[c8]} (value);
+    cte if __pragma!compile (std::conv::to!{[c8]} (value)) {
+        return std::conv::to!{[c8]} (value);
+    } else {
+        let dmut str = copy std::stream::StringStream ();
+        str:.write (value);
+        return str[];
+    }
 }
 
 
