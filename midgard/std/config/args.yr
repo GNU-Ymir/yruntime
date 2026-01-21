@@ -79,7 +79,24 @@ pub class ArgumentParser {
                 else if let Ok (opt) = self.isOption (name) {
                     let (val, rest_) = self.parseOption (opt, rest [1 .. $]);
                     rest = rest_;
-                    resultConfig:[opt.long] = val;
+                    if opt.isList {
+                        if let Ok (lst : &Array) = resultConfig [opt.long]? {
+                            let dmut nLst = copy Array ();
+                            for i in lst[] { nLst:.push (i); }
+                            nLst:.push (val);
+                            resultConfig:[opt.long] = nLst;                            
+                        } else {
+                            let dmut lst = copy Array ();
+                            lst:.push (val);
+                            resultConfig:[opt.long] = lst;
+                        }
+                    } else {
+                        if opt.long in resultConfig {
+                            throw copy DuplicateArgument (opt.long);
+                        } else {
+                            resultConfig:[opt.long] = val;
+                        }
+                    }
                 }
 
                 else {
@@ -216,13 +233,13 @@ pub class ArgumentParser {
             stream:.writeln ("mandatory arguments : ");
         }
         for f in self._options {
-            if (f.mandatory) {
+            if (f.isMandatory) {
                 self.exportHelpOption (f, alias stream, aligns);
             }
         }
 
         for f in self._subCommands {
-            if (f.mandatory) {
+            if (f.isMandatory) {
                 self.exportHelpOption (f, alias stream, aligns, hyphenated-> f.hyphenated);
             }
         }
@@ -231,12 +248,12 @@ pub class ArgumentParser {
             stream:.writeln ("optional arguments : ");
         }
         for f in self._options {
-            if (!f.mandatory) {
+            if (!f.isMandatory) {
                 self.exportHelpOption (f, alias stream, aligns);
             }
         }
         for f in self._subCommands {
-            if (!f.mandatory) {
+            if (!f.isMandatory) {
                 self.exportHelpOption (f, alias stream, aligns, hyphenated-> f.hyphenated);
             }
         }
@@ -405,6 +422,7 @@ pub class ArgumentParser {
      * @params:
      *    - name: the name used to retreive the option argument in the generated configuration (e.g. 'list').
      *    - comments: the comments to print for help
+     *    - list: true iif the option can be set multiple times (result a slice in config instead of a single value)
      * @example:
      * ```
      * use std::config::_;
@@ -423,14 +441,14 @@ pub class ArgumentParser {
      * assert (args ["D"].to!{f64} () == 87.12);
      * ```
      * */
-    pub fn if (isIntegral!{T} || isFloating!{T}) option {T} (mut self, name : [c8], short : [c8] = "", comments : [c8] = "", mandatory : bool = false)-> dmut &ArgumentParser {
+    pub fn if (isIntegral!{T} || isFloating!{T}) option {T} (mut self, name : [c8], short : [c8] = "", comments : [c8] = "", mandatory : bool = false, list : bool = false)-> dmut &ArgumentParser {
         let type = cte if isSigned!{T} {
             copy Int (0)
         } else {
             copy Float (0.0)
         }
 
-        self._options ~= [Argument (long-> name, short-> short, comments-> comments, type-> type?, hyphenated-> true, mandatory-> mandatory)];
+        self._options ~= [Argument (long-> name, short-> short, comments-> comments, type-> type?, hyphenated-> true, mandatory-> mandatory, list-> list)];
         alias self
     }
 
@@ -439,6 +457,7 @@ pub class ArgumentParser {
      * @params:
      *    - name: the name used to retreive the option argument in the generated configuration (e.g. 'list').
      *    - comments: the comments to print for help
+     *    - list: true iif the option can be set multiple times (result a slice in config instead of a single value)
      * @example:
      * ```
      * use std::config::_;
@@ -457,10 +476,10 @@ pub class ArgumentParser {
      * assert (args ["D"].to!{f64} () == 87.12);
      * ```
      * */
-    pub fn option {T of [U], U of c8} (mut self, name : [c8], short : [c8] = "", comments : [c8] = "", mandatory : bool = false)-> dmut &ArgumentParser {
+    pub fn option {T of [U], U of c8} (mut self, name : [c8], short : [c8] = "", comments : [c8] = "", mandatory : bool = false, list : bool = false)-> dmut &ArgumentParser {
         let type = copy Str ("");
 
-        self._options ~= [Argument (long-> name, short-> short, comments-> comments, type-> type?, hyphenated-> true, mandatory-> mandatory)];
+        self._options ~= [Argument (long-> name, short-> short, comments-> comments, type-> type?, hyphenated-> true, mandatory-> mandatory, list-> list)];
         alias self
     }
 
@@ -470,6 +489,7 @@ pub class ArgumentParser {
      *    - name: the name used to retreive the option argument in the generated configuration (e.g. 'list').
      *    - comments: the comments to print for help
      *    - short: the short name of the option
+     *    - list: true iif the option can be set multiple times (result a slice in config instead of a single value)
      * @example:
      * ```
      * let parser = ArgumentParser ()
@@ -481,7 +501,7 @@ pub class ArgumentParser {
      * assert (args ["list"] == [1, 2, 3]);
      * ```
      * */
-    pub fn if (isIntegral!{T} || isFloating!{T} || is!{T}{X of [c8]}) option {T of [U], U} (mut self, name : [c8], short : [c8] = "", comments : [c8] = "", mandatory : bool = false)-> dmut &ArgumentParser {
+    pub fn if (isIntegral!{T} || isFloating!{T} || is!{T}{X of [c8]}) option {T of [U], U} (mut self, name : [c8], short : [c8] = "", comments : [c8] = "", mandatory : bool = false, list : bool = false)-> dmut &ArgumentParser {
         let dmut lst = copy Array ();
 
         cte if isSigned!{T} {
@@ -492,7 +512,7 @@ pub class ArgumentParser {
             lst:.push (copy Str (""));
         }
 
-        self._options ~= [Argument (long-> name, short-> short, comments-> comments, type-> lst?, hyphenated-> true, mandatory-> mandatory)];
+        self._options ~= [Argument (long-> name, short-> short, comments-> comments, type-> lst?, hyphenated-> true, mandatory-> mandatory, list-> list)];
         alias self
     }
 
@@ -851,13 +871,13 @@ pub class ArgumentParser {
         }
 
         for o in self._options {
-            if o.mandatory && o.long !in cfg {
+            if o.isMandatory && o.long !in cfg {
                 throw copy MissingArgument (o.long);
             }
         }
 
         for o in self._subCommands {
-            if o.mandatory && o.long !in cfg {
+            if o.isMandatory && o.long !in cfg {
                 throw copy MissingArgument (o.long);
             }
         }
@@ -890,7 +910,7 @@ pub class ArgumentParser {
             self.exportUsageType (o, alias stream);
             stream:.write ("(", o.long, ")");
         } else {
-            if (!o.mandatory) stream:.write ("[");
+            if (!o.isMandatory) stream:.write ("[");
             if o.short != "" { stream:.write ("-", o.short, ","); }
             if (hyphenated) {
                 stream:.write ("--");
@@ -903,7 +923,7 @@ pub class ArgumentParser {
             } else if isSub {
                 stream:.write ("(...)");
             }
-            if (!o.mandatory) stream:.write ("]");
+            if (!o.isMandatory) stream:.write ("]");
         }
     }
 
@@ -951,7 +971,7 @@ pub class ArgumentParser {
                 shortAlign = cast!u32 (i.short.len + 1);
             }
 
-            if (i.mandatory) nbMandatory += 1;
+            if (i.isMandatory) nbMandatory += 1;
             else nbOptions += 1;
         }
 
@@ -988,7 +1008,7 @@ pub class ArgumentParser {
                 shortAlign = cast!u32 (i.short.len + 1);
             }
 
-            if (i.mandatory) nbMandatory += 1;
+            if (i.isMandatory) nbMandatory += 1;
             else nbOptions += 1;
         }
 
