@@ -10,10 +10,12 @@
 #include <gc/gc.h>
 #include "../rt/memory/types.h"
 
-
 _yrt_slice_t _yrt_create_args_slice (int len, char ** argv);
 int _yrt_run_unittests_impl ();
 void _yrt_register_unittest_impl (_yrt_slice_t name, void (*ptr) ());
+
+void _yrt_unittest_coverage_hit_call (void * caller, void * callee);
+void _yrt_unittest_coverage_hit_enter (void * func);
 
 void _yrt_register_unittest (char * func, void (*ptr) ()) {
   _yrt_slice_t arr;
@@ -27,3 +29,5 @@ void _yrt_register_unittest (char * func, void (*ptr) ()) {
 int _yrt_run_unittests (int argc, char ** argv) {
   return _yrt_run_unittests_impl (_yrt_create_args_slice (argc, argv));
 }
+
+

@@ -1,0 +1,168 @@
+in runner;
+
+use std::{io, config::_, algorithm::searching, fs::path};
+
+use core::exception::_;
+use utils::colors;
+
+extern (C) fn _yrt_force_debug ()-> void;
+
+@{final}
+pub class UnittestLauncher {
+
+    // The list of test registered in the launcher
+    let dmut _tests : [[c8] => fn ()-> void] = copy [];
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ======================================          CTOR          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    pub self () {}
+    
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ==================================          REGISTRATION          ==================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Register a test in the unittest map
+     * */
+    pub fn register (mut self, name : [c8], func : fn ()-> void) {
+        self._tests [name] = func; 
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =====================================          USAGE          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Run the tests
+     * @returns: true iif success
+     * */
+    pub fn run (self, args : [[c8]])-> bool {
+        let (filter, hasFilter, stopFirstError) = {
+            self.parseArguments (args)
+        } catch {
+            _ => { return false; } // parsing failed
+        }
+        
+        _yrt_force_debug ();
+
+        let mut failed = false;
+        for z, f in self._tests {
+            if !hasFilter || self.passFilter (z, filter) {
+                self.runTest (z, f);                    
+            } catch {
+                err : &Exception => {
+                    self.exposeError (z, err);                        
+                    if (stopFirstError) return false;
+                    failed = true;
+                }                
+            }
+        }
+
+        return !failed;        
+    } 
+
+    /**
+     * Run a unittest
+     * */
+    fn runTest (self, name : [c8], func : fn ()-> void)
+        throws Exception
+    {        
+        println ('[', Colors::BLUE, "RUN", Colors::RESET, "] : ", name);
+        println ("====================================");
+        self.fake_throw (true);
+        func ();
+        println ("====================================");
+        println ('[', Colors::GREEN, "SUCCESS", Colors::RESET, "] : ", name);
+    }
+
+    /**
+     * Print an error 
+     * */
+    fn exposeError (self, name : [c8], err : &Exception) {
+        println ("====================================");
+        println ('[', Colors::RED, "FAILURE", Colors::RESET, "] : ", name);
+
+        println (" --> ", err);
+    }
+    
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          PRIVATE          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+    
+    /**
+     * Some cheating util
+     * */
+    fn fake_throw (self, b : bool)
+        throws AssertError
+    {
+        assert (b);
+    }
+
+    /**
+     * @returns: true if the test pass the filter
+     * */
+    fn passFilter (self, name : [c8], filter : [c8])-> bool {
+        if filter.len > 1 && filter [$ - 1] == '*' {
+            return name.startsWith (filter [0 .. $ - 1]);
+        }
+
+        return Path (filter, sep-> "::") == Path (name, sep-> "::").parent ().parent (); // remove __test::id
+    }
+
+    /**
+     * Parse the arguments passed to the launcher
+     * @returns:
+     *    - 0: the filter of unittest
+     *    - 1: true iif there is a filter
+     *    - 2: true iif the run stops at first test failure
+     * */
+    fn parseArguments (self, args : [[c8]])-> ([c8], bool, bool)
+        throws AssertError
+    {
+        let parser = (copy ArgumentParser ())
+            :.help ("help", short-> "h", comments-> "print this help and exit")
+            :.option!{[c8]} ("filter", short-> "f", comments-> "unittest filter")
+            :.flag ("stop-first", short-> "sf", comments-> "stop after first test failure");
+
+        {
+            let ret = parser.parse (args);
+            let (f, h) = if let Ok (Str (value-> f)) = ret ["filter"]? {
+                (f, true)
+            } else {
+                ("", false)
+            };
+
+            let stop = if let Ok (Bool (value-> b)) = ret ["stop-first"]? {
+                b
+            } else {
+                false
+            };
+
+            return (f, h, stop);
+        } catch {
+            err => {
+                std::io::eprintln (parser.explain (err));
+                assert (false);
+            }
+        }    
+    }        
+
+}

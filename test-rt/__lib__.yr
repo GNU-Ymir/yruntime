@@ -1,94 +1,65 @@
-mod utils;
 
+mod .utils;
+
+use utils::_;
 use std::io;
-// use std::collection::map;
-use core::exception::_;
-use std::{config::_, algorithm::searching, fs::path};
+use etc::runtime::threads;
 
-use utils::colors;
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ====================================          COVERAGE          ====================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
 
-lazy mut __UNITTEST_MAP__ : [[c8] => mut fn ()-> void] = copy [];
 
-prv extern (C) fn _yrt_register_unittest_impl (name : [c8], func : fn ()-> void) {
-    __UNITTEST_MAP__ [name] = func;
+lazy dmut __COVERAGE__ : &CoverageTree = copy CoverageTree ();
+lazy dmut __MAIN_TID__ : [usize] = copy [0];
+
+extern (C) fn _yrt_unittest_coverage_hit_branch (func : *void, ref frameInfo : CoverageInfo, id : u32) {    
+    let tid = _yrt_thread_self_id ();    
+    if tid == __MAIN_TID__ [0] { 
+        __COVERAGE__:.hitBranch (func, frameInfo, id);
+    }
 }
 
-extern (C) fn _yrt_force_debug ()-> void;
+extern (C) fn _yrt_unittest_coverage_hit_enter (func : *void, ref frameInfo : CoverageInfo) {
+    let tid = _yrt_thread_self_id ();    
+    if tid == __MAIN_TID__ [0] { 
+        __COVERAGE__:.hitEnter (func, frameInfo);
+    }
+}
 
-
-fn fake_throw (b : bool)
-    throws AssertError
-{
-    assert (b);
+extern (C) fn _yrt_unittest_coverage_hit_exit (func : *void, ref frameInfo : CoverageInfo) {
+    let tid = _yrt_thread_self_id ();    
+    if tid == __MAIN_TID__ [0] { 
+        __COVERAGE__:.hitExit (func, frameInfo);
+    }
 }
 
 
-prv fn passFilter (name : [c8], filter : [c8])-> bool {
-    if filter.len > 1 && filter [$ - 1] == '*' {
-        return name.startsWith (filter [0 .. $ - 1]);
-    }
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =====================================          LAUNCH          =====================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
 
-    return Path (filter, sep-> "::") == Path (name, sep-> "::").parent ().parent (); // remove __test::id
+lazy dmut __LAUNCHER__ = copy runner::UnittestLauncher ();
+
+extern (C) fn _yrt_register_unittest_impl (name : [c8], func : fn ()-> void) {
+    __LAUNCHER__:.register (name, func);    
 }
 
-prv extern (C) fn _yrt_run_unittests_impl  (args : [[c8]]) -> i32 {
-
-    let parser = (copy ArgumentParser ())
-        :.help ("help", short-> "h", comments-> "print this help and exit")
-        :.option!{[c8]} ("filter", short-> "f", comments-> "unittest filter")
-        :.flag ("stop-first", short-> "sf", comments-> "stop after first test failure");
-
-    let (filter, hasFilter, stopFirstError) = {
-        let ret = parser.parse (args);
-        let (f, h) = if let Ok (Str (value-> f)) = ret ["filter"]? {
-            (f, true)
-        } else {
-            ("", false)
-        };
-
-        let stop = if let Ok (Bool (value-> b)) = ret ["stop-first"]? {
-            b
-        } else {
-            false
-        };
-
-        (f, h, stop)
-    } catch {
-        err => {
-            std::io::eprintln (parser.explain (err));
-            return -1;
-        }
+extern (C) fn _yrt_run_unittests_impl  (args : [[c8]]) -> i32 {
+    __MAIN_TID__ [0] = _yrt_thread_self_id ();
+    
+    if __LAUNCHER__.run (args) {
+        __COVERAGE__.report ();
+        return 0;
     }
-
-    _yrt_force_debug ();
-
-    let mut failed = false;
-    for z, f in __UNITTEST_MAP__ {
-        if !hasFilter || passFilter (z, filter) {
-            {
-                println ("[RUN] : ", z);
-                println ("====================================");
-                fake_throw (true);
-                f ();
-                println ("====================================");
-                println ('[', Colors::GREEN, "SUCCESS", Colors::RESET, "] : ", z);
-            } catch {
-                err : &Exception => {
-                    println ("====================================");
-                    println ('[', Colors::RED, "FAILURE", Colors::RESET, "] : ", z);
-
-                    println (" --> ", err);
-                    if (stopFirstError) return -1;
-
-                    failed = true;
-                }
-            }
-        }
-    }
-
-    if failed {
-        -1
-    } else {
-        0
-    }
+    
+    return -1;
 }

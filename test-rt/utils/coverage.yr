@@ -1,0 +1,91 @@
+in coverage;
+
+use std::io;
+use list;
+
+pub record CoverageInfo {
+    pub let file : [c8];
+    pub let func : [c8];
+    pub let locations : [(u32, u32)];
+}
+
+@final
+pub class CoverageTree {
+
+    // The stack of the function being monitored
+    let mut _stack : FuncStack = FuncStack (); 
+
+    // The calling tree
+    // func => [func => nbTimes]
+    let dmut _callTree : [*void => [*void => usize]] = copy [];
+
+    // The code coverage of the function being entered
+    let dmut _frames : [*CoverageInfo => [u32]] = copy [];
+    
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ======================================          CTOR          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+    
+    pub self () {}
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =====================================          USAGE          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Function called when a specific branch is entered
+     * */
+    pub fn hitBranch (mut self, _ : *void,  ref _ : CoverageInfo, id : u32) {        
+        let dmut lst = self._stack:.top ();        
+        lst [id] += 1;        
+    }
+    
+
+    /**
+     * Function called when a function is entered
+     * */
+    pub fn hitEnter (mut self, _ : *void, ref frameInfo : CoverageInfo) {        
+        let dmut lst = if let Ok (dmut lst) = alias self._frames [&frameInfo] {
+            alias lst
+        } else {
+            let dmut lst = copy [0u32 ; frameInfo.locations.len];
+            self._frames [&frameInfo] = alias lst;
+            alias lst
+        };
+        
+        self._stack:.push (alias lst);    
+    }
+
+    /**
+     * Function called when a function is exited
+     * */
+    pub fn hitExit (mut self, _ : *void, ref _ : CoverageInfo) {         
+        self._stack:.pop ();        
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =====================================          REPORT          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    pub fn report (self) {
+        // println ("Report : ");
+        // for func, metrics in self._frames {
+        //     let ref info = unsafe {*func};
+        //     println (info.file, " ", info.func, " ", info.locations, " ", metrics);            
+        // }
+    }
+    
+    
+}
