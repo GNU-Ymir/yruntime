@@ -101,10 +101,28 @@ pub class ELF64Loader over ELFLoader {
     let mut _pageMapping : [[c8] => mut ()] = copy [];
 
     // The list of found symbols
-    let mut _symbols : [[c8] => mut ReflectSymbol] = copy [];
+    let mut _functions : [[c8] => mut ReflectSymbol] = copy [];
 
-    // The list of address symbols sorted by the ptrs
-    let mut _addrSymbols : [mut ReflectSymbol] = [];
+    // The list of coverage symbols 
+    let mut _coverages : [[c8] => mut ReflectSymbol] = copy [];
+
+    // The list of vtables symbols 
+    let mut _vtables : [[c8] => mut ReflectSymbol] = copy [];
+
+    // The list of vtables symbols 
+    let mut _globals : [[c8] => mut ReflectSymbol] = copy [];
+
+    // The list of address of function symbols sorted by the ptrs
+    let mut _addrFunctions : [mut ReflectSymbol] = [];
+
+    // The list of address of vtable symbols sorted by the ptrs
+    let mut _addrVtables : [mut ReflectSymbol] = [];
+
+    // The list of address of coverage symbols sorted by the ptrs
+    let mut _addrCoverages : [mut ReflectSymbol] = [];
+
+    // The list of address of globals symbols sorted by the ptrs
+    let mut _addrGlobals : [mut ReflectSymbol] = [];
 
     pub self () {}
 
@@ -127,24 +145,15 @@ pub class ELF64Loader over ELFLoader {
             self._readElf [k] = ();
             updated = true;
         }
-
-        if updated {
-            let dmut lst = copy [j for _, j in self._symbols];
-            // we sort the address symbols to make search faster
-            self._addrSymbols = sort (alias lst, |a, b| => { a.ptr < b.ptr });
-        }
     }
 
     /**
      * Update the elf loader using a specific elf file
      * */
-    pub over update (mut self, name : [c8]) {
+    pub over update (mut self, name : [c8]) {        
         if name !in self._readElf {
             self:.readElf (name);
             self._readElf [name] = ();
-
-            let dmut lst = copy [j for _, j in self._symbols];
-            self._addrSymbols = sort (alias lst, |a, b| => { a.ptr < b.ptr });
         }
     }
 
@@ -156,11 +165,19 @@ pub class ELF64Loader over ELFLoader {
      * ====================================================================================================
      */
 
-    pub over clear (mut self) {
+    pub over clear (mut self) {        
         self._readElf = copy [];
         self._pageMapping = copy [];
-        self._symbols = copy [];
-        self._addrSymbols = [];
+        
+        self._functions = copy [];
+        self._coverages = copy [];
+        self._vtables = copy [];
+        self._globals = copy [];
+        
+        self._addrFunctions = [];
+        self._addrCoverages = [];
+        self._addrVtables = [];
+        self._addrGlobals = [];
     }
 
     /*!
@@ -171,38 +188,104 @@ pub class ELF64Loader over ELFLoader {
      * ====================================================================================================
      */
 
-    pub over find (self, name : [c8])-> ReflectSymbol {
-        if name in self._symbols {
-            if let Ok (r) = self._symbols [name] {
-                return r;
-            }
+    pub over find (self, name : [c8])-> ReflectSymbol {        
+        if let Ok (r) = self._functions [name] {
+            return r;
+        }
+
+        if let Ok (r) = self._vtables [name] {
+            return r;
+        }
+
+        if let Ok (r) = self._globals [name] {
+            return r;
+        }
+
+        if let Ok (r) = self._coverages [name] {
+            return r;
         }
 
         return ReflectSymbol (ReflectSymbolType::NONE, 0, 0, "");
     }
 
-    pub over find (self, addr : usize)-> ReflectSymbol {
-        if self._symbols.len == 0 return ReflectSymbol (ReflectSymbolType::NONE, 0, 0, "");
+    pub over find (mut self, addr : usize)-> ReflectSymbol {        
+        if let Ok (r) = self.dicSearch (addr, ref self._addrFunctions, self._functions) {            
+            return r;
+        }
+        
+        if let Ok (r) = self.dicSearch (addr, ref self._addrVtables, self._vtables) {
+            return r;
+        }
+        
+        if let Ok (r) = self.dicSearch (addr, ref self._addrGlobals, self._globals) {
+            return r;
+        }
+        
+        if let Ok (r) = self.dicSearch (addr, ref self._addrCoverages, self._coverages) {
+            return r;
+        }
+        
+        return ReflectSymbol (ReflectSymbolType::NONE, 0, 0, "");
+    }
 
-        let mut l = 0is, mut r = cast!isize (self._addrSymbols.len - 1us);
+    pub over findFunction (mut self, addr : usize)-> ReflectSymbol {        
+        if let Ok (r) = self.dicSearch (addr, ref self._addrFunctions, self._functions) {            
+            return r;
+        }
+
+        return ReflectSymbol (ReflectSymbolType::NONE, 0, 0, "");
+    }
+    
+    /**
+     * Dichotomic search in the symbol list
+     * @returns: the symbol if found
+     * */
+    fn dicSearch (self, addr : usize, ref dmut lst : [ReflectSymbol], from : [[c8] => ReflectSymbol])-> (ReflectSymbol)? {
+        if lst.len != from.len {
+            // we sort the address symbols to make search faster
+            lst = copy [j for _, j in self._functions];            
+            lst = sort (alias lst, |a, b| => { a.ptr < b.ptr });            
+        }
+        
+        let mut l = 0is, mut r = cast!isize (lst.len - 1us);
         while l <= r {
             let m = ((l + r) / 2);
 
-            let curr = self._addrSymbols [m];
+            let curr = lst [m];
             if curr.ptr + curr.size < addr {
                 l = m + 1;
             } else if curr.ptr > addr {
                 r = m - 1;
             } else {
-                return curr;
+                return (curr)?;
             }
         }
 
-        return ReflectSymbol (ReflectSymbolType::NONE, 0, 0, "");
+        none
     }
 
-    pub over getSymbols (self)-> [[c8] => ReflectSymbol] {
-        self._symbols
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          GETTERS          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    pub over getFunctionSymbols (self)-> [[c8] => ReflectSymbol] {
+        self._functions
+    }
+
+    pub over getVtableSymbols (self)-> [[c8] => ReflectSymbol] {
+        self._vtables
+    }
+
+    pub over getGlobalSymbols (self)-> [[c8] => ReflectSymbol] {
+        self._globals
+    }
+    
+    pub over getCoverageSymbols (self)-> [[c8] => ReflectSymbol] {
+        self._coverages
     }
 
     /*!
@@ -281,45 +364,57 @@ pub class ELF64Loader over ELFLoader {
     /**
      * Append the symbols from an elf section
      * */
+    @unsafe
     fn appendSymbols (mut self, syms : *Elf64_Sym, nb : usize, names : *c8) {
-        for i in 0 .. nb {
-            unsafe {
-                let sym = syms [i];
-                let name = &names [sym.st_name];
-                if (sym.st_info & SymbolInfo::STT_FUNC != 0) {
-                    let len = strlen (name);
-                    if len > 2 && name [0] == '_' && name [1] == 'Y' {
-                        let realName = std::conv::fromStringZ (name);
-                        let refl = ReflectSymbol (ReflectSymbolType::FUNCTION,
-                                                  ptr-> cast!usize (sym.st_value),
-                                                  size-> cast!usize (sym.st_size),
-                                                  name-> realName);
+        let coveH = "__COI___Y";
+        let ymirH = "_Y";
+        let vtblT = "VT";
+        
+        for i in 0 .. nb {            
+            let sym = syms [i];
+            let name = &names [sym.st_name];
+            if (sym.st_info & SymbolInfo::STT_FUNC != 0) {
+                let len = strlen (name);                
+                if len > ymirH.len && strncmp (name, ymirH.ptr, ymirH.len) == 0 {
+                    let realName = std::conv::fromStringZ (name);
+                    let refl = ReflectSymbol (ReflectSymbolType::FUNCTION,
+                                              ptr-> cast!usize (sym.st_value),
+                                              size-> cast!usize (sym.st_size),
+                                              name-> realName);
 
-                        self._symbols [realName] = refl;
-                    }
-                }
-
-                else if (sym.st_info & SymbolInfo::STT_OBJECT != 0) {
-                    let len = strlen (name);
-                    if len > 4 && name [0] == '_' && name [1] == 'Y' && name [len - 2] == 'V' && name [len - 1] == 'T' {
-                        let realName = std::conv::fromStringZ (name);
-                        let refl = ReflectSymbol (ReflectSymbolType::VTABLE,
-                                                  ptr-> cast!usize (sym.st_value),
-                                                  size-> cast!usize (sym.st_size),
-                                                  name-> realName);
-
-                        self._symbols [realName] = refl;
-                    } else if len > 2 && name [0] == '_' && name [1] == 'Y' {
-                        let realName = std::conv::fromStringZ (name);
-                        let refl = ReflectSymbol (ReflectSymbolType::OBJECT,
-                                                  ptr-> cast!usize (sym.st_value),
-                                                  size-> cast!usize (sym.st_size),
-                                                  name-> realName);
-
-                        self._symbols [realName] = refl;
-                    }
+                    self._functions [realName] = refl;
                 }
             }
+
+            else if (sym.st_info & SymbolInfo::STT_OBJECT != 0) {
+                let len = strlen (name);
+                if len > ymirH.len && strncmp (name, ymirH.ptr, ymirH.len) == 0 {
+                    let realName = std::conv::fromStringZ (name);
+                    let isVt = (strncmp (name + cast!usize (len - 2), vtblT.ptr, vtblT.len) == 0); // already len > 2 
+                    
+                    let refl = ReflectSymbol (if isVt { ReflectSymbolType::VTABLE }
+                                              else { ReflectSymbolType::OBJECT },
+                                              ptr-> cast!usize (sym.st_value),
+                                              size-> cast!usize (sym.st_size),
+                                              name-> realName);
+
+                    if isVt {
+                        self._vtables [realName] = refl;
+                    } else {
+                        self._globals [realName] = refl;
+                    }
+                }
+                
+                else if len > coveH.len && strncmp (name, coveH.ptr, coveH.len) == 0 {                    
+                    let realName = std::conv::fromStringZ (name);
+                    let refl = ReflectSymbol (ReflectSymbolType::COVERAGE,
+                                              ptr-> cast!usize (sym.st_value),
+                                              size-> cast!usize (sym.st_size),
+                                              name-> realName);
+
+                    self._coverages [realName] = refl;                        
+                }
+            }            
         }
     }
 }

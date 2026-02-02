@@ -26,27 +26,51 @@ pub class ELFLoader {
     pub fn clear (mut self);
 
     /**
-     * Find the symbol in the table from its name
+     * Find a symbol in the table from its name
      * */
     pub fn find (self, name : [c8])-> ReflectSymbol;
 
     /**
-     * Find the symbol in the table from its addr
+     * Find a symbol in the table from its addr
      * @info: returns the first symbol whose ptr >= 'addr' and ptr + size <= 'addr'
+     * @info: the method is mutable because index can be build if needed
      * */
-    pub fn find (self, addr : usize)-> ReflectSymbol;
+    pub fn find (mut self, addr : usize)-> ReflectSymbol;
 
     /**
-     * @returns: the list of symbol
+     * Find a function symbol in the table from its addr (ignoring vtable, coverage and globals)
+     * @info: returns the first symbol whose ptr >= 'addr' and ptr + size <= 'addr'
+     * @info: the method is mutable because index can be build if needed     
      * */
-    pub fn getSymbols (self)-> [[c8] => ReflectSymbol];
+    pub fn findFunction (mut self, addr : usize)-> ReflectSymbol;
+
+    /**
+     * @returns: the list of functions symbol 
+     * */
+    pub fn getFunctionSymbols (self)-> [[c8] => ReflectSymbol];
+
+    /**
+     * @returns: the list of vtable symbols 
+     * */
+    pub fn getVtableSymbols (self)-> [[c8] => ReflectSymbol];
+
+    /**
+     * @returns: the list of global symbols (that are neither vtable, nor coverage)
+     * */
+    pub fn getGlobalSymbols (self)-> [[c8] => ReflectSymbol];
+
+    /**
+     * @returns: the list of coverage symbols (for code coverage)
+     * */
+    pub fn getCoverageSymbols (self)-> [[c8] => ReflectSymbol];
 }
 
 pub enum
 | FUNCTION = 1
 | VTABLE   = 2
 | OBJECT   = 3
-| NONE     = 4
+| COVERAGE = 4
+| NONE     = 5
  -> ReflectSymbolType;
 
 pub record ReflectSymbol {
