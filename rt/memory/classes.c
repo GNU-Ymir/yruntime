@@ -3,7 +3,7 @@
 void _yrt_destruct_class (GC_PTR obj, GC_PTR x) {
     void* vtable = *((void**)obj); // vtable
     // the second element is the destructor
-    void(*__dtor) () = *(void(**)(void*)) ((void**) vtable + 1);
+    void(*__dtor) (void*) = *(void(**)(void*)) ((void**) vtable + 1);
     (*__dtor) (obj);
 }
 

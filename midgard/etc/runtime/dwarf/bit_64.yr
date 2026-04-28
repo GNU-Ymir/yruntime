@@ -9,26 +9,31 @@ in bit_64;
  * ====================================================================================================
  */
 
-def Dwarf_Debug: usize;
-def Dwarf_Die: usize;
-def Dwarf_Error: usize;
-def Dwarf_Arange: usize;
-def Dwarf_Signed: isize;
-def Dwarf_Unsigned: usize;
-def Dwarf_Off: usize;
-def Dwarf_Line: usize;
+
+def Dwarf_Debug:        usize;
+def Dwarf_Die:          usize;
+def Dwarf_Error:        usize;
+def Dwarf_Arange:       usize;
+def Dwarf_Signed:       isize;
+def Dwarf_Unsigned:     usize;
+def Dwarf_Off:          usize;
+def Dwarf_Line:         *(void);
+def Dwarf_Line_Context: usize;
+
 def Dwarf_Handler: *(void);
-def Dwarf_Ptr: *(void);
-def Dwarf_Addr: usize;
+def Dwarf_Ptr:     *(void);
+def Dwarf_Addr:    usize;
+def Dwarf_Small:   u8;
 
 enum
-| DLC_READ   = 0
-| DLE_NE     = 0
-| DLV_OK     = 0
-| DLV_ERROR  = 1
-| DLA_STRING = 1
-| DLA_DIE    = 8
-| DLA_ARANGE = 17
+| DLC_READ           = 0
+| DLE_NE             = 0
+| DLV_OK             = 0
+| DW_GROUPNUMBER_ANY = 0
+| DLV_ERROR          = 1
+| DLA_STRING         = 1
+| DLA_DIE            = 8
+| DLA_ARANGE         = 17
  -> DwarfCodes;
 
 /*!
@@ -39,19 +44,61 @@ enum
  * ====================================================================================================
  */
 
-extern (C) fn dwarf_init(fd: i32, code: DwarfCodes, errHand: Dwarf_Handler, errarg: Dwarf_Ptr, ref mut debug: Dwarf_Debug, ref mut err: Dwarf_Error)-> i32;
 
-extern (C) fn dwarf_get_aranges(obj: Dwarf_Debug, ref mut aranges: (*Dwarf_Arange), ref mut arangeCount: Dwarf_Signed, ref mut err: Dwarf_Error)-> i32;
-extern (C) fn dwarf_get_arange_info(aranges: Dwarf_Arange, ref mut start: Dwarf_Addr, ref mut len: Dwarf_Signed, ref mut off: Dwarf_Off, ref mut err: Dwarf_Error)-> i32;
+extern (C) fn dwarf_init_b(fd: i32,
+                           code: DwarfCodes,
+                           errHand: Dwarf_Handler,
+                           errarg: Dwarf_Ptr,
+                           ref mut debug: Dwarf_Debug,
+                           ref mut err: Dwarf_Error)-> i32;
 
-extern (C) fn dwarf_offdie_b(obj: Dwarf_Debug, off: Dwarf_Off, isInfo: i32, ref mut die: Dwarf_Die, ref mut err: Dwarf_Error)-> i32;
-extern (C) fn dwarf_diename(die: Dwarf_Die, ref mut name: *c8, ref mut err: Dwarf_Error)-> i32;
+extern (C) fn dwarf_get_aranges(obj: Dwarf_Debug,
+                                ref mut aranges: (*Dwarf_Arange),
+                                ref mut arangeCount: Dwarf_Signed,
+                                ref mut err: Dwarf_Error)-> i32;
 
-extern (C) fn dwarf_srclines(die: Dwarf_Die, ref mut lines: *(Dwarf_Line), ref mut nlines: Dwarf_Signed, ref mut err: Dwarf_Error)-> i32;
-extern (C) fn dwarf_srclines_dealloc(die: Dwarf_Die, lines: *Dwarf_Line, nb: Dwarf_Signed)-> i32;
-extern (C) fn dwarf_lineaddr(line: Dwarf_Line, ref mut addr: Dwarf_Addr, ref mut err: Dwarf_Error)-> i32;
-extern (C) fn dwarf_linesrc(line: Dwarf_Line, ref mut name: *c8, ref mut err: Dwarf_Error)-> i32;
-extern (C) fn dwarf_lineno(line: Dwarf_Line, ref mut lineno: Dwarf_Unsigned, ref mut err: Dwarf_Error)-> i32;
+extern (C) fn dwarf_get_arange_info_b(aranges: Dwarf_Arange,
+                                      segment: *Dwarf_Unsigned,
+                                      segment_entry_size: *Dwarf_Unsigned,
+                                      ref mut start: Dwarf_Addr,
+                                      ref mut len: Dwarf_Signed,
+                                      ref mut off: Dwarf_Off,
+                                      ref mut err: Dwarf_Error)-> i32;
+
+extern (C) fn dwarf_offdie_b(obj: Dwarf_Debug,
+                             off: Dwarf_Off,
+                             isInfo: i32,
+                             ref mut die: Dwarf_Die,
+                             ref mut err: Dwarf_Error)-> i32;
+
+extern (C) fn dwarf_diename(die: Dwarf_Die,
+                            ref mut name: *c8,
+                            ref mut err: Dwarf_Error)-> i32;
+
+extern (C) fn dwarf_srclines_b(die: Dwarf_Die,
+                               ref mut versionOut: Dwarf_Unsigned,
+                               ref mut tableCount: Dwarf_Small,
+                               ref mut lineContext: Dwarf_Line_Context,
+                               ref mut err: Dwarf_Error)-> i32;
+
+extern (C) fn dwarf_srclines_from_linecontext(lineContext: Dwarf_Line_Context,
+                                              ref mut lineBuf: *Dwarf_Line,
+                                              ref mut lineCount: Dwarf_Signed,
+                                              ref mut err: Dwarf_Error)-> i32;
+
+extern (C) fn dwarf_lineaddr(line: Dwarf_Line,
+                             ref mut addr: Dwarf_Addr,
+                             ref mut err: Dwarf_Error)-> i32;
+
+extern (C) fn dwarf_linesrc(line: Dwarf_Line,
+                            ref mut name: *c8,
+                            ref mut err: Dwarf_Error)-> i32;
+
+extern (C) fn dwarf_lineno(line: Dwarf_Line,
+                           ref mut lineno: Dwarf_Unsigned,
+                           ref mut err: Dwarf_Error)-> i32;
+
+extern (C) fn dwarf_srclines_dealloc_b(lineContext: Dwarf_Line_Context)-> i32;
 
 extern (C) fn dwarf_dealloc(obj: Dwarf_Debug, arange: Dwarf_Arange, code: i32);
 extern (C) fn dwarf_dealloc(obj: Dwarf_Debug, p: *c8, code: i32);
@@ -185,14 +232,27 @@ class ArangeInfo {
                 return false;
             }
 
-            let mut lines: *Dwarf_Line = null;
-            let mut nbLines: Dwarf_Signed = 0;
+            let mut version: Dwarf_Unsigned = 0;
+            let mut tableCount: Dwarf_Small = 0;
+            let mut linectx: Dwarf_Line_Context = 0;
+
             {
-                if dwarf_srclines(die, ref lines, ref nbLines, ref error) != 0 {
+                if dwarf_srclines_b(die, ref version, ref tableCount, ref linectx, ref error) != 0 {
                     return false;
                 }
 
                 {
+                    if tableCount != 1 {
+                        return false;
+                    }
+
+                    let mut lines: *Dwarf_Line = null;
+                    let mut nbLines: Dwarf_Signed = 0;
+
+                    if dwarf_srclines_from_linecontext(linectx, ref lines, ref nbLines, ref error) != 0 {
+                        return false;
+                    }
+
                     self._lineAddrs = copy [unsafe {
                         let mut addr: Dwarf_Addr = 0;
                         let mut lineno: Dwarf_Unsigned = 0;
@@ -221,7 +281,7 @@ class ArangeInfo {
                     });
 
                 } exit {
-                    dwarf_srclines_dealloc(self._context.getHandle(), lines, nbLines);
+                    dwarf_srclines_dealloc_b(linectx);
                 }
 
             } exit {
@@ -319,7 +379,7 @@ class DebugObject {
 
         for i in 0 .. nb {
             unsafe {
-                if dwarf_get_arange_info(lst[i], ref start, ref len, ref off, ref error) == 0 {
+                if dwarf_get_arange_info_b(lst[i], null, null, ref start, ref len, ref off, ref error) == 0 {
                     self._aranges ~= [copy ArangeInfo(self, lst[i], start, len, off)];
                 }
             }
@@ -457,7 +517,7 @@ pub class Dwarf64Loader over DwarfLoader {
         let mut errhand: Dwarf_Handler = null;
         let mut errarg: Dwarf_Ptr = null;
 
-        if dwarf_init(fd, DwarfCodes::DLC_READ, errhand, errarg, ref debug, ref error) != 0 {
+        if dwarf_init_b(fd, DwarfCodes::DW_GROUPNUMBER_ANY, errhand, errarg, ref debug, ref error) != 0 {
             return none;
         }
 

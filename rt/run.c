@@ -87,7 +87,7 @@ void _yrt_set_test_code (int i) {
     __YRT_TEST_CODE__ = i;
 }
 
-int _yrt_run_main_debug (int argc, char ** argv, int(* y_main)()) {
+int _yrt_run_main_debug (int argc, char ** argv, int(* y_main)(_yrt_slice_t)) {
     __YRT_DEBUG__ = 1;
     
     GC_INIT ();
@@ -100,7 +100,7 @@ int _yrt_run_main_debug (int argc, char ** argv, int(* y_main)()) {
     return ret;
 }
 
-int _yrt_run_main (int argc, char ** argv, int(* y_main)()) {
+int _yrt_run_main (int argc, char ** argv, int(* y_main)(_yrt_slice_t)) {
     __YRT_DEBUG__ = 0;
 
     GC_INIT ();
