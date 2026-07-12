@@ -9,6 +9,9 @@ pub record FuncStack {
 
     let dmut _data: [[u32]] = [];
 
+    // Parallel stack holding the function pointer associated with each frame.
+    let mut _funcPtrs: [mut *void] = [];
+
     /*!
      * ====================================================================================================
      * ====================================================================================================
@@ -31,12 +34,13 @@ pub record FuncStack {
      * Insert an element at the top of the stack
      *
      * */
-    pub fn push(mut self, dmut lst: [u32]) {
+    pub fn push(mut self, dmut lst: [u32], func: *void) {
         if self._data.len == self._len {
             self:.grow();
         }
 
         self._data[self._len] = alias lst;
+        self._funcPtrs[self._len] = func;
         self._len += 1;
     }
 
@@ -60,6 +64,17 @@ pub record FuncStack {
 
         self._len -= 1;
         alias result
+    }
+
+    /**
+     * @returns: function pointer at the top of the stack or null if empty.
+     * */
+    pub fn topFunc(mut self)-> *void {
+        if self._len > 0 {
+            self._funcPtrs[self._len - 1]
+        } else {
+            null
+        }
     }
 
     /**
@@ -89,6 +104,7 @@ pub record FuncStack {
         }
 
         self._data ~= copy [[] ; addLen];
+        self._funcPtrs ~= copy [null ; addLen];
     }
 
 }
