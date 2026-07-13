@@ -34,7 +34,7 @@ in runner;
 use std::{io, config::_, algorithm::searching, fs::path};
 
 use core::exception::_;
-use utils::{colors, coverage};
+use utils::{colors, coverage, filters, args};
 
 extern (C) fn _yrt_force_debug()-> void;
 
@@ -96,29 +96,40 @@ pub class UnittestLauncher {
      *     true iff all test successfully passed
      * */
     pub fn run(self, args: [[c8]], covTree: &CoverageTree)-> bool {
-        let (filter, hasFilter, stopFirstError, withCov, withCall) = {
+        let testArgs = {
             self.parseArguments(args)
         } catch {
             _ => { return false; } // parsing failed
         }
 
         _yrt_force_debug();
-
         let mut failed = false;
-        for z, f in self._tests {
-            if !hasFilter || self.passFilter(z, filter) {
-                self.runTest(z, f);
+        let dmut already: [[c8] => bool] = copy [];
+
+        let toLaunch = TestFilters::filterList(copy [name for name, _ in self._tests],
+                                               hasFilters-> testArgs.hasFilter,
+                                               filter-> testArgs.filter,
+                                               resume-> testArgs.hasResume,
+                                               already-> ref already);
+
+        for test in toLaunch {
+            if let Ok(f) = self._tests[test] {
+                self.runTest(test, f);
+                already[test] = true;
             } catch {
                 err: &Exception => {
-                    self.exposeError(z, err);
-                    if (stopFirstError) return false;
+                    self.exposeError(test, err);
+                    already[test] = false;
+                    if (testArgs.hasStopFirst) break;
                     failed = true;
                 }
             }
         }
 
+        TestFilters::dumpSuccessFile(already);
+
         if !failed  {
-            covTree.report(withCov, withCall);
+            covTree.report(testArgs.hasCoverage, testArgs.hasCallTree);
         }
 
         return !failed;
@@ -179,63 +190,12 @@ pub class UnittestLauncher {
     }
 
     /**
-     * @returns: true if the test pass the filter
-     * */
-    fn passFilter(self, name: [c8], filter: [c8])-> bool {
-        if filter.len > 1 && filter[$ - 1] == '*' {
-            return name.startsWith(filter[0 .. $ - 1]);
-        }
-
-        return Path(filter, sep-> "::") == Path(name, sep-> "::").parent().parent(); // remove __test::id
-    }
-
-    /**
      * Parse the arguments passed to the launcher
-     * 
+     *
      * */
-    fn parseArguments(self, args: [[c8]])-> ([c8], bool, bool, bool, bool)
+    fn parseArguments(self, args: [[c8]])-> TestRunnerArgument
         throws AssertError
     {
-        let parser = (copy ArgumentParser())
-            :.help("help", short-> "h", comments-> "print this help and exit")
-            :.option!{[c8]} ("filter", short-> "f", comments-> "unittest filter")
-            :.flag("stop-first", short-> "sf", comments-> "stop after first test failure")
-            :.flag("coverage", short-> "cov", comments-> "print coverage report")
-            :.flag("call-tree", short-> "ct", comments-> "print call tree report");
-
-        {
-            let ret = parser.parse(args);
-            let (f, h) = if let Ok(Str(value-> f)) = ret["filter"]? {
-                (f, true)
-            } else {
-                ("", false)
-            };
-
-            let stop = if let Ok(Bool(value-> b)) = ret["stop-first"]? {
-                b
-            } else {
-                false
-            };
-
-            let ncv = if let Ok(Bool(value-> b)) = ret["coverage"]? {
-                b
-            } else {
-                false
-            };
-
-            let wcl = if let Ok(Bool(value-> b)) = ret["call-tree"]? {
-                b
-            } else {
-                false
-            };
-
-
-            return (f, h, stop, ncv, wcl);
-        } catch {
-            err => {
-                std::io::eprintln(parser.explain(err));
-                assert(false);
-            }
-        }
+        return TestRunnerArgument(args);
     }
 }
