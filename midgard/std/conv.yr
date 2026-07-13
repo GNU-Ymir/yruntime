@@ -375,11 +375,11 @@ pub fn if (isChar!{IN} && isChar!{OUT}) to {T of [OUT], OUT, F of [IN], IN} (s: 
     }
 
     else {
-        let dmut s8 = cte if (is!{IN}{X of c8}) {
+        let dmut s8 = cte if (template!{IN}{X of c8}) {
             copy s
         } else { utf::decode(s) };
 
-        cte if (is!{OUT}{x of c8}) {
+        cte if (template!{OUT}{x of c8}) {
             return alias s8;
         } else {
             return utf::encode!{OUT} (s8);
@@ -439,17 +439,17 @@ pub fn if (isChar!{C} && isUnsigned!{U} && U::size == C::size) to {OUT of [C], C
  * ```
  * */
 pub fn if (isChar!{U} && isFloating!{F}) to {T of [U], U, F} (a: F, prec: u32 = 6u32)-> dmut T {
-    let dmut str8 = cte if is!{F}{X of f32} {
+    let dmut str8 = cte if template!{F}{X of f32} {
         utils::_yrt_f32_to_string(a, prec)
-    } else cte if is!{F}{X of f64} {
+    } else cte if template!{F}{X of f64} {
         utils::_yrt_f64_to_string(a, prec)
-    } else cte if is!{F}{X of f80} {
+    } else cte if template!{F}{X of f80} {
         utils::_yrt_f80_to_string(a, prec)
     } else {
         utils::_yrt_fsize_to_string(a, prec)
     };
 
-    cte if is!{U}{X of c8} {
+    cte if template!{U}{X of c8} {
         return alias str8;
     } else {
         return to!{T} (str8);
@@ -469,17 +469,17 @@ pub fn if (isChar!{U} && isFloating!{F}) to {T of [U], U, F} (a: F, prec: u32 = 
  * ```
  */
 pub fn if (isChar!{U} && isFloating!{F}) to {T of [U], U, "e", F} (a: F, prec: u32 = 6u32)-> dmut T {
-    let dmut str8 = cte if is!{F}{X of f32} {
+    let dmut str8 = cte if template!{F}{X of f32} {
         utils::_yrt_f32_to_string_exp(a, prec)
-    } else cte if is!{F}{X of f64} {
+    } else cte if template!{F}{X of f64} {
         utils::_yrt_f64_to_string_exp(a, prec)
-    } else cte if is!{F}{X of f80} {
+    } else cte if template!{F}{X of f80} {
         utils::_yrt_f80_to_string_exp(a, prec)
     } else {
         utils::_yrt_fsize_to_string_exp(a, prec)
     };
 
-    cte if is!{U}{X of c8} {
+    cte if template!{U}{X of c8} {
         return alias str8;
     } else {
         return to!{T} (str8);
@@ -531,11 +531,11 @@ pub fn if isChar!{U} to {T of [U], U, F of bool} (a: F)-> T {
  * assert(A::new(789).to![c8] () == "main::A(789)");
  * ```
  */
-pub fn if (isChar!{U} && (is!{F}{class C} || is!{F}{record C})) to {T of [U], U, F} (a: F)-> dmut T {
+pub fn if (isChar!{U} && (template!{F}{class C} || template!{F}{record C})) to {T of [U], U, F} (a: F)-> dmut T {
     let dmut stream = copy StringStream();
     stream:.write(a);
 
-    cte if is!{U}{X of c8} {
+    cte if template!{U}{X of c8} {
         return stream:[];
     } else {
         return std::conv::to!{T} (stream[]);
@@ -558,11 +558,11 @@ pub fn if (isChar!{U} && (is!{F}{class C} || is!{F}{record C})) to {T of [U], U,
  * assert(A(12).to![c8] () == "main::A(12)");
  * ```
  */
-pub fn if (isChar!{U} && (is!{F}{record R} || is!{F}{entity E})) to {T of [U], U, F} (ref a: F)-> dmut T {
+pub fn if (isChar!{U} && (template!{F}{record R} || template!{F}{entity E})) to {T of [U], U, F} (ref a: F)-> dmut T {
     let dmut stream = copy StringStream();
     stream:.write(a);
 
-    cte if is!{U}{X of c8} {
+    cte if template!{U}{X of c8} {
         return stream:[];
     } else {
         return std::conv::to!{T} (stream[]);
@@ -778,16 +778,16 @@ pub fn if (isSigned!{T} && isChar!{U} && isIntegral!{N}) to {T, base: N, F of [U
 pub fn if (isFloating!{F} && isChar!{U}) to {F, T of [U], U} (str: T)-> F
     throws CastFailure
 {
-    let str8 = cte if is!{U}{X of c8} {
+    let str8 = cte if template!{U}{X of c8} {
         str
     } else { to![c8] (str) };
 
     let mut succ = false;
-    let res = cte if is!{F}{F of f32} {
+    let res = cte if template!{F}{F of f32} {
         std::conv::utils::_yrt_string_to_f32(str8, ref succ)
-    } else cte if is!{F}{F of f64} {
+    } else cte if template!{F}{F of f64} {
         std::conv::utils::_yrt_string_to_f64(str8, ref succ)
-    } else cte if is!{F}{F of f80} {
+    } else cte if template!{F}{F of f80} {
         std::conv::utils::_yrt_string_to_f80(str8, ref succ)
     } else {
         std::conv::utils::_yrt_string_to_fsize(str8, ref succ)

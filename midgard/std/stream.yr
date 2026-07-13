@@ -49,7 +49,7 @@ pub trait Streamable {
      *     - stream: the stream in which the class instance will be written
      */
     pub fn toStream(self, dmut stream: &StringStream)-> void {
-        cte if is!{typeof(self)}{class E} {
+        cte if template!{typeof(self)}{class E} {
             let vd = etc::runtime::memory::Runtime!{typeof(self), *void}::_yrt_unsafe_cast(self);
             stream:.write(self.__typeid__, "(");
             if let Err() = __PRINT_SET__[vd] {
@@ -181,7 +181,7 @@ pub class StringStream {
      * @params:
      *   - c: the value to write
      * */
-    pub fn if (!is!{T}{class C} && !is!{T}{record C} && !is!{T}{entity E}) write {T} (mut self, c: T)-> dmut &StringStream {
+    pub fn if (!(template!{T}{class C}) && !(template!{T}{record C}) && !(template!{T}{entity E})) write {T} (mut self, c: T)-> dmut &StringStream {
         self:.write(std::conv::to!{[c8]} (c))
     }
 
@@ -221,11 +221,11 @@ pub class StringStream {
      * @info: consider weither the element is Streamable or not
      * @returns: the stream
      * */
-    pub fn if (is!{T}{class C} || is!{T}{record C}) write {T} (mut self, c: T)-> dmut &StringStream {
-        cte if is!{T}{X impl std::stream::Streamable} {
+    pub fn if (template!{T}{class C} || template!{T}{record C}) write {T} (mut self, c: T)-> dmut &StringStream {
+        cte if template!{T}{X impl std::stream::Streamable} {
             c.toStream(alias self);
         } else {
-            cte if is!{T}{class C} {
+            cte if template!{T}{class C} {
                 let vd = etc::runtime::memory::Runtime!{typeof(self), *void}::_yrt_unsafe_cast(self);
                 self:.write(c.__typeinfo.name, '(');
                 if vd !in __PRINT_SET__ {
@@ -260,8 +260,8 @@ pub class StringStream {
      * @info: consider weither the element is Streamable or not
      * @returns: the stream
      * */
-    pub fn if (is!{T}{record R} || is!{T}{entity E}) write {T} (mut self, ref c: T)-> dmut &StringStream {
-        cte if is!{T}{X impl std::stream::Streamable} {
+    pub fn if (template!{T}{record R} || template!{T}{entity E}) write {T} (mut self, ref c: T)-> dmut &StringStream {
+        cte if template!{T}{X impl std::stream::Streamable} {
             c.toStream(alias self);
         } else {
             self:.write(T::typeid, '(');
@@ -327,7 +327,7 @@ pub class StringStream {
      */
     pub fn write {F, T...} (mut self, f: F, r: T)-> dmut &StringStream {
         self:.write(f);
-        cte if (is!T {Z of (U,), U...}) {
+        cte if (template!T {Z of (U,), U...}) {
             for i in r
                 self:.write(i);
         } else {
@@ -341,7 +341,7 @@ pub class StringStream {
      */
     pub fn writeln {F, T...} (mut self, f: F, r: T)-> dmut &StringStream {
         self:.write(f);
-        cte if (is!T {Z of (U,), U...}) {
+        cte if (template!T {Z of (U,), U...}) {
             for i in r
                 self:.write(i);
         } else {
