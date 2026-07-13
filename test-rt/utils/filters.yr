@@ -1,0 +1,156 @@
+/*
+ *
+ * <hr>
+ *
+ * @Package: ymirc
+ * @Module: utils::filters
+ * @File: utils/filters.yr
+ * @Author(s):
+ *   - Emile Cadorel <ecadorel@gmail.com>
+ *
+ * @Created(YYYY-MM-DD): 2026-07-13
+ * @Copyright(C) 2021–2026 GNU-Ymir
+ * @License
+ *   ```text
+ *   This file is part of the Ymir language project.
+ *
+ *   Ymir is free software: you can redistribute it and/or modify it
+ *   under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation, either version 3 of the License, or
+ *   (at your option) any later version.
+ *
+ *   Ymir is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with Ymir.  If not, see <https://www.gnu.org/licenses/>.
+ *   ```
+ */
+
+in filters;
+
+use std::fs::_;
+use std::algorithm::{sorting, searching};
+use std::syntax::tokenizer;
+
+/**
+ * Module to apply filtering on tests names.
+ *
+ */
+pub mod TestFilters {
+
+    /**
+     * Filter the list of tests
+     * @params:
+     *    - tests: the list of tests registered in the program
+     *    - hasFilters: true iff the argument parser has filter
+     *    - filter: the filter to apply if hasFilters
+     *    - resume: true iff the flag resume was found in argument parser
+     *
+     * @returns:
+     *    - already: the list of tests that have been executed in the previous iteration(associated to success failure, flags)
+     *    - the list of tests to run
+     */
+    pub fn filterList(tests:            [[c8]],
+                      hasFilters:       bool,
+                      filter:           [c8],
+                      resume:           bool,
+                      ref dmut already: [[c8] => bool])-> [[c8]] {
+        already = TestFilters::readSuccessFile();
+
+        let dmut toLaunch: [[c8]] = [];
+        for t in tests {
+            let filteredOut = hasFilters && !TestFilters::passFilter(t, filter);
+            if !filteredOut {
+                if let Ok(x) = already[t] {
+                    if (!resume || !x) {
+                        toLaunch ~= [t];
+                        already[t] = false;
+                    }
+                } else {
+                    toLaunch ~= [t];
+                    already[t] = false;
+                }
+            }
+        }
+
+        let list = sort(alias toLaunch);
+        return list;
+    }
+
+    /**
+     * Write the file containing the success/failure of the tests execution
+     * (where false can also mean it wasn't executed but was planned to)
+     *
+     * @params:
+     *     - tests: the list of registered test and the flags defining the execution state
+     *
+     */
+    pub fn dumpSuccessFile(tests: [[c8] => bool]) {
+        {
+            let dmut sfile = File::create(Path(".ymir_test_success"), write-> true);
+            for test, success in tests {
+                sfile:.write(test);
+                sfile:.write(";");
+                if success {
+                    sfile:.write("true");
+                } else {
+                    sfile:.write("false");
+                }
+                sfile:.write("\n");
+            }
+        } catch {
+            err => {
+                std::io::println("err ", err);
+            }
+        }
+    }
+
+    /**
+     * Read the resume file containing the execution flag for each tests that where registered during previous execution
+     *
+     * @returns: the list of test assocuiated to the successfuly executed flag
+     */
+    fn readSuccessFile()-> dmut[[c8] => bool] {
+        {
+            let dmut sfile = File::open(Path(".ymir_test_success"), read-> true);
+            let content = sfile:.readAll();
+
+            let mut lineTzer = Tokenizer!{c8}();
+            lineTzer:.insert(";", isSkip-> true);
+
+            let mut globTzer = Tokenizer!{c8}();
+            globTzer:.insert("\n", isSkip-> true);
+
+            let dmut result: [[c8] => bool] = copy[];
+            let lines = globTzer.tokenizeWithoutSkips(content);
+
+            for line in lines {
+                let test = lineTzer.tokenizeWithoutSkips(line);
+                if (test.len == 2) {
+                    result[test[0]] = (test[1] == "true");
+                }
+            }
+
+            return alias result;
+        } catch {
+            _ => {
+                return copy [];
+            }
+        }
+    }
+
+    /**
+     * @returns: true if the test pass the filter and must be executed at this run
+     *
+     * */
+    fn passFilter(name: [c8], filter: [c8])-> bool {
+        if filter.len > 1 && filter[$ - 1] == '*' {
+            return name.startsWith(filter[0 .. $ - 1]);
+        }
+
+        return Path(filter, sep-> "::") == Path(name, sep-> "::").parent().parent(); // remove __test::id
+    }
+}

@@ -1,16 +1,51 @@
+/*
+ *
+ * <hr>
+ *
+ * @Package: ymirc
+ * @Module: utils::runner
+ * @File: utils/runner.yr
+ * @Author(s):
+ *   - Emile Cadorel <ecadorel@gmail.com>
+ *
+ * @Created(YYYY-MM-DD): 2026-02-01
+ * @Copyright(C) 2021–2026 GNU-Ymir
+ * @License
+ *   ```text
+ *   This file is part of the Ymir language project.
+ *
+ *   Ymir is free software: you can redistribute it and/or modify it
+ *   under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation, either version 3 of the License, or
+ *   (at your option) any later version.
+ *
+ *   Ymir is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with Ymir.  If not, see <https://www.gnu.org/licenses/>.
+ *   ```
+ */
+
 in runner;
 
 use std::{io, config::_, algorithm::searching, fs::path};
 
 use core::exception::_;
-use utils::{colors, coverage};
+use utils::{colors, coverage, filters, args};
 
 extern (C) fn _yrt_force_debug()-> void;
 
 @{final}
 pub class UnittestLauncher {
 
-    // The list of test registered in the launcher
+    // The list of test registered in the launcher This function pointers are
+    // cheated by the compiler as they don't respect the non throwing
+    // convention, as they throw when they fail. It is the standard accepted
+    // way, as it is only for internal usage.
+    //
     let dmut _tests: [[c8] => fn ()-> void] = copy [];
 
     /*!
@@ -33,6 +68,10 @@ pub class UnittestLauncher {
 
     /**
      * Register a test in the unittest map
+     * @params:
+     *    - name: the name of the test to register
+     *    - func: the function to execute for the test
+     *
      * */
     pub fn register(mut self, name: [c8], func: fn ()-> void) {
         self._tests[name] = func;
@@ -48,32 +87,49 @@ pub class UnittestLauncher {
 
     /**
      * Run the tests
-     * @returns: true iif success
+
+     * @params:
+     *    - args: the list of parameters passed to the program
+     *    - covTree: the code coverage tree that is being filled when branch of code are hit
+     *
+     * @returns:
+     *     true iff all test successfully passed
      * */
     pub fn run(self, args: [[c8]], covTree: &CoverageTree)-> bool {
-        let (filter, hasFilter, stopFirstError, withCov, withCall) = {
+        let testArgs = {
             self.parseArguments(args)
         } catch {
             _ => { return false; } // parsing failed
         }
 
         _yrt_force_debug();
-
         let mut failed = false;
-        for z, f in self._tests {
-            if !hasFilter || self.passFilter(z, filter) {
-                self.runTest(z, f);
+        let dmut already: [[c8] => bool] = copy [];
+
+        let toLaunch = TestFilters::filterList(copy [name for name, _ in self._tests],
+                                               hasFilters-> testArgs.hasFilter,
+                                               filter-> testArgs.filter,
+                                               resume-> testArgs.hasResume,
+                                               already-> ref already);
+
+        for test in toLaunch {
+            if let Ok(f) = self._tests[test] {
+                self.runTest(test, f);
+                already[test] = true;
             } catch {
                 err: &Exception => {
-                    self.exposeError(z, err);
-                    if (stopFirstError) return false;
+                    self.exposeError(test, err);
+                    already[test] = false;
+                    if (testArgs.hasStopFirst) break;
                     failed = true;
                 }
             }
         }
 
+        TestFilters::dumpSuccessFile(already);
+
         if !failed  {
-            covTree.report(withCov, withCall);
+            covTree.report(testArgs.hasCoverage, testArgs.hasCallTree);
         }
 
         return !failed;
@@ -81,6 +137,13 @@ pub class UnittestLauncher {
 
     /**
      * Run a unittest
+     *
+     * @params:
+     *     - name: the name of the test
+     *     - func: the function of the unit test
+     *
+     * @throws:
+     *    - the exception thrown by the test if it fails
      * */
     fn runTest(self, name: [c8], func: fn ()-> void)
         throws Exception
@@ -94,7 +157,12 @@ pub class UnittestLauncher {
     }
 
     /**
-     * Print an error
+     * Print the error of a test when it failed
+     *
+     * @params:
+     *     - name: the name of the test that failed
+     *     - err: the exception thrown by the test
+     *
      * */
     fn exposeError(self, name: [c8], err: &Exception) {
         println("====================================");
@@ -112,7 +180,8 @@ pub class UnittestLauncher {
      */
 
     /**
-     * Some cheating util
+     * Some cheating util, to make the compiler accept the try/catch block, when the actual throwing part is the unittes.
+     *
      * */
     fn fake_throw(self, b: bool)
         throws AssertError
@@ -121,66 +190,12 @@ pub class UnittestLauncher {
     }
 
     /**
-     * @returns: true if the test pass the filter
-     * */
-    fn passFilter(self, name: [c8], filter: [c8])-> bool {
-        if filter.len > 1 && filter[$ - 1] == '*' {
-            return name.startsWith(filter[0 .. $ - 1]);
-        }
-
-        return Path(filter, sep-> "::") == Path(name, sep-> "::").parent().parent(); // remove __test::id
-    }
-
-    /**
      * Parse the arguments passed to the launcher
-     * @returns:
-     *    - 0: the filter of unittest
-     *    - 1: true iif there is a filter
-     *    - 2: true iif the run stops at first test failure
+     *
      * */
-    fn parseArguments(self, args: [[c8]])-> ([c8], bool, bool, bool, bool)
+    fn parseArguments(self, args: [[c8]])-> TestRunnerArgument
         throws AssertError
     {
-        let parser = (copy ArgumentParser())
-            :.help("help", short-> "h", comments-> "print this help and exit")
-            :.option!{[c8]} ("filter", short-> "f", comments-> "unittest filter")
-            :.flag("stop-first", short-> "sf", comments-> "stop after first test failure")
-            :.flag("coverage", short-> "cov", comments-> "print coverage report")
-            :.flag("call-tree", short-> "ct", comments-> "print call tree report");
-
-        {
-            let ret = parser.parse(args);
-            let (f, h) = if let Ok(Str(value-> f)) = ret["filter"]? {
-                (f, true)
-            } else {
-                ("", false)
-            };
-
-            let stop = if let Ok(Bool(value-> b)) = ret["stop-first"]? {
-                b
-            } else {
-                false
-            };
-
-            let ncv = if let Ok(Bool(value-> b)) = ret["coverage"]? {
-                b
-            } else {
-                false
-            };
-
-            let wcl = if let Ok(Bool(value-> b)) = ret["call-tree"]? {
-                b
-            } else {
-                false
-            };
-
-
-            return (f, h, stop, ncv, wcl);
-        } catch {
-            err => {
-                std::io::eprintln(parser.explain(err));
-                assert(false);
-            }
-        }
+        return TestRunnerArgument(args);
     }
 }
