@@ -30,13 +30,13 @@ enum
 pub record JsonParser {
 
     // The lexer used to split the json content
-    let dmut _lex : &Lexer!{c8};
+    let dmut _lex: &Lexer!{c8};
 
     /**
      * @params:
      *    - content: the content of the json configuration file
      * */
-    pub self (content : [c8])
+    pub self (content: [c8])
         with _lex = copy Lexer!{c8} (content,
                                      tokens-> copy JsonTokens::__members__)
     {}
@@ -46,19 +46,19 @@ pub record JsonParser {
      * Parse the json content
      * @returns: the parsed configuration
      * */
-    pub fn parse (mut self)-> &Config
+    pub fn parse(mut self)-> &Config
         throws SyntaxError
     {
-        let (fst, l, c) = self._lex:.next ();
+        let (fst, l, c) = self._lex:.next();
         if (fst == "[") {
-            return self:.parseArray ();
+            return self:.parseArray();
         }
 
         else if (fst == "{") {
-            return self:.parseDict ();
+            return self:.parseDict();
         }
 
-        throw copy SyntaxError ("Unexpected '" ~  fst ~ "'", l, c);
+        throw copy SyntaxError("Unexpected '" ~  fst ~ "'", l, c);
     }
 
     /*!
@@ -72,21 +72,21 @@ pub record JsonParser {
     /**
      * Parse a dictionnary
      * */
-    prv fn parseDict (mut self)-> &Dict
+    prv fn parseDict(mut self)-> &Dict
         throws SyntaxError
     {
-        let dmut dict = copy Dict ();
-        let cursor = self._lex.getCursor ();
-        let (n, _, _) = self._lex:.next ();
+        let dmut dict = copy Dict();
+        let cursor = self._lex.getCursor();
+        let (n, _, _) = self._lex:.next();
         if n != "}" {
-            self._lex:.rewind (expand cursor);
+            self._lex:.rewind(expand cursor);
             loop {
-                let (b, l, c) = self:.assertRead (["'", "\""]);
-                let name = self:.parseIdentifier (b, l, c);
-                self:.assertRead ([":"]);
+                let (b, l, c) = self:.assertRead(["'", "\""]);
+                let name = self:.parseIdentifier(b, l, c);
+                self:.assertRead([":"]);
 
-                dict:[name] = self:.parseValue ();
-                let (e, _, _) = self:.assertRead ([",", "}"]);
+                dict:[name] = self:.parseValue();
+                let (e, _, _) = self:.assertRead([",", "}"]);
                 if (e == "}") {
                     break;
                 }
@@ -99,17 +99,17 @@ pub record JsonParser {
     /**
      * Parse an array value
      * */
-    prv fn parseArray (mut self)-> &Array
+    prv fn parseArray(mut self)-> &Array
         throws SyntaxError
     {
-        let dmut res = copy Array ();
-        let cursor = self._lex.getCursor ();
-        let (n, _, _) = self._lex:.next ();
+        let dmut res = copy Array();
+        let cursor = self._lex.getCursor();
+        let (n, _, _) = self._lex:.next();
         if n != "]" {
-            self._lex:.rewind (expand cursor);
+            self._lex:.rewind(expand cursor);
             loop {
-                res:.push (self:.parseValue ());
-                let (e, _, _) = self:.assertRead ([",", "]"]);
+                res:.push(self:.parseValue());
+                let (e, _, _) = self:.assertRead([",", "]"]);
                 if (e == "]") {
                     break;
                 }
@@ -122,18 +122,18 @@ pub record JsonParser {
     /**
      * Parse a value in the toml
      * */
-    prv fn parseValue (mut self)-> &Config
+    prv fn parseValue(mut self)-> &Config
         throws SyntaxError
     {
-        let (begin, l, c) = self._lex:.next ();
+        let (begin, l, c) = self._lex:.next();
         match begin {
-            "{"        => return self:.parseDict ();
-            "["        => return self:.parseArray ();
-            "false"    => return copy Bool (false);
-            "true"     => return copy Bool (true);
-            "'"        => return copy Str (self:.parseIdentifier (begin, l, c));
-            "\""       => return copy Str (self:.parseIdentifier (begin, l, c));
-            _          => return self:.parseIntOrFloat (begin, l, c);
+            "{" => return self:.parseDict();
+            "[" => return self:.parseArray();
+            "false" => return copy Bool(false);
+            "true" => return copy Bool(true);
+            "'" => return copy Str(self:.parseIdentifier(begin, l, c));
+            "\"" => return copy Str(self:.parseIdentifier(begin, l, c));
+            _ => return self:.parseIntOrFloat(begin, l, c);
         }
     }
 
@@ -145,17 +145,17 @@ pub record JsonParser {
      *     - l: the line
      *     - c: the column
      * */
-    prv fn parseIntOrFloat (mut self, val : [c8], l : usize, c : usize)-> &Config
+    prv fn parseIntOrFloat(mut self, val: [c8], l: usize, c: usize)-> &Config
         throws SyntaxError
     {
         {
-            if let Ok () = std::algorithm::searching::find (val, '.') {
-                return copy Float (std::conv::to!{f64} (val));
+            if let Ok() = std::algorithm::searching::find(val, '.') {
+                return copy Float(std::conv::to!{f64} (val));
             }
 
-            return copy Int (std::conv::to!{i64} (val));
+            return copy Int(std::conv::to!{i64} (val));
         } catch {
-            _ => throw copy SyntaxError ("Unexpected '" ~ val ~ "'", l, c);
+            _ => throw copy SyntaxError("Unexpected '" ~ val ~ "'", l, c);
         }
     }
 
@@ -170,44 +170,44 @@ pub record JsonParser {
     /**
      * Parse an identifier from content
      * */
-    prv fn parseIdentifier (mut self, end : [c8], lB : usize, cB : usize)-> [c8]
+    prv fn parseIdentifier(mut self, end: [c8], lB: usize, cB: usize)-> [c8]
         throws SyntaxError
     {
-        let dmut res = copy StringStream ();
+        let dmut res = copy StringStream();
 
-        self._lex:.setSkipTokens (false);
-        self._lex:.setSkipComments (false);
+        self._lex:.setSkipTokens(false);
+        self._lex:.setSkipComments(false);
 
         loop {
-            let (n, l, c) = self._lex:.next ();
-            if n.len == 0 { throw copy SyntaxError ("Unterminated string literal", lB, cB); }
+            let (n, l, c) = self._lex:.next();
+            if n.len == 0 { throw copy SyntaxError("Unterminated string literal", lB, cB); }
             else if n == end {
                 break;
             }
 
             if n == JsonTokens::ESCAPE {
-                let (af, _, _) = self._lex:.nextChar ();
+                let (af, _, _) = self._lex:.nextChar();
                 match af {
-                    "a" => { res:.write ("\a"); }
-                    "b" => { res:.write ("\b"); }
-                    "f" => { res:.write ("\f"); }
-                    "n" => { res:.write ("\n"); }
-                    "r" => { res:.write ("\r"); }
-                    "t" => { res:.write ("\t"); }
-                    "v" => { res:.write ("\v"); }
-                    "\\" => { res:.write ("\\"); }
-                    "\'" => { res:.write ("'"); }
-                    "\"" => { res:.write ("\""); }
-                    "u" => { self:.parseUnicode (alias res); }
-                    _ => throw copy SyntaxError ("Undefined escape sequence : \\" ~ af, l, c);
+                    "a" => { res:.write("\a"); }
+                    "b" => { res:.write("\b"); }
+                    "f" => { res:.write("\f"); }
+                    "n" => { res:.write("\n"); }
+                    "r" => { res:.write("\r"); }
+                    "t" => { res:.write("\t"); }
+                    "v" => { res:.write("\v"); }
+                    "\\" => { res:.write("\\"); }
+                    "\'" => { res:.write("'"); }
+                    "\"" => { res:.write("\""); }
+                    "u" => { self:.parseUnicode(alias res); }
+                    _ => throw copy SyntaxError("Undefined escape sequence: \\" ~ af, l, c);
                 }
             } else {
-                res:.write (n);
+                res:.write(n);
             }
         }
 
-        self._lex:.setSkipTokens (true);
-        self._lex:.setSkipComments (true);
+        self._lex:.setSkipTokens(true);
+        self._lex:.setSkipComments(true);
 
         res[]
     }
@@ -224,23 +224,23 @@ pub record JsonParser {
      * Parse an unicode in a string
      * @example: "\u{0x1F3B5}"
      * */
-    prv fn parseUnicode (mut self, dmut stream : &StringStream)
+    prv fn parseUnicode(mut self, dmut stream: &StringStream)
         throws SyntaxError
     {
-        self:.assertRead (["{"]);
-        let (code, l, c) = self._lex:.next ();
+        self:.assertRead(["{"]);
+        let (code, l, c) = self._lex:.next();
         let i = {
-            cast!c32 (std::conv::to!{u32, "x"} (code))
-         } catch {
-            _ => throw copy SyntaxError ("expected hexa code (not '" ~ code ~ "')", l, c);
+            cast!c32(std::conv::to!{u32, "x"} (code))
+        } catch {
+            _ => throw copy SyntaxError("expected hexa code (not '" ~ code ~ "')", l, c);
         }
 
-        self:.assertRead (["}"]);
-        let dmut res : [c8 ; 4] = ['\u{0}' ; 4];
-        let nbProduced = std::conv::utf::toUtf8 (i, ref res);
+        self:.assertRead(["}"]);
+        let dmut res: [c8 ; 4] = ['\u{0}' ; 4];
+        let nbProduced = std::conv::utf::toUtf8(i, ref res);
 
         for z in 0 .. nbProduced {
-            stream:.write (res [z]);
+            stream:.write(res[z]);
         }
     }
 
@@ -250,17 +250,17 @@ pub record JsonParser {
      *    - lst: the list of accepted tokens
      *    - canEof: iif true eof is also accepted
      * */
-    prv fn assertRead {N : usize} (mut self, lst : [[c8] ; N])-> ([c8], usize, usize)
+    prv fn assertRead {N: usize} (mut self, lst: [[c8] ; N])-> ([c8], usize, usize)
         throws SyntaxError
     {
-        let (wd, l, c) = self._lex:.next ();
+        let (wd, l, c) = self._lex:.next();
         for i in lst {
             if i == wd { return (wd, l, c); }
         }
 
-        let dmut err = copy StringStream ();
-        err:.write ("read '", wd, "' when excepting ", lst);
+        let dmut err = copy StringStream();
+        err:.write("read '", wd, "' when excepting ", lst);
 
-        throw copy SyntaxError (err[], l, c);
+        throw copy SyntaxError(err[], l, c);
     }
 }

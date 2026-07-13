@@ -4,7 +4,7 @@ in condition;
  * Condition are used to synchronize threads
  * */
 record _yrt_thread_cond_t {
-    let _data : [u8 ; 48] = [0; 48];
+    let _data: [u8 ; 48] = [0; 48];
     pub self () {}
 }
 
@@ -12,25 +12,25 @@ record _yrt_thread_cond_t {
 /**
  * Init a waitable conditional
  * @params:
- *    - data: the data of the condition (see libpthread)
+ *    - data: the data of the condition(see libpthread)
  * @returns:
  *    - cond: the condition
  */
-extern (C) fn _yrt_thread_cond_init (id : *_yrt_thread_cond_t, data : *void);
+extern (C) fn _yrt_thread_cond_init(id: *_yrt_thread_cond_t, data: *void);
 
 /**
  * Trigger a condition
  * @params:
  *    - cond: the condition to trigger
  */
-extern (C) fn _yrt_thread_cond_signal (id : *_yrt_thread_cond_t);
+extern (C) fn _yrt_thread_cond_signal(id: *_yrt_thread_cond_t);
 
 /**
  * Broadcast a condition
  * @params:
  *    - cond: the condition to trigger
  */
-extern (C) fn _yrt_thread_cond_broadcast (id : *_yrt_thread_cond_t);
+extern (C) fn _yrt_thread_cond_broadcast(id: *_yrt_thread_cond_t);
 
 
 /**
@@ -39,15 +39,15 @@ extern (C) fn _yrt_thread_cond_broadcast (id : *_yrt_thread_cond_t);
 @final
 pub class Condition {
 
-    let _cond : _yrt_thread_cond_t;
+    let _cond: _yrt_thread_cond_t;
 
     /**
      * Create a usable condition
      * */
     pub self ()
-        with _cond = _yrt_thread_cond_t ()
+        with _cond = _yrt_thread_cond_t()
     {
-        _yrt_thread_cond_init (&self._cond, null);
+        _yrt_thread_cond_init(&self._cond, null);
     }
 
     /**
@@ -55,22 +55,22 @@ pub class Condition {
      * @params:
      *     - mutex: a locked mutex that will be associated to the condition
      */
-    pub fn wait (mut self, dmut m : &mutex::Mutex) {
-        m:.waitCondition (cast!{*void} (&self._cond));
+    pub fn wait(mut self, dmut m: &mutex::Mutex) {
+        m:.waitCondition(cast!{*void} (&self._cond));
     }
 
     /**
      * Broadcast the signal to all waiting threads
      * */
-    pub fn broadcast (mut self) {
-        _yrt_thread_cond_broadcast (&self._cond);
+    pub fn broadcast(mut self) {
+        _yrt_thread_cond_broadcast(&self._cond);
     }
 
     /**
      * Signal the condition to restart the waiting thread
      * */
-    pub fn signal (mut self) {
-        _yrt_thread_cond_signal (&self._cond);
+    pub fn signal(mut self) {
+        _yrt_thread_cond_signal(&self._cond);
     }
 
 }

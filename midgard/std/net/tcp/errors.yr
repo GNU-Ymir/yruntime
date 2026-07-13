@@ -10,7 +10,7 @@ in errors;
 /**
  * The types of error that can occur when listening, or connecting to a TCP socket
  * */
-pub enum : u8
+pub enum: u8
 | ADDR_TYPE       = 0u8
 | SOCKET_CREATION = 1u8
 | BIND            = 2u8
@@ -26,29 +26,29 @@ pub enum : u8
 pub class TcpError over core::exception::Exception {
 
     // The message of the error
-    pub let msg : [c8];
+    pub let msg: [c8];
 
     // The error code to idenfity the error
-    pub let code : TcpErrorCode;
+    pub let code: TcpErrorCode;
 
     /**
      * @params:
      *    - code: the error code to identify the error
      *    - msg: the message to explain the reason of the error
      * */
-    pub self (code : TcpErrorCode, msg : [c8])
+    pub self (code: TcpErrorCode, msg: [c8])
         with msg = msg
         , code = code
     {}
 
     impl std::stream::Streamable {
-        pub over toStream (self, dmut stream : &std::stream::StringStream) {
-            stream:.write (self.__typeinfo__.name);
+        pub over toStream(self, dmut stream: &std::stream::StringStream) {
+            stream:.write(self.__typeinfo__.name);
             if (self.trace.len != 0u64) {
-                stream:.write (" ("):.write (tcp::errors::to![c8] (self.code)):.write (") : "):.writeln (self.msg);
-                stream:.write (self.getStackTrace ());
+                stream:.write(" ("):.write(tcp::errors::to![c8] (self.code)):.write(") : "):.writeln(self.msg);
+                stream:.write(self.getStackTrace());
             } else {
-                stream:.write (" ("):.write (tcp::errors::to![c8] (self.code)):.write (") : "):.writeln (self.msg);
+                stream:.write(" ("):.write(tcp::errors::to![c8] (self.code)):.write(") : "):.writeln(self.msg);
             }
         }
     }
@@ -60,15 +60,15 @@ pub class TcpError over core::exception::Exception {
  *    - err: the error code to transform into a readable string
  * @returns: a readable string
  */
-pub fn if is!{U}{X of c8} to {C of [U], U, T of TcpErrorCode} (err : T) -> [c8] {
+pub fn if is!{U}{X of c8} to {C of [U], U, T of TcpErrorCode} (err: T)-> [c8] {
     match err {
-        TcpErrorCode::ADDR_TYPE       => { "ADDR_TYPE" }
+        TcpErrorCode::ADDR_TYPE => { "ADDR_TYPE" }
         TcpErrorCode::SOCKET_CREATION => { "SOCKET_CREATION" }
-        TcpErrorCode::BIND            => { "BIND" }
-        TcpErrorCode::LISTEN          => { "LISTEN" }
-        TcpErrorCode::CONNECT         => { "CONNECT" }
-        TcpErrorCode::ACCEPT          => { "ACCEPT" }
-        TcpErrorCode::SOCKET_CLOSED   => { "SOCKET_CLOSED" }
+        TcpErrorCode::BIND => { "BIND" }
+        TcpErrorCode::LISTEN => { "LISTEN" }
+        TcpErrorCode::CONNECT => { "CONNECT" }
+        TcpErrorCode::ACCEPT => { "ACCEPT" }
+        TcpErrorCode::SOCKET_CLOSED => { "SOCKET_CLOSED" }
         _ => { "" }
     }
 }

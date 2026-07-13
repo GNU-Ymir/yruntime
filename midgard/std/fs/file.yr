@@ -8,50 +8,50 @@
  * <hr>
  *
  * @example:
- * Create a file and write a string in it :
+ * Create a file and write a string in it:
  * ```
  * use std::fs::{file, path};
  *
  * // Create a file named "foo.txt", and write something in it
  * {
- *     let dmut file = File::create (Path ("foo.txt"), write-> true);
- *     file:.write ("Hello World!");
+ *     let dmut file = File::create(Path("foo.txt"), write-> true);
+ *     file:.write("Hello World!");
  * } catch {
- *     err : &FsError => { // creation failed for some reason
- *         println (err);
+ *     err: &FsError => { // creation failed for some reason
+ *         println(err);
  *     }
  * }
  * ```
  *
  * <br>
- * Open an existing file and read its content :
+ * Open an existing file and read its content:
  * ```
  * use std::fs::{file, path};
  *
  * let content = {
- *     let dmut file = File::open (Path ("foo.txt"));
- *     file:.readAll () // read the all the content of the file
+ *     let dmut file = File::open(Path("foo.txt"));
+ *     file:.readAll() // read the all the content of the file
  * } catch {
  *     // File does not exist or permission denied
- *     err : &FsError => { "" } // return an empty string
+ *     err: &FsError => { "" } // return an empty string
  * };
  *
- * println (content);
+ * println(content);
  * ```
  *
  * <br>
- * Open an existing file and append content to it :
+ * Open an existing file and append content to it:
  * ```
  * use std::fs::{file, path};
  *
  * {
- *   let dmut file = File::open (Path ("foo.txt"), append-> true);
- *   file:.write ("Appending content");
+ *   let dmut file = File::open(Path("foo.txt"), append-> true);
+ *   file:.write("Appending content");
  *   // files are entities, so automatically closed when scope is exited
  * } catch {
  *     // File does not exist or permission denied
- *     err : &FsError => {
- *         println (err);
+ *     err: &FsError => {
+ *         println(err);
  *     }
  * }
  * ```
@@ -70,73 +70,73 @@ use etc::c::files;
  */
 pub entity File {
 
-    prv let dmut _handle : *(void) = null;
+    prv let dmut _handle: *(void) = null;
 
-    prv let mut _filename : Path = Path ();
+    prv let mut _filename: Path = Path();
 
-    prv let _read : bool = false;
+    prv let _read: bool = false;
 
-    prv let _write : bool = false;
+    prv let _write: bool = false;
 
-    prv let _append : bool = false;
+    prv let _append: bool = false;
 
     /**
      * Create a file in the filesystem.
      * @params:
      *    - path: the path of the file to create
-     *    - read: if true open the file in read mode (can be composed with write or append)
-     *    - write: if true open the file in write mode (can be composed with read)
-     *    - read: if true open the file in append mode (can be composed with read)
+     *    - read: if true open the file in read mode(can be composed with write or append)
+     *    - write: if true open the file in write mode(can be composed with read)
+     *    - read: if true open the file in append mode(can be composed with read)
      * @throws:
      *     - FsError, if the file failed to be created or opened.
      * @info: if the file already existed, it will be erased.
      */
-    pub self create (path : Path, read : bool = true, write : bool = false, append : bool = false)
+    pub self create(path: Path, read: bool = true, write: bool = false, append: bool = false)
         with _filename = path,
-             _read = read,
-             _write = write && !append,
-             _append = append
+    _read = read,
+    _write = write && !append,
+    _append = append
         throws FsError
     {
-        std::fs::sys::createFile (path);
-        self:.open ();
+        std::fs::sys::createFile(path);
+        self:.open();
     }
 
     /**
      * Open an existing file in the file system.
      * @params:
      *    - path: the path of the file to create
-     *    - read: if true open the file in read mode (can be composed with write or append)
-     *    - write: if true open the file in write mode (can be composed with read)
-     *    - read: if true open the file in append mode (can be composed with read)
+     *    - read: if true open the file in read mode(can be composed with write or append)
+     *    - write: if true open the file in write mode(can be composed with read)
+     *    - read: if true open the file in append mode(can be composed with read)
      * @throws:
      *    - FsError, if the file does not exists, or current user does not have the proper permissions
      * @info: if append and written are set to true, append is prioritized
      */
-    pub self open (path : Path, read : bool = true, write : bool = false, append : bool = false)
+    pub self open(path: Path, read: bool = true, write: bool = false, append: bool = false)
         with _filename = path,
-             _read = read,
-             _write = write && !append,
-             _append = append
+    _read = read,
+    _write = write && !append,
+    _append = append
         throws FsError
     {
-        if fs::sys::isDir (path) || !fs::sys::isReadable (path) {
-            throw copy FsError (FsErrorCode::NOT_A_FILE, self._filename.toStr ());
+        if fs::sys::isDir(path) || !fs::sys::isReadable(path) {
+            throw copy FsError(FsErrorCode::NOT_A_FILE, self._filename.toStr());
         }
-        self:.open ();
+        self:.open();
     }
 
     /**
      * Open the file
      */
-    prv fn open (mut self)
+    prv fn open(mut self)
         throws FsError
     {
-        let mode = self.createMode ();
-        self._handle = c::files::fopen (self._filename.toStr ().toStringZ (), mode.ptr);
+        let mode = self.createMode();
+        self._handle = c::files::fopen(self._filename.toStr().toStringZ(), mode.ptr);
 
         if (self._handle == null) {
-            throw copy FsError (fs::errors::to!(FsErrorCode) (errno ()), self._filename.toStr ());
+            throw copy FsError(fs::errors::to!(FsErrorCode) (errno()), self._filename.toStr());
         }
     }
 
@@ -151,37 +151,37 @@ pub entity File {
     /**
      * Lock the file on the system to avoid concurrent access on it
      * */
-    pub fn lock (mut self)
+    pub fn lock(mut self)
         throws FsError
     {
         if (self._handle == null) {
-            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+            throw copy FsError(FsErrorCode::FILE_CLOSED, self._filename.toStr());
         }
 
-        let fd = fileno (self._handle);
+        let fd = fileno(self._handle);
         if (fd == 0) {
-            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+            throw copy FsError(FsErrorCode::FILE_CLOSED, self._filename.toStr());
         }
 
-        lockf (fd, FileFlags::F_LOCK, 0);
+        lockf(fd, FileFlags::F_LOCK, 0);
     }
 
     /**
      * Unlock the file on the system to avoid concurrent access on it
      * */
-    pub fn unlock (mut self)
+    pub fn unlock(mut self)
         throws FsError
     {
         if (self._handle == null) {
-            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+            throw copy FsError(FsErrorCode::FILE_CLOSED, self._filename.toStr());
         }
 
-        let fd = fileno (self._handle);
+        let fd = fileno(self._handle);
         if (fd == 0) {
-            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+            throw copy FsError(FsErrorCode::FILE_CLOSED, self._filename.toStr());
         }
 
-        lockf (fd, FileFlags::F_ULOCK, 0);
+        lockf(fd, FileFlags::F_ULOCK, 0);
     }
 
     /*!
@@ -192,7 +192,7 @@ pub entity File {
      * ====================================================================================================
      */
 
-    
+
     /**
      * Read all the content contained in the file from the current cursor position.
      * @throws:
@@ -202,40 +202,40 @@ pub entity File {
      * use std::fs::{file, path};
      *
      * {
-     *     // Create a file in read and write mode (read is set by default)
-     *     let dmut fs = File::create (Path ("foo.txt"), write-> true);
-     *     fs:.write ("Hello World !");
+     *     // Create a file in read and write mode(read is set by default)
+     *     let dmut fs = File::create(Path("foo.txt"), write-> true);
+     *     fs:.write("Hello World !");
      *
      *     // Put the cursor to the beginning of the file
-     *     fs:.seek (0);
+     *     fs:.seek(0);
      *
-     *     let res = fs:.readAll ();
-     *     assert (res == "Hello World !");
+     *     let res = fs:.readAll();
+     *     assert(res == "Hello World !");
      * } catch {
-     *      err : _ => {
-     *          println (err);
+     *      err: _ => {
+     *          println(err);
      *      }
      * }
      * ```
      */
-    pub fn readAll (mut self) -> dmut [c8]
+    pub fn readAll(mut self)-> dmut[c8]
         throws FsError
     {
         if (self._handle == null) {
-            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+            throw copy FsError(FsErrorCode::FILE_CLOSED, self._filename.toStr());
         } else if (!self._read) {
-            throw copy FsError (FsErrorCode::NOT_READABLE, self._filename.toStr ());
+            throw copy FsError(FsErrorCode::NOT_READABLE, self._filename.toStr());
         }
 
-        if (!c::files::feof (self._handle)) {
-            let cursor = c::files::ftell (self._handle);
-            c::files::fseek (self._handle, 0u32, c::files::SeekWhence::SEEK_END);
-            let len = c::files::ftell (self._handle) - cursor;
-            c::files::fseek (self._handle, cursor, c::files::SeekWhence::SEEK_SET);
+        if (!c::files::feof(self._handle)) {
+            let cursor = c::files::ftell(self._handle);
+            c::files::fseek(self._handle, 0u32, c::files::SeekWhence::SEEK_END);
+            let len = c::files::ftell(self._handle) - cursor;
+            c::files::fseek(self._handle, cursor, c::files::SeekWhence::SEEK_SET);
 
             if (len != 0u32) {
-                let dmut res = core::types::array::allocArray!{c8} (cast!usize (len));
-                c::files::fread (alias cast!{dmut *void} (res.ptr), c8::size, len, alias self._handle);
+                let dmut res = core::types::array::allocArray!{c8} (cast!usize(len));
+                c::files::fread(alias cast!{dmut *void} (res.ptr), c8::size, len, alias self._handle);
 
                 return alias res
             }
@@ -255,44 +255,44 @@ pub entity File {
      * use std::fs::{file, path};
      *
      * {
-     *     let dmut fs = File::create (Path ("foo.txt"), write-> true);
-     *     fs:.write ("Hello World !");
+     *     let dmut fs = File::create(Path("foo.txt"), write-> true);
+     *     fs:.write("Hello World !");
      *
      *     // Put the cursor to the begin of the file
-     *     fs:.seek (0);
+     *     fs:.seek(0);
      *
-     *     let res = fs:.readUntil ("Wor");
-     *     assert (res == "Hello Wor");
+     *     let res = fs:.readUntil("Wor");
+     *     assert(res == "Hello Wor");
      *
-     *     let end = fs:.readAll ();
-     *     assert (end == "ld !");
+     *     let end = fs:.readAll();
+     *     assert(end == "ld !");
      * } catch {
-     *      err : _ => {
-     *          println (err);
+     *      err: _ => {
+     *          println(err);
      *      }
      * }
      * ```
      */
-    pub fn readUntil (mut self, delim : [c8])-> dmut [c8]
+    pub fn readUntil(mut self, delim: [c8])-> dmut[c8]
         throws FsError
     {
         if (self._handle == null) {
-            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+            throw copy FsError(FsErrorCode::FILE_CLOSED, self._filename.toStr());
         } else if (!self._read) {
-            throw copy FsError (FsErrorCode::NOT_READABLE, self._filename.toStr ());
+            throw copy FsError(FsErrorCode::NOT_READABLE, self._filename.toStr());
         }
 
-        let dmut res : [c8] = [];
+        let dmut res: [c8] = [];
         let mut current = 0u64;
 
-        while (!c::files::feof (self._handle) && current < delim.len) {
-            let u : u32 = c::files::fgetc (alias self._handle);
+        while (!c::files::feof(self._handle) && current < delim.len) {
+            let u: u32 = c::files::fgetc(alias self._handle);
             if (u >= u8::max) break {} // feof is not triggered before trying to read it, so this u can be eof == 256
 
-            let c = cast!c8 (cast!u8 (u));
+            let c = cast!c8(cast!u8(u));
             res ~= [c];
             {
-                if (delim [current] == c) { current += 1; }
+                if (delim[current] == c) { current += 1; }
                 else { current = 0; }
             }
         }
@@ -311,25 +311,25 @@ pub entity File {
      * use std::fs::{file, path};
      *
      * {
-     *      let dmut file = File::open (Path ("foo.txt"), write-> true);
-     *      file:.write ("Some text");
+     *      let dmut file = File::open(Path("foo.txt"), write-> true);
+     *      file:.write("Some text");
      * } catch {
-     *      err : &FsError => {
-     *          println (err);
+     *      err: &FsError => {
+     *          println(err);
      *      }
      * }
      * ```
      */
-    pub fn write (mut self, text : [c8]) -> void
+    pub fn write(mut self, text: [c8])-> void
         throws FsError
     {
         if (self._handle == null) {
-            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+            throw copy FsError(FsErrorCode::FILE_CLOSED, self._filename.toStr());
         } else if (!self._write && !self._append) {
-            throw copy FsError (FsErrorCode::NOT_WRITABLE, self._filename.toStr ());
+            throw copy FsError(FsErrorCode::NOT_WRITABLE, self._filename.toStr());
         }
 
-        c::files::fwrite (cast!{*void} (text.ptr), c8::size, cast!{u32} (text.len), alias self._handle);
+        c::files::fwrite(cast!{*void} (text.ptr), c8::size, cast!{u32} (text.len), alias self._handle);
     }
 
 
@@ -342,37 +342,37 @@ pub entity File {
      * use std::fs::{file, path};
      *
      * {
-     *     let dmut fs = File::create (Path ("foo.txt"), write-> true);
-     *     fs:.write ("Hello World !");
-     *     fs:.seek (0);
+     *     let dmut fs = File::create(Path("foo.txt"), write-> true);
+     *     fs:.write("Hello World !");
+     *     fs:.seek(0);
      *
-     *     let res : [u8] = fs:.readBytesAll ();
-     *     assert (res == [72u8, 101u8, 108u8, 108u8, 111u8, 32u8, 87u8, 111u8, 114u8, 108u8, 100u8, 32u8, 33u8]);
+     *     let res: [u8] = fs:.readBytesAll();
+     *     assert(res == [72u8, 101u8, 108u8, 108u8, 111u8, 32u8, 87u8, 111u8, 114u8, 108u8, 100u8, 32u8, 33u8]);
      * } catch {
-     *      err : _ => {
-     *          println (err);
+     *      err: _ => {
+     *          println(err);
      *      }
      * }
      * ```
      */
-    pub fn readBytesAll (mut self) -> dmut [u8]
+    pub fn readBytesAll(mut self)-> dmut[u8]
         throws FsError
     {
         if (self._handle == null) {
-            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+            throw copy FsError(FsErrorCode::FILE_CLOSED, self._filename.toStr());
         } else if (!self._read) {
-            throw copy FsError (FsErrorCode::NOT_READABLE, self._filename.toStr ());
+            throw copy FsError(FsErrorCode::NOT_READABLE, self._filename.toStr());
         }
 
-        if (!c::files::feof (self._handle)) {
-            let cursor = c::files::ftell (self._handle);
-            c::files::fseek (self._handle, 0u32, c::files::SeekWhence::SEEK_END);
-            let len = c::files::ftell (self._handle) - cursor;
-            c::files::fseek (self._handle, cursor, c::files::SeekWhence::SEEK_SET);
+        if (!c::files::feof(self._handle)) {
+            let cursor = c::files::ftell(self._handle);
+            c::files::fseek(self._handle, 0u32, c::files::SeekWhence::SEEK_END);
+            let len = c::files::ftell(self._handle) - cursor;
+            c::files::fseek(self._handle, cursor, c::files::SeekWhence::SEEK_SET);
 
             if (len != 0u32) {
                 let dmut res = core::types::array::allocArray!{u8} (cast!(usize) (len));
-                c::files::fread (alias cast!{dmut *void} (res.ptr), u8::size, cast!(u32) (len), alias self._handle);
+                c::files::fread(alias cast!{dmut *void} (res.ptr), u8::size, cast!(u32) (len), alias self._handle);
 
                 return alias res
             }
@@ -392,42 +392,42 @@ pub entity File {
      * use std::fs::{file, path};
      *
      * {
-     *     let dmut fs = File::create (Path ("foo.txt"), write-> true);
-     *     fs:.write ("Hello World !");
-     *     fs:.seek (0);
+     *     let dmut fs = File::create(Path("foo.txt"), write-> true);
+     *     fs:.write("Hello World !");
+     *     fs:.seek(0);
      *
-     *     let res : [u8] = fs:.readBytesUntil ([87u8, 111u8, 114u8]);
-     *     assert (res == [72u8, 101u8, 108u8, 108u8, 111u8, 32u8, 87u8, 111u8, 114u8]);
+     *     let res: [u8] = fs:.readBytesUntil([87u8, 111u8, 114u8]);
+     *     assert(res == [72u8, 101u8, 108u8, 108u8, 111u8, 32u8, 87u8, 111u8, 114u8]);
      *
-     *     let end = fs:.readAll ();
-     *     assert (end == "ld !");
+     *     let end = fs:.readAll();
+     *     assert(end == "ld !");
      * } catch {
-     *      err : _ => {
-     *          println (err);
+     *      err: _ => {
+     *          println(err);
      *      }
      * }
      * ```
      */
-    pub fn readBytesUntil (mut self, delim : [u8])-> dmut [u8]
+    pub fn readBytesUntil(mut self, delim: [u8])-> dmut[u8]
         throws FsError
     {
         if (self._handle == null) {
-            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+            throw copy FsError(FsErrorCode::FILE_CLOSED, self._filename.toStr());
         } else if (!self._read) {
-            throw copy FsError (FsErrorCode::NOT_READABLE, self._filename.toStr ());
+            throw copy FsError(FsErrorCode::NOT_READABLE, self._filename.toStr());
         }
 
-        let dmut res : [u8] = [];
+        let dmut res: [u8] = [];
         let mut current = 0u64;
 
-        while (!c::files::feof (self._handle) && current < delim.len) {
-            let u : u32 = c::files::fgetc (alias self._handle);
+        while (!c::files::feof(self._handle) && current < delim.len) {
+            let u: u32 = c::files::fgetc(alias self._handle);
             if (u >= u8::max) break {} // feof is not triggered before trying to read it, so this u can be eof == 256
 
             let c = cast!{u8} (u);
             res ~= [c];
             {
-                if (delim [current] == c) { current += 1u64; }
+                if (delim[current] == c) { current += 1u64; }
                 else { current = 0u64; }
             }
         }
@@ -439,29 +439,29 @@ pub entity File {
      * Read a pre allocated slice of data in the file
      * @params:
      *    - result: the value to receive
-     * @returns: the slice that was successfuly read (slice of `result`)
+     * @returns: the slice that was successfuly read(slice of `result`)
      * */
-    pub fn if std::traits::isScalar!{U} readRaw {T of [U], U} (mut self, dmut result : T)-> dmut T
+    pub fn if std::traits::isScalar!{U} readRaw {T of [U], U} (mut self, dmut result: T)-> dmut T
         throws FsError
     {
         if (self._handle == null) {
-            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+            throw copy FsError(FsErrorCode::FILE_CLOSED, self._filename.toStr());
         } else if (!self._read) {
-            throw copy FsError (FsErrorCode::NOT_READABLE, self._filename.toStr ());
+            throw copy FsError(FsErrorCode::NOT_READABLE, self._filename.toStr());
         }
 
-        if (!c::files::feof (self._handle)) {
-            let cursor = c::files::ftell (self._handle);
-            c::files::fseek (self._handle, 0u32, c::files::SeekWhence::SEEK_END);
-            let len = c::files::ftell (self._handle) - cursor;
-            c::files::fseek (self._handle, cursor, c::files::SeekWhence::SEEK_SET);
+        if (!c::files::feof(self._handle)) {
+            let cursor = c::files::ftell(self._handle);
+            c::files::fseek(self._handle, 0u32, c::files::SeekWhence::SEEK_END);
+            let len = c::files::ftell(self._handle) - cursor;
+            c::files::fseek(self._handle, cursor, c::files::SeekWhence::SEEK_SET);
 
-            let canRead  = cast!usize (len) / cast!usize (U::size);
+            let canRead  = cast!usize(len) / cast!usize(U::size);
             let toRead = if (canRead >= result.len) { result.len } else { canRead };
             if (toRead == 0) return [];
 
-            c::files::fread (alias cast!{dmut *void} (result.ptr), U::size, cast!u32 (toRead), alias self._handle);
-            return alias result [0 .. toRead];
+            c::files::fread(alias cast!{dmut *void} (result.ptr), U::size, cast!u32(toRead), alias self._handle);
+            return alias result[0 .. toRead];
         }
 
         []
@@ -477,25 +477,25 @@ pub entity File {
      * ```
      * import std::fs::file, std::fs::path;
      *
-     * with dmut file = File::open (Path ("foo.txt"), write-> true) {
-     *      file:.writeBytes ([83u8, 111u8, 109u8, 101u8, 32u8, 84u8, 101u8, 120u8, 116u8]);
+     * with dmut file = File::open(Path("foo.txt"), write-> true) {
+     *      file:.writeBytes([83u8, 111u8, 109u8, 101u8, 32u8, 84u8, 101u8, 120u8, 116u8]);
      * } catch {
-     *      err : &FsError => {
-     *          println (err);
+     *      err: &FsError => {
+     *          println(err);
      *      }
      * }
      * ```
      */
-    pub fn writeBytes (mut self, text : [u8]) -> void
+    pub fn writeBytes(mut self, text: [u8])-> void
         throws FsError
     {
         if (self._handle == null) {
-            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+            throw copy FsError(FsErrorCode::FILE_CLOSED, self._filename.toStr());
         } else if (!self._write && !self._append) {
-            throw copy FsError (FsErrorCode::NOT_WRITABLE, self._filename.toStr ());
+            throw copy FsError(FsErrorCode::NOT_WRITABLE, self._filename.toStr());
         }
 
-        c::files::fwrite (cast!{*void} (text.ptr), u8::size, cast!(u32) (text.len), alias self._handle);
+        c::files::fwrite(cast!{*void} (text.ptr), u8::size, cast!(u32) (text.len), alias self._handle);
     }
 
     /**
@@ -508,25 +508,25 @@ pub entity File {
      * ```
      * import std::fs::file, std::fs::path;
      *
-     * with dmut file = File::open (Path ("foo.txt"), write-> true) {
-     *      file:.writeBytes ([83u8, 111u8, 109u8, 101u8, 32u8, 84u8, 101u8, 120u8, 116u8]);
+     * with dmut file = File::open(Path("foo.txt"), write-> true) {
+     *      file:.writeBytes([83u8, 111u8, 109u8, 101u8, 32u8, 84u8, 101u8, 120u8, 116u8]);
      * } catch {
-     *      err : &FsError => {
-     *          println (err);
+     *      err: &FsError => {
+     *          println(err);
      *      }
      * }
      * ```
      */
-    pub fn if std::traits::isScalar!{U} writeRaw {T of [U], U} (mut self, text : T) -> void
+    pub fn if std::traits::isScalar!{U} writeRaw {T of [U], U} (mut self, text: T)-> void
         throws FsError
     {
         if (self._handle == null) {
-            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+            throw copy FsError(FsErrorCode::FILE_CLOSED, self._filename.toStr());
         } else if (!self._write && !self._append) {
-            throw copy FsError (FsErrorCode::NOT_WRITABLE, self._filename.toStr ());
+            throw copy FsError(FsErrorCode::NOT_WRITABLE, self._filename.toStr());
         }
 
-        c::files::fwrite (cast!{*void} (text.ptr), U::size, cast!(u32) (text.len), alias self._handle);
+        c::files::fwrite(cast!{*void} (text.ptr), U::size, cast!(u32) (text.len), alias self._handle);
     }
 
     /**
@@ -535,14 +535,14 @@ pub entity File {
      * @throws:
      *   - FsError: if the file is not opened
      */
-    pub fn seek (mut self, cursor : u32)-> void
+    pub fn seek(mut self, cursor: u32)-> void
         throws FsError
     {
         if (self._handle == null) {
-            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+            throw copy FsError(FsErrorCode::FILE_CLOSED, self._filename.toStr());
         }
 
-        c::files::fseek (self._handle, cursor, c::files::SeekWhence::SEEK_SET);
+        c::files::fseek(self._handle, cursor, c::files::SeekWhence::SEEK_SET);
     }
 
     /**
@@ -550,30 +550,30 @@ pub entity File {
      * @throws:
      *   - FsError: if the file is not opened
      */
-    pub fn tell (self)-> u32
+    pub fn tell(self)-> u32
         throws FsError
     {
         if (self._handle == null) {
-            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+            throw copy FsError(FsErrorCode::FILE_CLOSED, self._filename.toStr());
         }
 
-        c::files::ftell (self._handle)
+        c::files::ftell(self._handle)
     }
 
     /**
-     * @returns: the len of the file (from current cursor position to end) in number of bytes.
+     * @returns: the len of the file(from current cursor position to end) in number of bytes.
      */
-    pub fn len (self)-> u32
+    pub fn len(self)-> u32
         throws FsError
     {
         if self._handle == null {
-            throw copy FsError (FsErrorCode::FILE_CLOSED, self._filename.toStr ());
+            throw copy FsError(FsErrorCode::FILE_CLOSED, self._filename.toStr());
         }
 
-        let cursor = self.tell ();
-        c::files::fseek (self._handle, 0u32, c::files::SeekWhence::SEEK_END);
-        let len = self.tell ();
-        c::files::fseek (self._handle, cursor, c::files::SeekWhence::SEEK_SET);
+        let cursor = self.tell();
+        c::files::fseek(self._handle, 0u32, c::files::SeekWhence::SEEK_END);
+        let len = self.tell();
+        c::files::fseek(self._handle, cursor, c::files::SeekWhence::SEEK_SET);
 
         len
     }
@@ -582,9 +582,9 @@ pub entity File {
      * Close the file.
      * @info: if the file was not open, this method does nothing
      */
-    pub fn close (mut self) {
+    pub fn close(mut self) {
         if (self._handle != null) {
-            c::files::fclose (alias self._handle);
+            c::files::fclose(alias self._handle);
             self._handle = null;
         }
     }
@@ -592,7 +592,7 @@ pub entity File {
     /**
      * Create the mode of reading
      */
-    prv fn createMode (self)-> [c8] {
+    prv fn createMode(self)-> [c8] {
         if (self._write) return "r+";
         if (self._read && self._append) return "a+";
         if (self._append) return "a";
@@ -603,7 +603,7 @@ pub entity File {
     /**
      * Close the file when the entity is destroyed
      */
-    __dtor (mut self) {
-        self:.close ();
+    __dtor(mut self) {
+        self:.close();
     }
 }

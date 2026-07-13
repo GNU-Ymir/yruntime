@@ -16,22 +16,22 @@ use std::{config::_, char};
 pub record JsonDumper {
 
     // The root node of the config to dump
-    let _root : &Config;
+    let _root: &Config;
 
     /**
      * @params:
      *    - root: the configuration to dump
      * */
-    pub self (root : &Config)
+    pub self (root: &Config)
         with _root = root
     {}
 
     /**
      * Dump the configuration to an utf8 string
      * */
-    pub fn dump (self)-> [c8] {
-        let dmut res = copy StringStream ();
-        self.dump (self._root, alias res, 0, 0);
+    pub fn dump(self)-> [c8] {
+        let dmut res = copy StringStream();
+        self.dump(self._root, alias res, 0, 0);
 
         res[]
     }
@@ -50,26 +50,26 @@ pub record JsonDumper {
      *    - c: the configuration to dump
      *    - stream: the stream to fill
      * */
-    prv fn dump (self, c : &Config, dmut stream : &StringStream, indent : i32, retIndent : i32) {
+    prv fn dump(self, c: &Config, dmut stream: &StringStream, indent: i32, retIndent: i32) {
         match c {
-            d : &Dict => {
-                self.dumpDict (d, alias stream, indent, retIndent);
+            d: &Dict => {
+                self.dumpDict(d, alias stream, indent, retIndent);
             }
-            a : &Array => {
-                self.dumpArray (a, alias stream, indent, retIndent);
+            a: &Array => {
+                self.dumpArray(a, alias stream, indent, retIndent);
             }
-            Int (value-> i) => {
-                stream:.write (i);
+            Int(value-> i) => {
+                stream:.write(i);
             }
-            Float (value-> f) => {
-                stream:.write (f);
+            Float(value-> f) => {
+                stream:.write(f);
             }
-            Bool (value-> b) => {
-                if (b) stream:.write ("\"true\"");
-                else   stream:.write ("\"false\"");
+            Bool(value-> b) => {
+                if (b) stream:.write("\"true\"");
+                else   stream:.write("\"false\"");
             }
-            Str (value-> s) => {
-                stream:.write ("\"", s, "\"");
+            Str(value-> s) => {
+                stream:.write("\"", s, "\"");
             }
         }
     }
@@ -80,17 +80,17 @@ pub record JsonDumper {
      *    - d: the dict to dump
      *    - stream: the stream to fill
      * */
-    prv fn dumpArray (self, a : &Array, dmut stream : &StringStream, indent : i32, retIndent : i32) {
-        stream:.write ("[");
+    prv fn dumpArray(self, a: &Array, dmut stream: &StringStream, indent: i32, retIndent: i32) {
+        stream:.write("[");
         for i, v in a[] {
             if i != 0 {
-                stream:.write (", ");
+                stream:.write(", ");
             }
 
-            self.dump (v, alias stream, indent, retIndent);
+            self.dump(v, alias stream, indent, retIndent);
         }
 
-        stream:.write ("]");
+        stream:.write("]");
     }
 
     /**
@@ -99,37 +99,37 @@ pub record JsonDumper {
      *    - d: the dict to dump
      *    - stream: the stream to fill
      * */
-    prv fn dumpDict (self, d : &Dict, dmut stream : &StringStream, indent : i32, retIndent : i32) {
-        stream:.write ("{");
+    prv fn dumpDict(self, d: &Dict, dmut stream: &StringStream, indent: i32, retIndent: i32) {
+        stream:.write("{");
         if d[].len != 0 {
-            stream:.write ("\n");
+            stream:.write("\n");
             for _ in 0 .. indent + 3 {
-                stream:.write (" ");
+                stream:.write(" ");
             }
         }
 
         let mut z = 0us;
         for k, v in d[] {
             if z != 0 {
-                stream:.write (",\n");
+                stream:.write(",\n");
                 for _ in 0 .. indent + 3 {
-                    stream:.write (" ");
+                    stream:.write(" ");
                 }
             }
 
-            stream:.write ("\"", k, "\" : ");
-            self.dump (v, alias stream, indent + cast!i32 (k.len) + 3, indent + 3);
+            stream:.write("\"", k, "\" : ");
+            self.dump(v, alias stream, indent + cast!i32(k.len) + 3, indent + 3);
             z += 1;
         }
 
         if d[].len != 0 {
-            stream:.write ("\n");
+            stream:.write("\n");
             for _ in 0 .. retIndent {
-                stream:.write (" ");
+                stream:.write(" ");
             }
         }
 
-        stream:.write ("}");
+        stream:.write("}");
     }
 
 }

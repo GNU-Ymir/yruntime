@@ -12,15 +12,15 @@ in quick;
  *    - a: the slice to sort
  *    - predicate: the predicate function used to compare elements
  */
-pub fn quicksort {U} (mut a : mut [mut U], predicate : dg (U, U)-> bool) {
+pub fn quicksort {U} (mut a: mut[mut U], predicate: dg (U, U)-> bool) {
     if (a.len < 2us) {
         return;
     }
 
-    let pivot = a [a.len / 2us];
+    let pivot = a[a.len / 2us];
     let mut i = 0us, mut j = a.len - 1us;
     loop {
-        while (predicate (a[i], pivot)) {
+        while (predicate(a[i], pivot)) {
             if (i == a.len) {
                 return;
             }
@@ -28,7 +28,7 @@ pub fn quicksort {U} (mut a : mut [mut U], predicate : dg (U, U)-> bool) {
             i += 1us;
         }
 
-        while (predicate (pivot, a[j])) {
+        while (predicate(pivot, a[j])) {
             if (j == 0us) {
                 return;
             }
@@ -40,20 +40,20 @@ pub fn quicksort {U} (mut a : mut [mut U], predicate : dg (U, U)-> bool) {
             break;
         }
 
-        cte if __pragma!compile ({a [i] = a [j];}) {
-            let temp = a [i];
-            a [i] = a [j];
-            a [j] = temp;
+        cte if __pragma!compile({a[i] = a[j];}) {
+            let temp = a[i];
+            a[i] = a[j];
+            a[j] = temp;
         } else { // even if U is not deeply mutable, it may be a structure containing aliasable stuff
-            let mut temp = alias a [i];
-            a [i] = alias a [j];
-            a [j] = alias temp;
+            let mut temp = alias a[i];
+            a[i] = alias a[j];
+            a[j] = alias temp;
         }
 
         i += 1us;
         j -= 1us;
     }
 
-    quicksort (alias a [0us .. i], predicate);
-    quicksort (alias a [i .. $], predicate);
+    quicksort(alias a[0us .. i], predicate);
+    quicksort(alias a[i .. $], predicate);
 }

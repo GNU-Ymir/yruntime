@@ -7,14 +7,14 @@ use std::config::errors;
  * A dictionnary associates values to string keys.
  * @example:
  * ```
- * let dmut dict = Dict ();
- * dict:["foo"] = copy Str ("foo");
- * dict:["bar"] = copy Int (42);
- * dict:["baz"] = copy Array ();
+ * let dmut dict = Dict();
+ * dict:["foo"] = copy Str("foo");
+ * dict:["bar"] = copy Int(42);
+ * dict:["baz"] = copy Array();
  *
  * // Dict are iterable
  * for k, v in dict[] {
- *     println ("Key : ", k, " is associated to value : ", v);
+ *     println("Key: ", k, " is associated to value: ", v);
  * }
  * ```
  */
@@ -22,7 +22,7 @@ use std::config::errors;
 pub class Dict over Config {
 
     // The values in the dict
-    let mut _content : [[c8] => mut &Config] = copy [];
+    let mut _content: [[c8] => mut &Config] = copy [];
 
     /**
      * Creates a new empty dictionnary
@@ -37,44 +37,44 @@ pub class Dict over Config {
      *    - k: a key index
      * @example:
      * ```
-     * let dmut dict = copy Dict ();
-     * dict:["foo"] = copy Str ("foo");
-     * dict:["bar"] = copy Int (42);
+     * let dmut dict = copy Dict();
+     * dict:["foo"] = copy Str("foo");
+     * dict:["bar"] = copy Int(42);
      * {
-     *     println (dict ["foo"]);
+     *     println(dict["foo"]);
      * } catch {
-     *     ConfigError () => {
-     *         println ("foo not found in ", dict);
+     *     ConfigError() => {
+     *         println("foo not found in ", dict);
      *     }
      * }
      *
-     * println (dict["bar"]?); // put it in an option type
+     * println(dict["bar"]?); // put it in an option type
      * ```
      */
-    pub over opIndex (self, k : [c8])-> &Config
+    pub over opIndex(self, k: [c8])-> &Config
         throws ConfigKeyError
     {
-        if let Ok (v) = self._content [k] {
+        if let Ok(v) = self._content[k] {
             return v;
         }
 
-        throw copy ConfigKeyError (k);
+        throw copy ConfigKeyError(k);
     }
 
     /**
      * @returns: the map containing the values contained in the dictionnary
      * @example:
      * ```
-     * let dmut dict = copy Dict ();
-     * dict:["foo"] = copy Str ("foo");
-     * dict:["bar"] = copy Int (42);
+     * let dmut dict = copy Dict();
+     * dict:["foo"] = copy Str("foo");
+     * dict:["bar"] = copy Int(42);
      *
      * for k, v in dict[] {
-     *     println (k, " => ", v);
+     *     println(k, " => ", v);
      * }
      * ```
      * */
-    pub fn opIndex (self)-> [[c8] => &Config] {
+    pub fn opIndex(self)-> [[c8] => &Config] {
         self._content
     }
 
@@ -86,16 +86,16 @@ pub class Dict over Config {
      *    - value: the value to insert
      * @example:
      * ```
-     * let dmut dict = copy Dict ();
-     * dict:["foo"] = copy Str ("foo");
-     * dict:["bar"] = copy Int (42);
+     * let dmut dict = copy Dict();
+     * dict:["foo"] = copy Str("foo");
+     * dict:["bar"] = copy Int(42);
      *
      * // replace the value at foo index
-     * dict:["foo"] = copy Int (12);
+     * dict:["foo"] = copy Int(12);
      * ```
      * */
-    pub over opIndexAssign (mut self, k : [c8], value : &Config) -> void {
-        self._content [k] = value;
+    pub over opIndexAssign(mut self, k: [c8], value: &Config)-> void {
+        self._content[k] = value;
     }
 
     /**
@@ -105,17 +105,17 @@ pub class Dict over Config {
      *    - k: the key to remove
      * @example:
      * ```
-     * let dmut dict = copy Dict ();
-     * dict:["foo"] = copy Int (1);
+     * let dmut dict = copy Dict();
+     * dict:["foo"] = copy Int(1);
      *
-     * assert ("foo" in dict);
+     * assert("foo" in dict);
      *
-     * dict:.remove ("foo");
-     * assert ("foo" !in dict);
+     * dict:.remove("foo");
+     * assert("foo" !in dict);
      * ```
      * */
-    pub fn remove (mut self, k : [c8])-> void {
-        self._content:.remove (k);
+    pub fn remove(mut self, k: [c8])-> void {
+        self._content:.remove(k);
     }
 
     /**
@@ -125,18 +125,18 @@ pub class Dict over Config {
      * - value: the value to return if the key is not found, or of the wrong type
      * @example:
      * ```
-     * let dmut dict = copy Dict ();
-     * dict:["foo"] = copy Str ("foo");
-     * dict:["bar"] = copy Int (42);
+     * let dmut dict = copy Dict();
+     * dict:["foo"] = copy Str("foo");
+     * dict:["bar"] = copy Int(42);
      *
-     * assert (dict.getOr ("bar", 56) == 42);
-     * assert (dict.getOr ("baz", 56) == 56);
+     * assert(dict.getOr("bar", 56) == 42);
+     * assert(dict.getOr("baz", 56) == 56);
      * ```
      */
-    pub fn getOr {T} (self, k : [c8], value : T)-> T {
+    pub fn getOr {T} (self, k: [c8], value: T)-> T {
         if (k in self._content) {
             {
-                return std::config::conv::to!{T} (self._content [k]);
+                return std::config::conv::to!{T} (self._content[k]);
             } catch {
                 _ => return value;
             }
@@ -149,14 +149,14 @@ pub class Dict over Config {
      *   - k: the key to find
      * @example:
      * ```
-     * let dmut dict = Dict::new ();
-     * (alias dict) ["foo"] = Str::new ("foo");
-     * (alias dict) ["bar"] = Int::new (42);
+     * let dmut dict = Dict::new();
+     * (alias dict) ["foo"] = Str::new("foo");
+     * (alias dict) ["bar"] = Int::new(42);
      *
-     * assert ("foo" in dict);
+     * assert("foo" in dict);
      * ```
      */
-    pub over opContains (self, k : [c8])-> bool {
+    pub over opContains(self, k: [c8])-> bool {
         k in self._content
     }
 
@@ -164,7 +164,7 @@ pub class Dict over Config {
      * @returns: the number of element in the dict
      */
     @field
-    pub fn len (self)-> usize {
+    pub fn len(self)-> usize {
         self._content.len
     }
 
@@ -173,15 +173,15 @@ pub class Dict over Config {
         /**
          * Dictionnary are printable
          */
-        pub over toStream (self, dmut stream : &StringStream) -> void {
-            stream:.write ("Dict ("s8);
+        pub over toStream(self, dmut stream: &StringStream)-> void {
+            stream:.write("Dict ("s8);
             let mut k = 0us;
             for i, j in self._content {
-                if k != 0us { stream:.write (", "s8); }
-                stream:.write (i):.write (" => "s8):.write (j);
+                if k != 0us { stream:.write(", "s8); }
+                stream:.write(i):.write(" => "s8):.write(j);
                 k += 1us;
             }
-            stream:.write (")"s8);
+            stream:.write(")"s8);
         }
     }
 }

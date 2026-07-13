@@ -9,7 +9,7 @@ in response;
 use std::net::_;
 use std::stream;
 
-pub enum : (u32, [c8])
+pub enum: (u32, [c8])
 // Information
 | CONTINUE                        = (100, "Continue")
 | SWITCHING_PROTOCOL              = (101, "Switching Protocol")
@@ -81,64 +81,64 @@ pub enum : (u32, [c8])
 | BANDWIDTH_LIMIT_EXCESS          = (509, "Bandwidth Limit Excess")
 | NOT_EXTENDED                    = (510, "Not extended")
 | NETWORK_AUTH_REQUIRED           = (511, "Network authentication required")
--> HttpResponseCode;
+ -> HttpResponseCode;
 
 
 pub record HttpResponse {
 
     // The return code of the response
-    pub let mut code : u32;
+    pub let mut code: u32;
 
     // The body of the response
-    pub let mut body : [c8];
+    pub let mut body: [c8];
 
     // The header of the response
-    pub let mut header : header::HttpHeader = header::HttpHeader ();
+    pub let mut header: header::HttpHeader = header::HttpHeader();
 
-    pub self (code : u32, body : [c8] = "", contentType : [c8] = "text/plain")
+    pub self (code: u32, body: [c8] = "", contentType: [c8] = "text/plain")
         with code = code
         , body = body
     {
-        self.header.contentLength = cast!u32 (self.body.len);
+        self.header.contentLength = cast!u32(self.body.len);
         self.header.contentType = contentType;
     }
 
     /**
      * Send the response through the socket accepting HTTP response
      * */
-    pub fn send (self, dmut sock : &TcpStream)
+    pub fn send(self, dmut sock: &TcpStream)
         throws TcpError
     {
         match self.header.version {
-            header::HttpVersion::V0_9 => { sock:.sendRaw ("HTTP/0.9 "); }
-            header::HttpVersion::V1_0 => { sock:.sendRaw ("HTTP/1.0 "); }
-            header::HttpVersion::V1_1 => { sock:.sendRaw ("HTTP/1.1 "); }
-            header::HttpVersion::V2_0 => { sock:.sendRaw ("HTTP/2 "); }
-            header::HttpVersion::V3_0 => { sock:.sendRaw ("HTTP/3 "); }
-            _ => { sock:.sendRaw ("HTTP/1.1 "); }
+            header::HttpVersion::V0_9 => { sock:.sendRaw("HTTP/0.9 "); }
+            header::HttpVersion::V1_0 => { sock:.sendRaw("HTTP/1.0 "); }
+            header::HttpVersion::V1_1 => { sock:.sendRaw("HTTP/1.1 "); }
+            header::HttpVersion::V2_0 => { sock:.sendRaw("HTTP/2 "); }
+            header::HttpVersion::V3_0 => { sock:.sendRaw("HTTP/3 "); }
+            _ => { sock:.sendRaw("HTTP/1.1 "); }
         }
 
         for c in HttpResponseCode::__members__ {
             if c._0 == self.code {
-                sock:.sendRaw (std::conv::to!{[c8]} (c._0));
-                sock:.sendRaw (" ");
-                sock:.sendRaw (c._1);
-                sock:.sendRaw ("\r\n");
+                sock:.sendRaw(std::conv::to!{[c8]} (c._0));
+                sock:.sendRaw(" ");
+                sock:.sendRaw(c._1);
+                sock:.sendRaw("\r\n");
             }
         }
 
         if self.header.contentType != "" {
-            sock:.sendRaw ("Content-Type: ");
-            sock:.sendRaw (self.header.contentType);
-            sock:.sendRaw ("\r\n");
+            sock:.sendRaw("Content-Type: ");
+            sock:.sendRaw(self.header.contentType);
+            sock:.sendRaw("\r\n");
         }
 
-        sock:.sendRaw ("Content-Length: ");
-        sock:.sendRaw (std::conv::to!{[c8]} (self.body.len));
-        sock:.sendRaw ("\r\n");
-        sock:.sendRaw ("\r\n");
+        sock:.sendRaw("Content-Length: ");
+        sock:.sendRaw(std::conv::to!{[c8]} (self.body.len));
+        sock:.sendRaw("\r\n");
+        sock:.sendRaw("\r\n");
 
-        sock:.sendRaw (self.body);
+        sock:.sendRaw(self.body);
     }
 
 }

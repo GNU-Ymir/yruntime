@@ -6,13 +6,13 @@ use std::stream;
  * Atomic linked list storing
  * */
 @abstract
-pub class IMailBox {T, mutable : bool} {
+pub class IMailBox {T, mutable: bool} {
 
     cte if mutable {
         // The list of mails
-        let dmut _mails : [T] = [];
+        let dmut _mails: [T] = [];
     } else {
-        let mut _mails : [mut T] = [];
+        let mut _mails: [mut T] = [];
     }
 
     /**
@@ -27,7 +27,7 @@ pub class IMailBox {T, mutable : bool} {
          * @params:
          *   - value: the value to post
          * */
-        pub fn send (mut self, value : T) {
+        pub fn send(mut self, value: T) {
             atomic self {
                 self._mails ~= [value];
             }
@@ -36,11 +36,11 @@ pub class IMailBox {T, mutable : bool} {
         /**
          * @returns: the first value found in the box if any
          * */
-        pub fn receive (mut self)-> (T)? {
+        pub fn receive(mut self)-> (T)? {
             atomic self {
                 if (self._mails.len == 0us) return none;
-                let fr = self._mails [0];
-                self._mails = alias self._mails [1 .. $];
+                let fr = self._mails[0];
+                self._mails = alias self._mails[1 .. $];
 
                 return fr?;
             }
@@ -49,7 +49,7 @@ pub class IMailBox {T, mutable : bool} {
         /**
          * @returns: all the messages in the mailbox
          * */
-        pub fn opIndex (mut self)-> [T] {
+        pub fn opIndex(mut self)-> [T] {
             atomic self {
                 let mut result = self._mails;
                 self._mails = [];
@@ -57,14 +57,14 @@ pub class IMailBox {T, mutable : bool} {
                 return result;
             }
         }
-        
+
     } else {
         /**
          * Post a message in the mailbox
          * @params:
          *   - value: the value to post
          * */
-        pub fn send (mut self, dmut value : T) {
+        pub fn send(mut self, dmut value: T) {
             atomic self {
                 self._mails ~= [alias value];
             }
@@ -73,12 +73,12 @@ pub class IMailBox {T, mutable : bool} {
         /**
          * @returns: the first value found in the box if any
          * */
-        pub fn receive (mut self)-> dmut (T)? {
+        pub fn receive(mut self)-> dmut(T)? {
             atomic self {
                 if (self._mails.len == 0us) return none;
 
-                let dmut fr = alias self._mails [0];
-                self._mails = alias self._mails [1 .. $];
+                let dmut fr = alias self._mails[0];
+                self._mails = alias self._mails[1 .. $];
 
                 (alias fr)?
             }
@@ -87,7 +87,7 @@ pub class IMailBox {T, mutable : bool} {
         /**
          * @returns: all the messages in the mailbox
          * */
-        pub fn opIndex (mut self)-> dmut [T] {
+        pub fn opIndex(mut self)-> dmut[T] {
             atomic self {
                 let dmut result = alias self._mails;
                 self._mails = [];
@@ -102,7 +102,7 @@ pub class IMailBox {T, mutable : bool} {
     /**
      * Clear everything that can be found in the mailbox
      * */
-    pub fn clear (mut self) {
+    pub fn clear(mut self) {
         atomic self {
             self._mails = [];
         }
@@ -112,25 +112,25 @@ pub class IMailBox {T, mutable : bool} {
      * @returns: the number of element in the box
      * */
     @field
-    pub fn len (self)-> usize {
+    pub fn len(self)-> usize {
         self._mails.len
     }
 
     impl Streamable {
-        pub over toStream (self, dmut stream : &StringStream) {
-            stream:.write ("MailBox {");
+        pub over toStream(self, dmut stream: &StringStream) {
+            stream:.write("MailBox {");
             atomic self {
                 for i, m in self._mails {
-                    cte if __pragma!compile ({ stream:.write (m); }) {
-                        if i != 0 { stream:.write (", "); }
-                        stream:.write (m);
+                    cte if __pragma!compile({ stream:.write(m); }) {
+                        if i != 0 { stream:.write(", "); }
+                        stream:.write(m);
                     } else {
                         i;
                         m;
                     }
                 }
             }
-            stream:.write ("}");
+            stream:.write("}");
         }
     }
 

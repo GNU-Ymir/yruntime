@@ -10,16 +10,16 @@ use core::exception::io;
 pub class OPipe {
 
     // The managed pipe
-    let mut _pipe : i32 = -1;
+    let mut _pipe: i32 = -1;
 
     // True if the pipe failed to read
-    let mut _error : bool = false;
+    let mut _error: bool = false;
 
     /**
      * @params:
      *    - the reading pipe
      * */
-    pub self (pipe : i32 = -1)
+    pub self (pipe: i32 = -1)
         with _pipe = pipe
         , _error = false
     {}
@@ -35,35 +35,35 @@ pub class OPipe {
     /**
      * Set the pipe to non block mode
      * */
-    pub fn setNonBlocking (mut self) {
-        if (self.isOpen ()) {
-            let old = fcntl (self._pipe, FileFlags::F_GETFL, 0);
-            fcntl (self._pipe, FileFlags::F_SETFL, old | SocketFlag::O_NONBLOCK);
+    pub fn setNonBlocking(mut self) {
+        if (self.isOpen()) {
+            let old = fcntl(self._pipe, FileFlags::F_GETFL, 0);
+            fcntl(self._pipe, FileFlags::F_SETFL, old | SocketFlag::O_NONBLOCK);
         }
     }
 
     /**
      * Set the pipe to blocking mode
      * */
-    pub fn setBlocking (mut self) {
-        if (self.isOpen ()) {
-            let old = fcntl (self._pipe, FileFlags::F_GETFL, 0);
-            fcntl (self._pipe, FileFlags::F_SETFL, old | !SocketFlag::O_NONBLOCK);
+    pub fn setBlocking(mut self) {
+        if (self.isOpen()) {
+            let old = fcntl(self._pipe, FileFlags::F_GETFL, 0);
+            fcntl(self._pipe, FileFlags::F_SETFL, old | !SocketFlag::O_NONBLOCK);
         }
     }
 
     /**
      * Set this pipe as the stdout of the current process
      * */
-    pub fn setAsStdout (mut self) {
-        etc::c::files::dup2 (self._pipe, etc::c::files::StdFileNumbers::STDOUT);
+    pub fn setAsStdout(mut self) {
+        etc::c::files::dup2(self._pipe, etc::c::files::StdFileNumbers::STDOUT);
     }
 
     /**
      * Set this pipe as the stderr of the current process
      * */
-    pub fn setAsStderr (mut self) {
-        etc::c::files::dup2 (self._pipe, etc::c::files::StdFileNumbers::STDERR);
+    pub fn setAsStderr(mut self) {
+        etc::c::files::dup2(self._pipe, etc::c::files::StdFileNumbers::STDERR);
     }
 
 
@@ -78,14 +78,14 @@ pub class OPipe {
     /**
      * @returns: true if the pipe is open
      * */
-    pub fn isOpen (self)-> bool {
+    pub fn isOpen(self)-> bool {
         self._pipe >= 0 && !self._error
     }
 
     /**
      * @returns: the file descriptor of the pipe
      * */
-    pub fn getHandle (self)-> i32 {
+    pub fn getHandle(self)-> i32 {
         self._pipe
     }
 
@@ -100,17 +100,17 @@ pub class OPipe {
     /**
      * Write a slice on the pipe
      * @params:
-     *    - sl : the slice to write
+     *    - sl: the slice to write
      * */
-    pub fn if (std::traits::isScalar!{C}) write {T of [C], C} (mut self, sl : T)
+    pub fn if (std::traits::isScalar!{C}) write {T of [C], C} (mut self, sl: T)
         throws IOError
     {
-        if (!self.isOpen ()) throw copy IOError ();
+        if (!self.isOpen()) throw copy IOError();
 
         {
             let pv = cast!{*void} (sl.ptr);
             let pu = cast!{*u8} (pv);
-            self:.inner_WriteRaw (pu, sl.len * C::size);
+            self:.inner_WriteRaw(pu, sl.len * C::size);
         }
     }
 
@@ -127,24 +127,24 @@ pub class OPipe {
      * @throws:
      *    - IOError, if the write fails
      * */
-    pub fn if (std::traits::isScalar!{C}) write {C} (mut self, c : C)
+    pub fn if (std::traits::isScalar!{C}) write {C} (mut self, c: C)
         throws IOError
     {
-        if (!self.isOpen ()) throw copy IOError ();
+        if (!self.isOpen()) throw copy IOError();
         let pv = cast!{*void} (&c);
         let pu = cast!{*u8} (pv);
 
-        self:.inner_WriteRaw (pu, C::size);
+        self:.inner_WriteRaw(pu, C::size);
     }
 
     /**
      * Write raw value on the pipe
      * */
-    pub fn writeRaw (mut self, buffer : *u8, len : usize)
+    pub fn writeRaw(mut self, buffer: *u8, len: usize)
         throws IOError
     {
-        if (!self.isOpen ()) throw copy IOError ();
-        self:.inner_WriteRaw (buffer, len)
+        if (!self.isOpen()) throw copy IOError();
+        self:.inner_WriteRaw(buffer, len)
     }
 
 
@@ -152,21 +152,21 @@ pub class OPipe {
      * Write raw value on the pipe
      * @warning: does not check wether the pipe is open or not
      * */
-    prv fn inner_WriteRaw (mut self, buffer : *u8, len : usize)
+    prv fn inner_WriteRaw(mut self, buffer: *u8, len: usize)
         throws IOError
     {
         let mut curr = buffer;
         let mut lenToSend = len;
 
         while (lenToSend > 0) {
-            let valsent = socket::write (self._pipe, cast!{*void} (curr), cast!usize (lenToSend));
+            let valsent = socket::write(self._pipe, cast!{*void} (curr), cast!usize(lenToSend));
             if (valsent <= 0) {
                 self._error = true;
-                throw copy core::exception::io::IOError ();
+                throw copy core::exception::io::IOError();
             }
 
-            curr = (curr + cast!usize (valsent));
-            lenToSend = lenToSend - cast!usize (valsent);
+            curr = (curr + cast!usize(valsent));
+            lenToSend = lenToSend - cast!usize(valsent);
         }
     }
 
@@ -181,9 +181,9 @@ pub class OPipe {
     /**
      * Close the pipe
      * */
-    pub fn dispose (mut self) {
-        if (self.isOpen () && self._pipe >= 3) { // stderr = 2, out = 1, in = 0
-            socket::close (self._pipe);
+    pub fn dispose(mut self) {
+        if (self.isOpen() && self._pipe >= 3) { // stderr = 2, out = 1, in = 0
+            socket::close(self._pipe);
         }
 
         self._pipe = -1;
@@ -191,8 +191,8 @@ pub class OPipe {
     }
 
 
-    __dtor (mut self) {
-        self:.dispose ();
+    __dtor(mut self) {
+        self:.dispose();
     }
 
 }

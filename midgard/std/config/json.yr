@@ -18,11 +18,11 @@ use std::config::data;
  * @throws:
  *    - SyntaxError: if the json is malformed
  * */
-pub fn parse (content : [c8])-> &Config
+pub fn parse(content: [c8])-> &Config
     throws std::syntax::errors::SyntaxError
 {
-    let mut parser = JsonParser (content);
-    return parser:.parse ();
+    let mut parser = JsonParser(content);
+    return parser:.parse();
 }
 
 
@@ -32,9 +32,9 @@ pub fn parse (content : [c8])-> &Config
  *    - content: the configuration to dump
  * @returns: an utf8 string in json format
  * */
-pub fn dump (content : &Config)-> [c8] {
-    let mut dumper = JsonDumper (content);
-    return dumper.dump ();
+pub fn dump(content: &Config)-> [c8] {
+    let mut dumper = JsonDumper(content);
+    return dumper.dump();
 }
 
 
@@ -64,9 +64,9 @@ pub fn dump (content : &Config)-> [c8] {
  * ```
  */
 pub macro json {
-    self (a=(dictEntry) b=("," inner=dictEntry)* (" " | "\n" | "\t" | "\r")*) skips (" " | "\n" | "\t" | "\r") {
+    self (a=(dictEntry) b=("," inner=dictEntry)* (" " | "\n" | "\t" | "\r")*) skips(" " | "\n" | "\t" | "\r") {
         {
-            let dmut d_#{__index} = copy Dict ();
+            let dmut d_#{__index} = copy Dict();
             let v_#{__index}_base = #{a};
             d_#{__index}:[v_#{__index}_base._0] = v_#{__index}_base._1;
             #(for x in b) {{
@@ -77,9 +77,9 @@ pub macro json {
         }
     }
 
-    fn dict ("{" a=(dictEntry) b=("," inner=dictEntry)* "}") skips (" " | "\n" | "\t" | "\r") {
+    fn dict("{" a=(dictEntry) b=("," inner=dictEntry)* "}") skips(" " | "\n" | "\t" | "\r") {
         {
-            let dmut d_#{__index} = copy Dict ();
+            let dmut d_#{__index} = copy Dict();
             let v_#{__index}_base = #{a};
             d_#{__index}:[v_#{__index}_base._0] = v_#{__index}_base._1;
             #(for x in b) {{
@@ -91,23 +91,23 @@ pub macro json {
         }
     }
 
-    fn emptyDict ("{" "}") skips (" " | "\n" | "\t" | "\r") {
+    fn emptyDict("{" "}") skips(" " | "\n" | "\t" | "\r") {
         {
-            copy Dict ()
+            copy Dict()
         }
     }
 
-    fn array ("[" a=(array | dict | value) b=("," inner=(array | dict | value))* "]") skips (" " | "\n" | "\t" | "\r") {
+    fn array("[" a=(array | dict | value) b=("," inner=(array | dict | value))* "]") skips(" " | "\n" | "\t" | "\r") {
         {
-            let dmut array_#{__index} = copy Array ();
-            array_#{__index}:.push (#{a});
+            let dmut array_#{__index} = copy Array();
+            array_#{__index}:.push(#{a});
             #(for i in b) {
-                array_#{__index}:.push (#{i::inner});
+                array_#{__index}:.push(#{i::inner});
             }
             array_#{__index}
         }
     }
 
-    fn dictEntry (key=__str ":" value=(array | dict | value)) skips (" " | "\n" | "\t" | "\r") {(std::conv::to!{[c8]} (#{key}), #{value})}
-    fn value (a=__expr) skips (" " | "\n" | "\t" | "\r") {std::config::conv::to!{&Config} (#{a})}
+    fn dictEntry(key=__str ":" value=(array | dict | value)) skips(" " | "\n" | "\t" | "\r") {(std::conv::to!{[c8]} (#{key}), #{value})}
+    fn value(a=__expr) skips(" " | "\n" | "\t" | "\r") {std::config::conv::to!{&Config} (#{a})}
 }

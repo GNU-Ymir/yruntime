@@ -1,13 +1,13 @@
 in map;
 
 mod Runtime{K, V} {
-    pub extern (C) fn _yrt_map_erase (a : *[K => V], k : *K);
+    pub extern (C) fn _yrt_map_erase(a: *[K => V], k: *K);
 }
 
 /**
  * Binding to the comparison function in order to be callable from the C runtime
  * */
-pub fn compareKeys {T} (a : *T, b : *T)-> bool {
+pub fn compareKeys {T} (a: *T, b: *T)-> bool {
     unsafe {
         return *a == *b;
     }
@@ -16,26 +16,26 @@ pub fn compareKeys {T} (a : *T, b : *T)-> bool {
 /**
  * Binding to the hash function callable in order to be callable from the C runtime
  * */
-pub fn hashKey {T} (a : *T)-> u64 {
+pub fn hashKey {T} (a: *T)-> u64 {
     unsafe {
-        core::types::hash::__hash (*a)
+        core::types::hash::__hash(*a)
     }
 }
 
 /**
  * Remove a key from the map
  * */
-pub fn removeKey {K, V} (dmut ref a : [K => V], key : K) {
-    Runtime!{K, V}::_yrt_map_erase (&a, &key);
+pub fn removeKey {K, V} (dmut ref a: [K => V], key: K) {
+    Runtime!{K, V}::_yrt_map_erase(&a, &key);
 }
 
 /**
  * Deep copy of a map value
  * */
-pub fn deepCopyMap {K, V} (a : [K => V])-> mut [K => dmut V] {
-    let dmut res : [K => V] = copy [];
+pub fn deepCopyMap {K, V} (a: [K => V])-> mut[K => dmut V] {
+    let dmut res: [K => V] = copy [];
     for k, v in a {
-        res [k] = dcopy v;
+        res[k] = dcopy v;
     }
 
     return alias res;

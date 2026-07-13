@@ -30,27 +30,27 @@ use core::concurrency::pipes::_;
  * ```
  * use std::concurrency::actor;
  *
- * fn main () {
+ * fn main() {
  *    // Actor system accepting connection from any address on port 8080
- *    let dmut sys = copy ActorSystem (SockAddr ("0.0.0.0", 8080));
+ *    let dmut sys = copy ActorSystem(SockAddr("0.0.0.0", 8080));
  *
  *    // Add actors to the system
- *    sys:.add ("alice", copy AliceActor ());
- *    sys:.add ("bob", copy BobActor ());
+ *    sys:.add("alice", copy AliceActor());
+ *    sys:.add("bob", copy BobActor());
  *
- *    sys:.start (); // start the actor system
+ *    sys:.start(); // start the actor system
  *
  *    // Access to a remote actor managed by a remote actor system
- *    let dmut charlie = sys:.remote ("charlie", SockAddr ("192.168.1.10", 8081));
+ *    let dmut charlie = sys:.remote("charlie", SockAddr("192.168.1.10", 8081));
  *
  *    // send a message to charlie
- *    charlie:.send (json#{"message" : "Hello"})?;
+ *    charlie:.send(json#{"message" : "Hello"})?;
  *
  *    // Send a request expecting for a response
- *    let dmut req = charlie:.request (json#{"message" : "I have a question?"});
- *    println (req:.value ()?); // wait for the response
+ *    let dmut req = charlie:.request(json#{"message" : "I have a question?"});
+ *    println(req:.value()?); // wait for the response
  *
- *    sys:.join (); // wait for the actor system to end (all actors are killed)
+ *    sys:.join(); // wait for the actor system to end(all actors are killed)
  * }
  * ```
  *
@@ -70,11 +70,11 @@ use core::concurrency::pipes::_;
 pub class ActorSystem {
 
     // The list of local actors
-    let dmut _actorMutex : &Mutex = copy Mutex ();
-    let dmut _actors : [[c8] => (&base::ActorBase, &Mutex)] = copy [];
+    let dmut _actorMutex: &Mutex = copy Mutex();
+    let dmut _actors: [[c8] => (&base::ActorBase, &Mutex)] = copy [];
 
     // True iif the system is running
-    let mut _isRunning : bool = false;
+    let mut _isRunning: bool = false;
 
     /*!
      * ====================================================================================================
@@ -85,25 +85,25 @@ pub class ActorSystem {
      */
 
     // The epoll list for message passing
-    let mut _epoll_fd : i32 = 0;
+    let mut _epoll_fd: i32 = 0;
 
     // The timeout of new connections
-    let mut _connectionTimeout : Duration = dur::seconds (2);
+    let mut _connectionTimeout: Duration = dur::seconds(2);
 
     // The number of retries when sending messages
-    let mut _nbSendRetries : u32 = 3;
+    let mut _nbSendRetries: u32 = 3;
 
     // The address of the server
-    let _addr : SockAddr;
+    let _addr: SockAddr;
 
     // The tcp listener of the system
-    let dmut _listener : (&TcpListener)? = none;
+    let dmut _listener: (&TcpListener)? = none;
 
     // The number of threads to spawn in the task pool
-    let mut _nbJobThreads : u32;
+    let mut _nbJobThreads: u32;
 
     // The polling threads
-    let dmut _pollingTh : (future-> void)? = none;
+    let dmut _pollingTh: (future-> void)? = none;
 
     /*!
      * ====================================================================================================
@@ -114,10 +114,10 @@ pub class ActorSystem {
      */
 
     // The list of worker threads
-    let dmut _jobThreads : [usize => (future-> void)] = copy [];
-    let dmut _jobs       : &MailBox!{(ActorMessage, bool)} = copy MailBox!{(ActorMessage, bool)} ();
-    let dmut _jobMutex   : &Mutex = copy Mutex ();
-    let dmut _waitTask   : &Semaphore = copy Semaphore ();
+    let dmut _jobThreads: [usize => (future-> void)] = copy [];
+    let dmut _jobs: &MailBox!{(ActorMessage, bool)} = copy MailBox!{(ActorMessage, bool)} ();
+    let dmut _jobMutex: &Mutex = copy Mutex();
+    let dmut _waitTask: &Semaphore = copy Semaphore();
 
     /*!
      * ====================================================================================================
@@ -128,11 +128,11 @@ pub class ActorSystem {
      */
 
     // The sending thread
-    let dmut _sendingTh : (future-> void)? = none;
+    let dmut _sendingTh: (future-> void)? = none;
 
     // The list of messages to send to remote actor systems
-    let dmut _sendMails : &MailBox!{(ActorMessage, SockAddr)} = copy MailBox!{(ActorMessage, SockAddr)} ();
-    let dmut _waitSend : &Semaphore = copy Semaphore ();
+    let dmut _sendMails: &MailBox!{(ActorMessage, SockAddr)} = copy MailBox!{(ActorMessage, SockAddr)} ();
+    let dmut _waitSend: &Semaphore = copy Semaphore();
 
     /*!
      * ====================================================================================================
@@ -143,11 +143,11 @@ pub class ActorSystem {
      */
 
     // Pipe used to trigger polling loop
-    let dmut _triggerI : (&IPipe)? = none;
-    let dmut _triggerO : (&OPipe)? = none;
+    let dmut _triggerI: (&IPipe)? = none;
+    let dmut _triggerO: (&OPipe)? = none;
 
     // The semaphore used to trigger the workers
-    let dmut _ready : &Semaphore = copy Semaphore ();
+    let dmut _ready: &Semaphore = copy Semaphore();
 
     /*!
      * ====================================================================================================
@@ -157,13 +157,13 @@ pub class ActorSystem {
      * ====================================================================================================
      */
 
-    let dmut _requestMutex : &Mutex = copy Mutex ();
+    let dmut _requestMutex: &Mutex = copy Mutex();
 
     // Requests being resolved by that might timeout
-    let dmut _requestIds : [u64 => &request::ActorRqtFuture] = copy [];
+    let dmut _requestIds: [u64 => &request::ActorRqtFuture] = copy [];
 
     // The last uniq id for requests
-    let mut _lastUID : u64 = 0;
+    let mut _lastUID: u64 = 0;
 
     /*!
      * ====================================================================================================
@@ -176,28 +176,28 @@ pub class ActorSystem {
     /**
      * Create an actor system using ipv4 protocol with a automatically selected port
      * */
-    pub self (nbThreads : u32 = 0)
-        with self (SockAddr (Ipv4::UNSPECIFIED, 0), nbThreads-> nbThreads)
+    pub self (nbThreads: u32 = 0)
+        with self (SockAddr(Ipv4::UNSPECIFIED, 0), nbThreads-> nbThreads)
     {}
 
     /**
      * @params:
      *    - addr: the addresse range accepted by the actor system
-     *    - nbThreads: the number of threads used (0 means nb cores available on system)
+     *    - nbThreads: the number of threads used(0 means nb cores available on system)
      */
-    pub self (addr : SockAddr, nbThreads : u32 = 0)
+    pub self (addr: SockAddr, nbThreads: u32 = 0)
         with _addr = addr
-        , _nbJobThreads = if (nbThreads == 0) { etc::runtime::threads::_yrt_get_nprocs () } else { nbThreads + 1 }
+        , _nbJobThreads = if (nbThreads == 0) { etc::runtime::threads::_yrt_get_nprocs() } else { nbThreads + 1 }
     {
-        let dmut pipes : [i32 ; 2] = [0, 0];
-        if (files::pipe (pipes.ptr) == 0) {
-            self._triggerI = (copy IPipe (pipe-> pipes [0]))?;
-            self._triggerO = (copy OPipe (pipe-> pipes [1]))?;
+        let dmut pipes: [i32 ; 2] = [0, 0];
+        if (files::pipe(pipes.ptr) == 0) {
+            self._triggerI = (copy IPipe(pipe-> pipes[0]))?;
+            self._triggerO = (copy OPipe(pipe-> pipes[1]))?;
         }
     }
 
-    __dtor (mut self) {
-        self:.dispose ();
+    __dtor(mut self) {
+        self:.dispose();
     }
 
     /*!
@@ -211,55 +211,55 @@ pub class ActorSystem {
     /**
      * Start the actor system
      * */
-    pub fn start (mut self)
+    pub fn start(mut self)
         throws errors::ActorError
     {
         if self._isRunning { return; }
 
-        self:.configureEpoll ();
-        self._pollingTh = (spawn self:.pollMain ())?;
-        self._ready:.wait ();
+        self:.configureEpoll();
+        self._pollingTh = (spawn self:.pollMain())?;
+        self._ready:.wait();
 
-        self._sendingTh = (spawn self:.sendMain ())?;
-        self._ready:.wait ();
+        self._sendingTh = (spawn self:.sendMain())?;
+        self._ready:.wait();
 
-        self._actorMutex:.lock ();
+        self._actorMutex:.lock();
         let names = copy [name for name, _ in self._actors];
-        self._actorMutex:.unlock ();
+        self._actorMutex:.unlock();
 
         for name in names {
-            self._actorMutex:.lock ();
-            let dmut act__ = alias self._actors [name];
-            self._actorMutex:.unlock ();
+            self._actorMutex:.lock();
+            let dmut act__ = alias self._actors[name];
+            self._actorMutex:.unlock();
 
-            if let Ok (dmut act) = alias act__ {
-                act._0:.onStart ();
+            if let Ok(dmut act) = alias act__ {
+                act._0:.onStart();
             }
         }
 
     } catch {
         e => {
-            throw copy errors::ActorError (std::conv::to!{[c8]} (e));
+            throw copy errors::ActorError(std::conv::to!{[c8]} (e));
         }
     }
 
     /**
-     * Wait for the actor system to stop (all actors are killed)
+     * Wait for the actor system to stop(all actors are killed)
      * @warning: this function returns immediately if used inside an actor
      * */
-    pub fn join (mut self) {
-        if self.isWorkerThread () return;
+    pub fn join(mut self) {
+        if self.isWorkerThread() return;
 
-        if let Ok (dmut t) = self._pollingTh {
+        if let Ok(dmut t) = self._pollingTh {
             t.value;
         }
 
-        self:.dispose ();
+        self:.dispose();
     }
 
     /**
      * Kill all actors present in the actor system
-     * @warning: if an actor is added afterwards (or by another message) the system won't effectively exit,
+     * @warning: if an actor is added afterwards(or by another message) the system won't effectively exit,
      * and would have to be killed again.
      * For example: if an actor add an new actor instance during its 'onQuit' method, the actor system won't send kill message to that new actor
      * @example:
@@ -267,34 +267,34 @@ pub class ActorSystem {
      * class MyActor over ActorBase {
      *   pub self () {}
 
-     *   pub over onMessage (mut self, msg : &Config) {
-     *     println ("Receive a message : ", msg);
-     *      self:.system:.kill (); // kill the actor system once message is received
+     *   pub over onMessage(mut self, msg: &Config) {
+     *     println("Receive a message: ", msg);
+     *      self:.system:.kill(); // kill the actor system once message is received
      *   }
      *
-     *   pub over onQuit (mut self) {
-     *      println ("Killing actor : ", self._name);
+     *   pub over onQuit(mut self) {
+     *      println("Killing actor: ", self._name);
      *    }
      * }
      * ```
      * */
-    pub fn kill (mut self) {
-        self._actorMutex:.lock ();
+    pub fn kill(mut self) {
+        self._actorMutex:.lock();
         let names = copy [name for name, _ in self._actors];
-        self._actorMutex:.unlock ();
+        self._actorMutex:.unlock();
 
         for name in names {
-            self._actorMutex:.lock ();
-            let dmut act__ = alias self._actors [name];
-            self._actorMutex:.unlock ();
+            self._actorMutex:.lock();
+            let dmut act__ = alias self._actors[name];
+            self._actorMutex:.unlock();
 
-            if let Ok (dmut act) = alias act__ {
-                act._0:.kill ();
+            if let Ok(dmut act) = alias act__ {
+                act._0:.kill();
             }
         }
 
         if self._actors.len == 0 {
-            self:.triggerExit ();
+            self:.triggerExit();
         }
     }
 
@@ -302,18 +302,18 @@ pub class ActorSystem {
      * Dispose the actor system and kill all the running actors
      * @warning: this function returns immediately if used inside an actor
      * */
-    fn dispose (mut self) {
-        if self.isWorkerThread () { return; }
-        self:.kill ();
-        self:.waitAllCompletes ();
+    fn dispose(mut self) {
+        if self.isWorkerThread() { return; }
+        self:.kill();
+        self:.waitAllCompletes();
 
-        self._actorMutex:.lock ();
+        self._actorMutex:.lock();
         self._actors = copy [];
-        self._actorMutex:.unlock ();
+        self._actorMutex:.unlock();
 
         self._listener = none;
         if (self._epoll_fd != 0) {
-            etc::c::files::close (self._epoll_fd);
+            etc::c::files::close(self._epoll_fd);
             self._epoll_fd = 0;
         }
     }
@@ -329,61 +329,61 @@ pub class ActorSystem {
     /**
      * Configure the polling descriptor
      * */
-    fn configureEpoll (mut self)
+    fn configureEpoll(mut self)
         throws TcpError
     {
-        self._epoll_fd = epoll_create1 (0);
-        let dmut lst = copy TcpListener (self._addr);
+        self._epoll_fd = epoll_create1(0);
+        let dmut lst = copy TcpListener(self._addr);
         self._listener = (alias lst)?;
 
-        if let Ok (dmut i) = alias self._triggerI {
-            i:.setNonBlocking ();
+        if let Ok(dmut i) = alias self._triggerI {
+            i:.setNonBlocking();
 
-            let mut event = epoll_event ();
+            let mut event = epoll_event();
             event.events = EPOLLIN | EPOLLHUP;
-            event.data.fd = i.getHandle ();
-            epoll_ctl (self._epoll_fd, EPOLL_CTL_ADD, event.data.fd, &event);
+            event.data.fd = i.getHandle();
+            epoll_ctl(self._epoll_fd, EPOLL_CTL_ADD, event.data.fd, &event);
 
-            event.data.fd = lst.getHandle ();
-            epoll_ctl (self._epoll_fd, EPOLL_CTL_ADD, event.data.fd, &event);
+            event.data.fd = lst.getHandle();
+            epoll_ctl(self._epoll_fd, EPOLL_CTL_ADD, event.data.fd, &event);
         }
     }
 
     /**
      * Main function of the polling thread
      * */
-    fn pollMain (mut self) {
+    fn pollMain(mut self) {
         self._isRunning = true;
-        self._ready:.post ();
+        self._ready:.post();
 
-        let dmut sockets : [&TcpStream] = [];
+        let dmut sockets: [&TcpStream] = [];
 
         while self._isRunning {
-            let mut event = epoll_event ();
-            let event_count = epoll_wait (self._epoll_fd, &event, 1, -1);
+            let mut event = epoll_event();
+            let event_count = epoll_wait(self._epoll_fd, &event, 1, -1);
             if event_count > 0 {
-                if let Ok (dmut l) = alias self._listener && l.getHandle () == event.data.fd {
+                if let Ok(dmut l) = alias self._listener && l.getHandle() == event.data.fd {
                     {
-                        let dmut stream = l:.accept ();
-                        self:.receiveMessage (alias stream);
-                        if (stream.isOpen ()) {
-                            self:.addPoll (alias stream);
+                        let dmut stream = l:.accept();
+                        self:.receiveMessage(alias stream);
+                        if (stream.isOpen()) {
+                            self:.addPoll(alias stream);
                             sockets ~= [alias stream];
-                        } else stream:.dispose ();
+                        } else stream:.dispose();
                     }?; // catch
-                } else if let Ok (dmut i) = alias self._triggerI && i.getHandle () == event.data.fd {
+                } else if let Ok(dmut i) = alias self._triggerI && i.getHandle() == event.data.fd {
                     let code = i:.read!{u8} ()?;
-                    if let Ok (Protocol::SYSTEM_KILL_ALL) = code {
+                    if let Ok(Protocol::SYSTEM_KILL_ALL) = code {
                         self._isRunning = false;
                         break;
                     }
                 } else {
-                    for i, dmut sc in alias sockets if sc.getHandle () == event.data.fd {
-                        self:.receiveMessage (alias sc);
-                        if !sc.isOpen () {
-                            self:.delPoll (event.data.fd);
-                            sockets = sockets [0 .. i] ~ sockets [i + 1 .. $];
-                            sc:.dispose ();
+                    for i, dmut sc in alias sockets if sc.getHandle() == event.data.fd {
+                        self:.receiveMessage(alias sc);
+                        if !sc.isOpen() {
+                            self:.delPoll(event.data.fd);
+                            sockets = sockets[0 .. i] ~ sockets[i + 1 .. $];
+                            sc:.dispose();
                         }
 
                         break;
@@ -393,7 +393,7 @@ pub class ActorSystem {
         }
 
         for dmut r in alias sockets {
-            r:.dispose ();
+            r:.dispose();
         }
         sockets = [];
     }
@@ -401,21 +401,21 @@ pub class ActorSystem {
     /**
      * Add a new socket in the polling thread
      * */
-    fn addPoll (mut self, dmut stream : &TcpStream) {
-        let dmut event = epoll_event ();
+    fn addPoll(mut self, dmut stream: &TcpStream) {
+        let dmut event = epoll_event();
         event.events = EPOLLIN | EPOLLHUP;
-        event.data.fd = stream.getHandle ();
-        epoll_ctl (self._epoll_fd, EPOLL_CTL_ADD, event.data.fd, &event);
+        event.data.fd = stream.getHandle();
+        epoll_ctl(self._epoll_fd, EPOLL_CTL_ADD, event.data.fd, &event);
     }
 
     /**
      * Delete an old socket from the polling thread
      * */
-    fn delPoll (mut self, fd : i32) {
-        let dmut event = epoll_event ();
+    fn delPoll(mut self, fd: i32) {
+        let dmut event = epoll_event();
         event.events = EPOLLIN | EPOLLHUP;
         event.data.fd = fd;
-        epoll_ctl (self._epoll_fd, EPOLL_CTL_DEL, fd, &event);
+        epoll_ctl(self._epoll_fd, EPOLL_CTL_DEL, fd, &event);
     }
 
     /*!
@@ -429,29 +429,29 @@ pub class ActorSystem {
     /**
      * Receive a message from a remote stream
      * */
-    fn receiveMessage (mut self, dmut stream : &TcpStream) {
-        if !stream.isOpen () return;
+    fn receiveMessage(mut self, dmut stream: &TcpStream) {
+        if !stream.isOpen() return;
 
-        let dmut buffer : [u8] = [];
-        let n = Instant::now ();
+        let dmut buffer: [u8] = [];
+        let n = Instant::now();
 
         {
             let size = stream:.receive!{u32} ();
-            if (size > std::unit::MemorySize::MB (1)) {
-                stream:.dispose ();
+            if (size > std::unit::MemorySize::MB(1)) {
+                stream:.dispose();
                 return ;
             }
 
             buffer = copy [0u8 ; size];
-            stream:.receiveRaw (alias buffer);
+            stream:.receiveRaw(alias buffer);
         } catch {
             _ => {
-                stream:.dispose ();
+                stream:.dispose();
                 return;
             }
         }
 
-        self:.submitJob (Job (data-> buffer, origin-> stream.addr, n));
+        self:.submitJob(Job(data-> buffer, origin-> stream.addr, n));
     }
 
     /*!
@@ -465,33 +465,33 @@ pub class ActorSystem {
     /**
      * Submit a new job
      * */
-    fn submitJob (mut self, jb : Job) {
+    fn submitJob(mut self, jb: Job) {
         let mut isTh = false;
-        if jb.isPacket () {
-            let m = message::deserialize (alias self, jb.origin, jb.data)?;
-            if let Ok (msg) = m {
-                isTh = self:.treatMessage (msg, false);
+        if jb.isPacket() {
+            let m = message::deserialize(alias self, jb.origin, jb.data)?;
+            if let Ok(msg) = m {
+                isTh = self:.treatMessage(msg, false);
             }
         } else {
-            if let Ok (msg) = jb.msg {
-                isTh = self:.treatMessage (msg, true);
+            if let Ok(msg) = jb.msg {
+                isTh = self:.treatMessage(msg, true);
             }
         }
 
         if isTh {
             if self._jobThreads.len != self._nbJobThreads {
-                let nb : u32 = cast!u32 (self._jobThreads.len);
+                let nb: u32 = cast!u32(self._jobThreads.len);
                 for _ in nb .. self._nbJobThreads {
-                    let dmut f = spawn self:.workerJobThread ();
-                    self._ready:.wait ();
+                    let dmut f = spawn self:.workerJobThread();
+                    self._ready:.wait();
 
-                    self._jobMutex:.lock ();
-                    self._jobThreads [f.tid] = f;
-                    self._jobMutex:.unlock ();
+                    self._jobMutex:.lock();
+                    self._jobThreads[f.tid] = f;
+                    self._jobMutex:.unlock();
                 }
             }
 
-            self._waitTask:.post ();
+            self._waitTask:.post();
         }
     }
 
@@ -502,16 +502,16 @@ pub class ActorSystem {
      *    - local: true iif the message was send by a local actor
      * @returns: true iif we need to awake an actor
      * */
-    fn treatMessage (mut self, msg : ActorMessage, local : bool)-> bool {
+    fn treatMessage(mut self, msg: ActorMessage, local: bool)-> bool {
         match msg.kind {
             Protocol::ACTOR_RESP => {
-                self:.onResponse (msg, failed-> false);
+                self:.onResponse(msg, failed-> false);
             }
             Protocol::ACTOR_RESP_FAILED => {
-                self:.onResponse (msg, failed-> true);
+                self:.onResponse(msg, failed-> true);
             }
             _ => {
-                self._jobs:.send ((msg, local));
+                self._jobs:.send((msg, local));
                 return true;
             }
         }
@@ -530,33 +530,33 @@ pub class ActorSystem {
     /**
      * Worker thread
      * */
-    fn workerJobThread (mut self) {
-        self._ready:.post ();
+    fn workerJobThread(mut self) {
+        self._ready:.post();
 
         loop {
-            self._waitTask:.wait ();
+            self._waitTask:.wait();
             if (!self._isRunning) {
                 break;
             }
 
-            if let Ok ((msg, local)) = self._jobs:.receive () {
+            if let Ok((msg, local)) = self._jobs:.receive() {
                 match msg.kind {
                     Protocol::ACTOR_MSG => {
-                        self:.onActorMsg (msg);
+                        self:.onActorMsg(msg);
                     }
                     Protocol::ACTOR_REQ => {
-                        self:.onActorReq (msg, local);
+                        self:.onActorReq(msg, local);
                     }
                     Protocol::ACTOR_KILL => {
-                        self:.onActorKill (msg);
+                        self:.onActorKill(msg);
                     }
                 }
             }
         }
 
-        self._jobMutex:.lock ();
-        self._jobThreads:.remove (etc::runtime::threads::_yrt_thread_self_id ());
-        self._jobMutex:.unlock ();
+        self._jobMutex:.lock();
+        self._jobThreads:.remove(etc::runtime::threads::_yrt_thread_self_id());
+        self._jobMutex:.unlock();
     }
 
     /**
@@ -564,14 +564,14 @@ pub class ActorSystem {
      * @params:
      *    - msg: the message received
      * */
-    fn onActorMsg (mut self, msg : ActorMessage) {
-        if let Ok (dmut ac) = alias self:.getActor (msg.actorName) {
+    fn onActorMsg(mut self, msg: ActorMessage) {
+        if let Ok(dmut ac) = alias self:.getActor(msg.actorName) {
             if ac._0.isAtomic {
-                ac._1:.lock ();
-                ac._0:.onMessage (msg.content);
-                ac._1:.unlock ();
+                ac._1:.lock();
+                ac._0:.onMessage(msg.content);
+                ac._1:.unlock();
             } else {
-                ac._0:.onMessage (msg.content);
+                ac._0:.onMessage(msg.content);
             }
         }
     }
@@ -582,19 +582,19 @@ pub class ActorSystem {
      * @params:
      *    - msg: the message received
      * */
-    fn onActorKill (mut self, msg : ActorMessage) {
-        if let Ok (dmut ac) = alias self:.getActor (msg.actorName) {
+    fn onActorKill(mut self, msg: ActorMessage) {
+        if let Ok(dmut ac) = alias self:.getActor(msg.actorName) {
             if (ac._0.isAtomic) {
-                ac._1:.lock ();
-                ac._0:.onQuit ();
-                ac._1:.unlock ();
+                ac._1:.lock();
+                ac._0:.onQuit();
+                ac._1:.unlock();
             } else {
-                ac._0:.onQuit ();
+                ac._0:.onQuit();
             }
 
-            self:.removeActor (msg.actorName);
+            self:.removeActor(msg.actorName);
             if self._actors.len == 0 {
-                self:.triggerExit ();
+                self:.triggerExit();
             }
         }
     }
@@ -603,24 +603,24 @@ pub class ActorSystem {
      * Trigger the execution of the 'onRequest' method of an actor after the reception of a request
      * @params:
      *    - msg: the message received
-     *    - local: true iif the request was sent by a local actor (and therefore does not require a socket sending for the response)
+     *    - local: true iif the request was sent by a local actor(and therefore does not require a socket sending for the response)
      * */
-    fn onActorReq (mut self, msg : ActorMessage, local : bool) {
-        if let Ok (dmut ac) = alias self:.getActor (msg.actorName) {
+    fn onActorReq(mut self, msg: ActorMessage, local: bool) {
+        if let Ok(dmut ac) = alias self:.getActor(msg.actorName) {
             let result = if ac._0.isAtomic {
-                ac._1:.lock ();
-                let result = ac._0:.onRequest (msg.content);
-                ac._1:.unlock ();
+                ac._1:.lock();
+                let result = ac._0:.onRequest(msg.content);
+                ac._1:.unlock();
                 result
             } else {
-                ac._0:.onRequest (msg.content)
+                ac._0:.onRequest(msg.content)
             };
 
-            let response = ActorMessage (reqId-> msg.uid, alias self, Protocol::ACTOR_RESP, msg.addr, result);
-            self:.sendActorMessage (msg.addr, response, local);
+            let response = ActorMessage(reqId-> msg.uid, alias self, Protocol::ACTOR_RESP, msg.addr, result);
+            self:.sendActorMessage(msg.addr, response, local);
         } else {
-            let response = ActorMessage (reqId-> msg.uid, alias self, Protocol::ACTOR_RESP_FAILED, msg.addr, copy Dict ());
-            self:.sendActorMessage (msg.addr, response, local);
+            let response = ActorMessage(reqId-> msg.uid, alias self, Protocol::ACTOR_RESP_FAILED, msg.addr, copy Dict());
+            self:.sendActorMessage(msg.addr, response, local);
         }
     }
 
@@ -636,27 +636,27 @@ pub class ActorSystem {
      * Wait for all worker threads to join
      * @warning: discard submitted jobs that have not yet started
      * */
-    fn waitAllCompletes (mut self) {
-        if (self.isWorkerThread ()) return;
+    fn waitAllCompletes(mut self) {
+        if (self.isWorkerThread()) return;
 
-        if let Ok (dmut t) = self._sendingTh {
-            self._waitSend:.post ();
+        if let Ok(dmut t) = self._sendingTh {
+            self._waitSend:.post();
             t.value; // wait sending thread
         }
 
-        if self._isRunning { self:.triggerExit (); }
-        if let Ok (dmut t) = self._pollingTh {
+        if self._isRunning { self:.triggerExit(); }
+        if let Ok(dmut t) = self._pollingTh {
             t.value; // wait polling thread
         }
 
-        self._jobs:.clear ();
+        self._jobs:.clear();
         loop {
-            self._jobMutex:.lock ();
+            self._jobMutex:.lock();
             let nbJobs = self._jobThreads.len;
-            self._jobMutex:.unlock ();
+            self._jobMutex:.unlock();
 
             if (nbJobs != 0) {
-                self._waitTask:.post ();
+                self._waitTask:.post();
             } else break;
         }
     }
@@ -664,8 +664,8 @@ pub class ActorSystem {
     /**
      * Trigger exit signal for polling loop
      * */
-    fn triggerExit (mut self) {
-        if let Ok (dmut o) = alias self._triggerO {
+    fn triggerExit(mut self) {
+        if let Ok(dmut o) = alias self._triggerO {
             o:.write!{u8} (Protocol::SYSTEM_KILL_ALL)?;
         }
     }
@@ -673,13 +673,13 @@ pub class ActorSystem {
     /**
      * @returns: true if the disposing thread is a working thread spawned by the system
      * */
-    fn isWorkerThread (self)-> bool {
-        let s = etc::runtime::threads::_yrt_thread_self_id ();
-        if let Ok (t) = (self._pollingTh) && t.tid == s {
+    fn isWorkerThread(self)-> bool {
+        let s = etc::runtime::threads::_yrt_thread_self_id();
+        if let Ok(t) = (self._pollingTh) && t.tid == s {
             return true;
         }
 
-        if let Ok (t) = self._sendingTh && t.tid == s {
+        if let Ok(t) = self._sendingTh && t.tid == s {
             return true;
         }
 
@@ -703,43 +703,43 @@ pub class ActorSystem {
      * @params:
      *    - name: the name of the actor
      * */
-    pub fn local (mut self, name : [c8])-> dmut &reference::ActorRef {
+    pub fn local(mut self, name: [c8])-> dmut &reference::ActorRef {
         match self._addr.ip {
-            Ipv4Addr () => {
-                return copy reference::ActorRef (name, SockAddr (Ipv4::LOCALHOST, self.port), alias self);
+            Ipv4Addr() => {
+                return copy reference::ActorRef(name, SockAddr(Ipv4::LOCALHOST, self.port), alias self);
             }
             _ => {
-                return copy reference::ActorRef (name, SockAddr (Ipv6::LOCALHOST, self.port), alias self);
+                return copy reference::ActorRef(name, SockAddr(Ipv6::LOCALHOST, self.port), alias self);
             }
         }
     }
 
     /**
      * @returns: a reference to a remote actor managed by another actor system
-     * @info: if addr is the address of the actorsystem (ip of the current machine, and same port) a local reference is returned
+     * @info: if addr is the address of the actorsystem(ip of the current machine, and same port) a local reference is returned
      * */
-    pub fn remote (mut self, name : [c8], addr : SockAddr)-> dmut &reference::ActorRef {
-        if (self.isLocalAddr (addr)) {
-            return self:.local (name);
+    pub fn remote(mut self, name: [c8], addr: SockAddr)-> dmut &reference::ActorRef {
+        if (self.isLocalAddr(addr)) {
+            return self:.local(name);
         }
 
-        return copy reference::ActorRef (name, addr, alias self)
+        return copy reference::ActorRef(name, addr, alias self)
     }
 
 
     /**
      * @returns: true if the addr is a loopback address to the ActorSystem
      * */
-    fn isLocalAddr (self, addr : SockAddr)-> bool {
+    fn isLocalAddr(self, addr: SockAddr)-> bool {
         if addr.port != self.port {
             return false;
         }
 
         // No need to list ips, if this is a loopback ip
-        if addr.ip.isLoopback () return true;
+        if addr.ip.isLoopback() return true;
 
         // Find the ip of the machine and check wether it will loopback in the end
-        let faces = unsafe { std::env::getIpInterfaces () };
+        let faces = unsafe { std::env::getIpInterfaces() };
         for _, j in faces for z in j {
             if addr.ip == z return true;
         }
@@ -761,24 +761,24 @@ pub class ActorSystem {
      *    - name: the name of the actor
      *    - act: the actor to attach to the system
      * */
-    pub fn add (mut self, name : [c8], dmut act : &actor::base::ActorBase)
+    pub fn add(mut self, name: [c8], dmut act: &actor::base::ActorBase)
         throws errors::ActorError
     {
-        self._actorMutex:.lock ();
+        self._actorMutex:.lock();
         let found = name in self._actors;
-        self._actorMutex:.unlock ();
+        self._actorMutex:.unlock();
 
         if found {
-            throw copy errors::ActorError (std::format::format ("Already an actor named '{}'", name));
+            throw copy errors::ActorError(std::format::format("Already an actor named '{}'", name));
         }
 
-        act:.attach (name, alias self);
-        self._actorMutex:.lock ();
-        self._actors [name] = (alias act, copy Mutex ());
-        self._actorMutex:.unlock ();
+        act:.attach(name, alias self);
+        self._actorMutex:.lock();
+        self._actors[name] = (alias act, copy Mutex());
+        self._actorMutex:.unlock();
 
         if (self._isRunning) {
-            act:.onStart ();
+            act:.onStart();
         }
     }
 
@@ -787,10 +787,10 @@ pub class ActorSystem {
      * @params:
      *   - name: the name of the actor to find
      * */
-    fn getActor (mut self, name : [c8])-> dmut ((&base::ActorBase, &Mutex))? {
-        self._actorMutex:.lock ();
-        let dmut act__ = alias self._actors [name];
-        self._actorMutex:.unlock ();
+    fn getActor(mut self, name: [c8])-> dmut((&base::ActorBase, &Mutex))? {
+        self._actorMutex:.lock();
+        let dmut act__ = alias self._actors[name];
+        self._actorMutex:.unlock();
 
         alias act__
     }
@@ -800,10 +800,10 @@ pub class ActorSystem {
      * @params:
      *   - name: the name of the actor to remove
      * */
-    fn removeActor (mut self, name : [c8]) {
-        self._actorMutex:.lock ();
-        self._actors:.remove (name);
-        self._actorMutex:.unlock ();
+    fn removeActor(mut self, name: [c8]) {
+        self._actorMutex:.lock();
+        self._actors:.remove(name);
+        self._actorMutex:.unlock();
     }
 
     /*!
@@ -818,8 +818,8 @@ pub class ActorSystem {
      * @returns: the address on which the system is listening
      * */
     @field
-    pub fn ip (self)-> &IpAddr {
-        if let Ok (lst) = self._listener {
+    pub fn ip(self)-> &IpAddr {
+        if let Ok(lst) = self._listener {
             lst.addr.ip
         } else {
             self._addr.ip
@@ -830,8 +830,8 @@ pub class ActorSystem {
      * @returns: the port on wich the system is listening
      * */
     @field
-    pub fn port (self)-> u16 {
-        if let Ok (lst) = self._listener {
+    pub fn port(self)-> u16 {
+        if let Ok(lst) = self._listener {
             lst.addr.port
         } else {
             0u16
@@ -841,11 +841,11 @@ pub class ActorSystem {
     /**
      * @returns: a uniq message id
      * */
-    pub fn genUID (mut self)-> u64 {
-        self._requestMutex:.lock ();
+    pub fn genUID(mut self)-> u64 {
+        self._requestMutex:.lock();
         self._lastUID += 1;
         let id = self._lastUID;
-        self._requestMutex:.unlock ();
+        self._requestMutex:.unlock();
 
         id
     }
@@ -861,14 +861,14 @@ pub class ActorSystem {
     /**
      * Set the duration of the timeout when issuing new tcp connection to remote actor systems
      * */
-    pub fn setConnectionTimeout (mut self, timeout : Duration) {
+    pub fn setConnectionTimeout(mut self, timeout: Duration) {
         self._connectionTimeout = timeout;
     }
 
     /**
      * Set the number of retries when sending a message to a remote actor system
      * */
-    pub fn setNbSendRetries (mut self, nb : u32) {
+    pub fn setNbSendRetries(mut self, nb: u32) {
         self._nbSendRetries = nb;
     }
 
@@ -883,44 +883,44 @@ pub class ActorSystem {
     /**
      * Send a message to a remote or local actor
      * */
-    pub fn sendMessage (mut self, addr : SockAddr, actorName : [c8], content : &Config, local : bool) {
-        let message = ActorMessage (alias self, Protocol::ACTOR_MSG, actorName, addr, content);
-        self:.sendActorMessage (addr, message, local);
+    pub fn sendMessage(mut self, addr: SockAddr, actorName: [c8], content: &Config, local: bool) {
+        let message = ActorMessage(alias self, Protocol::ACTOR_MSG, actorName, addr, content);
+        self:.sendActorMessage(addr, message, local);
     }
 
     /**
      * Send actor kill message to a remote or local actor
      * */
-    pub fn sendKill (mut self, actorName : [c8]) {
-        let addr = SockAddr (Ipv4::LOCALHOST, self.port);
-        let message = ActorMessage (alias self, Protocol::ACTOR_KILL, actorName, addr, copy Dict ());
-        self:.sendActorMessage (addr, message, true);
+    pub fn sendKill(mut self, actorName: [c8]) {
+        let addr = SockAddr(Ipv4::LOCALHOST, self.port);
+        let message = ActorMessage(alias self, Protocol::ACTOR_KILL, actorName, addr, copy Dict());
+        self:.sendActorMessage(addr, message, true);
     }
 
     /**
      * Send a message to a remote or local actor
      * */
-    pub fn sendRequest (mut self, addr : SockAddr, actorName : [c8], content : &Config, local : bool, timeout : Duration)-> dmut &request::ActorRqtFuture {
-        let message = ActorMessage (alias self, Protocol::ACTOR_REQ, actorName, addr, content);
+    pub fn sendRequest(mut self, addr: SockAddr, actorName: [c8], content: &Config, local: bool, timeout: Duration)-> dmut &request::ActorRqtFuture {
+        let message = ActorMessage(alias self, Protocol::ACTOR_REQ, actorName, addr, content);
 
-        let t = Instant::now ();
-        let dmut sem = copy Semaphore ();
-        let dmut req = copy request::ActorRqtFuture (message.uid, alias self, alias sem, t + timeout);
+        let t = Instant::now();
+        let dmut sem = copy Semaphore();
+        let dmut req = copy request::ActorRqtFuture(message.uid, alias self, alias sem, t + timeout);
 
-        self:.registerRequest (alias req);
-        self:.sendActorMessage (addr, message, local);
+        self:.registerRequest(alias req);
+        self:.sendActorMessage(addr, message, local);
         return alias req;
     }
 
     /**
      * Send a message to a an actor in remote or local system
      * */
-    fn sendActorMessage (mut self, addr : SockAddr, msg : ActorMessage, local : bool) {
+    fn sendActorMessage(mut self, addr: SockAddr, msg: ActorMessage, local: bool) {
         if (local) {
-            self:.submitJob (Job (origin-> SockAddr (self._addr.ip, self.port), msg-> msg?, Instant::now ()));
+            self:.submitJob(Job(origin-> SockAddr(self._addr.ip, self.port), msg-> msg?, Instant::now()));
         } else {
-            self._sendMails:.send ((msg, addr));
-            self._waitSend:.post ();
+            self._sendMails:.send((msg, addr));
+            self._waitSend:.post();
         }
     }
 
@@ -935,22 +935,22 @@ pub class ActorSystem {
     /**
      * Main function of the message sending thread
      * */
-    fn sendMain (mut self) {
-        self._ready:.post ();
+    fn sendMain(mut self) {
+        self._ready:.post();
 
-        let dmut remotes : [&TcpStream] = [];
+        let dmut remotes: [&TcpStream] = [];
         loop {
-            self._waitSend:.wait ();
+            self._waitSend:.wait();
             if !self._isRunning break;
 
-            if let Ok ((msg, addr)) = self._sendMails:.receive () {
-                self:.performSending (ref remotes, addr, msg);
+            if let Ok((msg, addr)) = self._sendMails:.receive() {
+                self:.performSending(ref remotes, addr, msg);
             }
         }
 
         // Send all the message that have been queued but are not yet sent
-        while let Ok ((msg, addr)) = self._sendMails:.receive () {
-            self:.performSending (ref remotes, addr, msg);
+        while let Ok((msg, addr)) = self._sendMails:.receive() {
+            self:.performSending(ref remotes, addr, msg);
         }
     }
 
@@ -960,23 +960,23 @@ pub class ActorSystem {
      *   - addr: the address of the remote sys
      *   - msg: the message to send
      * */
-    fn performSending (mut self, dmut ref remotes : [&TcpStream], addr : SockAddr, msg : ActorMessage) {
-        let buffer = msg.serialize ();
+    fn performSending(mut self, dmut ref remotes: [&TcpStream], addr: SockAddr, msg: ActorMessage) {
+        let buffer = msg.serialize();
         for _ in 0 .. self._nbSendRetries {
-            let dmut co = self:.connect (ref remotes, addr);
-            if let Ok (dmut str) = alias co {
+            let dmut co = self:.connect(ref remotes, addr);
+            if let Ok(dmut str) = alias co {
                 {
-                    str:.send!{u32} (cast!u32 (buffer.len));
-                    str:.sendRaw (buffer);
+                    str:.send!{u32} (cast!u32(buffer.len));
+                    str:.sendRaw(buffer);
 
-                    if !str.isOpen () {
-                        self:.release (ref remotes, addr, alias str);
+                    if !str.isOpen() {
+                        self:.release(ref remotes, addr, alias str);
                     }
 
                     break;
                 } catch {
                     _ => {
-                        self:.release (ref remotes, addr, alias str);
+                        self:.release(ref remotes, addr, alias str);
                     }
                 }
             }
@@ -995,44 +995,44 @@ pub class ActorSystem {
      * Manage the reception of a response to a request
      * @params:
      *    - msg: the response to a sent request
-     *    - failed: true if the remote system returned an empty response (because remote actor was not found)
+     *    - failed: true if the remote system returned an empty response(because remote actor was not found)
      * */
-    fn onResponse (mut self, msg : ActorMessage, failed : bool) {
-        self._requestMutex:.lock ();
-        let dmut rq__ = alias self._requestIds [msg.uid];
+    fn onResponse(mut self, msg: ActorMessage, failed: bool) {
+        self._requestMutex:.lock();
+        let dmut rq__ = alias self._requestIds[msg.uid];
 
-        if let Ok (dmut req) = alias rq__ {
-            self._requestIds:.remove (msg.uid);
-            self._requestMutex:.unlock ();
+        if let Ok(dmut req) = alias rq__ {
+            self._requestIds:.remove(msg.uid);
+            self._requestMutex:.unlock();
 
-            if (Instant::now () <= req.timeout) {
+            if (Instant::now() <= req.timeout) {
                 if (!failed) {
-                    req:.emitResponse (msg.content?);
+                    req:.emitResponse(msg.content?);
                 } else {
-                    req:.emitResponse (none);
+                    req:.emitResponse(none);
                 }
             } // else simply ignore the request response
         } else {
-            self._requestMutex:.unlock ();
+            self._requestMutex:.unlock();
         }
     }
 
     /**
      * Register a request to be awaited
      * */
-    fn registerRequest (mut self, dmut req : &request::ActorRqtFuture) {
-        self._requestMutex:.lock ();
-        self._requestIds [req.uid] = alias req;
-        self._requestMutex:.unlock ();
+    fn registerRequest(mut self, dmut req: &request::ActorRqtFuture) {
+        self._requestMutex:.lock();
+        self._requestIds[req.uid] = alias req;
+        self._requestMutex:.unlock();
     }
 
     /**
      * Remove a request in the list of awaited requests
      * */
-    pub fn removeRequest (mut self, uid : u64) {
-        self._requestMutex:.lock ();
-        self._requestIds:.remove (uid);
-        self._requestMutex:.unlock ();
+    pub fn removeRequest(mut self, uid: u64) {
+        self._requestMutex:.lock();
+        self._requestIds:.remove(uid);
+        self._requestMutex:.unlock();
     }
 
     /*!
@@ -1046,15 +1046,15 @@ pub class ActorSystem {
     /**
      * Find a connected socket or create a new one to a remote actor system
      * */
-    fn connect (mut self, ref dmut remotes : [&TcpStream], addr : SockAddr)-> dmut (&TcpStream)? {
+    fn connect(mut self, ref dmut remotes: [&TcpStream], addr: SockAddr)-> dmut(&TcpStream)? {
         for dmut r in alias remotes if r.addr == addr {
             return (alias r)?;
         }
 
         {
-            let dmut r = copy TcpStream::connect (addr, timeout-> self._connectionTimeout);
-            r:.setSendTimeout (self._connectionTimeout);
-            r:.setRecvTimeout (self._connectionTimeout);
+            let dmut r = copy TcpStream::connect(addr, timeout-> self._connectionTimeout);
+            r:.setSendTimeout(self._connectionTimeout);
+            r:.setRecvTimeout(self._connectionTimeout);
             remotes ~= [alias r];
             alias r
         }?
@@ -1063,13 +1063,13 @@ pub class ActorSystem {
     /**
      * Release a socket connection to a remote system
      * */
-    fn release (mut self, ref dmut remotes : [&TcpStream], addr : SockAddr, dmut sock : &TcpStream) {
+    fn release(mut self, ref dmut remotes: [&TcpStream], addr: SockAddr, dmut sock: &TcpStream) {
         for i, dmut r in alias remotes if r.addr == addr {
-            r:.dispose ();
-            remotes = remotes [0 .. i] ~ remotes [i + 1 .. $];
+            r:.dispose();
+            remotes = remotes[0 .. i] ~ remotes[i + 1 .. $];
         }
 
-        sock:.dispose ();
+        sock:.dispose();
     }
 
 
