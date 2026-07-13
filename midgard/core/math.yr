@@ -159,15 +159,30 @@ pub fn fabs {T} (a: T)-> T {
  * */
 @inline
 pub fn fcmp {T} (a: T, b: T)-> bool {
-    if (fabs(a - b) <= T::epsilon) {
-        true
-    } else if (a != a && b != b) {
-        true
-    } else {
-        false
-    }
+    // 1. NaN handling
+    if isNaN(a) && isNaN(b) return true;
+    if isNaN(a) || isNaN(b) return false;
+
+    // 2. Infinities and signed zero
+    if a == b return true;
+
+    // 3. Absolute difference
+    let diff = abs(a - b);
+
+    // 4. Magnitude
+    let maxXY = max(abs(a), abs(b));
+
+    // 5. Tolerance based on machine epsilon
+    let tol = max(T::epsilon, T::epsilon * maxXY);
+
+    // 6. Final congruence test
+    return diff <= tol;
 }
 
+@inline
+pub fn isNaN {T} (a: T)-> bool {
+    return a != a;
+}
 
 @inline
 pub fn abs {T} (a: T) {
