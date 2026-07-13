@@ -10,25 +10,25 @@
  * use std::io;
  * use std::concurrency::signal;
  *
- * fn foo (x : i32, y : i32) {
- *     println ("Foo called with ", x, " ", y);
+ * fn foo(x: i32, y: i32) {
+ *     println("Foo called with ", x, " ", y);
  * }
  *
  * let mut sig = Signal!{i32, i32} ();
  *
  * // Connecting the foo function to the signal
- * sig:.connect (&foo);
+ * sig:.connect(&foo);
 
  * let i = 42;
- * sig:.connect (copy |x, y| => {
- *     println ("Lambda called : ", x, " ", y, " ", i);
+ * sig:.connect(copy |x, y| => {
+ *     println("Lambda called: ", x, " ", y, " ", i);
  * });
  *
  * // Call all the slots connected to the signal
- * sig.emit (1, 2);
+ * sig.emit(1, 2);
  *
  * // disconnect a connected slot
- * sig:.disconnect (&foo);
+ * sig:.disconnect(&foo);
  * ```
  */
 in signal;
@@ -36,7 +36,7 @@ in signal;
 pub record Signal {T of ()} {
 
     // List of connected function pointers
-    let dmut _foos : [(dg ()-> void) => ()] = copy [];
+    let dmut _foos: [(dg ()-> void) => ()] = copy [];
 
     /**
      * Create an empty signal connected to nothing
@@ -48,10 +48,10 @@ pub record Signal {T of ()} {
      * @params:
      *    - f: the function to connect
      * @info: does not reconnect the function if already found
-     * @complexity: O (1)
+     * @complexity: O(1)
      */
-    pub fn connect (mut self, f : dg ()-> void) {
-        self._foos [f] = ();
+    pub fn connect(mut self, f: dg ()-> void) {
+        self._foos[f] = ();
     }
 
     /**
@@ -59,22 +59,22 @@ pub record Signal {T of ()} {
      * @params:
      *    - f: the function to disconnect
      * @info: does nothing if the function was not connected
-     * @complexity: O (1)
+     * @complexity: O(1)
      * * */
-    pub fn disconnect (mut self, f : dg ()-> void) {
-        self._foos:.remove (f);
+    pub fn disconnect(mut self, f: dg ()-> void) {
+        self._foos:.remove(f);
     }
 
 
     /**
-     * Emit the signal (calling all the connected functions).
+     * Emit the signal(calling all the connected functions).
      * @info: run the functions in the current threads with no guarantee on calling order.
      * @params:
      *    - values: the list of parameters to pass to the connected functions.
      * */
-    pub fn emit (self) {
+    pub fn emit(self) {
         for f, _ in self._foos {
-            f ();
+            f();
         }
     }
 
@@ -82,7 +82,7 @@ pub record Signal {T of ()} {
      * @returns: the number of functions connected to the signal
      * */
     @field
-    pub fn len (self)-> usize {
+    pub fn len(self)-> usize {
         self._foos.len
     }
 
@@ -91,7 +91,7 @@ pub record Signal {T of ()} {
 pub record Signal {T...} {
 
     // List of connected function pointers
-    let dmut _foos : [(dg (T)-> void) => ()] = copy [];
+    let dmut _foos: [(dg (T)-> void) => ()] = copy [];
 
     /**
      * Create an empty signal connected to nothing
@@ -103,10 +103,10 @@ pub record Signal {T...} {
      * @params:
      *    - f: the function to connect
      * @info: does not reconnect the function if already found
-     * @complexity: O (1)
+     * @complexity: O(1)
      */
-    pub fn connect (mut self, f : dg (T)-> void) {
-        self._foos [f] = ();
+    pub fn connect(mut self, f: dg (T)-> void) {
+        self._foos[f] = ();
     }
 
     /**
@@ -114,24 +114,24 @@ pub record Signal {T...} {
      * @params:
      *    - f: the function to disconnect
      * @info: does nothing if the function was not connected
-     * @complexity: O (1)
+     * @complexity: O(1)
      * * */
-    pub fn disconnect (mut self, f : dg (T)-> void) {
-        self._foos:.remove (f);
+    pub fn disconnect(mut self, f: dg (T)-> void) {
+        self._foos:.remove(f);
     }
 
 
     /**
-     * Emit the signal (calling all the connected functions).
+     * Emit the signal(calling all the connected functions).
      * @info: run the functions in the current threads with no guarantee on calling order.
      * @params:
      *    - values: the list of parameters to pass to the connected functions.
      * */
-    pub fn emit (self, values : T) {
+    pub fn emit(self, values: T) {
         for f, _ in self._foos {
-            cte if ((T,)::arity == 1) { f (values); }
+            cte if ((T,)::arity == 1) { f(values); }
             else {
-                f (expand values);
+                f(expand values);
             }
         }
     }
@@ -140,7 +140,7 @@ pub record Signal {T...} {
      * @returns: the number of functions connected to the signal
      * */
     @field
-    pub fn len (self)-> usize {
+    pub fn len(self)-> usize {
         self._foos.len
     }
 

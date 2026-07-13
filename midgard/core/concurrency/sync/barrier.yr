@@ -1,7 +1,7 @@
 in barrier;
 
 prv record _yrt_thread_barrier_t {
-    let data : [u8 ; 32] = [0 ; 32];
+    let data: [u8 ; 32] = [0 ; 32];
     pub self () {}
 }
 
@@ -12,17 +12,17 @@ prv record _yrt_thread_barrier_t {
  *    - loc: the barrier to create
  *    - nbThreads: the number of threads to wait before the barrier opens
  * */
-prv extern (C) fn _yrt_thread_barrier_init (lock : *_yrt_thread_barrier_t, nb : u32);
+prv extern (C) fn _yrt_thread_barrier_init(lock: *_yrt_thread_barrier_t, nb: u32);
 
 /**
  * Wait for the barrier to open
  * */
-prv extern (C) fn _yrt_thread_barrier_wait (lock : *_yrt_thread_barrier_t);
+prv extern (C) fn _yrt_thread_barrier_wait(lock: *_yrt_thread_barrier_t);
 
 /**
  * Destroy the barrier
  * */
-prv extern (C) fn _yrt_thread_barrier_destroy (lock : *_yrt_thread_barrier_t);
+prv extern (C) fn _yrt_thread_barrier_destroy(lock: *_yrt_thread_barrier_t);
 
 /**
  * A barrier used to synchronized multiple threads
@@ -30,40 +30,40 @@ prv extern (C) fn _yrt_thread_barrier_destroy (lock : *_yrt_thread_barrier_t);
 @final
 pub class Barrier {
 
-    let _lock : _yrt_thread_barrier_t;
-    let mut _isInit : bool = false;
+    let _lock: _yrt_thread_barrier_t;
+    let mut _isInit: bool = false;
 
     /**
      * @params:
      *    - nb: the number of threads to sync
      * */
-    pub self (nb : u32)
-        with _lock = _yrt_thread_barrier_t ()
+    pub self (nb: u32)
+        with _lock = _yrt_thread_barrier_t()
     {
-        _yrt_thread_barrier_init (&self._lock, nb);
+        _yrt_thread_barrier_init(&self._lock, nb);
         self._isInit = true;
     }
 
     /**
      * Wait for the barrier to open
      * */
-    pub fn wait (mut self) {
-        _yrt_thread_barrier_wait (&self._lock);
+    pub fn wait(mut self) {
+        _yrt_thread_barrier_wait(&self._lock);
     }
 
     /**
      * Destroy the barrier
      * */
-    pub fn dispose (mut self) {
+    pub fn dispose(mut self) {
         if (self._isInit) {
-            _yrt_thread_barrier_destroy (&self._lock);
+            _yrt_thread_barrier_destroy(&self._lock);
         }
 
         self._isInit = false;
     }
 
-    __dtor (mut self) {
-        self:.dispose ();
+    __dtor(mut self) {
+        self:.dispose();
     }
 
 }

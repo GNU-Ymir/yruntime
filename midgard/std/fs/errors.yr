@@ -12,7 +12,7 @@ use std::stream;
 /**
  * Error code used to identify a specific filesystem error
  */
-pub enum : u8
+pub enum: u8
 | FILE_CLOSED       = 1u8
 | NOT_READABLE      = 2u8
 | NOT_WRITABLE      = 3u8
@@ -35,26 +35,26 @@ pub enum : u8
 pub class FsError over core::exception::io::IOError {
 
     // The message of the error
-    pub let msg : [c8];
+    pub let msg: [c8];
 
     // The error code to identify the error
-    pub let code : FsErrorCode;
+    pub let code: FsErrorCode;
 
     /**
      * @params:
      *    - code: the error code to identify the error
      *    - msg: the message to explain the reason of the error
      */
-    pub self (code : FsErrorCode, msg : [c8]) with msg = msg, code = code {}
+    pub self (code: FsErrorCode, msg: [c8]) with msg = msg, code = code {}
 
     impl Streamable {
-        pub over toStream (self, dmut stream : &StringStream) {
-            stream:.write (self.__typeinfo__.name);
+        pub over toStream(self, dmut stream: &StringStream) {
+            stream:.write(self.__typeinfo__.name);
             if (self.trace.len != 0u64) {
-                stream:.write (" ("):.write (fs::errors::to![c8] (self.code)):.write (") : "):.writeln (self.msg);
-                stream:.write (self.getStackTrace ());
+                stream:.write(" ("):.write(fs::errors::to![c8] (self.code)):.write(") : "):.writeln(self.msg);
+                stream:.write(self.getStackTrace());
             } else {
-                stream:.write (" ("):.write (fs::errors::to![c8] (self.code)):.write (") : "):.writeln (self.msg);
+                stream:.write(" ("):.write(fs::errors::to![c8] (self.code)):.write(") : "):.writeln(self.msg);
             }
         }
     }
@@ -62,19 +62,19 @@ pub class FsError over core::exception::io::IOError {
 
 /**
  * Transform an errno error into an FsErrorCode
-* @params:
+ * @params:
  *   - err: the error returned by errno
  * @returns: a FsErrorCode usable by FsError exception
  */
-pub fn if is!{T}{X of FsErrorCode} to {T} (err : ErrnoValue) -> FsErrorCode {
+pub fn if is!{T}{X of FsErrorCode} to {T} (err: ErrnoValue)-> FsErrorCode {
     match err {
         ErrnoValue::EACCES => { FsErrorCode::PERMISSION_DENIED }
         ErrnoValue::ENOTDIR => { FsErrorCode::PARENT_DONT_EXIST }
         ErrnoValue::ENOENT => { FsErrorCode::NOT_FOUND }
-        ErrnoValue::EBADF  => { FsErrorCode::FILE_CLOSED }
-        ErrnoValue::ELOOP  => { FsErrorCode::LINK_LOOP }
-        ErrnoValue::EEXIST  => { FsErrorCode::ALREADY_EXISTS }
-        ErrnoValue::ENAMETOOLONG  => { FsErrorCode::PATH_TOO_LONG }
+        ErrnoValue::EBADF => { FsErrorCode::FILE_CLOSED }
+        ErrnoValue::ELOOP => { FsErrorCode::LINK_LOOP }
+        ErrnoValue::EEXIST => { FsErrorCode::ALREADY_EXISTS }
+        ErrnoValue::ENAMETOOLONG => { FsErrorCode::PATH_TOO_LONG }
         ErrnoValue::ENOTEMPTY => { FsErrorCode::DIR_NOT_EMPTY }
         _ => { FsErrorCode::IO_ERROR }
     }
@@ -86,9 +86,9 @@ pub fn if is!{T}{X of FsErrorCode} to {T} (err : ErrnoValue) -> FsErrorCode {
  *    - err: the error code to transform into a readable string
  * @returns: a readable string
  */
-pub fn if is!{U}{X of c8} to {C of [U], U, T of FsErrorCode} (err : T) -> [c8] {
+pub fn if is!{U}{X of c8} to {C of [U], U, T of FsErrorCode} (err: T)-> [c8] {
     match err {
-        FsErrorCode::FILE_CLOSED  => { "FILE_CLOSED" }
+        FsErrorCode::FILE_CLOSED => { "FILE_CLOSED" }
         FsErrorCode::NOT_READABLE => { "NOT_READABLE" }
         FsErrorCode::NOT_WRITABLE => { "NOT_WRITABLE" }
         FsErrorCode::PERMISSION_DENIED => { "PERMISSION_DENIED" }

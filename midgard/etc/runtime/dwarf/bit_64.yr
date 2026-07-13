@@ -9,26 +9,31 @@ in bit_64;
  * ====================================================================================================
  */
 
-def Dwarf_Debug    : usize;
-def Dwarf_Die      : usize;
-def Dwarf_Error    : usize;
-def Dwarf_Arange   : usize;
-def Dwarf_Signed   : isize;
-def Dwarf_Unsigned : usize;
-def Dwarf_Off      : usize;
-def Dwarf_Line     : usize;
-def Dwarf_Handler  : *(void);
-def Dwarf_Ptr      : *(void);
-def Dwarf_Addr     : usize;
+
+def Dwarf_Debug:        usize;
+def Dwarf_Die:          usize;
+def Dwarf_Error:        usize;
+def Dwarf_Arange:       usize;
+def Dwarf_Signed:       isize;
+def Dwarf_Unsigned:     usize;
+def Dwarf_Off:          usize;
+def Dwarf_Line:         *(void);
+def Dwarf_Line_Context: usize;
+
+def Dwarf_Handler: *(void);
+def Dwarf_Ptr:     *(void);
+def Dwarf_Addr:    usize;
+def Dwarf_Small:   u8;
 
 enum
-| DLC_READ   = 0
-| DLE_NE     = 0
-| DLV_OK     = 0
-| DLV_ERROR  = 1
-| DLA_STRING = 1
-| DLA_DIE    = 8
-| DLA_ARANGE = 17
+| DLC_READ           = 0
+| DLE_NE             = 0
+| DLV_OK             = 0
+| DW_GROUPNUMBER_ANY = 0
+| DLV_ERROR          = 1
+| DLA_STRING         = 1
+| DLA_DIE            = 8
+| DLA_ARANGE         = 17
  -> DwarfCodes;
 
 /*!
@@ -39,23 +44,65 @@ enum
  * ====================================================================================================
  */
 
-extern (C) fn dwarf_init (fd : i32, code : DwarfCodes, errHand : Dwarf_Handler, errarg : Dwarf_Ptr, ref mut debug : Dwarf_Debug, ref mut err : Dwarf_Error)-> i32;
 
-extern (C) fn dwarf_get_aranges (obj : Dwarf_Debug, ref mut aranges : (*Dwarf_Arange), ref mut arangeCount : Dwarf_Signed, ref mut err : Dwarf_Error)-> i32;
-extern (C) fn dwarf_get_arange_info (aranges : Dwarf_Arange, ref mut start : Dwarf_Addr, ref mut len : Dwarf_Signed, ref mut off : Dwarf_Off, ref mut err : Dwarf_Error)-> i32;
+extern (C) fn dwarf_init_b(fd: i32,
+                           code: DwarfCodes,
+                           errHand: Dwarf_Handler,
+                           errarg: Dwarf_Ptr,
+                           ref mut debug: Dwarf_Debug,
+                           ref mut err: Dwarf_Error)-> i32;
 
-extern (C) fn dwarf_offdie_b (obj : Dwarf_Debug, off : Dwarf_Off, isInfo : i32, ref mut die : Dwarf_Die, ref mut err : Dwarf_Error)-> i32;
-extern (C) fn dwarf_diename (die : Dwarf_Die, ref mut name : *c8, ref mut err : Dwarf_Error)-> i32;
+extern (C) fn dwarf_get_aranges(obj: Dwarf_Debug,
+                                ref mut aranges: (*Dwarf_Arange),
+                                ref mut arangeCount: Dwarf_Signed,
+                                ref mut err: Dwarf_Error)-> i32;
 
-extern (C) fn dwarf_srclines (die : Dwarf_Die, ref mut lines : *(Dwarf_Line), ref mut nlines : Dwarf_Signed, ref mut err : Dwarf_Error)-> i32;
-extern (C) fn dwarf_srclines_dealloc (die : Dwarf_Die, lines : *Dwarf_Line, nb : Dwarf_Signed)-> i32;
-extern (C) fn dwarf_lineaddr (line : Dwarf_Line, ref mut addr : Dwarf_Addr, ref mut err : Dwarf_Error)-> i32;
-extern (C) fn dwarf_linesrc (line : Dwarf_Line, ref mut name : *c8, ref mut err : Dwarf_Error)-> i32;
-extern (C) fn dwarf_lineno (line : Dwarf_Line, ref mut lineno : Dwarf_Unsigned, ref mut err : Dwarf_Error)-> i32;
+extern (C) fn dwarf_get_arange_info_b(aranges: Dwarf_Arange,
+                                      segment: *Dwarf_Unsigned,
+                                      segment_entry_size: *Dwarf_Unsigned,
+                                      ref mut start: Dwarf_Addr,
+                                      ref mut len: Dwarf_Signed,
+                                      ref mut off: Dwarf_Off,
+                                      ref mut err: Dwarf_Error)-> i32;
 
-extern (C) fn dwarf_dealloc (obj : Dwarf_Debug, arange : Dwarf_Arange, code : i32);
-extern (C) fn dwarf_dealloc (obj : Dwarf_Debug, p : *c8, code : i32);
-extern (C) fn dwarf_finish (obj : Dwarf_Debug, ref mut err : Dwarf_Error)-> i32;
+extern (C) fn dwarf_offdie_b(obj: Dwarf_Debug,
+                             off: Dwarf_Off,
+                             isInfo: i32,
+                             ref mut die: Dwarf_Die,
+                             ref mut err: Dwarf_Error)-> i32;
+
+extern (C) fn dwarf_diename(die: Dwarf_Die,
+                            ref mut name: *c8,
+                            ref mut err: Dwarf_Error)-> i32;
+
+extern (C) fn dwarf_srclines_b(die: Dwarf_Die,
+                               ref mut versionOut: Dwarf_Unsigned,
+                               ref mut tableCount: Dwarf_Small,
+                               ref mut lineContext: Dwarf_Line_Context,
+                               ref mut err: Dwarf_Error)-> i32;
+
+extern (C) fn dwarf_srclines_from_linecontext(lineContext: Dwarf_Line_Context,
+                                              ref mut lineBuf: *Dwarf_Line,
+                                              ref mut lineCount: Dwarf_Signed,
+                                              ref mut err: Dwarf_Error)-> i32;
+
+extern (C) fn dwarf_lineaddr(line: Dwarf_Line,
+                             ref mut addr: Dwarf_Addr,
+                             ref mut err: Dwarf_Error)-> i32;
+
+extern (C) fn dwarf_linesrc(line: Dwarf_Line,
+                            ref mut name: *c8,
+                            ref mut err: Dwarf_Error)-> i32;
+
+extern (C) fn dwarf_lineno(line: Dwarf_Line,
+                           ref mut lineno: Dwarf_Unsigned,
+                           ref mut err: Dwarf_Error)-> i32;
+
+extern (C) fn dwarf_srclines_dealloc_b(lineContext: Dwarf_Line_Context)-> i32;
+
+extern (C) fn dwarf_dealloc(obj: Dwarf_Debug, arange: Dwarf_Arange, code: i32);
+extern (C) fn dwarf_dealloc(obj: Dwarf_Debug, p: *c8, code: i32);
+extern (C) fn dwarf_finish(obj: Dwarf_Debug, ref mut err: Dwarf_Error)-> i32;
 
 
 /*!
@@ -73,27 +120,27 @@ extern (C) fn dwarf_finish (obj : Dwarf_Debug, ref mut err : Dwarf_Error)-> i32;
 class ArangeInfo {
 
     // The begin address of the address range
-    let _addr : Dwarf_Addr;
+    let _addr: Dwarf_Addr;
 
     // The length of the address range
-    let _len : Dwarf_Signed;
+    let _len: Dwarf_Signed;
 
     // The offset of the die in the address range
-    let _off : Dwarf_Off;
+    let _off: Dwarf_Off;
 
-    // The context (dwarf debug object) containing the range
-    let _context : &DebugObject;
+    // The context(dwarf debug object) containing the range
+    let _context: &DebugObject;
 
     // The address range handle
-    let _arange : Dwarf_Arange;
+    let _arange: Dwarf_Arange;
 
     // True if the debug information have been loaded
-    let mut _loaded : bool = false;
+    let mut _loaded: bool = false;
 
     // The extraction of the line
-    let mut _lineAddrs : [mut (Dwarf_Addr, Dwarf_Unsigned, [c8])] = [];
+    let mut _lineAddrs: [mut(Dwarf_Addr, Dwarf_Unsigned, [c8])] = [];
 
-    pub self (context : &DebugObject, arange : Dwarf_Arange, start : Dwarf_Addr, len : Dwarf_Signed, off : Dwarf_Off)
+    pub self (context: &DebugObject, arange: Dwarf_Arange, start: Dwarf_Addr, len: Dwarf_Signed, off: Dwarf_Off)
         with _context = context
         , _arange = arange
         , _addr = start
@@ -104,8 +151,8 @@ class ArangeInfo {
     /**
      * @returns: true if the address is located within the address range
      * */
-    pub fn opContains (self, addr : usize)-> bool {
-        return addr >= self._addr && addr <= self._addr + cast!usize (self._len);
+    pub fn opContains(self, addr: usize)-> bool {
+        return addr >= self._addr && addr <= self._addr + cast!usize(self._len);
     }
 
     /**
@@ -114,8 +161,8 @@ class ArangeInfo {
      *    - .0: the source filename
      *    - .1: the line number
      * */
-    pub fn find (mut self, addr : usize)-> ([c8], usize)? {
-        if self:.loadDie () {
+    pub fn find(mut self, addr: usize)-> ([c8], usize)? {
+        if self:.loadDie() {
             for i in self._lineAddrs {
                 if i._0 >= addr {
                     return (i._2, i._1)?;
@@ -132,9 +179,9 @@ class ArangeInfo {
      *    - .0: the source filename
      *    - .1: the line number
      * */
-    pub fn find (mut self, addr : usize, start : usize, end : usize)-> ([c8], usize)? {
-        if self:.loadDie () {
-            let mut result : ([c8], usize)? = none;
+    pub fn find(mut self, addr: usize, start: usize, end: usize)-> ([c8], usize)? {
+        if self:.loadDie() {
+            let mut result: ([c8], usize)? = none;
             let mut currentDist = usize::max;
 
             for i in self._lineAddrs {
@@ -176,39 +223,52 @@ class ArangeInfo {
      * Load the debug information of the address range
      * @returns: true if the loading succeeded
      * */
-    fn loadDie (mut self)-> bool {
+    fn loadDie(mut self)-> bool {
         if !self._loaded {
-            let mut die : Dwarf_Die = 0;
-            let mut error : Dwarf_Error = 0;
+            let mut die: Dwarf_Die = 0;
+            let mut error: Dwarf_Error = 0;
 
-            if dwarf_offdie_b (self._context.getHandle (), self._off, 1, ref die, ref error) != 0 {
+            if dwarf_offdie_b(self._context.getHandle(), self._off, 1, ref die, ref error) != 0 {
                 return false;
             }
 
-            let mut lines : *Dwarf_Line = null;
-            let mut nbLines : Dwarf_Signed = 0;
+            let mut version: Dwarf_Unsigned = 0;
+            let mut tableCount: Dwarf_Small = 0;
+            let mut linectx: Dwarf_Line_Context = 0;
+
             {
-                if dwarf_srclines (die, ref lines, ref nbLines, ref error) != 0 {
+                if dwarf_srclines_b(die, ref version, ref tableCount, ref linectx, ref error) != 0 {
                     return false;
                 }
 
                 {
-                    self._lineAddrs = copy [unsafe {
-                        let mut addr : Dwarf_Addr = 0;
-                        let mut lineno : Dwarf_Unsigned = 0;
-                        let mut srcFile : *c8 = null;
+                    if tableCount != 1 {
+                        return false;
+                    }
 
-                        let addrR = if dwarf_lineaddr (lines [i], ref addr, ref error) == 0 {
+                    let mut lines: *Dwarf_Line = null;
+                    let mut nbLines: Dwarf_Signed = 0;
+
+                    if dwarf_srclines_from_linecontext(linectx, ref lines, ref nbLines, ref error) != 0 {
+                        return false;
+                    }
+
+                    self._lineAddrs = copy [unsafe {
+                        let mut addr: Dwarf_Addr = 0;
+                        let mut lineno: Dwarf_Unsigned = 0;
+                        let mut srcFile: *c8 = null;
+
+                        let addrR = if dwarf_lineaddr(lines[i], ref addr, ref error) == 0 {
                             addr
                         } else { 0 };
 
-                        let linenoR = if dwarf_lineno (lines [i], ref lineno, ref error) == 0 {
+                        let linenoR = if dwarf_lineno(lines[i], ref lineno, ref error) == 0 {
                             lineno
                         } else { 0 };
 
-                        let filename = if dwarf_linesrc (lines [i], ref srcFile, ref error) == 0 {
-                            let r = std::conv::fromStringZ (srcFile);
-                            dwarf_dealloc (self._context.getHandle (), srcFile, DwarfCodes::DLA_STRING);
+                        let filename = if dwarf_linesrc(lines[i], ref srcFile, ref error) == 0 {
+                            let r = std::conv::fromStringZ(srcFile);
+                            dwarf_dealloc(self._context.getHandle(), srcFile, DwarfCodes::DLA_STRING);
                             r
                         } else { "" };
 
@@ -216,16 +276,16 @@ class ArangeInfo {
                     } for i in 0 .. nbLines];
 
 
-                    std::algorithm::sorting::sort (alias self._lineAddrs, |x, y| => {
+                    std::algorithm::sorting::sort(alias self._lineAddrs, |x, y| => {
                         x.0 < y.0
                     });
 
                 } exit {
-                    dwarf_srclines_dealloc (self._context.getHandle (), lines, nbLines);
+                    dwarf_srclines_dealloc_b(linectx);
                 }
 
             } exit {
-                dwarf_dealloc (self._context.getHandle (), die, DwarfCodes::DLA_DIE);
+                dwarf_dealloc(self._context.getHandle(), die, DwarfCodes::DLA_DIE);
             }
 
             self._loaded = true;
@@ -243,21 +303,21 @@ class ArangeInfo {
 class DebugObject {
 
     // The dwarf handle
-    let _debug : Dwarf_Debug;
+    let _debug: Dwarf_Debug;
 
     // The list of address range found in the dwarf object
-    let dmut _aranges : [&ArangeInfo] = [];
+    let dmut _aranges: [&ArangeInfo] = [];
 
-    pub self (debug : Dwarf_Debug)
+    pub self (debug: Dwarf_Debug)
         with _debug = debug
     {
-        self:.loadAranges ();
+        self:.loadAranges();
     }
 
     /**
      * @returns: the dwarf handle associated to the object
      * */
-    pub fn getHandle (self)-> Dwarf_Debug {
+    pub fn getHandle(self)-> Dwarf_Debug {
         self._debug
     }
 
@@ -267,10 +327,10 @@ class DebugObject {
      *    - .0: the source filename
      *    - .1: the line number
      * */
-    pub fn find (mut self, addr : usize)-> ([c8], usize)? {
+    pub fn find(mut self, addr: usize)-> ([c8], usize)? {
         for _, dmut a in alias self._aranges {
             if addr in a  {
-                return a:.find (addr);
+                return a:.find(addr);
             }
         }
 
@@ -283,10 +343,10 @@ class DebugObject {
      *    - .0: the source filename
      *    - .1: the line number
      * */
-    pub fn find (mut self, addr : usize, start : usize, end : usize)-> ([c8], usize)? {
+    pub fn find(mut self, addr: usize, start: usize, end: usize)-> ([c8], usize)? {
         for _, dmut a in alias self._aranges {
             if addr in a  {
-                return a:.find (addr, start, end);
+                return a:.find(addr, start, end);
             }
         }
 
@@ -304,23 +364,23 @@ class DebugObject {
     /**
      * Load the list of address range within the dwarf object
      * */
-    fn loadAranges (mut self) {
-        let mut error : Dwarf_Error = 0;
-        let mut lst : *(Dwarf_Arange) = null;
-        let mut nb : Dwarf_Signed = 0;
+    fn loadAranges(mut self) {
+        let mut error: Dwarf_Error = 0;
+        let mut lst: *(Dwarf_Arange) = null;
+        let mut nb: Dwarf_Signed = 0;
 
-        if dwarf_get_aranges (self._debug, ref lst, ref nb, ref error) != 0 {
+        if dwarf_get_aranges(self._debug, ref lst, ref nb, ref error) != 0 {
             return;
         }
 
-        let mut start : Dwarf_Addr = 0;
-        let mut len : Dwarf_Signed = 0;
-        let mut off : Dwarf_Off = 0;
+        let mut start: Dwarf_Addr = 0;
+        let mut len: Dwarf_Signed = 0;
+        let mut off: Dwarf_Off = 0;
 
         for i in 0 .. nb {
             unsafe {
-                if dwarf_get_arange_info (lst [i], ref start, ref len, ref off, ref error) == 0 {
-                    self._aranges ~= [copy ArangeInfo (self, lst [i], start, len, off)];
+                if dwarf_get_arange_info_b(lst[i], null, null, ref start, ref len, ref off, ref error) == 0 {
+                    self._aranges ~= [copy ArangeInfo(self, lst[i], start, len, off)];
                 }
             }
         }
@@ -334,9 +394,9 @@ class DebugObject {
      * ====================================================================================================
      */
 
-    pub fn dispose (mut self) {
-        let mut error : Dwarf_Error = 0;
-        dwarf_finish (self._debug, ref error);
+    pub fn dispose(mut self) {
+        let mut error: Dwarf_Error = 0;
+        dwarf_finish(self._debug, ref error);
     }
 
 }
@@ -357,10 +417,10 @@ class DebugObject {
 pub class Dwarf64Loader over DwarfLoader {
 
     // The list of open files
-    let dmut _openFiles : [[c8] => i32] = copy [];
+    let dmut _openFiles: [[c8] => i32] = copy [];
 
     // The list of DwarfObject associated to the files
-    let mut _debugs : [i32 => dmut &DebugObject] = copy [];
+    let mut _debugs: [i32 => dmut &DebugObject] = copy [];
 
     /*!
      * ====================================================================================================
@@ -390,10 +450,10 @@ pub class Dwarf64Loader over DwarfLoader {
      *    - .0: the source filename
      *    - .1: the line number
      * */
-    pub over find (mut self, object : [c8], addr : usize)-> ([c8], usize)? {
-        if let Ok (fd) = self:.getFileFd (object) {
-            if let Ok (dmut debug) = alias self:.getDwarf (fd) {
-                return debug:.find (addr);
+    pub over find(mut self, object: [c8], addr: usize)-> ([c8], usize)? {
+        if let Ok(fd) = self:.getFileFd(object) {
+            if let Ok(dmut debug) = alias self:.getDwarf(fd) {
+                return debug:.find(addr);
             }
         }
 
@@ -401,7 +461,7 @@ pub class Dwarf64Loader over DwarfLoader {
     }
 
 
-        /**
+    /**
      * Find the source filename and source line the nearest to the address
      * @params:
      *   - object: the source path to the ELF object file containing dwarf information
@@ -412,10 +472,10 @@ pub class Dwarf64Loader over DwarfLoader {
      *    - .0: the source filename
      *    - .1: the line number
      * */
-    pub over find (mut self, object : [c8], addr : usize, start : usize, end : usize)-> ([c8], usize)? {
-        if let Ok (fd) = self:.getFileFd (object) {
-            if let Ok (dmut debug) = alias self:.getDwarf (fd) {
-                return debug:.find (addr, start, end);
+    pub over find(mut self, object: [c8], addr: usize, start: usize, end: usize)-> ([c8], usize)? {
+        if let Ok(fd) = self:.getFileFd(object) {
+            if let Ok(dmut debug) = alias self:.getDwarf(fd) {
+                return debug:.find(addr, start, end);
             }
         }
 
@@ -434,13 +494,13 @@ pub class Dwarf64Loader over DwarfLoader {
      * Get the dwarf object associated with an open file descriptor
      * @returns: the dwarf object iif initialization succeeded
      * */
-    fn getDwarf (mut self, fd : i32)-> dmut (&DebugObject)? {
-        if let Ok (dmut debug) = alias self._debugs [fd] {
+    fn getDwarf(mut self, fd: i32)-> dmut(&DebugObject)? {
+        if let Ok(dmut debug) = alias self._debugs[fd] {
             return (alias debug)?;
         }
 
-        if let Ok (dmut debug) = alias self:.openNewDwarf (fd) {
-            self._debugs [fd] = alias debug;
+        if let Ok(dmut debug) = alias self:.openNewDwarf(fd) {
+            self._debugs[fd] = alias debug;
 
             return (alias debug)?;
         }
@@ -451,17 +511,17 @@ pub class Dwarf64Loader over DwarfLoader {
     /**
      * Open a new dwarf object from a file descriptor
      * */
-    pub fn openNewDwarf (mut self, fd : i32)-> dmut (&DebugObject)? {
-        let mut debug : Dwarf_Debug = 0;
-        let mut error : Dwarf_Error = 0;
-        let mut errhand : Dwarf_Handler = null;
-        let mut errarg : Dwarf_Ptr = null;
+    pub fn openNewDwarf(mut self, fd: i32)-> dmut(&DebugObject)? {
+        let mut debug: Dwarf_Debug = 0;
+        let mut error: Dwarf_Error = 0;
+        let mut errhand: Dwarf_Handler = null;
+        let mut errarg: Dwarf_Ptr = null;
 
-        if dwarf_init (fd, DwarfCodes::DLC_READ, errhand, errarg, ref debug, ref error) != 0 {
+        if dwarf_init_b(fd, DwarfCodes::DW_GROUPNUMBER_ANY, errhand, errarg, ref debug, ref error) != 0 {
             return none;
         }
 
-        return (copy DebugObject (debug))?;
+        return (copy DebugObject(debug))?;
     }
 
     /*!
@@ -477,19 +537,19 @@ pub class Dwarf64Loader over DwarfLoader {
      * @params:
      *    - file: the path to the file to open
      * */
-    fn getFileFd (mut self, file : [c8])-> i32? {
+    fn getFileFd(mut self, file: [c8])-> i32? {
         use std::conv;
 
-        if let Ok (f) = self._openFiles [file] {
+        if let Ok(f) = self._openFiles[file] {
             return (f)?;
         }
 
-        let fd = etc::c::files::open (file.toStringZ (), 4);
+        let fd = etc::c::files::open(file.toStringZ(), 4);
         if fd == 0 {
             return none;
         }
 
-        self._openFiles [file] = fd;
+        self._openFiles[file] = fd;
         (fd)?
     }
 
@@ -505,17 +565,17 @@ pub class Dwarf64Loader over DwarfLoader {
     /**
      * Close all dwarf objects and all file descriptors
      * */
-    pub over dispose (mut self) {
-        self:.disposeDebugs ();
-        self:.closeAllFiles ();
+    pub over dispose(mut self) {
+        self:.disposeDebugs();
+        self:.closeAllFiles();
     }
 
     /**
      * Dispose the loaded Debug dwarf Object
      * */
-    fn disposeDebugs (mut self) {
+    fn disposeDebugs(mut self) {
         for _, dmut obj in alias self._debugs {
-            obj:.dispose ();
+            obj:.dispose();
         }
 
         self._debugs = copy [];
@@ -524,9 +584,9 @@ pub class Dwarf64Loader over DwarfLoader {
     /**
      * Close opened file descriptors
      * */
-    fn closeAllFiles (mut self) {
+    fn closeAllFiles(mut self) {
         for _, fd in self._openFiles {
-            etc::c::files::close (fd);
+            etc::c::files::close(fd);
         }
 
         self._openFiles = copy [];

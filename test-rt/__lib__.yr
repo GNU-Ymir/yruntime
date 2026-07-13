@@ -14,27 +14,27 @@ use etc::runtime::threads;
  */
 
 
-lazy dmut __COVERAGE__ : &CoverageTree = copy CoverageTree ();
-lazy dmut __MAIN_TID__ : [usize] = copy [0];
+lazy dmut __COVERAGE__: &CoverageTree = copy CoverageTree();
+lazy dmut __MAIN_TID__: [usize] = copy [0];
 
-extern (C) fn _yrt_unittest_coverage_hit_branch (func : *void, ref frameInfo : CoverageInfo, id : u32) {    
-    let tid = _yrt_thread_self_id ();    
-    if tid == __MAIN_TID__ [0] { 
-        __COVERAGE__:.hitBranch (func, frameInfo, id);
+extern (C) fn _yrt_unittest_coverage_hit_branch(func: *void, ref frameInfo: CoverageInfo, id: u32) {
+    let tid = _yrt_thread_self_id();
+    if tid == __MAIN_TID__[0] {
+        __COVERAGE__:.hitBranch(func, frameInfo, id);
     }
 }
 
-extern (C) fn _yrt_unittest_coverage_hit_enter (func : *void, ref frameInfo : CoverageInfo) {
-    let tid = _yrt_thread_self_id ();    
-    if tid == __MAIN_TID__ [0] { 
-        __COVERAGE__:.hitEnter (func, frameInfo);
+extern (C) fn _yrt_unittest_coverage_hit_enter(func: *void, ref frameInfo: CoverageInfo) {
+    let tid = _yrt_thread_self_id();
+    if tid == __MAIN_TID__[0] {
+        __COVERAGE__:.hitEnter(func, frameInfo);
     }
 }
 
-extern (C) fn _yrt_unittest_coverage_hit_exit (func : *void, ref frameInfo : CoverageInfo) {
-    let tid = _yrt_thread_self_id ();    
-    if tid == __MAIN_TID__ [0] { 
-        __COVERAGE__:.hitExit (func, frameInfo);
+extern (C) fn _yrt_unittest_coverage_hit_exit(func: *void, ref frameInfo: CoverageInfo) {
+    let tid = _yrt_thread_self_id();
+    if tid == __MAIN_TID__[0] {
+        __COVERAGE__:.hitExit(func, frameInfo);
     }
 }
 
@@ -47,19 +47,19 @@ extern (C) fn _yrt_unittest_coverage_hit_exit (func : *void, ref frameInfo : Cov
  * ====================================================================================================
  */
 
-lazy dmut __LAUNCHER__ = copy runner::UnittestLauncher ();
+lazy dmut __LAUNCHER__ = copy runner::UnittestLauncher();
 
-extern (C) fn _yrt_register_unittest_impl (name : [c8], func : fn ()-> void) {
-    __LAUNCHER__:.register (name, func);    
+extern (C) fn _yrt_register_unittest_impl(name: [c8], func: fn ()-> void) {
+    __LAUNCHER__:.register(name, func);
 }
 
-extern (C) fn _yrt_run_unittests_impl  (args : [[c8]]) -> i32 {
-    __MAIN_TID__ [0] = _yrt_thread_self_id ();
-    
-    if __LAUNCHER__.run (args) {
-        __COVERAGE__.report ();
+
+extern (C) fn _yrt_run_unittests_impl  (args: [[c8]])-> i32 {
+    __MAIN_TID__[0] = _yrt_thread_self_id();
+
+    if __LAUNCHER__.run(args, __COVERAGE__) {
         return 0;
     }
-    
+
     return -1;
 }

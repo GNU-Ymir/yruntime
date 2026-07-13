@@ -32,33 +32,33 @@ enum
 pub record TomlParser {
 
     // The lexer used to split the toml content
-    let dmut _lex : &Lexer!{c8};
+    let dmut _lex: &Lexer!{c8};
 
     // The tokenizer for name and int values
-    let mut _nameTzer : Tokenizer!{c8};
+    let mut _nameTzer: Tokenizer!{c8};
 
     /**
      * @params:
      *    - content: the content of the toml configuration file
      * */
-    pub self (content : [c8])
+    pub self (content: [c8])
         with _lex = copy Lexer!{c8} (content,
                                      tokens-> copy TomlTokens::__members__)
         , _nameTzer = Tokenizer!{c8} ()
     {
-        self._nameTzer:.insert (".", isSkip-> true);
+        self._nameTzer:.insert(".", isSkip-> true);
     }
 
     /**
      * Parse the content of the toml
      * @returns: the configuration contained in the toml
      * */
-    pub fn parse (mut self)-> &Dict
+    pub fn parse(mut self)-> &Dict
         throws std::syntax::errors::SyntaxError
     {
-        let dmut result = copy Dict ();
+        let dmut result = copy Dict();
         loop {
-            let (tok, l, c) = self._lex:.next ();
+            let (tok, l, c) = self._lex:.next();
             // End of file
             if tok.len == 0 {
                 break;
@@ -66,27 +66,27 @@ pub record TomlParser {
 
             // Global dict entry
             else if tok == TomlTokens::LCRO {
-                let (name, lName, cName) = self._lex:.next ();
-                let names = self._nameTzer.tokenizeWithoutSkips (name);
+                let (name, lName, cName) = self._lex:.next();
+                let names = self._nameTzer.tokenizeWithoutSkips(name);
                 if (names.len == 0) {
-                    throw copy SyntaxError ("Unexpected '" ~ name ~ "'", lName, cName);
+                    throw copy SyntaxError("Unexpected '" ~ name ~ "'", lName, cName);
                 }
 
                 let mut currC = cName;
                 for n in names {
-                    self.assertIsIdentifier (n, lName, currC);
+                    self.assertIsIdentifier(n, lName, currC);
                     currC += n.len + 1; // dot
                 }
 
-                self:.assertRead (["]"]);
-                result = self.insertInPath (result, names, self:.parseDict (isGlobal-> true));
+                self:.assertRead(["]"]);
+                result = self.insertInPath(result, names, self:.parseDict(isGlobal-> true));
             }
 
             // Global var
             else {
-                self.assertIsIdentifier (tok, l, c);
-                self:.assertRead (["="]);
-                result:[tok] = self:.parseValue ();
+                self.assertIsIdentifier(tok, l, c);
+                self:.assertRead(["="]);
+                result:[tok] = self:.parseValue();
             }
         }
 
@@ -104,18 +104,18 @@ pub record TomlParser {
     /**
      * Parse a value in the toml
      * */
-    prv fn parseValue (mut self)-> &Config
+    prv fn parseValue(mut self)-> &Config
         throws SyntaxError
     {
-        let (begin, l, c) = self._lex:.next ();
+        let (begin, l, c) = self._lex:.next();
         match begin {
-            "{"        => return self:.parseDict (isGlobal-> false);
-            "["        => return self:.parseArray ();
-            "false"    => return copy Bool (false);
-            "true"     => return copy Bool (true);
-            "'"        => return self:.parseString (begin, l, c);
-             "\""      => return self:.parseString (begin, l, c);
-            _          => return self:.parseIntOrFloat (begin, l, c);
+            "{" => return self:.parseDict(isGlobal-> false);
+            "[" => return self:.parseArray();
+            "false" => return copy Bool(false);
+            "true" => return copy Bool(true);
+            "'" => return self:.parseString(begin, l, c);
+            "\"" => return self:.parseString(begin, l, c);
+            _ => return self:.parseIntOrFloat(begin, l, c);
         }
     }
 
@@ -124,25 +124,25 @@ pub record TomlParser {
      * @params:
      *    - isGlobal: true iif reading a global dictionnary
      * */
-    prv fn parseDict (mut self, isGlobal : bool = false)-> &Dict
+    prv fn parseDict(mut self, isGlobal: bool = false)-> &Dict
         throws SyntaxError
     {
-        let dmut result = copy Dict ();
+        let dmut result = copy Dict();
         loop {
-            let cursor = self._lex.getCursor ();
-            let (name, l, c) = self._lex:.next ();
+            let cursor = self._lex.getCursor();
+            let (name, l, c) = self._lex:.next();
             if isGlobal && (name == "[" || name.len == 0) {  // read the next global dict
-                self._lex:.rewind (expand cursor); // rewind the read
+                self._lex:.rewind(expand cursor); // rewind the read
                 break;
             }
 
-            self.assertIsIdentifier (name, l, c);
-            self:.assertRead (["="]);
+            self.assertIsIdentifier(name, l, c);
+            self:.assertRead(["="]);
 
-            result:[name] = self:.parseValue ();
+            result:[name] = self:.parseValue();
 
             if (!isGlobal) {
-                let (n, _, _) = self:.assertRead ([",", "}"]);
+                let (n, _, _) = self:.assertRead([",", "}"]);
                 if (n == "}") break; // read the end of a local dict
             }
         }
@@ -153,21 +153,21 @@ pub record TomlParser {
     /**
      * Parse an array value
      * */
-    prv fn parseArray (mut self)-> &Array
+    prv fn parseArray(mut self)-> &Array
         throws SyntaxError
     {
-        let dmut result = copy Array ();
+        let dmut result = copy Array();
 
-        let cursor = self._lex.getCursor ();
-        let (b, _, _) = self._lex:.next (); // check if we have an empty array
+        let cursor = self._lex.getCursor();
+        let (b, _, _) = self._lex:.next(); // check if we have an empty array
         if (b == "]") return result;
         else {
-            self._lex:.rewind (expand cursor); // rewind the read
+            self._lex:.rewind(expand cursor); // rewind the read
         }
 
         loop {
-            result:.push (self:.parseValue ());
-            let (n, _, _) = self:.assertRead ([",", "]"]);
+            result:.push(self:.parseValue());
+            let (n, _, _) = self:.assertRead([",", "]"]);
             if (n == "]") break;
         }
 
@@ -181,17 +181,17 @@ pub record TomlParser {
      *     - l: the line
      *     - c: the column
      * */
-    prv fn parseIntOrFloat (mut self, val : [c8], l : usize, c : usize)-> &Config
+    prv fn parseIntOrFloat(mut self, val: [c8], l: usize, c: usize)-> &Config
         throws SyntaxError
     {
         {
-            if let Ok () = std::algorithm::searching::find (val, '.') {
-                return copy Float (std::conv::to!{f64} (val));
+            if let Ok() = std::algorithm::searching::find(val, '.') {
+                return copy Float(std::conv::to!{f64} (val));
             }
 
-            return copy Int (std::conv::to!{i64} (val));
+            return copy Int(std::conv::to!{i64} (val));
         } catch {
-            _ => throw copy SyntaxError ("Unexpected '" ~ val ~ "'", l, c);
+            _ => throw copy SyntaxError("Unexpected '" ~ val ~ "'", l, c);
         }
     }
 
@@ -202,46 +202,46 @@ pub record TomlParser {
      *    - l: the line
      *    - c: the col
      * */
-    prv fn parseString (mut self, beg : [c8], l : usize, c : usize)-> &Config
+    prv fn parseString(mut self, beg: [c8], l: usize, c: usize)-> &Config
         throws SyntaxError
     {
-        self._lex:.setSkipTokens (false);
-        self._lex:.setSkipComments (false);
-        let dmut result = copy StringStream ();
+        self._lex:.setSkipTokens(false);
+        self._lex:.setSkipComments(false);
+        let dmut result = copy StringStream();
         loop {
-            let (n, _, _) = self._lex:.next ();
+            let (n, _, _) = self._lex:.next();
             if (n == beg) { break; }
             if n.len == 0 {
-                self._lex:.setSkipTokens (true);
-                self._lex:.setSkipComments (true);
-                throw copy SyntaxError ("Unterminated string literal", l, c);
+                self._lex:.setSkipTokens(true);
+                self._lex:.setSkipComments(true);
+                throw copy SyntaxError("Unterminated string literal", l, c);
             }
 
             if n == TomlTokens::ESCAPE {
-                let (af, _, _) = self._lex:.nextChar ();
+                let (af, _, _) = self._lex:.nextChar();
                 match af {
-                    "a" => { result:.write ("\a"); }
-                    "b" => { result:.write ("\b"); }
-                    "f" => { result:.write ("\f"); }
-                    "n" => { result:.write ("\n"); }
-                    "r" => { result:.write ("\r"); }
-                    "t" => { result:.write ("\t"); }
-                    "v" => { result:.write ("\v"); }
-                    "\\" => { result:.write ("\\"); }
-                    "\'" => { result:.write ("'"); }
-                    "\"" => { result:.write ("\""); }
-                    "u" => { self:.parseUnicode (alias result); }
-                    _ => throw copy SyntaxError ("Undefined escape sequence : \\" ~ af, l, c);
+                    "a" => { result:.write("\a"); }
+                    "b" => { result:.write("\b"); }
+                    "f" => { result:.write("\f"); }
+                    "n" => { result:.write("\n"); }
+                    "r" => { result:.write("\r"); }
+                    "t" => { result:.write("\t"); }
+                    "v" => { result:.write("\v"); }
+                    "\\" => { result:.write("\\"); }
+                    "\'" => { result:.write("'"); }
+                    "\"" => { result:.write("\""); }
+                    "u" => { self:.parseUnicode(alias result); }
+                    _ => throw copy SyntaxError("Undefined escape sequence: \\" ~ af, l, c);
                 }
             } else {
-                result:.write (n);
+                result:.write(n);
             }
         }
 
-        self._lex:.setSkipTokens (true);
-        self._lex:.setSkipComments (true);
+        self._lex:.setSkipTokens(true);
+        self._lex:.setSkipComments(true);
 
-        copy Str (result[])
+        copy Str(result[])
     }
 
     /*!
@@ -256,23 +256,23 @@ pub record TomlParser {
      * Parse an unicode in a string
      * @example: "\u{0x1F3B5}"
      * */
-    prv fn parseUnicode (mut self, dmut stream : &StringStream)
+    prv fn parseUnicode(mut self, dmut stream: &StringStream)
         throws SyntaxError
     {
-        self:.assertRead (["{"]);
-        let (code, l, c) = self._lex:.next ();
+        self:.assertRead(["{"]);
+        let (code, l, c) = self._lex:.next();
         let i = {
-            cast!c32 (std::conv::to!{u32, "x"} (code))
+            cast!c32(std::conv::to!{u32, "x"} (code))
         } catch {
-            _ => throw copy SyntaxError ("expected hexa code (not '" ~ code ~ "')", l, c);
+            _ => throw copy SyntaxError("expected hexa code (not '" ~ code ~ "')", l, c);
         }
 
-        self:.assertRead (["}"]);
-        let dmut res : [c8 ; 4] = ['\u{0}' ; 4];
-        let nbProduced = std::conv::utf::toUtf8 (i, ref res);
+        self:.assertRead(["}"]);
+        let dmut res: [c8 ; 4] = ['\u{0}' ; 4];
+        let nbProduced = std::conv::utf::toUtf8(i, ref res);
 
         for z in 0 .. nbProduced {
-            stream:.write (res [z]);
+            stream:.write(res[z]);
         }
     }
 
@@ -282,39 +282,39 @@ pub record TomlParser {
      *    - lst: the list of accepted tokens
      *    - canEof: iif true eof is also accepted
      * */
-    prv fn assertRead {N : usize} (mut self, lst : [[c8] ; N])-> ([c8], usize, usize)
+    prv fn assertRead {N: usize} (mut self, lst: [[c8] ; N])-> ([c8], usize, usize)
         throws SyntaxError
     {
-        let (wd, l, c) = self._lex:.next ();
+        let (wd, l, c) = self._lex:.next();
         for i in lst {
             if i == wd { return (wd, l, c); }
         }
 
-        let dmut err = copy StringStream ();
-        err:.write ("read '", wd, "' when excepting ", lst);
+        let dmut err = copy StringStream();
+        err:.write("read '", wd, "' when excepting ", lst);
 
-        throw copy SyntaxError (err[], l, c);
+        throw copy SyntaxError(err[], l, c);
     }
 
     /**
      * Assert a read string is an identifier
      * */
-    prv fn assertIsIdentifier (self, id : [c8], line : usize, col : usize)
+    prv fn assertIsIdentifier(self, id: [c8], line: usize, col: usize)
         throws SyntaxError
     {
         let mut oneAlpha = false;
         for z in id {
-            if !isAlpha (z) && !isDigit (z) && z != '_' && z != '-' {
-                throw copy SyntaxError ("Unexpected '" ~ id ~ "'", line, col);
+            if !isAlpha(z) && !isDigit(z) && z != '_' && z != '-' {
+                throw copy SyntaxError("Unexpected '" ~ id ~ "'", line, col);
             }
 
-            if isAlpha (z) {
+            if isAlpha(z) {
                 oneAlpha = true;
             }
         }
 
         if (!oneAlpha) {
-            throw copy SyntaxError ("Unexpected '" ~ id ~ "'", line, col);
+            throw copy SyntaxError("Unexpected '" ~ id ~ "'", line, col);
         }
     }
 
@@ -325,21 +325,21 @@ pub record TomlParser {
      *    - path: the path of insertion
      *    - value: the value to insert
      * */
-    prv fn insertInPath (self, dict : &Dict, path : [[c8]], value : &Config)-> dmut &Dict {
+    prv fn insertInPath(self, dict: &Dict, path: [[c8]], value: &Config)-> dmut &Dict {
         if path.len == 1 {
-            let dmut res = copy Dict ();
+            let dmut res = copy Dict();
             for k, v in dict[] {
                 res:[k] = v;
             }
-            res:[path [0]] = value;
+            res:[path[0]] = value;
             return alias res;
         }
 
-        let dmut res = copy Dict ();
+        let dmut res = copy Dict();
         let mut found = false;
         for k, v in dict[] {
-            if let d : &Dict = v && k == path [0] {
-                res:[k] = self.insertInPath (d, path [1 .. $], value);
+            if let d: &Dict = v && k == path[0] {
+                res:[k] = self.insertInPath(d, path[1 .. $], value);
                 found = true;
             }
 
@@ -349,7 +349,7 @@ pub record TomlParser {
         }
 
         if !found {
-            res:[path [0]] = self.insertInPath (copy Dict (), path [1 .. $], value);
+            res:[path[0]] = self.insertInPath(copy Dict(), path[1 .. $], value);
         }
 
         return alias res;

@@ -1,7 +1,7 @@
 in exception;
 
-extern (C) fn _yrt_exc_get_stack_trace ()-> [*(void)];
-extern (C) fn _yrt_exc_resolve_stack_trace (trc : [*void])-> [c8];
+extern (C) fn _yrt_exc_get_stack_trace()-> [*(void)];
+extern (C) fn _yrt_exc_resolve_stack_trace(trc: [*void])-> [c8];
 
 /**
  * Ancestor of all exception types.
@@ -9,10 +9,10 @@ extern (C) fn _yrt_exc_resolve_stack_trace (trc : [*void])-> [c8];
 @abstract
 pub class Exception {
 
-    let trace : [*(void)];
+    let trace: [*(void)];
 
     __version DEBUG_LIB {
-        self () with trace = _yrt_exc_get_stack_trace () {
+        self () with trace = _yrt_exc_get_stack_trace() {
         }
     } else {
         self () with trace = [] {
@@ -20,18 +20,18 @@ pub class Exception {
     }
 
     impl std::stream::Streamable {
-        
-        pub over toStream (self, dmut stream : &std::stream::StringStream)-> void {
-            stream:.write (self.__typeid__, " ()");                        
+
+        pub over toStream(self, dmut stream: &std::stream::StringStream)-> void {
+            stream:.write(self.__typeid__, " ()");
             if (self.trace.len != 0us) {
-                stream:.write (":\n");
-                stream:.write (self.getStackTrace ());
+                stream:.write(":\n");
+                stream:.write(self.getStackTrace());
             }
         }
 
     }
 
-    prot fn hasTrace (self)-> bool {
+    prot fn hasTrace(self)-> bool {
         self.trace.len != 0us
     }
 
@@ -39,9 +39,9 @@ pub class Exception {
      * @returns: the stacktrace generated when the exception was constructed.
      */
     @final
-    pub fn getStackTrace (self) -> [c8] {
+    pub fn getStackTrace(self)-> [c8] {
         __version DEBUG_LIB {
-            _yrt_exc_resolve_stack_trace (self.trace)
+            _yrt_exc_resolve_stack_trace(self.trace)
         } else {
             []
         }

@@ -4,7 +4,7 @@ in semaphore;
  * A C semaphore
  * */
 prv record sem_t {
-    let data : [u8; 32_u64] = [0 ; 32];
+    let data: [u8; 32_u64] = [0 ; 32];
     pub self () {}
 }
 
@@ -13,25 +13,25 @@ prv record sem_t {
  * Initialize a semaphore
  * @params:
  *    - pshared: the number of signal to emit before the semaphore is triggered
- *    - value: the value of the semaphore (see libpthread)
+ *    - value: the value of the semaphore(see libpthread)
  * @returns:
  *    - sem: the semaphore
  */
-extern (C) fn _yrt_thread_sem_init (id : *sem_t, shared : i32, value : i32);
+extern (C) fn _yrt_thread_sem_init(id: *sem_t, shared: i32, value: i32);
 
 /**
  * Destroy a semaphore
  * @params:
  *    - sem: the semaphore to destroy
  */
-extern (C) fn _yrt_thread_sem_destroy (id : *sem_t);
+extern (C) fn _yrt_thread_sem_destroy(id: *sem_t);
 
 /**
  * Wait for a semaphore to be triggered
  * @params:
  *    - sem: the semaphore
  */
-extern (C) fn _yrt_thread_sem_wait (id : *sem_t);
+extern (C) fn _yrt_thread_sem_wait(id: *sem_t);
 
 /**
  * Wait for a semaphore to be triggered
@@ -41,7 +41,7 @@ extern (C) fn _yrt_thread_sem_wait (id : *sem_t);
  *    - nsec: number of micro second before timeout
  * @returns: true if the semaphore was posted, false if timedout
  */
-extern (C) fn _yrt_thread_sem_wait_timeout (id : *sem_t, sec : u64, nsec : u64)-> bool;
+extern (C) fn _yrt_thread_sem_wait_timeout(id: *sem_t, sec: u64, nsec: u64)-> bool;
 
 
 /**
@@ -52,7 +52,7 @@ extern (C) fn _yrt_thread_sem_wait_timeout (id : *sem_t, sec : u64, nsec : u64)-
  *    - nsec: the epoch instant in micro seconds
  * @returns: true if the semaphore was posted, false if timedout
  */
-extern (C) fn _yrt_thread_sem_wait_instant (id : *sem_t, sec : u64, nsec : u64)-> bool;
+extern (C) fn _yrt_thread_sem_wait_instant(id: *sem_t, sec: u64, nsec: u64)-> bool;
 
 /**
  * Emit a new entry in the semaphore
@@ -60,12 +60,12 @@ extern (C) fn _yrt_thread_sem_wait_instant (id : *sem_t, sec : u64, nsec : u64)-
  *    - sem: the semaphore to post
  * @info: if the number of post is equal to its value, the semaphore is triggered and wait-ers no longer wait
  */
-extern (C) fn _yrt_thread_sem_post (id : *sem_t);
+extern (C) fn _yrt_thread_sem_post(id: *sem_t);
 
 /**
  * @returns: the current count of the semaphore
  * */
-extern (C) fn _yrt_thread_sem_get (id : *sem_t)-> i32;
+extern (C) fn _yrt_thread_sem_get(id: *sem_t)-> i32;
 
 /**
  * A semaphore used to send signals between threads
@@ -75,38 +75,38 @@ extern (C) fn _yrt_thread_sem_get (id : *sem_t)-> i32;
 pub class Semaphore {
 
     // The C semaphore
-    let _sem : sem_t;
+    let _sem: sem_t;
 
-    let mut _isInit : bool = false;
+    let mut _isInit: bool = false;
 
     /**
      * Create a new semaphore
      * */
     pub self ()
-        with _sem = sem_t ()
+        with _sem = sem_t()
     {
-        _yrt_thread_sem_init (&self._sem, 0, 0);
+        _yrt_thread_sem_init(&self._sem, 0, 0);
         self._isInit = true;
     }
 
     /**
      * Post the semaphore
      * */
-    pub fn post (mut self) {
-        _yrt_thread_sem_post (&self._sem);
+    pub fn post(mut self) {
+        _yrt_thread_sem_post(&self._sem);
     }
 
     /**
      * Wait for the semaphore to be posted
      * @params:
-     *    - timeout: the timeout in second (<= 0 means infinite)
+     *    - timeout: the timeout in second(<= 0 means infinite)
      * */
-    pub fn wait (mut self, timeout : std::time::dur::Duration = std::time::dur::seconds (0))-> bool {
-        if (timeout <= std::time::dur::seconds (0)) {
-            _yrt_thread_sem_wait (&self._sem);
+    pub fn wait(mut self, timeout: std::time::dur::Duration = std::time::dur::seconds(0))-> bool {
+        if (timeout <= std::time::dur::seconds(0)) {
+            _yrt_thread_sem_wait(&self._sem);
             true
         } else {
-            _yrt_thread_sem_wait_timeout (&self._sem, timeout.getSec (), timeout.getUSec () * 1000u64)
+            _yrt_thread_sem_wait_timeout(&self._sem, timeout.getSec(), timeout.getUSec() * 1000u64)
         }
     }
 
@@ -115,29 +115,29 @@ pub class Semaphore {
      * @params:
      *    - timeout: the instant in the future defining the timeout
      * */
-    pub fn wait (mut self, timeout : std::time::instant::Instant)-> bool {
-        _yrt_thread_sem_wait_instant (&self._sem, timeout.sec, timeout.usec * 1000u64)
+    pub fn wait(mut self, timeout: std::time::instant::Instant)-> bool {
+        _yrt_thread_sem_wait_instant(&self._sem, timeout.sec, timeout.usec * 1000u64)
     }
 
     /**
      * @returns: the current counter of the semaphore
      * */
-    pub fn get (self)-> i32 {
-        _yrt_thread_sem_get (&self._sem)
+    pub fn get(self)-> i32 {
+        _yrt_thread_sem_get(&self._sem)
     }
 
     /**
      * Destroy the semaphore
      * */
-    pub fn dispose (mut self) {
+    pub fn dispose(mut self) {
         if (self._isInit) {
-            _yrt_thread_sem_destroy (&self._sem);
+            _yrt_thread_sem_destroy(&self._sem);
         }
 
         self._isInit = false;
     }
 
-    __dtor (mut self) {
-        self:.dispose ();
+    __dtor(mut self) {
+        self:.dispose();
     }
 }
