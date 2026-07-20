@@ -34,14 +34,18 @@ in list;
 use std::stream;
 use core::types::array;
 
+def __MAX_LEN__ = 512;
+
 pub record FuncStack {
+
+    let mut _inPush: bool = false;
 
     let mut _len: usize = 0us;
 
-    let dmut _data: [[u32]] = [];
+    let dmut _data: [[u32]] = copy [[] ; __MAX_LEN__];
 
     // Parallel stack holding the function pointer associated with each frame.
-    let mut _funcPtrs: [mut *void] = [];
+    let mut _funcPtrs: [mut *void] = copy [null; __MAX_LEN__];
 
     /*!
      * ====================================================================================================
@@ -66,13 +70,15 @@ pub record FuncStack {
      *
      * */
     pub fn push(mut self, dmut lst: [u32], func: *void) {
-        if self._data.len == self._len {
-            self:.grow();
+        if self._inPush || self._len == self._data.len {
+            return;
         }
 
+        self._inPush = true;
         self._data[self._len] = alias lst;
         self._funcPtrs[self._len] = func;
         self._len += 1;
+        self._inPush = false;
     }
 
     /**
@@ -113,29 +119,6 @@ pub record FuncStack {
      * */
     pub fn isEmpty(self)-> bool {
         self._len == 0
-    }
-
-    /*!
-     * ====================================================================================================
-     * ====================================================================================================
-     * ====================================          PRIVATE          =====================================
-     * ====================================================================================================
-     * ====================================================================================================
-     */
-
-    /**
-     * Change the size of the capacity to write other elements
-     * @complexity: O(n), with n = self._len
-     */
-    prv fn grow(mut self) {
-        let addLen = if (self._data.len == 0us) {
-            2us
-        } else {
-            self._data.len
-        }
-
-        self._data ~= copy [[] ; addLen];
-        self._funcPtrs ~= copy [null ; addLen];
     }
 
 }
