@@ -35,12 +35,34 @@ use std::io;
 use std::format::_;
 use list;
 use utils::colors;
-use std::{syntax::tokenizer, stream};
+use std::{syntax::tokenizer, stream, fs::_, char};
 
 pub record CoverageInfo {
     pub let file: [c8];
     pub let func: [c8];
     pub let locations: [(u32, u32)];
+}
+
+/**
+ * Compilers name anonymous lambdas after their source position(e.g. `::_12_9`).
+ * Such names only ever contain digits and underscores, so this is used to
+ * filter them out of coverage reports.
+ *
+ * @returns: true iff the last "::"-separated segment of `name` contains only '_' and digits
+ */
+fn isLambdaName(name: [c8])-> bool {
+    let last = Path(name, sep-> "::").file();
+    if last.len == 0us {
+        return false;
+    }
+
+    for c in last {
+        if !isDigit(c) && c != '_' {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 @final
@@ -150,6 +172,10 @@ pub class CoverageTree {
         }
     }
 
+    /**
+     * Print the per-function coverage report and the overall total,
+     * skipping frames whose name is a lambda(see `isLambdaName`)
+     * */
     fn reportCoverage(self) {
         let dmut stream = copy StringStream();
         let mut totalLocations: usize = 0us;
@@ -157,22 +183,24 @@ pub class CoverageTree {
 
         for framePtr, metrics in self._frames {
             let info = unsafe {*framePtr};
-            let total = info.locations.len;
-            totalLocations += total;
+            if !isLambdaName(info.func) {
+                let total = info.locations.len;
+                totalLocations += total;
 
-            let mut covered: usize = 0us;
-            let mut missing: [(u32, u32)] = [];
+                let mut covered: usize = 0us;
+                let mut missing: [(u32, u32)] = [];
 
-            for i, hit in metrics if i < total {
-                if hit > 0u32 {
-                    covered += 1us;
-                } else {
-                    missing ~= [info.locations[i]];
+                for i, hit in metrics if i < total {
+                    if hit > 0u32 {
+                        covered += 1us;
+                    } else {
+                        missing ~= [info.locations[i]];
+                    }
                 }
-            }
 
-            coveredLocations += covered;
-            self.formatSingleReport(alias stream, covered, missing, info);
+                coveredLocations += covered;
+                self.formatSingleReport(alias stream, covered, missing, info);
+            }
         }
 
         let overallPercent: usize = if totalLocations == 0us { 0us } else { coveredLocations * 100us / totalLocations };
@@ -182,10 +210,13 @@ pub class CoverageTree {
         self.printReport("COVERAGE", stream[]);
     }
 
+    /**
+     * Append a single function's coverage line(and its missing locations) to `stream`
+     * */
     fn formatSingleReport(self, dmut stream: &StringStream, covered: usize, missing: [(u32, u32)], info: CoverageInfo) {
         let total = info.locations.len;
         let percent: usize = if total == 0us { 100us } else { covered * 100us / total };
-        if percent == 100 return;
+        if total == 0 return;
 
         let statusColor = if percent == 100us {
             Colors::GREEN
@@ -219,6 +250,9 @@ pub class CoverageTree {
         }
     }
 
+    /**
+     * Print, for each caller function, the list of callees and how many times each was called
+     * */
     fn reportCallTree(self) {
         let dmut stream = copy StringStream();
 
@@ -256,6 +290,10 @@ pub class CoverageTree {
         self.printReport("CALL TREE", stream[]);
     }
 
+    /**
+     * Print `report` framed with a title header(`head`) and delimiter lines
+     * sized to the longest line in the report
+     * */
     fn printReport(self, head: [c8], report: [c8]) {
         let lines = Tokenizer!{c8}(tokens-> copy ["\n"]).tokenize(report);
         let mut maxLen = 0us;
