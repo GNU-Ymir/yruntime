@@ -60,6 +60,13 @@ add_custom_target (midgard_tests ALL
 )
 
 
+set_source_files_properties (
+  ${CMAKE_CURRENT_BINARY_DIR}/__lib_release_.o
+  ${CMAKE_CURRENT_BINARY_DIR}/__lib_debug_.o
+  ${CMAKE_CURRENT_BINARY_DIR}/__lib_test_.o
+  PROPERTIES GENERATED TRUE
+)
+
 add_library (gymidgard-release_1.1 STATIC ${SRC_CORE_C} ${SRC_STD_C} ${SRC_RUNTIME} ${CMAKE_CURRENT_BINARY_DIR}/__lib_release_.o)
 add_library (gymidgard-debug_1.1 STATIC ${SRC_CORE_C} ${SRC_STD_C} ${SRC_RUNTIME} ${CMAKE_CURRENT_BINARY_DIR}/__lib_debug_.o)
 add_library (gymidgard-tests_1.1 STATIC ${SRC_UNITTEST} ${CMAKE_CURRENT_BINARY_DIR}/__lib_test_.o)
