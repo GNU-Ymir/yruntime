@@ -66,7 +66,7 @@ pub record TomlDumper {
             }
             Int(value-> i) => { stream:.write(i); }
             Float(value-> f) => { stream:.write(f); }
-            Str(value-> s) => { stream:.write('"', s, '"'); }
+            Str(value-> s) => { self.dumpString(s, alias stream); }
             Bool(value-> b) => {
                 if b { stream:.write("true"); }
                 else {
@@ -74,6 +74,28 @@ pub record TomlDumper {
                 }
             }
         }
+    }
+
+    /**
+     * Write `s` to `stream`, wrapped in double quotes, with `"`, `\` and control characters
+     * escaped so the result is valid toml(and round-trips through `TomlParser`)
+     * @params:
+     *    - s: the string to write
+     *    - stream: the stream to fill
+     * */
+    prv fn dumpString(self, s: [c8], dmut stream: &StringStream) {
+        stream:.write("\"");
+        for c in s {
+            match c {
+                '"' => { stream:.write("\\\""); }
+                '\\' => { stream:.write("\\\\"); }
+                '\n' => { stream:.write("\\n"); }
+                '\r' => { stream:.write("\\r"); }
+                '\t' => { stream:.write("\\t"); }
+                _ => { stream:.write(c); }
+            }
+        }
+        stream:.write("\"");
     }
 
     /**

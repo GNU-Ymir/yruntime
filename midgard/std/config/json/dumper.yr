@@ -69,9 +69,31 @@ pub record JsonDumper {
                 else   stream:.write("\"false\"");
             }
             Str(value-> s) => {
-                stream:.write("\"", s, "\"");
+                self.dumpString(s, alias stream);
             }
         }
+    }
+
+    /**
+     * Write `s` to `stream`, wrapped in double quotes, with `"`, `\` and control characters
+     * escaped so the result is valid json(and round-trips through `JsonParser`)
+     * @params:
+     *    - s: the string to write
+     *    - stream: the stream to fill
+     * */
+    prv fn dumpString(self, s: [c8], dmut stream: &StringStream) {
+        stream:.write("\"");
+        for c in s {
+            match c {
+                '"' => { stream:.write("\\\""); }
+                '\\' => { stream:.write("\\\\"); }
+                '\n' => { stream:.write("\\n"); }
+                '\r' => { stream:.write("\\r"); }
+                '\t' => { stream:.write("\\t"); }
+                _ => { stream:.write(c); }
+            }
+        }
+        stream:.write("\"");
     }
 
     /**
@@ -117,7 +139,8 @@ pub record JsonDumper {
                 }
             }
 
-            stream:.write("\"", k, "\" : ");
+            self.dumpString(k, alias stream);
+            stream:.write(" : ");
             self.dump(v, alias stream, indent + cast!i32(k.len) + 3, indent + 3);
             z += 1;
         }
