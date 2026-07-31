@@ -34,7 +34,8 @@ in runner;
 use std::{io, config::_, algorithm::searching, fs::path};
 
 use core::exception::_;
-use utils::{colors, coverage, filters, args};
+use utils::{colors, filters, args};
+use utils::coverage::{tree, store, load, format, conv};
 
 extern (C) fn _yrt_force_debug()-> void;
 
@@ -102,6 +103,8 @@ pub class UnittestLauncher {
             _ => { return false; } // parsing failed
         }
 
+        self.resetCoverageUnlessResuming(testArgs.hasResume);
+
         _yrt_force_debug();
         let mut failed = false;
         let dmut already: [[c8] => bool] = copy [];
@@ -127,12 +130,54 @@ pub class UnittestLauncher {
         }
 
         TestFilters::dumpSuccessFile(already);
+        self.storeCoverage(covTree);
 
-        if !failed  {
-            covTree.report(testArgs.hasCoverage, testArgs.hasCallTree);
+        if !failed {
+            self.reportCoverage(testArgs);
         }
 
         return !failed;
+    }
+
+    /**
+     * Delete every coverage file left over from previous runs(see `CoverageStore::PID_FILE_PREFIX`),
+     * unless `--resume` was passed, in which case this run's coverage must be merged with theirs
+     *
+     * @params:
+     *    - hasResume: true iff the flag resume was found in argument parser
+     * */
+    fn resetCoverageUnlessResuming(self, hasResume: bool) {
+        if !hasResume {
+            CoverageStore::removePidFiles(CoverageLoad::listPidFiles());
+        }
+    }
+
+    /**
+     * Export this process's coverage tree to its own coverage file(see `CoverageStore::storePid`),
+     * so it can be merged with the coverage of other runs when the report is printed
+     *
+     * @params:
+     *    - covTree: the code coverage tree that was filled while running the tests
+     * */
+    fn storeCoverage(self, covTree: &CoverageTree) {
+        {
+            CoverageStore::storePid(covTree);
+        } catch {
+            err => { println("err ", err); }
+        }
+    }
+
+    /**
+     * Print the coverage/call-tree report, merged from every coverage file found on disk(this
+     * run's, plus any left over from a previous `--resume` run)
+     *
+     * @params:
+     *    - testArgs: the parsed arguments of this run
+     * */
+    fn reportCoverage(self, testArgs: TestRunnerArgument) {
+        let report = CoverageConv::fromConfigs(CoverageLoad::loadAll(CoverageLoad::listPidFiles()));
+
+        CoverageFormat::report(report, testArgs.hasCoverage, testArgs.hasCallTree);
     }
 
     /**
