@@ -55,6 +55,9 @@ pub record TestRunnerArgument {
     // True iff only executing failed or not run tests
     pub let mut hasResume: bool = false;
 
+    // The number of worker subprocesses to run tests in parallel(1 = sequential, in-process)
+    pub let mut jobs: i64 = 1;
+
     /**
      * @params:
      *    - args: the list of argument passed to the command line
@@ -68,6 +71,7 @@ pub record TestRunnerArgument {
             :.flag("coverage", short-> "cov", comments-> "print coverage report")
             :.flag("call-tree", short-> "ct", comments-> "print call tree report")
             :.flag("resume", comments-> "re-run only failed tests")
+            :.option!{i64} ("jobs", short-> "j", comments-> "number of worker subprocesses to run tests in parallel (default: 1, sequential)")
             :.help("help", short-> "h", comments-> "print this help and exit");
 
         {
@@ -91,6 +95,10 @@ pub record TestRunnerArgument {
 
             if let Ok(Bool(value-> b)) = ret["resume"]? {
                 self.hasResume = b;
+            }
+
+            if let Ok(Int(value-> v)) = ret["jobs"]? {
+                self.jobs = if v < 1i64 { 1i64 } else { v };
             }
 
         } catch {
