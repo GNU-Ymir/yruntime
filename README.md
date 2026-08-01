@@ -9,6 +9,26 @@ It is one component of a larger Ymir toolchain checkout: `gyc` (the GCC-based Ym
 builds and links against Midgard, and the `midgard` sources are installed as system-wide Ymir
 includes.
 
+## Getting started
+
+Building and testing this repo requires a `gyc` toolchain matching the version this repo
+targets (`YMIR_VERSION` at the repo root) already installed on the machine — this repo does not
+build `gyc` itself. If you don't already have a matching `gyc` on `PATH` (check with `gyc
+--version`), bootstrap one:
+
+```sh
+./dev/init-dev-env.sh
+```
+
+This downloads the `gyc` release matching `YMIR_VERSION` from the
+[gymir releases](https://github.com/GNU-Ymir/gymir/releases), installs it system-wide (expects
+a Debian/Ubuntu-derived system with `apt`/`sudo`), and runs `./install` (see
+[Installing](#installing)) so this repo's own `.yr` sources are where that `gyc` looks for
+them. It's safe to re-run any time `YMIR_VERSION` changes.
+
+Once `gyc` is available, see [Building](#building) below to compile Midgard itself and
+[Running tests](#running-tests) to check your setup.
+
 ## Layout
 
 - `midgard/` — the library sources, organized as three top-level modules:
@@ -27,7 +47,7 @@ includes.
 
 ## Building
 
-Requires a working `gyc` toolchain (path configured via `CMAKE_YMIR_COMPILER` in
+Requires a working `gyc` toolchain (looked up as `gyc` on `PATH`, see `CMAKE_YMIR_COMPILER` in
 `CMakeLists.txt`).
 
 ```sh
@@ -36,11 +56,14 @@ cmake ..
 make
 ```
 
-This produces, per build mode:
+The ymir bootstrap version this library is built/versioned against comes from `YMIR_VERSION`
+at the repo root (not hardcoded); midgard's own version lives in `VERSION`. This produces, per
+build mode:
 
-- `libgymidgard-release_1.1.a` / `libgymidgard-debug_1.1.a` — the compiled Midgard library
-  (release and debug builds).
-- `libgymidgard-tests_1.1.a` — the test-runner support library.
+- `libgymidgard-release_<ymirShortVersion>.a` / `libgymidgard-debug_<ymirShortVersion>.a` — the
+  compiled Midgard library (release and debug builds), e.g. `libgymidgard-release_1.1.a` for a
+  `YMIR_BOOTSTRAP_VERSION` of `1.1.x`.
+- `libgymidgard-tests_<ymirShortVersion>.a` — the test-runner support library.
 - `libruntime.a` — the standalone C runtime.
 - `midgard_tests` — the compiled Midgard test suite binary.
 
@@ -51,8 +74,9 @@ sudo make install       # installs the static libraries to /usr/lib/
 sudo ./install          # installs the .yr sources as system Ymir includes
 ```
 
-`install` copies `midgard/**/*.yr` into `/usr/include/ymir/1.1` and the `gyc` internal include
-path, so other Ymir projects can `use std::...` / `use core::...` against this library.
+`install` copies `midgard/**/*.yr` into `/usr/include/ymir/<ymirShortVersion>` and the `gyc`
+internal include path (both derived from `YMIR_VERSION`), so other Ymir projects can
+`use std::...` / `use core::...` against this library.
 
 ## Running tests
 

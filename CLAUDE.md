@@ -158,19 +158,27 @@ passes the address of the caller's storage slot itself. Confirmed by compiling w
 ## Build / run / test
 
 Build system is plain CMake (no `gyllir` here, unlike the compiler frontend repo). The Ymir
-compiler path is hardcoded in `CMakeLists.txt` (`CMAKE_YMIR_COMPILER`).
+compiler is looked up as `gyc` on `PATH` (`CMAKE_YMIR_COMPILER` in `CMakeLists.txt`).
+
+`YMIR_VERSION` at the repo root (`YMIR_BOOTSTRAP_VERSION`/`GCC_VERSION`) is the single source
+of truth for the ymir bootstrap version this library is built against; CMake reads it to derive
+`YMIR_SHORT_VERSION` (major.minor, e.g. `1.1`), which is what's baked into the static lib names
+and install include dir below — it is not hardcoded in `CMakeLists.txt`/`install` anymore.
+`VERSION` at the repo root holds midgard's own (separate) version number, used by the release
+workflows.
 
 - Build: `mkdir -p .build && cd .build && cmake .. && make`.
 - This builds four CMake targets in dependency order: `lib_release`/`lib_debug` (compile
   `midgard/__lib__.yr` via `gyc -c`), `lib_tests` (compiles `test-rt/__lib__.yr`), then the
-  static libs (`gymidgard-release_1.1`, `gymidgard-debug_1.1`, `gymidgard-tests_1.1`, `runtime`)
-  that bundle the `.o` plus the C sources under `core/*.c`, `std/*.c`, `rt/*.c`, then finally
-  `midgard_tests`, the compiled test binary.
+  static libs (`gymidgard-release_<ymirShortVersion>`, `gymidgard-debug_<ymirShortVersion>`,
+  `gymidgard-tests_<ymirShortVersion>`, `runtime`) that bundle the `.o` plus the C sources under
+  `core/*.c`, `std/*.c`, `rt/*.c`, then finally `midgard_tests`, the compiled test binary.
 - Run tests: `.build/midgard_tests` (add `-f <substr>` to filter, `-sf` to stop on first
   failure, `--resume` to re-run only previously-failed tests, `-cov` for a coverage report,
   `-ct` for a call-tree report — see `test-rt/utils/args.yr`).
 - Install system-wide: `sudo make install` (libs to `/usr/lib/`) and `sudo ./install` (copies
-  `midgard/**/*.yr` into `/usr/include/ymir/1.1` and the `gyc` internal include dir).
+  `midgard/**/*.yr` into `/usr/include/ymir/<ymirShortVersion>` and the `gyc` internal include
+  dir, both derived from `YMIR_VERSION`).
 - `.build/.ymir_test_success` caches per-test pass/fail state, consumed by `--resume`.
 
 ## Architecture
