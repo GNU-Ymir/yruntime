@@ -1,0 +1,84 @@
+name: Preview Release (dev)
+
+# Rolling pre-release, manually triggered (pick the branch/ref - normally dev - from the
+# "Run workflow" button). The tag/release name is v<ymirBootstrapVersion>__m<midgardVersion> -
+# it only changes when VERSION (midgard) or YMIR_VERSION (ymir bootstrap) is bumped, so
+# repeated runs in between land on the *same* name and simply replace the previous preview.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  preview-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute versions and tag name
+        id: version
+        run: |
+          . ./YMIR_VERSION
+          MIDGARD_VERSION="$(tr -d '[:space:]' < VERSION)"
+          YMIR_SHORT_VERSION="$(echo "$YMIR_BOOTSTRAP_VERSION" | cut -d. -f1,2)"
+          TAG_NAME="v${YMIR_BOOTSTRAP_VERSION}__m${MIDGARD_VERSION}"
+          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          echo "gyc_release_tag=${YMIR_BOOTSTRAP_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "gyc_asset=v${YMIR_SHORT_VERSION}_gyc_${GCC_VERSION}_amd64.deb" >> "$GITHUB_OUTPUT"
+          echo "ymir_short_version=${YMIR_SHORT_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Same `test` stage the CI workflow builds: compiles midgard and runs midgard_tests -sf,
+      # failing the job (and skipping the release) if anything regressed.
+      - name: Build and test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: test
+          push: false
+          load: true
+          tags: midgard-preview-build:latest
+          build-args: |
+            GYC_RELEASE_TAG=${{ steps.version.outputs.gyc_release_tag }}
+            GYC_ASSET=${{ steps.version.outputs.gyc_asset }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Extract build artifacts
+        env:
+          TAG: ${{ steps.version.outputs.tag_name }}
+          YMIR_SHORT_VERSION: ${{ steps.version.outputs.ymir_short_version }}
+        run: |
+          CID="$(docker create midgard-preview-build:latest)"
+          docker cp "${CID}:/midgard/.build/libgymidgard-debug_${YMIR_SHORT_VERSION}.a"   "./libmidgard_debug_${TAG}.a"
+          docker cp "${CID}:/midgard/.build/libgymidgard-release_${YMIR_SHORT_VERSION}.a" "./libmidgard_release_${TAG}.a"
+          docker cp "${CID}:/midgard/.build/libgymidgard-tests_${YMIR_SHORT_VERSION}.a"   "./libmidgard_tests_${TAG}.a"
+          docker rm "${CID}"
+
+      - name: Build source zip
+        env:
+          TAG: ${{ steps.version.outputs.tag_name }}
+        run: zip -r "midgard-${TAG}-src.zip" midgard/
+
+      - name: Replace existing preview tag/release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag_name }}
+        run: gh release delete "$TAG" --yes --cleanup-tag || true
+
+      - name: Publish preview release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag_name }}
+        run: |
+          gh release create "$TAG" \
+            --target "${{ github.sha }}" \
+            --title "Preview $TAG" \
+            --notes "Automated preview release built from dev @ ${{ github.sha }}." \
+            --prerelease \
+            "midgard-${TAG}-src.zip" \
+            "libmidgard_debug_${TAG}.a" \
+            "libmidgard_release_${TAG}.a" \
+            "libmidgard_tests_${TAG}.a"
