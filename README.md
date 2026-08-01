@@ -68,6 +68,15 @@ Useful flags (see `test-rt/utils/args.yr`):
 - `-cov, --coverage` — print a branch/line coverage report after the run.
 - `-ct, --call-tree` — print a call-tree report after the run.
 
+## Contributing
+
+- Every change is tracked by a [Linear](https://linear.app) issue in the **Ymir** team (key
+  `YMI`) — open one before starting work if it doesn't already exist.
+- Name the branch after the issue: `YMI-<issue_number>-<short-description>` (e.g.
+  `YMI-34-coverage-by-files`).
+- Name the pull request the same way, prefixed with the issue key (e.g.
+  `YMI-34: Coverage by files`), so it's traceable back to the Linear issue.
+
 ## License
 
 GPLv3 — see [LICENSE.txt](LICENSE.txt).
