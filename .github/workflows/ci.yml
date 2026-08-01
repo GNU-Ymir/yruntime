@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [master, dev]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute gyc build-args from YMIR_VERSION
+        id: gyc
+        run: |
+          . ./YMIR_VERSION
+          YMIR_SHORT_VERSION="$(echo "$YMIR_BOOTSTRAP_VERSION" | cut -d. -f1,2)"
+          echo "release_tag=${YMIR_BOOTSTRAP_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "asset=v${YMIR_SHORT_VERSION}_gyc_${GCC_VERSION}_amd64.deb" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Builds through the `test` stage of the Dockerfile: `cmake && make` then
+      # `midgard_tests -sf`. The RUN step running the tests fails (non-zero exit) the
+      # build - and therefore this job - the same way a failing `make check` would.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: test
+          push: false
+          build-args: |
+            GYC_RELEASE_TAG=${{ steps.gyc.outputs.release_tag }}
+            GYC_ASSET=${{ steps.gyc.outputs.asset }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
