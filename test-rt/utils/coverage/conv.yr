@@ -34,6 +34,28 @@ in conv;
 use std::config::data;
 
 /**
+ * A coverage file entry groups all the hit locations in a given file
+ */
+pub class CoverageFileEntry {
+    pub let file: [c8];
+    pub let dmut locations: [(u32, u32) => u32] = copy [];
+
+    pub self(file: [c8])
+        with file = file
+    {}
+
+    pub fn addFunction(mut self, function: CoverageFunctionEntry) {
+        for i, line in function.locations {
+            if let Ok(nb) = self.locations[line] {
+                self.locations[line] = nb + function.hits[i];
+            } else {
+                self.locations[line] = function.hits[i];
+            }
+        }
+    }
+}
+
+/**
  * A single "functions" entry of a coverage json configuration(see `CoverageStore`), as plain data
  * */
 pub record CoverageFunctionEntry {
@@ -274,6 +296,24 @@ pub mod CoverageConv {
         }
 
         return CoverageReport(functions.build(), callTree.build());
+    }
+
+    /**
+     * Merge the function reports into a file report list
+     */
+    pub fn extractFiles(report: CoverageReport)-> [[c8] => &CoverageFileEntry] {
+        let dmut res: [[c8] => &CoverageFileEntry] = copy [];
+        for func in report.functions {
+            if let Ok(dmut file) = alias res[func.file] {
+                file:.addFunction(func);
+            } else {
+                let dmut newFile = copy CoverageFileEntry(func.file);
+                newFile:.addFunction(func);
+                res[func.file] = alias newFile;
+            }
+        }
+
+        return res;
     }
 
     /**

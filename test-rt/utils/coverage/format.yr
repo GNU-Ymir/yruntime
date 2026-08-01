@@ -61,138 +61,71 @@ pub mod CoverageFormat {
      * */
     fn reportCoverage(rep: CoverageReport) {
         let dmut stream = copy StringStream();
-        let (fileOrder, fileEntries) = groupFunctionsByFile(rep);
+        let filtered = CoverageReport(filterFunctions(rep.functions), rep.callTree);
+        let fileEntries = CoverageConv::extractFiles(filtered);
 
-        for file in fileOrder {
-            if let Ok(entries) = fileEntries[file] {
-                formatFileReport(alias stream, file, entries);
-            }
+        let mut totalCovered: usize = 0us;
+        let mut totalLocations: usize = 0us;
+
+        for file, entry in fileEntries {
+            let (covered, total, missing) = coverageOfFile(entry);
+            formatFileReport(alias stream, file, covered, total, missing);
+            totalCovered += covered;
+            totalLocations += total;
         }
 
-        let (totalCovered, totalLocations) = sumEntryMap(fileOrder, fileEntries);
         writeTotalLine(alias stream, totalCovered, totalLocations);
 
         printReport("COVERAGE", stream[]);
     }
 
     /**
-     * Group the(non-lambda, instrumented) functions of `rep` by file
-     * @returns: the files in first-seen order, and for each file the list of(func, covered, total, missing) of its functions
+     * @returns: `functions`, with lambdas and functions without any instrumented location removed
      * */
-    fn groupFunctionsByFile(rep: CoverageReport)-> ([[c8]], [[c8] => [([c8], usize, usize, [(u32, u32)])]]) {
-        let dmut fileOrder: [[c8]] = [];
-        let dmut fileEntries: [[c8] => [([c8], usize, usize, [(u32, u32)])]] = copy [];
-
-        for fnEntry in rep.functions {
-            let (keep, file, func, covered, total, missing) = parseFunctionEntry(fnEntry);
-            if keep {
-                let dmut entries: [([c8], usize, usize, [(u32, u32)])] = if let Ok(dmut e) = alias fileEntries[file] {
-                    alias e
-                } else {
-                    fileOrder ~= [file];
-                    let dmut e: [([c8], usize, usize, [(u32, u32)])] = [];
-                    alias e
-                };
-
-                entries ~= [(func, covered, total, missing)];
-                fileEntries[file] = alias entries;
+    fn filterFunctions(functions: [CoverageFunctionEntry])-> [CoverageFunctionEntry] {
+        let dmut result: [CoverageFunctionEntry] = [];
+        for fnEntry in functions {
+            if !isLambdaName(fnEntry.func) && fnEntry.locations.len > 0us {
+                result ~= [fnEntry];
             }
         }
 
-        return (fileOrder, fileEntries);
+        return result;
     }
 
     /**
-     * Parse a single entry of `rep.functions`
-     * @returns: (keep, file, func, covered, total, missing), where `keep` is false for lambdas
-     *           and functions without any instrumented location(and the rest of the tuple is then meaningless)
+     * @returns: the covered/total locations of `entry`, and its locations that are not covered
      * */
-    fn parseFunctionEntry(fnEntry: CoverageFunctionEntry)-> (bool, [c8], [c8], usize, usize, [(u32, u32)]) {
-        if isLambdaName(fnEntry.func) || fnEntry.locations.len == 0us {
-            return (false, "", "", 0us, 0us, []);
-        }
-
-        let (covered, missing) = coverageOf(fnEntry.locations, fnEntry.hits);
-
-        return (true, fnEntry.file, fnEntry.func, covered, fnEntry.locations.len, missing);
-    }
-
-    /**
-     * @returns: the number of covered locations, and the locations that are not, given the hit count of each of them
-     * */
-    fn coverageOf(locations: [(u32, u32)], hits: [u32])-> (usize, [(u32, u32)]) {
+    fn coverageOfFile(entry: &CoverageFileEntry)-> (usize, usize, [(u32, u32)]) {
         let mut covered: usize = 0us;
-        let mut missing: [(u32, u32)] = [];
+        let mut total: usize = 0us;
+        let dmut missing: [(u32, u32)] = [];
 
-        for i, hit in hits if i < locations.len {
-            if hit > 0u32 {
+        for loc, hits in entry.locations {
+            total += 1us;
+            if hits > 0u32 {
                 covered += 1us;
             } else {
-                missing ~= [locations[i]];
+                missing ~= [loc];
             }
         }
 
-        return (covered, missing);
+        return (covered, total, missing);
     }
 
     /**
-     * @returns: the total covered/total locations, summed over every function of every file
+     * Append a file's coverage line(its own percentage and totals) to `stream`,
+     * followed by its missing locations if it isn't fully covered
      * */
-    fn sumEntryMap(fileOrder: [[c8]], fileEntries: [[c8] => [([c8], usize, usize, [(u32, u32)])]])-> (usize, usize) {
-        let mut covered: usize = 0us;
-        let mut total: usize = 0us;
+    fn formatFileReport(dmut stream: &StringStream, file: [c8], covered: usize, total: usize, missing: [(u32, u32)]) {
+        let percent = percentOf(covered, total);
 
-        for file in fileOrder {
-            if let Ok(entries) = fileEntries[file] {
-                let (fileCovered, fileTotal) = sumEntries(entries);
-                covered += fileCovered;
-                total += fileTotal;
-            }
+        stream:.write('[', colorFor(percent), percent, "%", Colors::RESET, "][", covered, "/", total, "] ", file);
+
+        if missing.len > 0us {
+            stream:.write(Colors::BOLD, " | missing: ", Colors::RESET);
+            writeMissingList(alias stream, missing);          
         }
-
-        return (covered, total);
-    }
-
-    /**
-     * Append a file's coverage header(with its own percentage and totals) and the
-     * coverage line of each of its functions to `stream`
-     * */
-    fn formatFileReport(dmut stream: &StringStream, file: [c8], entries: [([c8], usize, usize, [(u32, u32)])]) {
-        let (fileCovered, fileTotal) = sumEntries(entries);
-        let percent = percentOf(fileCovered, fileTotal);
-
-        stream:.writeln('[', colorFor(percent), percent, "%", Colors::RESET, ']', " ", file, " ", fileCovered, " / ", fileTotal, " :");
-
-        for entry in entries {
-            formatFunctionLine(alias stream, entry._0, entry._1, entry._2, entry._3);
-        }
-    }
-
-    /**
-     * @returns: the covered/total locations, summed over every function of `entries`
-     * */
-    fn sumEntries(entries: [([c8], usize, usize, [(u32, u32)])])-> (usize, usize) {
-        let mut covered: usize = 0us;
-        let mut total: usize = 0us;
-
-        for entry in entries {
-            covered += entry._1;
-            total += entry._2;
-        }
-
-        return (covered, total);
-    }
-
-    /**
-     * Append a single function's coverage line(and its missing locations) to `stream`,
-     * skipping functions that are fully covered
-     * */
-    fn formatFunctionLine(dmut stream: &StringStream, func: [c8], covered: usize, total: usize, missing: [(u32, u32)]) {
-        if missing.len == 0us return;
-
-        stream:.write("  - fn ", func, " - ", covered, " / ", total, " locations");
-        stream:.write(Colors::BOLD, " | missing: ", Colors::RESET);
-        writeMissingList(alias stream, missing);
         stream:.writeln();
     }
 
