@@ -1,0 +1,124 @@
+/*
+ *
+ * <hr>
+ *
+ * @Package: ymirc
+ * @Module: utils::list
+ * @File: utils/list.yr
+ * @Author(s):
+ *   - Emile Cadorel <ecadorel@gmail.com>
+ *
+ * @Created(YYYY-MM-DD): 2026-02-01
+ * @Copyright(C) 2021–2026 GNU-Ymir
+ * @License
+ *   ```text
+ *   This file is part of the Ymir language project.
+ *
+ *   Ymir is free software: you can redistribute it and/or modify it
+ *   under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation, either version 3 of the License, or
+ *   (at your option) any later version.
+ *
+ *   Ymir is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with Ymir.  If not, see <https://www.gnu.org/licenses/>.
+ *   ```
+ */
+
+in list;
+
+use std::stream;
+use core::types::array;
+
+def __MAX_LEN__ = 512;
+
+pub record FuncStack {
+
+    let mut _inPush: bool = false;
+
+    let mut _len: usize = 0us;
+
+    let dmut _data: [[u32]] = copy [[] ; __MAX_LEN__];
+
+    // Parallel stack holding the function pointer associated with each frame.
+    let mut _funcPtrs: [mut *void] = copy [null; __MAX_LEN__];
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ======================================          CTOR          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    pub self () {}
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =====================================          USAGE          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Insert an element at the top of the stack
+     *
+     * */
+    pub fn push(mut self, dmut lst: [u32], func: *void) {
+        if self._inPush || self._len == self._data.len {
+            return;
+        }
+
+        self._inPush = true;
+        self._data[self._len] = alias lst;
+        self._funcPtrs[self._len] = func;
+        self._len += 1;
+        self._inPush = false;
+    }
+
+    /**
+     * @returns: the element at the top of the task
+     * */
+    pub fn top(mut self)-> dmut[u32] {
+        if self._len > 0 {
+            return alias self._data[self._len - 1]
+        }
+
+        []
+    }
+
+    /**
+     * Remove the element at the top of the stack(does nothing if empty)
+     * */
+    pub fn pop(mut self)-> dmut[u32] {
+        if self._len == 0 { return []; }
+        let dmut result = self:.top();
+
+        self._len -= 1;
+        alias result
+    }
+
+    /**
+     * @returns: function pointer at the top of the stack or null if empty.
+     * */
+    pub fn topFunc(mut self)-> *void {
+        if self._len > 0 {
+            self._funcPtrs[self._len - 1]
+        } else {
+            null
+        }
+    }
+
+    /**
+     * @returns: true iif the stack is empty
+     * */
+    pub fn isEmpty(self)-> bool {
+        self._len == 0
+    }
+
+}

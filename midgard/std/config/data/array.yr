@@ -7,27 +7,27 @@ use std::config::errors;
  * An array is a list of `Config`.
  * @example:
  * ```
- * let dmut array = copy Array ();
- * array:.push (copy Str ("foo"));
- * array:.push (copy Int (42));
+ * let dmut array = copy Array();
+ * array:.push(copy Str("foo"));
+ * array:.push(copy Int(42));
  *
  * // Arrays are iterable
  * for v, index in array {
- *     println ("At index ", index, " the value is ", v);
+ *     println("At index ", index, " the value is ", v);
  * }
  * ```
  */
 @final
 pub class Array over Config {
 
-    let mut _content : [mut &Config] = [];
+    let mut _content: [mut &Config] = [];
 
     /**
      * Creates a new Array of nodes, containing a pre constructed list of Configs
      * @params:
      *    - nodes: some nodes to put in the array
      */
-    pub self (mut nodes : [mut &Config]) {
+    pub self (mut nodes: [mut &Config]) {
         self._content = alias nodes;
     }
 
@@ -40,15 +40,15 @@ pub class Array over Config {
      * Add a node at the end of the Array.
      * @example:
      * ```
-     * let dmut array = copy Array ();
-     * array:.push (copy Int (1));
-     * array:.push (copy Int (2));
-     * match array [$ - 1u64] {// access the last element of the array
-     *    Int (value-> x) => assert (x == 2);
+     * let dmut array = copy Array();
+     * array:.push(copy Int(1));
+     * array:.push(copy Int(2));
+     * match array[$ - 1u64] {// access the last element of the array
+     *    Int(value-> x) => assert(x == 2);
      * }
      * ```
      */
-    pub fn push (mut self, node : &Config) -> void {
+    pub fn push(mut self, node: &Config)-> void {
         self._content ~= [node];
     }
 
@@ -58,41 +58,41 @@ pub class Array over Config {
      *   - &OutOfArray: if the index is not in the array
      * @example:
      * ```
-     * let i : &Config = copy Int (12);
-     * let j : &Config = copt Int (42);
-     * let dmut array = copy Array ([i, j]);
+     * let i: &Config = copy Int(12);
+     * let j: &Config = copt Int(42);
+     * let dmut array = copy Array([i, j]);
      * {
-     *     match array [0] {
-     *         Int (value-> x)  => println ("index 0 contains : ", x);
+     *     match array[0] {
+     *         Int(value-> x) => println("index 0 contains: ", x);
      *     }
      * } catch {
-     *    ConfigError () => println ("Array does not contain elements");
+     *    ConfigError() => println("Array does not contain elements");
      * }
      * ```
      */
 
-    pub over opIndex (self, i : u32) -> &Config
+    pub over opIndex(self, i: u32)-> &Config
         throws ConfigOutError
     {
         if i >= self._content.len {
-            throw copy ConfigOutError (self._content.len, i);
+            throw copy ConfigOutError(self._content.len, i);
         }
 
-        self._content [i]
+        self._content[i]
     }
 
     /**
      * @returns: a slice of the elements contained in the array
      * @example:
      * ```
-     * let i : &Config = copy Int (12);
-     * let j : &Config = copy Int (42);
-     * let dmut array = copy Array (copy [i, j]);
+     * let i: &Config = copy Int(12);
+     * let j: &Config = copy Int(42);
+     * let dmut array = copy Array(copy [i, j]);
      *
-     * let slc : [&Config] = array [];
+     * let slc: [&Config] = array[];
      * ```
      */
-    pub fn opIndex (self)-> [&Config] {
+    pub fn opIndex(self)-> [&Config] {
         self._content
     }
 
@@ -102,42 +102,42 @@ pub class Array over Config {
      *   - &OutOfArray: if i is not a valid index of the array
      * @example:
      * ```
-     * let i : &Config = copy Int (12);
-     * let j : &Config = copy Int (42);
-     * let dmut array = copy Array (copy [i]);
+     * let i: &Config = copy Int(12);
+     * let j: &Config = copy Int(42);
+     * let dmut array = copy Array(copy [i]);
      * {
      *    array:[0] = j;
      * } catch {
-     *    ConfigError () => println ("Array does not contain elements");
+     *    ConfigError() => println("Array does not contain elements");
      * }
      * ```
      */
-    pub over opIndexAssign (mut self, i : u32, node : &Config) -> void
+    pub over opIndexAssign(mut self, i: u32, node: &Config)-> void
         throws ConfigOutError
     {
         if i >= self._content.len {
-            throw copy ConfigOutError (self._content.len, i);
+            throw copy ConfigOutError(self._content.len, i);
         }
 
-        self._content [i] = node;
+        self._content[i] = node;
     }
 
     /**
      * An alias to get the length of the array
      * @example:
      * ```
-     * let i : &Config = copy Int (12);
-     * let j : &Config = copy Int (42);
-     * let dmut array = copy Array (copy [i, j]);
+     * let i: &Config = copy Int(12);
+     * let j: &Config = copy Int(42);
+     * let dmut array = copy Array(copy [i, j]);
      * {
      *    // print the last element of the array
-     *    println (array [$ - 1u64]);
+     *    println(array[$ - 1u64]);
      * } catch {
-     *    _: &OutOfArray => println ("Array does not contain elements");
+     *    _: &OutOfArray => println("Array does not contain elements");
      * }
      * ```
      */
-    pub fn opDollar (self) -> usize {
+    pub fn opDollar(self)-> usize {
         self._content.len
     }
 
@@ -145,14 +145,14 @@ pub class Array over Config {
      * @returns: the number of element contained in the array.
      * @example:
      * ```
-     * let i : &Config = copy Int (12);
-     * let j : &Config = copy Int (42);
-     * let dmut array = copy Array (copy [i, j]);
-     * assert (array.len == 2us);
+     * let i: &Config = copy Int(12);
+     * let j: &Config = copy Int(42);
+     * let dmut array = copy Array(copy [i, j]);
+     * assert(array.len == 2us);
      * ```
      */
     @field
-    pub fn len (self) -> usize {
+    pub fn len(self)-> usize {
         self._content.len
     }
 
@@ -161,13 +161,13 @@ pub class Array over Config {
         /**
          * Arrays are printable
          */
-        pub over toStream (self, dmut stream : &StringStream) -> void {
-            stream:.write ("Array ("s8);
+        pub over toStream(self, dmut stream: &StringStream)-> void {
+            stream:.write("Array ("s8);
             for i, j in self._content {
-                if i != 0 { stream:.write (", "s8); }
-                stream:.write (j);
+                if i != 0 { stream:.write(", "s8); }
+                stream:.write(j);
             }
-            stream:.write (")");
+            stream:.write(")");
         }
     }
 }

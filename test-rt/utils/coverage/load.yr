@@ -1,0 +1,102 @@
+/*
+ *
+ * <hr>
+ *
+ * @Package: ymirc
+ * @Module: utils::coverage::load
+ * @File: utils/coverage/load.yr
+ * @Author(s):
+ *   - Emile Cadorel <ecadorel@gmail.com>
+ *
+ * @Created(YYYY-MM-DD): 2026-07-31
+ * @Copyright(C) 2021–2026 GNU-Ymir
+ * @License
+ *   ```text
+ *   This file is part of the Ymir language project.
+ *
+ *   Ymir is free software: you can redistribute it and/or modify it
+ *   under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation, either version 3 of the License, or
+ *   (at your option) any later version.
+ *
+ *   Ymir is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with Ymir.  If not, see <https://www.gnu.org/licenses/>.
+ *   ```
+ */
+
+in load;
+
+use std::algorithm::searching;
+use std::config::data;
+use std::config::json;
+use std::fs::_;
+use utils::coverage::store;
+
+/**
+ * Loads a json coverage file previously written by `CoverageStore`, as a json configuration
+ * that `CoverageConv` can convert into a `CoverageReport` for `CoverageFormat` to print.
+ * */
+pub mod CoverageLoad {
+
+    /**
+     * Read the json file at `path`
+     * @throws:
+     *    - FsError: if the file could not be opened/read
+     *    - SyntaxError: if the file does not contain valid json
+     * */
+    pub fn load(path: [c8])-> &Config
+        throws FsError, std::syntax::errors::SyntaxError
+    {
+        let dmut file = File::open(Path(path), read-> true);
+        let content = file:.readAll();
+
+        return parse(content);
+    }
+
+    /**
+     * @returns: the path of every per-process coverage file(see `CoverageStore::PID_FILE_PREFIX`)
+     *           found in the current directory
+     * */
+    pub fn listPidFiles()-> [Path] {
+        let dmut result: [Path] = [];
+
+        {
+            for entry in readDir(Path(".")) {
+                if entry.kind == FsEntryKind::FILE {
+                    let name = entry.path.file();
+                    if name.startsWith(PID_FILE_PREFIX) && name.endsWith(PID_FILE_SUFFIX) {
+                        result ~= [entry.path];
+                    }
+                }
+            }
+        } catch {
+            _ => {}
+        }
+
+        return result;
+    }
+
+    /**
+     * Load every per-process coverage file(see `listPidFiles`), skipping the ones that fail to
+     * be read or parsed
+     * @returns: the configuration of each successfully loaded file
+     * */
+    pub fn loadAll(paths: [Path])-> [&Config] {
+        let dmut result: [&Config] = [];
+
+        for path in paths {
+            {
+                result ~= [load(path.toStr())];
+            } catch {
+                _ => {}
+            }
+        }
+
+        return result;
+    }
+}

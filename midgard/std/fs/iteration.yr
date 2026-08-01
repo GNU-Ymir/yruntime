@@ -9,11 +9,11 @@
  * use std::fs;
  *
  * // Iteration through the directory ./some/dir
- * for entry in sys::readDir (Path ("./some/dir"s8)) {
+ * for entry in sys::readDir(Path("./some/dir"s8)) {
  *     match entry {
  *         // path field is public, so it can be used in pattern deconstruction
- *         FsEntry (path-> p, kind-> FsEntryKind::DIR) => println ("Directory : ", p.toStr ());
- *         FsEntry (path-> p, kind-> FsEntryKind::FILE)-> println ("File : ", p.toStr ());
+ *         FsEntry(path-> p, kind-> FsEntryKind::DIR) => println("Directory: ", p.toStr());
+ *         FsEntry(path-> p, kind-> FsEntryKind::FILE)-> println("File: ", p.toStr());
  *     }
  * }
  * ```
@@ -27,9 +27,9 @@ use etc::runtime::errno;
 use etc::c::dirent;
 use core::exception;
 
-extern (C) fn printf (c : *c8, ...);
+extern (C) fn printf(c: *c8, ...);
 
-pub enum : u8
+pub enum: u8
 | FILE = 1
 | DIR = 2
 | LINK = 3
@@ -43,27 +43,27 @@ pub enum : u8
 pub record FsEntry {
 
     // The path of the fs entry
-    let _path : Path;
+    let _path: Path;
 
     // The kind of fs entry
-    let _kind : FsEntryKind;
+    let _kind: FsEntryKind;
 
     /**
      * @params:
-     *    - path: the path of the fs entry (absolute or relative to the cwd).
+     *    - path: the path of the fs entry(absolute or relative to the cwd).
      */
-    pub self (path : Path, kind : FsEntryKind)
+    pub self (path: Path, kind: FsEntryKind)
         with _path = path
         , _kind = kind
     {}
 
     @field
-    pub fn kind (self)-> FsEntryKind {
+    pub fn kind(self)-> FsEntryKind {
         self._kind
     }
 
     @field
-    pub fn path (self)-> Path {
+    pub fn path(self)-> Path {
         self._path
     }
 
@@ -74,18 +74,18 @@ pub record FsEntry {
      * use std::fs::_;
      *
      * /*
-     *  * Verify that a directory contains a file named fName (recursively)
+     *  * Verify that a directory contains a file named fName(recursively)
      * */
-     * fn exists (fName : [c8], dir : FsEntry)-> bool
+     * fn exists(fName: [c8], dir: FsEntry)-> bool
      *    throws &FsError
      * {
      *    for e in dir {
      *        match e {
-     *            FsEntry (kind-> FsEntryKind::FILE, path-> p) => {
-     *                if p.file () == fName { return true; }
+     *            FsEntry(kind-> FsEntryKind::FILE, path-> p) => {
+     *                if p.file() == fName { return true; }
      *            }
-     *            subDir = FsEntry (kind-> FsEntryKind::DIR) => {
-     *                if (exists (fName, subDir)) return true;
+     *            subDir = FsEntry(kind-> FsEntryKind::DIR) => {
+     *                if (exists(fName, subDir)) return true;
      *            }
      *        }
      *    }
@@ -93,21 +93,21 @@ pub record FsEntry {
      *    false
      * }
      *
-     * exists ("foo", fs::sys::readDir (Path ("./some/dir")));
+     * exists("foo", fs::sys::readDir(Path("./some/dir")));
      * ```
      */
-    pub fn begin (self)-> DirIterator {
+    pub fn begin(self)-> DirIterator {
         if (self._kind == FsEntryKind::DIR) {
-            DirIterator (opendir (self._path.toStr ().toStringZ ()), self._path)
+            DirIterator(opendir(self._path.toStr().toStringZ()), self._path)
         } else {
-            DirIterator (null, self._path)
+            DirIterator(null, self._path)
         }
     }
 
     /**
      * @returns: the iterator to the end of the directory, to know when to stop the iteration.
      */
-    pub fn end (self)-> *void {
+    pub fn end(self)-> *void {
         null
     }
 
@@ -117,34 +117,34 @@ pub record FsEntry {
      *   - if the entry is a link => the path where the link leads
      *   - else => the path
      */
-    pub fn follow (self)-> Path {
+    pub fn follow(self)-> Path {
         if self._kind == FsEntryKind::LINK {
             let dmut path = ['\u{0}'c8 ; 256];
-            let size = readlink (self._path.toStr ().toStringZ (), alias path.ptr, cast!i32 (path.len));
+            let size = readlink(self._path.toStr().toStringZ(), alias path.ptr, cast!i32(path.len));
             if (size == -1) {
                 return self._path;
             }
 
-            Path (copy path [0 .. size])
+            Path(copy path[0 .. size])
         } else {
             self._path
         }
     }
 
     impl std::stream::Streamable {
-        pub over toStream (self, dmut stream : &StringStream) {
+        pub over toStream(self, dmut stream: &StringStream) {
             match self._kind {
                 FsEntryKind::FILE => {
-                    stream:.write ("file (", self._path.toStr (), ")");
+                    stream:.write("file (", self._path.toStr(), ")");
                 }
                 FsEntryKind::DIR => {
-                    stream:.write ("dir (", self._path.toStr (), ")");
+                    stream:.write("dir (", self._path.toStr(), ")");
                 }
                 FsEntryKind::LINK => {
-                    stream:.write ("link (", self._path.toStr (), ")");
+                    stream:.write("link (", self._path.toStr(), ")");
                 }
                 _ => {
-                    stream:.write ("unk (", self._path.toStr (), ")");
+                    stream:.write("unk (", self._path.toStr(), ")");
                 }
             }
         }
@@ -156,32 +156,32 @@ pub record FsEntry {
  */
 entity DirIterator {
 
-    // The directory being read (C dir iteration)
-    let mut _dir : *(void) = null;
+    // The directory being read(C dir iteration)
+    let mut _dir: *(void) = null;
 
     // The path of the directory being iterated
-    let _root : Path = Path ();
+    let _root: Path = Path();
 
-    // The iterator on the directory (C dir iteration)
-    let mut _curr : *(dirent) = null;
+    // The iterator on the directory(C dir iteration)
+    let mut _curr: *(dirent) = null;
 
     /**
      * @params:
      *    - dir: the opendir handle
      *    - root: the path of the directory being iterated
      */
-    pub self (dir : *void, root : Path)
+    pub self (dir: *void, root: Path)
         with _dir = dir
         , _curr = null
         , _root = root
     {
-        self:.next ();
+        self:.next();
     }
 
     /**
      * @returns: true if the iterators point to the same entry
      */
-    pub fn opEquals (self, end : *void) -> bool {
+    pub fn opEquals(self, end: *void)-> bool {
         self._dir == end
     }
 
@@ -190,11 +190,11 @@ entity DirIterator {
         /**
          * Advance the iterator to the next element.
          */
-        pub over next (mut self)  {
+        pub over next(mut self)  {
             if (self._dir != null) {
-                self._curr = readdir (self._dir);
+                self._curr = readdir(self._dir);
                 if (self._curr == null) {
-                    self:.dispose ();
+                    self:.dispose();
                 } else {
                     let c = unsafe {
                         *self._curr
@@ -202,9 +202,9 @@ entity DirIterator {
 
                     match c.d_type {
                         DirEntryTypes::DT_DIR => { // ignore current and rewind dir
-                            if (c.d_name[0 .. 2] == ".."s8 && c.d_name [2] == '\u{0}') ||
-                                (c.d_name[0 .. 1] == "."s8 && c.d_name [1] == '\u{0}')
-                                self:.next ();
+                            if (c.d_name[0 .. 2] == ".."s8 && c.d_name[2] == '\u{0}') ||
+                                (c.d_name[0 .. 1] == "."s8 && c.d_name[1] == '\u{0}')
+                                self:.next();
                         }
                     }
                 }
@@ -221,18 +221,18 @@ entity DirIterator {
             *self._curr
         };
 
-        let path = self._root.push (unsafe { c.d_name.ptr.fromStringZ () });
+        let path = self._root.push(unsafe { c.d_name.ptr.fromStringZ() });
         match c.d_type {
-            DirEntryTypes::DT_DIR => { FsEntry (path, kind-> FsEntryKind::DIR) }
-            DirEntryTypes::DT_REG => { FsEntry (path, kind-> FsEntryKind::FILE) }
-            DirEntryTypes::DT_LNK => { FsEntry (path, kind-> FsEntryKind::LINK) }
-            _ => { FsEntry (path, kind-> FsEntryKind::UNKNOWN) }
+            DirEntryTypes::DT_DIR => { FsEntry(path, kind-> FsEntryKind::DIR) }
+            DirEntryTypes::DT_REG => { FsEntry(path, kind-> FsEntryKind::FILE) }
+            DirEntryTypes::DT_LNK => { FsEntry(path, kind-> FsEntryKind::LINK) }
+            _ => { FsEntry(path, kind-> FsEntryKind::UNKNOWN) }
         }
     }
 
-    fn dispose (mut self) {
+    fn dispose(mut self) {
         if (self._dir != null) {
-            closedir (self._dir);
+            closedir(self._dir);
             self._dir = null;
         }
     }
@@ -241,8 +241,8 @@ entity DirIterator {
      * Not needed, if the iterator is used to iterate, but can be used
      * if the begin method is called outside a for loop (which is totally deprecated, but not easy to ensure)
      */
-    __dtor (mut self) {
-        self:.dispose ();
+    __dtor(mut self) {
+        self:.dispose();
     }
 
 }

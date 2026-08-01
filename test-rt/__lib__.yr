@@ -1,3 +1,34 @@
+/*
+ *
+ * <hr>
+ *
+ * @Package: ymirc
+ * @Module: __lib__
+ * @File: __lib__.yr
+ * @Author(s):
+ *   - Emile Cadorel <ecadorel@gmail.com>
+ *   - Emile Cadorel <emile.cadorel@davidson.fr>
+ *
+ * @Created(YYYY-MM-DD): 2023-02-21
+ * @Copyright(C) 2021–2026 GNU-Ymir
+ * @License
+ *   ```text
+ *   This file is part of the Ymir language project.
+ *
+ *   Ymir is free software: you can redistribute it and/or modify it
+ *   under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation, either version 3 of the License, or
+ *   (at your option) any later version.
+ *
+ *   Ymir is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with Ymir.  If not, see <https://www.gnu.org/licenses/>.
+ *   ```
+ */
 
 mod .utils;
 
@@ -14,28 +45,20 @@ use etc::runtime::threads;
  */
 
 
-lazy dmut __COVERAGE__ : &CoverageTree = copy CoverageTree ();
-lazy dmut __MAIN_TID__ : [usize] = copy [0];
+@thread
+lazy dmut __COVERAGE__: &CoverageTree = copy CoverageTree();
+lazy dmut __MAIN_TID__: [usize] = copy [0];
 
-extern (C) fn _yrt_unittest_coverage_hit_branch (func : *void, ref frameInfo : CoverageInfo, id : u32) {    
-    let tid = _yrt_thread_self_id ();    
-    if tid == __MAIN_TID__ [0] { 
-        __COVERAGE__:.hitBranch (func, frameInfo, id);
-    }
+extern (C) fn _yrt_unittest_coverage_hit_branch(func: *void, ref frameInfo: CoverageInfo, id: u32) {
+    __COVERAGE__:.hitBranch(func, frameInfo, id);
 }
 
-extern (C) fn _yrt_unittest_coverage_hit_enter (func : *void, ref frameInfo : CoverageInfo) {
-    let tid = _yrt_thread_self_id ();    
-    if tid == __MAIN_TID__ [0] { 
-        __COVERAGE__:.hitEnter (func, frameInfo);
-    }
+extern (C) fn _yrt_unittest_coverage_hit_enter(func: *void, ref frameInfo: CoverageInfo) {
+    __COVERAGE__:.hitEnter(func, frameInfo);
 }
 
-extern (C) fn _yrt_unittest_coverage_hit_exit (func : *void, ref frameInfo : CoverageInfo) {
-    let tid = _yrt_thread_self_id ();    
-    if tid == __MAIN_TID__ [0] { 
-        __COVERAGE__:.hitExit (func, frameInfo);
-    }
+extern (C) fn _yrt_unittest_coverage_hit_exit(func: *void, ref frameInfo: CoverageInfo) {
+    __COVERAGE__:.hitExit(func, frameInfo);
 }
 
 
@@ -47,19 +70,19 @@ extern (C) fn _yrt_unittest_coverage_hit_exit (func : *void, ref frameInfo : Cov
  * ====================================================================================================
  */
 
-lazy dmut __LAUNCHER__ = copy runner::UnittestLauncher ();
+lazy dmut __LAUNCHER__ = copy runner::UnittestLauncher();
 
-extern (C) fn _yrt_register_unittest_impl (name : [c8], func : fn ()-> void) {
-    __LAUNCHER__:.register (name, func);    
+extern (C) fn _yrt_register_unittest_impl(name: [c8], func: fn ()-> void) {
+    __LAUNCHER__:.register(name, func);
 }
 
-extern (C) fn _yrt_run_unittests_impl  (args : [[c8]]) -> i32 {
-    __MAIN_TID__ [0] = _yrt_thread_self_id ();
-    
-    if __LAUNCHER__.run (args) {
-        __COVERAGE__.report ();
+
+extern (C) fn _yrt_run_unittests_impl(args: [[c8]])-> i32 {
+    __MAIN_TID__[0] = _yrt_thread_self_id();
+
+    if __LAUNCHER__.run(args, __COVERAGE__) {
         return 0;
     }
-    
+
     return -1;
 }

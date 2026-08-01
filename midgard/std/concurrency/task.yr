@@ -10,26 +10,26 @@
  * use std::conv; // for 'to'
  * use std::concurrency::task;
  *
- * fn computePi (prec : i32)-> f64 {
+ * fn computePi(prec: i32)-> f64 {
  *    let mut res = 0.0;
- *    let n = prec.to!f64 ();
+ *    let n = prec.to!f64();
  *    for i in 0 .. prec {
- *        res += (4.0 / n) / ( 1.0 + (( to!f64 (i) - 0.5 ) * (1.0 / n)) * (( to!f64 (i) - 0.5 ) * (1.0 / n)));
+ *        res += (4.0 / n) / ( 1.0 + (( to!f64(i) - 0.5 ) * (1.0 / n)) * (( to!f64(i) - 0.5 ) * (1.0 / n)));
  *    }
  *    res
  * }
 
- * fn main () {
- *     let dmut pool = copy TaskPool (nbThreads-> 2u64); // Creating a task pool with two threads
+ * fn main() {
+ *     let dmut pool = copy TaskPool(nbThreads-> 2u64); // Creating a task pool with two threads
  *
  *     // Only two threads are spawned to perform 1_000_000 jobs
  *     for _ in 0 .. 1_000_000 {
- *         pool:.submit (|| => {
- *             println (computePi (i32::max / 1000));
+ *         pool:.submit(|| => {
+ *             println(computePi(i32::max / 1000));
  *         });
  *     }
  *
- *     pool:.join ();
+ *     pool:.join();
  * }
  * ```
  */
@@ -41,39 +41,39 @@ use core::concurrency::sync::_;
 pub class TaskPool {
 
     // The list of task submitted in the task pool
-    let dmut _mails : &mail::MailBox!{dg()-> void} = copy mail::MailBox!{dg ()-> void} ();
+    let dmut _mails: &mail::MailBox!{dg()-> void} = copy mail::MailBox!{dg ()-> void} ();
 
     // the number of thread to manage in the pool
-    let _nbThreads : u32;
+    let _nbThreads: u32;
 
     // The threads spawned by the pool
-    let mut _threads : [mut future-> void] = [];
+    let mut _threads: [mut future-> void] = [];
 
     // The semaphore used to trigger the workers
-    let dmut _ready : &Semaphore = copy Semaphore ();
+    let dmut _ready: &Semaphore = copy Semaphore();
 
     // The semaphore used
-    let dmut _waitTask : &Semaphore = copy Semaphore ();
+    let dmut _waitTask: &Semaphore = copy Semaphore();
 
     // Set to true when the task pool is disposed
-    let mut _terminated : bool = false;
+    let mut _terminated: bool = false;
 
     // The number of finished tasks
-    let mut _finished : usize = 0;
+    let mut _finished: usize = 0;
 
     // The number of submitted tasks
-    let mut _submitted : usize = 0;
+    let mut _submitted: usize = 0;
 
     /**
      * Create a task pool
      * */
-    pub self (nbThreads : u32 = 0u32)
-        with _nbThreads = (if (nbThreads == 0u32) etc::runtime::threads::_yrt_get_nprocs () else nbThreads)
+    pub self (nbThreads: u32 = 0u32)
+        with _nbThreads = (if (nbThreads == 0u32) etc::runtime::threads::_yrt_get_nprocs() else nbThreads)
     {
         // Spawn the threads of the pool
-        self._threads = copy [spawn { self:.workerMain (i); } for i in 0 .. self._nbThreads];
+        self._threads = copy [spawn { self:.workerMain(i); } for i in 0 .. self._nbThreads];
         for _ in 0 .. self._nbThreads {
-            self._ready:.wait ();
+            self._ready:.wait();
         }
     }
 
@@ -81,22 +81,22 @@ pub class TaskPool {
      * Submit a task to the task pool
      * @limitation: submitted tasks cannot have blocking treatment, for complex and dependant tasks normal threads have to be used
      * */
-    pub fn submit (mut self, task : dg ()-> void) {
+    pub fn submit(mut self, task: dg ()-> void) {
         atomic self {
             self._submitted += 1;
-            self._mails:.send (task);
+            self._mails:.send(task);
         }
 
-        self._waitTask:.post ();
+        self._waitTask:.post();
     }
 
     /**
      * Wait for the task pool to complete all submitted tasks
      * */
-    pub fn join (mut self) {
+    pub fn join(mut self) {
         if (self._finished == self._submitted) return;
         loop {
-            self._ready:.wait ();
+            self._ready:.wait();
             atomic self {
                 // if not equal to zero then new tasks have been submitted since last mailbox finish
                 if (self._mails.len == 0) return;
@@ -107,33 +107,33 @@ pub class TaskPool {
     /**
      * Clear the tasks that have been submitted
      * */
-    pub fn clear (mut self) {
+    pub fn clear(mut self) {
         atomic self {
             let len = self._mails.len;
-            self._mails:.clear ();
+            self._mails:.clear();
             self._finished += len;
-            if (self._finished == self._submitted) self._ready:.post ();
+            if (self._finished == self._submitted) self._ready:.post();
         }
     }
 
     /**
      * Stop all running threads in the task pool without waiting for all tasks to be completed
      * */
-    pub fn dispose (mut self) {
+    pub fn dispose(mut self) {
         if (!self._terminated) {
             self._terminated = true;
-            self._mails:.clear ();
+            self._mails:.clear();
 
             // trigger worker threads for termination
             for i in 0us .. self._threads.len {
-                self._waitTask:.post ();
-                self._threads [i].value; // join the worker thread
+                self._waitTask:.post();
+                self._threads[i].value; // join the worker thread
             }
         }
     }
 
-    __dtor (mut self) {
-        self:.dispose ();
+    __dtor(mut self) {
+        self:.dispose();
     }
 
     /*!
@@ -147,17 +147,17 @@ pub class TaskPool {
     /**
      * Worker threads waiting for tasks to be submitted and execute them one after the other
      * */
-    fn workerMain (mut self, _ : u32) {
-        self._ready:.post ();
+    fn workerMain(mut self, _: u32) {
+        self._ready:.post();
         loop {
-            self._waitTask:.wait ();
+            self._waitTask:.wait();
             if (self._terminated) break;
 
-            if let Ok (j) = self._mails:.receive () {
-                j ();
+            if let Ok(j) = self._mails:.receive() {
+                j();
                 atomic self {
                     self._finished += 1;
-                    if (self._finished == self._submitted) self._ready:.post ();
+                    if (self._finished == self._submitted) self._ready:.post();
                 }
             }
         }

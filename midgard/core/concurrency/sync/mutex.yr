@@ -4,35 +4,35 @@ in mutex;
  * Runtime mutex defined in C
  * */
 prv record _yrt_thread_mutex_t {
-    let _data : [u8 ; 40] = [0 ; 40];
+    let _data: [u8 ; 40] = [0 ; 40];
 
     pub self () {}
 }
 
-extern (C) fn printf (c : *c8, ...);
+extern (C) fn printf(c: *c8, ...);
 
 /**
  * Create a new mutex
  * @params:
- *    - data: the data of the mutex (see libpthread)
+ *    - data: the data of the mutex(see libpthread)
  * @returns:
  *    - lock: the id of the lock
  */
-prv extern (C) fn _yrt_thread_mutex_init (lock : *_yrt_thread_mutex_t, data : *void);
+prv extern (C) fn _yrt_thread_mutex_init(lock: *_yrt_thread_mutex_t, data: *void);
 
 /**
  * Lock a mutex
  * @params:
  *    - lock: the mutex to lock
  */
-prv extern (C) fn _yrt_thread_mutex_lock (lock : *_yrt_thread_mutex_t);
+prv extern (C) fn _yrt_thread_mutex_lock(lock: *_yrt_thread_mutex_t);
 
 /**
  * Unlock a mutex
  * @params:
  *    - lock: the mutex to unlock
  */
-prv extern (C) fn _yrt_thread_mutex_unlock (lock : *_yrt_thread_mutex_t);
+prv extern (C) fn _yrt_thread_mutex_unlock(lock: *_yrt_thread_mutex_t);
 
 /**
  * Wait for a condition to be triggered
@@ -41,7 +41,7 @@ prv extern (C) fn _yrt_thread_mutex_unlock (lock : *_yrt_thread_mutex_t);
  *    - mutex: the associtated mutex locked while the condition isn't met
  * @info: see libpthread
  */
-pub extern (C) fn _yrt_thread_cond_wait (id : *void, mutex : *_yrt_thread_mutex_t);
+pub extern (C) fn _yrt_thread_cond_wait(id: *void, mutex: *_yrt_thread_mutex_t);
 
 
 /**
@@ -52,36 +52,36 @@ pub extern (C) fn _yrt_thread_cond_wait (id : *void, mutex : *_yrt_thread_mutex_
 pub class Mutex {
 
     // The mutex to lock
-    pub let _lock : _yrt_thread_mutex_t;
+    pub let _lock: _yrt_thread_mutex_t;
 
     /**
      * Construct a mutex that can be locked to synchronize two or more threads
      * */
     pub self ()
-        with _lock = _yrt_thread_mutex_t ()
+        with _lock = _yrt_thread_mutex_t()
     {
-        _yrt_thread_mutex_init (&self._lock, null);
+        _yrt_thread_mutex_init(&self._lock, null);
     }
 
     /**
      * Lock the mutex in the current thread
      * */
-    pub fn lock (mut self) {
-        _yrt_thread_mutex_lock (&self._lock);
+    pub fn lock(mut self) {
+        _yrt_thread_mutex_lock(&self._lock);
     }
 
     /**
      * Wait a condition and lock the mutex
      * */
-    pub fn waitCondition (mut self, cond : *void) {
-        _yrt_thread_cond_wait (cond, &self._lock);
+    pub fn waitCondition(mut self, cond: *void) {
+        _yrt_thread_cond_wait(cond, &self._lock);
     }
 
     /**
      * Unlock the mutex in the current thread
      * */
-    pub fn unlock (mut self) {
-        _yrt_thread_mutex_unlock (&self._lock);
+    pub fn unlock(mut self) {
+        _yrt_thread_mutex_unlock(&self._lock);
     }
 }
 
@@ -89,9 +89,9 @@ pub class Mutex {
  * Entity type that is used to ensure that mutex is unlock before exiting the locking context
  * @example:
  * ```
- * fn foo (m : Mutex) {
- *    let lock = MutexLocker (m);
- *    println ("Doing atomic stuff");
+ * fn foo(m: Mutex) {
+ *    let lock = MutexLocker(m);
+ *    println("Doing atomic stuff");
  *
  *    // __dtor lock
  * }
@@ -99,7 +99,7 @@ pub class Mutex {
  * */
 pub entity MutexLocker {
 
-    let dmut _m : (&Mutex)?;
+    let dmut _m: (&Mutex)?;
 
     /**
      * Move ctor
@@ -112,18 +112,18 @@ pub entity MutexLocker {
      * @params:
      *    - m: the mutex to lock
      * */
-    pub self (dmut m : &Mutex)
+    pub self (dmut m: &Mutex)
         with _m = (alias m)?
     {
-        m:.lock ();
+        m:.lock();
     }
 
     /**
      * Unlock the mutex
      * */
-    __dtor (mut self) {
-        if let Ok (dmut m) = alias self._m {
-            m:.unlock ();
+    __dtor(mut self) {
+        if let Ok(dmut m) = alias self._m {
+            m:.unlock();
         }
     }
 

@@ -16,32 +16,30 @@
  * /*
  *  * Function that can return anything
  *  */
- * fn foo (x : i32)-> &Any {
+ * fn foo(x: i32)-> &Any {
  *     if (x < 10) {
- *         copy Some (14) // returns a i32, if x < 10
+ *         copy Some(14) // returns a i32, if x < 10
  *     } else if (x < 100) {
- *         copy Some ("foo"s8) // returns a [c8] if x < 100 and x >= 10
+ *         copy Some("foo"s8) // returns a[c8] if x < 100 and x >= 10
  *     } else {
- *         copy None () // returns nothing if x >= 100
+ *         copy None() // returns nothing if x >= 100
  *     }
  * }
  *
- * fn main () {
- *     let a = foo (27); // foo can return anything
+ * fn main() {
+ *     let a = foo(27); // foo can return anything
  *
  *     // One can use pattern matching to safely unwrap the Any type
  *     match a {
- *        Some!{i32} (value-> x) =>
- *            println (x); // maybe its an i32
- *        Some!{f32} (value-> y) =>
- *            println (y); // maybe its an f32
+ *        Some!{i32} (value-> x) => *            println(x); // maybe its an i32
+ *        Some!{f32} (value-> y) => *            println(y); // maybe its an f32
  *     }
  *
  *     // any can be transformed into an option
- *     if let Ok (str) = a.unwrap!{[c8]} () {
- *        println (str);
- *     } else if let Ok (str) = a.unwrap!{[c32]} () {
- *        println (str);
+ *     if let Ok(str) = a.unwrap!{[c8]} () {
+ *        println(str);
+ *     } else if let Ok(str) = a.unwrap!{[c32]} () {
+ *        println(str);
  *     }
  * }
  * ```
@@ -66,7 +64,7 @@ pub class Any {
     pub fn unwrap {T} (self)-> (T)? {
         if let ISome!{T, false} (value-> v) = self {
             return (v)?;
-        } else cte if __pragma!compile (ISome!{T, true}) {
+        } else cte if __pragma!compile(ISome!{T, true}) {
             if let ISome!{T, true} (value-> v) = self {
                 return (v)?;
             }
@@ -78,9 +76,9 @@ pub class Any {
      * Mutable unwrap of the value inside the any
      * @returns: the value inside the any
      * */
-    pub fn unwrap {T of dmut J, class J} (mut self)-> dmut (T)? {
+    pub fn unwrap {T of dmut J, class J} (mut self)-> dmut(T)? {
         match alias self {
-            dmut s : &ISome!{T, true} => {
+            dmut s: &ISome!{T, true} => {
                 return (alias s.value)?;
             }
         }
@@ -92,16 +90,16 @@ pub class Any {
      * @returns: true if the any contains no data
      * */
     @final
-    pub fn isEmpty (self)-> bool {
+    pub fn isEmpty(self)-> bool {
         match self {
-            None () => { true }
+            None() => { true }
             _ => { false }
         }
     }
 
     impl std::stream::Streamable {
-        pub over toStream (self, dmut stream : &std::stream::StringStream) {
-            stream:.write (self.__typeid__, "()");
+        pub over toStream(self, dmut stream: &std::stream::StringStream) {
+            stream:.write(self.__typeid__, "()");
         }
     }
 
@@ -112,7 +110,7 @@ pub class Any {
  * */
 @final
 pub class Some {T} over ISome!{T, false} {
-    pub self (val : T)
+    pub self (val: T)
         with super (val)
     {}
 }
@@ -122,7 +120,7 @@ pub class Some {T} over ISome!{T, false} {
  * */
 @final
 pub class Some {T of dmut J, class J} over ISome!{T, true} {
-    pub self (dmut val : T)
+    pub self (dmut val: T)
         with super (alias val)
     {}
 }

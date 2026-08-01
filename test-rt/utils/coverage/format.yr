@@ -1,0 +1,295 @@
+/*
+ *
+ * <hr>
+ *
+ * @Package: ymirc
+ * @Module: utils::coverage::format
+ * @File: utils/coverage/format.yr
+ * @Author(s):
+ *   - Emile Cadorel <ecadorel@gmail.com>
+ *
+ * @Created(YYYY-MM-DD): 2026-07-31
+ * @Copyright(C) 2021–2026 GNU-Ymir
+ * @License
+ *   ```text
+ *   This file is part of the Ymir language project.
+ *
+ *   Ymir is free software: you can redistribute it and/or modify it
+ *   under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation, either version 3 of the License, or
+ *   (at your option) any later version.
+ *
+ *   Ymir is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with Ymir.  If not, see <https://www.gnu.org/licenses/>.
+ *   ```
+ */
+
+in format;
+
+use std::io;
+use std::format::_;
+use std::{syntax::tokenizer, stream, fs::_, char};
+use utils::colors;
+use utils::coverage::conv;
+
+/**
+ * Formats a `CoverageReport`(see `CoverageConv`) into a human readable report, and prints it to
+ * the console.
+ * */
+pub mod CoverageFormat {
+
+    /**
+     * Print the coverage and/or call-tree report described by `rep` to the console
+     * */
+    pub fn report(rep: CoverageReport, withCov: bool, withCallTree: bool) {
+        if withCov {
+            reportCoverage(rep);
+        }
+        if withCallTree {
+            reportCallTree(rep);
+        }
+    }
+
+    /**
+     * Print the per-file coverage report(functions grouped by their file) and the overall total,
+     * skipping frames whose name is a lambda(see `isLambdaName`)
+     * */
+    fn reportCoverage(rep: CoverageReport) {
+        let dmut stream = copy StringStream();
+        let filtered = CoverageReport(filterFunctions(rep.functions), rep.callTree);
+        let fileEntries = CoverageConv::extractFiles(filtered);
+
+        let mut totalCovered: usize = 0us;
+        let mut totalLocations: usize = 0us;
+
+        for file, entry in fileEntries {
+            let (covered, total, missing) = coverageOfFile(entry);
+            formatFileReport(alias stream, file, covered, total, missing);
+            totalCovered += covered;
+            totalLocations += total;
+        }
+
+        writeTotalLine(alias stream, totalCovered, totalLocations);
+
+        printReport("COVERAGE", stream[]);
+    }
+
+    /**
+     * @returns: `functions`, with lambdas and functions without any instrumented location removed
+     * */
+    fn filterFunctions(functions: [CoverageFunctionEntry])-> [CoverageFunctionEntry] {
+        let dmut result: [CoverageFunctionEntry] = [];
+        for fnEntry in functions {
+            if !isLambdaName(fnEntry.func) && fnEntry.locations.len > 0us {
+                result ~= [fnEntry];
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * @returns: the covered/total locations of `entry`, and its locations that are not covered
+     * */
+    fn coverageOfFile(entry: &CoverageFileEntry)-> (usize, usize, [(u32, u32)]) {
+        let mut covered: usize = 0us;
+        let mut total: usize = 0us;
+        let dmut missing: [(u32, u32)] = [];
+
+        for loc, hits in entry.locations {
+            total += 1us;
+            if hits > 0u32 {
+                covered += 1us;
+            } else {
+                missing ~= [loc];
+            }
+        }
+
+        return (covered, total, missing);
+    }
+
+    /**
+     * Append a file's coverage line(its own percentage and totals) to `stream`,
+     * followed by its missing locations if it isn't fully covered
+     * */
+    fn formatFileReport(dmut stream: &StringStream, file: [c8], covered: usize, total: usize, missing: [(u32, u32)]) {
+        let percent = percentOf(covered, total);
+
+        stream:.write('[', colorFor(percent), percent, "%", Colors::RESET, "][", covered, "/", total, "] ", file);
+
+        if missing.len > 0us {
+            stream:.write(Colors::BOLD, " | missing: ", Colors::RESET);
+            writeMissingList(alias stream, missing);          
+        }
+        stream:.writeln();
+    }
+
+    /**
+     * Append the(possibly truncated) list of missing locations to `stream`
+     * */
+    fn writeMissingList(dmut stream: &StringStream, missing: [(u32, u32)]) {
+        // Avoid too much output: show only the first few missing ranges.
+        let maxShown = if missing.len < 10us { missing.len } else { 10us };
+        for j in 0us .. maxShown {
+            let (startLine, _) = missing[j];
+            if j != 0 stream:.write(", ");
+            stream:.write(startLine);
+        }
+        if missing.len > maxShown {
+            stream:.write("   ... (", missing.len - maxShown, " more)");
+        }
+    }
+
+    /**
+     * Append the overall "TOTAL" coverage line to `stream`
+     * */
+    fn writeTotalLine(dmut stream: &StringStream, covered: usize, total: usize) {
+        let percent = percentOf(covered, total);
+        stream:.writeln('[', colorFor(percent), percent, "%", Colors::RESET, ']', ' ', "TOTAL:", covered, '/', total);
+    }
+
+    /**
+     * @returns: `covered` out of `total`, as a percentage(0 if `total` is 0)
+     * */
+    fn percentOf(covered: usize, total: usize)-> usize {
+        if total == 0us { 0us } else { covered * 100us / total }
+    }
+
+    /**
+     * @returns: the color associated to a coverage percentage
+     * */
+    fn colorFor(percent: usize)-> [c8] {
+        if percent == 100us {
+            Colors::GREEN
+        } else if percent >= 80us {
+            Colors::YELLOW
+        } else {
+            Colors::RED
+        }
+    }
+
+    /**
+     * Print, for each caller function, the list of callees and how many times each was called
+     * */
+    fn reportCallTree(rep: CoverageReport) {
+        let dmut stream = copy StringStream();
+
+        for entry in rep.callTree {
+            formatCallTreeEntry(alias stream, entry);
+        }
+
+        printReport("CALL TREE", stream[]);
+    }
+
+    /**
+     * Append a single caller's line(and its list of callees) to `stream`
+     * */
+    fn formatCallTreeEntry(dmut stream: &StringStream, entry: CoverageCaller) {
+        writeFuncName(alias stream, entry.file, entry.func);
+        writeCallees(alias stream, entry.callees);
+        stream:.writeln();
+    }
+
+    /**
+     * Append " file::func"(bold), or " <unknown>" if both are empty, to `stream`
+     * */
+    fn writeFuncName(dmut stream: &StringStream, file: [c8], func: [c8]) {
+        if file.len > 0us || func.len > 0us {
+            stream:.write(Colors::BOLD, " ", file, "::", func, Colors::RESET);
+        } else {
+            stream:.write(Colors::BOLD, " <unknown>", Colors::RESET);
+        }
+    }
+
+    /**
+     * Append the(possibly truncated) "callees" list of `callees` to `stream`
+     * */
+    fn writeCallees(dmut stream: &StringStream, callees: [CoverageCallee]) {
+        let maxShown: usize = 10us;
+        let mut printed: usize = 0us;
+        let mut skipped: usize = 0us;
+
+        for callee in callees {
+            if callee.count != 0us {
+                if printed < maxShown {
+                    writeCalleeLine(alias stream, callee);
+                    printed += 1us;
+                } else {
+                    skipped += 1us;
+                }
+            }
+        }
+
+        if skipped > 0us {
+            stream:.write("\n   ... (", skipped, " more)");
+        }
+    }
+
+    /**
+     * Append a single "\n  - file::func : count" callee line to `stream`
+     * */
+    fn writeCalleeLine(dmut stream: &StringStream, callee: CoverageCallee) {
+        if callee.file.len > 0us || callee.func.len > 0us {
+            stream:.write("\n  - ", callee.file, "::", callee.func, " : ", callee.count);
+        } else {
+            stream:.write("\n  - <unknown> : ", callee.count);
+        }
+    }
+
+    /**
+     * Print `report` framed with a title header(`head`) and delimiter lines
+     * sized to the longest line in the report
+     * */
+    fn printReport(head: [c8], report: [c8]) {
+        let lines = Tokenizer!{c8}(tokens-> copy ["\n"]).tokenize(report);
+        let mut maxLen = 0us;
+        for l in lines if l.len > maxLen {
+            maxLen = l.len;
+        }
+
+        {
+            let delim = format("{1:=^*}"s8, maxLen, "");
+            let headline = format("{1:^*}"s8, maxLen, head);
+            println(delim);
+            println(Colors::BOLD, headline, Colors::RESET);
+            println(delim);
+            print(report);
+            println(delim);
+        } catch {
+            _ => {
+                println("====================");
+                println(Colors::BOLD, head, Colors::RESET);
+                println("====================");
+                print(report);
+                println("====================");
+            }
+        }
+    }
+
+    /**
+     * Compilers name anonymous lambdas after their source position(e.g. `::_12_9`).
+     * Such names only ever contain digits and underscores, so this is used to
+     * filter them out of coverage reports.
+     *
+     * @returns: true iff the last "::"-separated segment of `name` contains only '_' and digits
+     */
+    fn isLambdaName(name: [c8])-> bool {
+        let last = Path(name, sep-> "::").file();
+        if last.len == 0us {
+            return false;
+        }
+
+        for c in last {
+            if !isDigit(c) && c != '_' {
+                return false;
+            }
+        }
+
+        return true;
+    }
+}

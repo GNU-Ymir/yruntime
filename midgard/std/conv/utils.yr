@@ -11,20 +11,20 @@ use std::traits;
  * ====================================================================================================
  */
 
-pub extern (C) fn _yrt_f32_to_string (f : f32, prec : u32)-> dmut [c8];
-pub extern (C) fn _yrt_f64_to_string (f : f64, prec : u32)-> dmut [c8];
-pub extern (C) fn _yrt_f80_to_string (f : f80, prec : u32)-> dmut [c8];
-pub extern (C) fn _yrt_fsize_to_string (f : fsize, prec : u32)-> dmut [c8];
+pub extern (C) fn _yrt_f32_to_string(f: f32, prec: u32)-> dmut[c8];
+pub extern (C) fn _yrt_f64_to_string(f: f64, prec: u32)-> dmut[c8];
+pub extern (C) fn _yrt_f80_to_string(f: f80, prec: u32)-> dmut[c8];
+pub extern (C) fn _yrt_fsize_to_string(f: fsize, prec: u32)-> dmut[c8];
 
-pub extern (C) fn _yrt_f32_to_string_exp (f : f32, prec : u32)-> dmut [c8];
-pub extern (C) fn _yrt_f64_to_string_exp (f : f64, prec : u32)-> dmut [c8];
-pub extern (C) fn _yrt_f80_to_string_exp (f : f80, prec : u32)-> dmut [c8];
-pub extern (C) fn _yrt_fsize_to_string_exp (f : fsize, prec : u32)-> dmut [c8];
+pub extern (C) fn _yrt_f32_to_string_exp(f: f32, prec: u32)-> dmut[c8];
+pub extern (C) fn _yrt_f64_to_string_exp(f: f64, prec: u32)-> dmut[c8];
+pub extern (C) fn _yrt_f80_to_string_exp(f: f80, prec: u32)-> dmut[c8];
+pub extern (C) fn _yrt_fsize_to_string_exp(f: fsize, prec: u32)-> dmut[c8];
 
-pub extern (C) fn _yrt_string_to_f32 (s : [c8], ref mut succ : bool)-> f32;
-pub extern (C) fn _yrt_string_to_f64 (s : [c8], ref mut succ : bool)-> f64;
-pub extern (C) fn _yrt_string_to_f80 (s : [c8], ref mut succ : bool)-> f80;
-pub extern (C) fn _yrt_string_to_fsize (s : [c8], ref mut succ : bool)-> fsize;
+pub extern (C) fn _yrt_string_to_f32(s: [c8], ref mut succ: bool)-> f32;
+pub extern (C) fn _yrt_string_to_f64(s: [c8], ref mut succ: bool)-> f64;
+pub extern (C) fn _yrt_string_to_f80(s: [c8], ref mut succ: bool)-> f80;
+pub extern (C) fn _yrt_string_to_fsize(s: [c8], ref mut succ: bool)-> fsize;
 
 /*!
  * ====================================================================================================
@@ -35,7 +35,7 @@ pub extern (C) fn _yrt_string_to_fsize (s : [c8], ref mut succ : bool)-> fsize;
  */
 
 
-pub fn if (isIntegral!{U} && isChar!{C}) to {C, U} (a : U, base : U, upper : bool) -> C {
+pub fn if (isIntegral!{U} && isChar!{C}) to {C, U} (a: U, base: U, upper: bool)-> C {
     match a {
         0us => { return '0'; }
         1us => { return '1'; }
@@ -52,9 +52,9 @@ pub fn if (isIntegral!{U} && isChar!{C}) to {C, U} (a : U, base : U, upper : boo
                 panic;
             }
 
-            let c = cast!C (cast!c8 (cast!u8 ('a') + cast!u8 (a - 10)));
+            let c = cast!C(cast!c8(cast!u8('a') + cast!u8(a - 10)));
             if (upper) {
-                return std::char::toUpper (c);
+                return std::char::toUpper(c);
             }
 
             c
@@ -62,7 +62,7 @@ pub fn if (isIntegral!{U} && isChar!{C}) to {C, U} (a : U, base : U, upper : boo
     }
 }
 
-pub fn if (isIntegral!{T} && isChar!{C}) to {T, C} (a : C, base : T) -> T
+pub fn if (isIntegral!{T} && isChar!{C}) to {T, C} (a: C, base: T)-> T
     throws std::conv::errors::CastFailure
 {
     match a {
@@ -78,18 +78,18 @@ pub fn if (isIntegral!{T} && isChar!{C}) to {T, C} (a : C, base : T) -> T
         '9' => { return 9; }
         _ => {
             let ret = if (a >= 'a' && a <= 'z') {
-                cast!T (cast!u8 (a) - cast!u8 ('a')) + 10
+                cast!T(cast!u8(a) - cast!u8('a')) + 10
             } else if (a >= 'A' && a <= 'Z') {
-                cast!T (cast!u8 (a) - cast!u8 ('A')) + 10
+                cast!T(cast!u8(a) - cast!u8('A')) + 10
             } else {
-                throw copy CastFailure (c8::typeinfo, usize::typeinfo);
+                throw copy CastFailure(c8::typeinfo, usize::typeinfo);
             };
 
             if (base > ret) {
                 return ret;
             }
 
-            throw copy CastFailure (c8::typeinfo, usize::typeinfo);
+            throw copy CastFailure(c8::typeinfo, usize::typeinfo);
         }
     }
 }

@@ -1,0 +1,260 @@
+/*
+ *
+ * <hr>
+ *
+ * @Package: ymirc
+ * @Module: utils::filters
+ * @File: utils/filters.yr
+ * @Author(s):
+ *   - Emile Cadorel <ecadorel@gmail.com>
+ *
+ * @Created(YYYY-MM-DD): 2026-07-13
+ * @Copyright(C) 2021–2026 GNU-Ymir
+ * @License
+ *   ```text
+ *   This file is part of the Ymir language project.
+ *
+ *   Ymir is free software: you can redistribute it and/or modify it
+ *   under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation, either version 3 of the License, or
+ *   (at your option) any later version.
+ *
+ *   Ymir is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with Ymir.  If not, see <https://www.gnu.org/licenses/>.
+ *   ```
+ */
+
+in filters;
+
+use std::fs::_;
+use std::algorithm::{sorting, searching};
+use std::syntax::tokenizer;
+use std::conv;
+use etc::c::process;
+
+// The canonical file written once, at the end of a run, by `TestFilters::dumpSuccessFile`.
+pub def SUCCESS_FILE = ".ymir_test_success";
+
+// Every worker subprocess writes its own subset of results to
+// "{SUCCESS_FRAGMENT_PREFIX}{pid}{SUCCESS_FRAGMENT_SUFFIX}"(see `dumpSuccessFragment`), so that
+// concurrent workers never clobber each other or the canonical file; the parent merges and
+// deletes these fragments once every worker has finished(see `mergeFragments`).
+pub def SUCCESS_FRAGMENT_PREFIX = ".ymir_test_success_";
+pub def SUCCESS_FRAGMENT_SUFFIX = ".part";
+
+/**
+ * Module to apply filtering on tests names.
+ *
+ */
+pub mod TestFilters {
+
+    /**
+     * Filter the list of tests
+     * @params:
+     *    - tests: the list of tests registered in the program
+     *    - hasFilters: true iff the argument parser has filter
+     *    - filter: the filter to apply if hasFilters
+     *    - resume: true iff the flag resume was found in argument parser
+     *
+     * @returns:
+     *    - already: the list of tests that have been executed in the previous iteration(associated to success failure, flags)
+     *    - the list of tests to run
+     */
+    pub fn filterList(tests:            [[c8]],
+                      hasFilters:       bool,
+                      filter:           [c8],
+                      resume:           bool,
+                      ref dmut already: [[c8] => bool])-> [[c8]] {
+        already = TestFilters::readSuccessFile();
+
+        let dmut toLaunch: [[c8]] = [];
+        for t in tests {
+            let filteredOut = hasFilters && !TestFilters::passFilter(t, filter);
+            if !filteredOut {
+                if let Ok(x) = already[t] {
+                    if (!resume || !x) {
+                        toLaunch ~= [t];
+                        already[t] = false;
+                    }
+                } else {
+                    toLaunch ~= [t];
+                    already[t] = false;
+                }
+            }
+        }
+
+        let list = sort(alias toLaunch);
+        return list;
+    }
+
+    /**
+     * Write the file containing the success/failure of the tests execution
+     * (where false can also mean it wasn't executed but was planned to)
+     *
+     * @params:
+     *     - tests: the list of registered test and the flags defining the execution state
+     *
+     */
+    pub fn dumpSuccessFile(tests: [[c8] => bool]) {
+        writeSuccessMap(tests, SUCCESS_FILE);
+    }
+
+    /**
+     * Write this worker's own subset of results to its own fragment file, so a parent process
+     * can later merge it(see `mergeFragments`) without clobbering sibling workers or the
+     * canonical file(see `dumpSuccessFile`)
+     *
+     * @params:
+     *     - tests: the subset of tests this worker ran, and whether each of them succeeded
+     * */
+    pub fn dumpSuccessFragment(tests: [[c8] => bool]) {
+        writeSuccessMap(tests, fragmentPath());
+    }
+
+    /**
+     * Delete every leftover success fragment file(see `dumpSuccessFragment`), e.g. left behind
+     * by a previous run that crashed before merging them
+     * */
+    pub fn clearStaleFragments() {
+        for path in listFragments() {
+            {
+                removeFile(path);
+            } catch {
+                _ => {}
+            }
+        }
+    }
+
+    /**
+     * Merge every success fragment file(see `dumpSuccessFragment`) into `already`, deleting each
+     * fragment once merged
+     *
+     * @params:
+     *    - already: the map to merge the fragments' results into
+     * */
+    pub fn mergeFragments(ref dmut already: [[c8] => bool]) {
+        for path in listFragments() {
+            for test, success in readSuccessMap(path.toStr()) {
+                already[test] = success;
+            }
+
+            {
+                removeFile(path);
+            } catch {
+                _ => {}
+            }
+        }
+    }
+
+    /**
+     * Read the resume file containing the execution flag for each tests that where registered during previous execution
+     *
+     * @returns: the list of test assocuiated to the successfuly executed flag
+     */
+    fn readSuccessFile()-> dmut[[c8] => bool] {
+        return readSuccessMap(SUCCESS_FILE);
+    }
+
+    /**
+     * Write `tests` to `path`(created, or erased if it already existed), one "name;true"/
+     * "name;false" line per entry
+     * */
+    fn writeSuccessMap(tests: [[c8] => bool], path: [c8]) {
+        {
+            let dmut sfile = File::create(Path(path), write-> true);
+            for test, success in tests {
+                sfile:.write(test);
+                sfile:.write(";");
+                if success {
+                    sfile:.write("true");
+                } else {
+                    sfile:.write("false");
+                }
+                sfile:.write("\n");
+            }
+        } catch {
+            err => {
+                std::io::println("err ", err);
+            }
+        }
+    }
+
+    /**
+     * Read a "name;true"/"name;false" per-line file previously written by `writeSuccessMap`
+     * @returns: the parsed content of `path`, or an empty map if it does not exist/is unreadable
+     * */
+    fn readSuccessMap(path: [c8])-> dmut[[c8] => bool] {
+        {
+            let dmut sfile = File::open(Path(path), read-> true);
+            let content = sfile:.readAll();
+
+            let mut lineTzer = Tokenizer!{c8}();
+            lineTzer:.insert(";", isSkip-> true);
+
+            let mut globTzer = Tokenizer!{c8}();
+            globTzer:.insert("\n", isSkip-> true);
+
+            let dmut result: [[c8] => bool] = copy[];
+            let lines = globTzer.tokenizeWithoutSkips(content);
+
+            for line in lines {
+                let test = lineTzer.tokenizeWithoutSkips(line);
+                if (test.len == 2) {
+                    result[test[0]] = (test[1] == "true");
+                }
+            }
+
+            return alias result;
+        } catch {
+            _ => {
+                return copy [];
+            }
+        }
+    }
+
+    /**
+     * @returns: the path of this worker's own success fragment file(see `SUCCESS_FRAGMENT_PREFIX`)
+     * */
+    fn fragmentPath()-> [c8] {
+        return SUCCESS_FRAGMENT_PREFIX ~ std::conv::to!{[c8]} (getpid()) ~ SUCCESS_FRAGMENT_SUFFIX;
+    }
+
+    /**
+     * @returns: the path of every success fragment file found in the current directory
+     * */
+    fn listFragments()-> [Path] {
+        let dmut result: [Path] = [];
+
+        {
+            for entry in readDir(Path(".")) {
+                if entry.kind == FsEntryKind::FILE {
+                    let name = entry.path.file();
+                    if name.startsWith(SUCCESS_FRAGMENT_PREFIX) && name.endsWith(SUCCESS_FRAGMENT_SUFFIX) {
+                        result ~= [entry.path];
+                    }
+                }
+            }
+        } catch {
+            _ => {}
+        }
+
+        return result;
+    }
+
+    /**
+     * @returns: true if the test pass the filter and must be executed at this run
+     *
+     * */
+    fn passFilter(name: [c8], filter: [c8])-> bool {
+        if filter.len > 1 && filter[$ - 1] == '*' {
+            return name.startsWith(filter[0 .. $ - 1]);
+        }
+
+        return Path(filter, sep-> "::") == Path(name, sep-> "::").parent().parent(); // remove __test::id
+    }
+}
