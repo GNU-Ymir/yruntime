@@ -34,7 +34,8 @@ in runner;
 use std::{io, config::_, algorithm::searching, fs::path};
 
 use core::exception::_;
-use utils::{colors, coverage, filters, args};
+use utils::{colors, filters, args, worker};
+use utils::coverage::{tree, store, load, format, conv};
 
 extern (C) fn _yrt_force_debug()-> void;
 
@@ -102,8 +103,9 @@ pub class UnittestLauncher {
             _ => { return false; } // parsing failed
         }
 
+        self.resetCoverageUnlessResuming(testArgs.hasResume);
+
         _yrt_force_debug();
-        let mut failed = false;
         let dmut already: [[c8] => bool] = copy [];
 
         let toLaunch = TestFilters::filterList(copy [name for name, _ in self._tests],
@@ -112,7 +114,36 @@ pub class UnittestLauncher {
                                                resume-> testArgs.hasResume,
                                                already-> ref already);
 
-        for test in toLaunch {
+        let failed = if testArgs.jobs <= 1 || toLaunch.len <= 1us {
+            self.runList(toLaunch, testArgs.hasStopFirst, ref already)
+        } else {
+            self.runParallel(toLaunch, testArgs, covTree, ref already)
+        };
+
+        TestFilters::dumpSuccessFile(already);
+        self.storeCoverage(covTree);
+
+        if !failed {
+            self.reportCoverage(testArgs);
+        }
+
+        return !failed;
+    }
+
+    /**
+     * Run every test of `tests` sequentially, in this process, recording each one's outcome
+     * into `already`
+     *
+     * @params:
+     *    - tests: the names of the tests to run
+     *    - hasStopFirst: true iff execution must stop at the first failure
+     *    - already: the map to record each test's success/failure into
+     *
+     * @returns: true iff at least one test of `tests` failed
+     * */
+    fn runList(self, tests: [[c8]], hasStopFirst: bool, ref dmut already: [[c8] => bool])-> bool {
+        let mut failed = false;
+        for test in tests {
             if let Ok(f) = self._tests[test] {
                 self.runTest(test, f);
                 already[test] = true;
@@ -120,19 +151,130 @@ pub class UnittestLauncher {
                 err: &Exception => {
                     self.exposeError(test, err);
                     already[test] = false;
-                    if (testArgs.hasStopFirst) break;
+                    if (hasStopFirst) break;
                     failed = true;
                 }
             }
         }
 
-        TestFilters::dumpSuccessFile(already);
+        return failed;
+    }
 
-        if !failed  {
-            covTree.report(testArgs.hasCoverage, testArgs.hasCallTree);
+    /**
+     * Split `toLaunch` into `testArgs.jobs` chunks(see `TestChunks::split`), fork one
+     * `TestWorker` subprocess per chunk, wait for all of them, and merge their results into
+     * `already`
+     *
+     * @info: each worker independently honors `--stop-first` *within its own chunk* only --
+     *        siblings are never signaled/cancelled when one of them fails first(no cross-process
+     *        cancellation)
+     * @info: worker stdout/stderr is inherited and unpiped, so it freely interleaves across
+     *        workers -- this is the accepted, expected behaviour of a parallel test runner
+     *
+     * @params:
+     *    - toLaunch: the names of the tests to run, split across workers
+     *    - testArgs: the parsed arguments of this run
+     *    - covTree: the code coverage tree that will be filled by each worker's own tests
+     *    - already: the map to merge the workers' results into
+     *
+     * @returns: true iff at least one worker reported a failure
+     * */
+    fn runParallel(self, toLaunch: [[c8]], testArgs: TestRunnerArgument, covTree: &CoverageTree, ref dmut already: [[c8] => bool])-> bool {
+        TestFilters::clearStaleFragments();
+        let chunks = TestChunks::split(toLaunch, testArgs.jobs);
+        let dmut pids: [u32] = [];
+
+        for chunk in chunks {
+            if let Ok(pid) = TestWorker::fork() {
+                pids ~= [pid];
+            } else {
+                self.runWorkerChunk(chunk, testArgs.hasStopFirst, covTree); // never returns
+            }
         }
 
-        return !failed;
+        return self.collectWorkers(pids, ref already);
+    }
+
+    /**
+     * The body of a forked worker: run its chunk, persist its results(its own success fragment
+     * and coverage file), then terminate. Never returns.
+     *
+     * @params:
+     *    - chunk: the names of the tests this worker must run
+     *    - hasStopFirst: true iff execution must stop at the first failure
+     *    - covTree: this(forked) process's own code coverage tree
+     * */
+    fn runWorkerChunk(self, chunk: [[c8]], hasStopFirst: bool, covTree: &CoverageTree) {
+        let dmut mine: [[c8] => bool] = copy [];
+        let failed = self.runList(chunk, hasStopFirst, ref mine);
+
+        TestFilters::dumpSuccessFragment(mine);
+        self.storeCoverage(covTree);
+
+        TestWorker::exit(if failed { 1 } else { 0 });
+    }
+
+    /**
+     * Wait for every worker of `pids` to terminate, then merge their success fragments into
+     * `already`(see `TestFilters::mergeFragments`)
+     *
+     * @params:
+     *    - pids: the pid of every forked worker(see `TestWorker::fork`)
+     *    - already: the map to merge the workers' results into
+     *
+     * @returns: true iff at least one worker exited with a non-zero status
+     * */
+    fn collectWorkers(self, pids: [u32], ref dmut already: [[c8] => bool])-> bool {
+        let mut failed = false;
+        for pid in pids {
+            if (TestWorker::wait(pid) != 0) {
+                failed = true;
+            }
+        }
+
+        TestFilters::mergeFragments(ref already);
+        return failed;
+    }
+
+    /**
+     * Delete every coverage file left over from previous runs(see `CoverageStore::PID_FILE_PREFIX`),
+     * unless `--resume` was passed, in which case this run's coverage must be merged with theirs
+     *
+     * @params:
+     *    - hasResume: true iff the flag resume was found in argument parser
+     * */
+    fn resetCoverageUnlessResuming(self, hasResume: bool) {
+        if !hasResume {
+            CoverageStore::removePidFiles(CoverageLoad::listPidFiles());
+        }
+    }
+
+    /**
+     * Export this process's coverage tree to its own coverage file(see `CoverageStore::storePid`),
+     * so it can be merged with the coverage of other runs when the report is printed
+     *
+     * @params:
+     *    - covTree: the code coverage tree that was filled while running the tests
+     * */
+    fn storeCoverage(self, covTree: &CoverageTree) {
+        {
+            CoverageStore::storePid(covTree);
+        } catch {
+            err => { println("err ", err); }
+        }
+    }
+
+    /**
+     * Print the coverage/call-tree report, merged from every coverage file found on disk(this
+     * run's, plus any left over from a previous `--resume` run)
+     *
+     * @params:
+     *    - testArgs: the parsed arguments of this run
+     * */
+    fn reportCoverage(self, testArgs: TestRunnerArgument) {
+        let report = CoverageConv::fromConfigs(CoverageLoad::loadAll(CoverageLoad::listPidFiles()));
+
+        CoverageFormat::report(report, testArgs.hasCoverage, testArgs.hasCallTree);
     }
 
     /**

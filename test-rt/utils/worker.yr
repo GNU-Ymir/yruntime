@@ -1,0 +1,145 @@
+/*
+ *
+ * <hr>
+ *
+ * @Package: ymirc
+ * @Module: utils::worker
+ * @File: utils/worker.yr
+ * @Author(s):
+ *   - Emile Cadorel <ecadorel@gmail.com>
+ *
+ * @Created(YYYY-MM-DD): 2026-08-01
+ * @Copyright(C) 2021–2026 GNU-Ymir
+ * @License
+ *   ```text
+ *   This file is part of the Ymir language project.
+ *
+ *   Ymir is free software: you can redistribute it and/or modify it
+ *   under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation, either version 3 of the License, or
+ *   (at your option) any later version.
+ *
+ *   Ymir is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with Ymir.  If not, see <https://www.gnu.org/licenses/>.
+ *   ```
+ */
+
+in worker;
+
+use etc::c::process;
+
+// `std::io::utils` (where this is declared) is a private submodule of `std::io`, not importable
+// from here; redeclaring the extern binding directly is the same pattern other modules use for
+// C bindings (e.g. `etc::c::process::getpid`).
+extern (C) fn _yrt_fflush_stdout();
+
+/**
+ * Fork/waitpid based mechanism to run a subset of the registered unittests in a dedicated OS
+ * subprocess, reusing this process's already fully-populated in-memory test registry via
+ * fork()'s copy-on-write semantics. Unlike `std::concurrency::process::SubProcess`, the forked
+ * child here never execs: it keeps running Ymir code, and keeps its GC enabled.
+ * */
+pub mod TestWorker {
+
+    /**
+     * Fork the calling process.
+     * @returns:
+     *    - in the parent: the pid of the spawned child(see `TestWorker::wait`)
+     *    - in the child: none -- from this point on the caller IS the forked child, and MUST
+     *      terminate via `TestWorker::exit` and never return normally(otherwise it would keep
+     *      running the rest of the parent's flow, e.g. forking further siblings of its own)
+     * @info: flushes stdout right before forking, so buffered-but-not-yet-flushed output is not
+     *        printed a second time, independently, by both processes
+     * */
+    pub fn fork()-> (u32)? {
+        _yrt_fflush_stdout();
+        let pid = process::fork();
+        if pid == 0 {
+            return none;
+        }
+
+        return pid?;
+    }
+
+    /**
+     * Wait for the child `pid`(as returned by `TestWorker::fork`) to terminate
+     * @returns: the exit code passed to `TestWorker::exit` by the child, or -1 if it did not
+     *           exit normally(e.g. killed by a signal)
+     * */
+    pub fn wait(pid: u32)-> i32 {
+        let mut status: i32 = 0;
+        process::waitpid(pid, &status, 0);
+
+        return decodeExitCode(status);
+    }
+
+    /**
+     * Terminate the calling process with `code` -- must be called by a forked child once its
+     * work is done(see `TestWorker::fork`)
+     * */
+    pub fn exit(code: i32) {
+        process::_yrt_exit(code);
+    }
+
+    /**
+     * @returns: the exit code encoded in a `waitpid` status, decoded the same way as the
+     *           standard `WIFEXITED`/`WEXITSTATUS` macros(-1 if the process did not exit
+     *           normally, e.g. it was killed by a signal)
+     * */
+    fn decodeExitCode(status: i32)-> i32 {
+        if (status & 0x7F) != 0 {
+            return -1;
+        }
+
+        return (status >> 8) & 0xFF;
+    }
+}
+
+/**
+ * Splits a sorted test list into near-equally sized, contiguous chunks to distribute across
+ * `TestWorker` subprocesses.
+ * */
+pub mod TestChunks {
+
+    /**
+     * @returns: at most `jobs` chunks of `tests`(the first `tests.len % jobs` chunks get one
+     *           extra element); never an empty chunk -- if `jobs > tests.len`, only `tests.len`
+     *           singleton chunks are produced
+     * */
+    pub fn split(tests: [[c8]], jobs: i64)-> [[[c8]]] {
+        let n = normalizeJobs(jobs, tests.len);
+        if n <= 1us {
+            return copy [tests];
+        }
+
+        let base = tests.len / n;
+        let extra = tests.len % n;
+
+        let dmut result: [[[c8]]] = [];
+        let mut start = 0us;
+        for i in 0us .. n {
+            let size = base + (if i < extra { 1us } else { 0us });
+            result ~= [tests[start .. start + size]];
+            start += size;
+        }
+
+        return result;
+    }
+
+    /**
+     * @returns: `jobs`(clamped to at least 1), further clamped so it never exceeds `total`
+     * */
+    fn normalizeJobs(jobs: i64, total: usize)-> usize {
+        let n = if jobs < 1 { 1us } else { cast!usize(jobs) };
+        if n > total {
+            return total;
+        }
+
+        return n;
+    }
+}

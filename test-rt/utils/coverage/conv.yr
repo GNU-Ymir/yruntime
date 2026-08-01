@@ -1,0 +1,392 @@
+/*
+ *
+ * <hr>
+ *
+ * @Package: ymirc
+ * @Module: utils::coverage::conv
+ * @File: utils/coverage/conv.yr
+ * @Author(s):
+ *   - Emile Cadorel <ecadorel@gmail.com>
+ *
+ * @Created(YYYY-MM-DD): 2026-08-01
+ * @Copyright(C) 2021–2026 GNU-Ymir
+ * @License
+ *   ```text
+ *   This file is part of the Ymir language project.
+ *
+ *   Ymir is free software: you can redistribute it and/or modify it
+ *   under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation, either version 3 of the License, or
+ *   (at your option) any later version.
+ *
+ *   Ymir is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with Ymir.  If not, see <https://www.gnu.org/licenses/>.
+ *   ```
+ */
+
+in conv;
+
+use std::config::data;
+
+/**
+ * A single "functions" entry of a coverage json configuration(see `CoverageStore`), as plain data
+ * */
+pub record CoverageFunctionEntry {
+    pub let file: [c8];
+    pub let func: [c8];
+    pub let locations: [(u32, u32)];
+    pub let hits: [u32];
+
+    pub self (file: [c8], func: [c8], locations: [(u32, u32)], hits: [u32])
+        with file = file
+        , func = func
+        , locations = locations
+        , hits = hits
+    {}
+}
+
+/**
+ * A single "callees" entry of a "callTree" entry, as plain data
+ * */
+pub record CoverageCallee {
+    pub let file: [c8];
+    pub let func: [c8];
+    pub let count: usize;
+
+    pub self (file: [c8], func: [c8], count: usize)
+        with file = file
+        , func = func
+        , count = count
+    {}
+}
+
+/**
+ * A single "callTree" entry(a caller and its callees), as plain data
+ * */
+pub record CoverageCaller {
+    pub let file: [c8];
+    pub let func: [c8];
+    pub let callees: [CoverageCallee];
+
+    pub self (file: [c8], func: [c8], callees: [CoverageCallee])
+        with file = file
+        , func = func
+        , callees = callees
+    {}
+}
+
+/**
+ * The full content of a coverage json configuration(see `CoverageStore`/`CoverageLoad`), as plain
+ * data that `CoverageFormat` can print without depending on `&Config`
+ * */
+pub record CoverageReport {
+    pub let functions: [CoverageFunctionEntry];
+    pub let callTree: [CoverageCaller];
+
+    pub self (functions: [CoverageFunctionEntry], callTree: [CoverageCaller])
+        with functions = functions
+        , callTree = callTree
+    {}
+}
+
+/**
+ * Accumulates the "functions" of several `CoverageReport`(e.g. one per `.ymir_coverage_<pid>.json`
+ * file) into a single, deduplicated list, combining the hit counts of a function that appears
+ * in more than one report
+ * */
+class FunctionMerger {
+
+    let dmut _order: [([c8], [c8])] = [];
+    let dmut _byKey: [([c8], [c8]) => CoverageFunctionEntry] = copy [];
+
+    pub self () {}
+
+    pub fn add(mut self, entry: CoverageFunctionEntry) {
+        let key = (entry.file, entry.func);
+        if let Ok(prev) = self._byKey[key] {
+            self._byKey[key] = mergeFunctionEntry(prev, entry);
+        } else {
+            self._order ~= [key];
+            self._byKey[key] = entry;
+        }
+    }
+
+    pub fn build(self)-> [CoverageFunctionEntry] {
+        let dmut result: [CoverageFunctionEntry] = [];
+        for key in self._order {
+            if let Ok(e) = self._byKey[key] {
+                result ~= [e];
+            }
+        }
+
+        return result;
+    }
+}
+
+/**
+ * @returns: `a` and `b`(the same function, seen in two different reports), combined by
+ *           taking, for each location, the highest hit count seen in either
+ * */
+fn mergeFunctionEntry(a: CoverageFunctionEntry, b: CoverageFunctionEntry)-> CoverageFunctionEntry {
+    let dmut hits: [u32] = copy [0u32 ; a.hits.len];
+    for i, h in a.hits if i < hits.len {
+        hits[i] = h;
+    }
+    for i, h in b.hits if i < hits.len && h > hits[i] {
+        hits[i] = h;
+    }
+
+    return CoverageFunctionEntry(a.file, a.func, a.locations, hits);
+}
+
+/**
+ * Accumulates the "callTree" of several `CoverageReport` into a single one, summing the call
+ * count of edges(caller-> callee) that appear in more than one report
+ * */
+class CallTreeMerger {
+
+    let dmut _callerOrder: [([c8], [c8])] = [];
+    let dmut _calleeOrder: [([c8], [c8]) => [([c8], [c8])]] = copy [];
+    let dmut _counts: [(([c8], [c8]), ([c8], [c8])) => usize] = copy [];
+
+    pub self () {}
+
+    pub fn add(mut self, caller: CoverageCaller) {
+        let callerKey = (caller.file, caller.func);
+        self:.ensureCaller(callerKey);
+
+        for callee in caller.callees {
+            self:.addCallee(callerKey, callee);
+        }
+    }
+
+    pub fn build(self)-> [CoverageCaller] {
+        let dmut result: [CoverageCaller] = [];
+        for callerKey in self._callerOrder {
+            result ~= [self.buildCaller(callerKey)];
+        }
+
+        return result;
+    }
+
+    fn ensureCaller(mut self, callerKey: ([c8], [c8])) {
+        if let Ok(_) = self._calleeOrder[callerKey] {
+            return;
+        }
+
+        self._callerOrder ~= [callerKey];
+        self._calleeOrder[callerKey] = [];
+    }
+
+    fn addCallee(mut self, callerKey: ([c8], [c8]), callee: CoverageCallee) {
+        let calleeKey = (callee.file, callee.func);
+        let edge = (callerKey, calleeKey);
+
+        if let Ok(c) = self._counts[edge] {
+            self._counts[edge] = c + callee.count;
+            return;
+        }
+
+        self._counts[edge] = callee.count;
+        self:.appendCalleeOrder(callerKey, calleeKey);
+    }
+
+    fn appendCalleeOrder(mut self, callerKey: ([c8], [c8]), calleeKey: ([c8], [c8])) {
+        let dmut lst: [([c8], [c8])] = if let Ok(dmut l) = alias self._calleeOrder[callerKey] {
+            alias l
+        } else {
+            let dmut l: [([c8], [c8])] = [];
+            alias l
+        };
+
+        lst ~= [calleeKey];
+        self._calleeOrder[callerKey] = alias lst;
+    }
+
+    fn buildCaller(self, callerKey: ([c8], [c8]))-> CoverageCaller {
+        let (file, func) = callerKey;
+        return CoverageCaller(file, func, self.buildCallees(callerKey));
+    }
+
+    fn buildCallees(self, callerKey: ([c8], [c8]))-> [CoverageCallee] {
+        let dmut result: [CoverageCallee] = [];
+        if let Ok(order) = self._calleeOrder[callerKey] {
+            for calleeKey in order {
+                result ~= [self.buildCallee(callerKey, calleeKey)];
+            }
+        }
+
+        return result;
+    }
+
+    fn buildCallee(self, callerKey: ([c8], [c8]), calleeKey: ([c8], [c8]))-> CoverageCallee {
+        let (file, func) = calleeKey;
+        let count = if let Ok(c) = self._counts[(callerKey, calleeKey)] { c } else { 0us };
+
+        return CoverageCallee(file, func, count);
+    }
+}
+
+/**
+ * Converts a coverage json configuration(see `CoverageStore`/`CoverageLoad`) into a `CoverageReport`
+ * */
+pub mod CoverageConv {
+
+    /**
+     * @returns: the content of `cfg`, converted into a `CoverageReport`
+     * */
+    pub fn fromConfig(cfg: &Config)-> CoverageReport {
+        return CoverageReport(readFunctions(cfg), readCallTree(cfg));
+    }
+
+    /**
+     * @returns: the content of every config of `cfgs`, converted and merged into a single `CoverageReport`(see `merge`)
+     * */
+    pub fn fromConfigs(cfgs: [&Config])-> CoverageReport {
+        let dmut reports: [CoverageReport] = [];
+        for cfg in cfgs {
+            reports ~= [fromConfig(cfg)];
+        }
+
+        return merge(reports);
+    }
+
+    /**
+     * Merge several `CoverageReport`(e.g. one per `.ymir_coverage_<pid>.json` file) into a single
+     * one, combining the coverage of every function/call edge that appears in more than one of them
+     * */
+    pub fn merge(reports: [CoverageReport])-> CoverageReport {
+        let dmut functions = copy FunctionMerger();
+        let dmut callTree = copy CallTreeMerger();
+
+        for rep in reports {
+            for fnEntry in rep.functions {
+                functions:.add(fnEntry);
+            }
+            for caller in rep.callTree {
+                callTree:.add(caller);
+            }
+        }
+
+        return CoverageReport(functions.build(), callTree.build());
+    }
+
+    /**
+     * @returns: the "functions" array of `cfg`, converted into a list of `CoverageFunctionEntry`
+     * */
+    fn readFunctions(cfg: &Config)-> [CoverageFunctionEntry] {
+        let dmut result: [CoverageFunctionEntry] = [];
+
+        if let Ok(functionsCfg) = cfg["functions"]? {
+            if let arr: &Array = functionsCfg {
+                for fnCfg in arr[] {
+                    result ~= [CoverageFunctionEntry(readStr(fnCfg, "file"), readStr(fnCfg, "func"), readLocations(fnCfg), readHits(fnCfg))];
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * @returns: the "callTree" array of `cfg`, converted into a list of `CoverageCaller`
+     * */
+    fn readCallTree(cfg: &Config)-> [CoverageCaller] {
+        let dmut result: [CoverageCaller] = [];
+
+        if let Ok(callTreeCfg) = cfg["callTree"]? {
+            if let arr: &Array = callTreeCfg {
+                for entryCfg in arr[] {
+                    result ~= [CoverageCaller(readStr(entryCfg, "file"), readStr(entryCfg, "func"), readCallees(entryCfg))];
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * @returns: the "callees" array of a "callTree" entry `entryCfg`, converted into a list of `CoverageCallee`
+     * */
+    fn readCallees(entryCfg: &Config)-> [CoverageCallee] {
+        let dmut result: [CoverageCallee] = [];
+
+        if let Ok(calleesCfg) = entryCfg["callees"]? {
+            if let arr: &Array = calleesCfg {
+                for calleeCfg in arr[] {
+                    result ~= [CoverageCallee(readStr(calleeCfg, "file"), readStr(calleeCfg, "func"), cast!usize(readInt(calleeCfg, "count")))];
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * @returns: the "locations" array of `cfg`, converted into a list of(line, column) pairs
+     * */
+    fn readLocations(cfg: &Config)-> [(u32, u32)] {
+        let dmut result: [(u32, u32)] = [];
+
+        if let Ok(locsCfg) = cfg["locations"]? {
+            if let arr: &Array = locsCfg {
+                for pairCfg in arr[] {
+                    if let pairArr: &Array = pairCfg {
+                        let slc = pairArr[];
+                        if slc.len >= 2us {
+                            result ~= [(cast!u32(readIntCfg(slc[0])), cast!u32(readIntCfg(slc[1])))];
+                        }
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * @returns: the "hits" array of `cfg`, converted into a list of hit counts
+     * */
+    fn readHits(cfg: &Config)-> [u32] {
+        let dmut result: [u32] = [];
+
+        if let Ok(hitsCfg) = cfg["hits"]? {
+            if let arr: &Array = hitsCfg {
+                for h in arr[] {
+                    result ~= [cast!u32(readIntCfg(h))];
+                }
+            }
+        }
+
+        return result;
+    }
+
+    fn readStr(cfg: &Config, key: [c8])-> [c8] {
+        if let Ok(Str(value-> v)) = cfg[key]? {
+            return v;
+        }
+
+        return "";
+    }
+
+    fn readInt(cfg: &Config, key: [c8])-> i64 {
+        if let Ok(Int(value-> v)) = cfg[key]? {
+            return v;
+        }
+
+        return 0i64;
+    }
+
+    fn readIntCfg(cfg: &Config)-> i64 {
+        if let Int(value-> v) = cfg {
+            return v;
+        }
+
+        return 0i64;
+    }
+}
