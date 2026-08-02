@@ -39,7 +39,7 @@ use etc::runtime::elf;
  */
 pub class CoverageFileEntry {
     pub let file: [c8];
-    pub let dmut locations: [(u32, u32) => u32] = copy [];
+    pub let dmut locations: [u32 => u32] = copy [];
 
     pub self(file: [c8])
         with file = file
@@ -62,10 +62,10 @@ pub class CoverageFileEntry {
 pub record CoverageFunctionEntry {
     pub let file: [c8];
     pub let func: [c8];
-    pub let locations: [(u32, u32)];
+    pub let locations: [u32];
     pub let hits: [u32];
 
-    pub self (file: [c8], func: [c8], locations: [(u32, u32)], hits: [u32])
+    pub self (file: [c8], func: [c8], locations: [u32], hits: [u32])
         with file = file
         , func = func
         , locations = locations
@@ -306,7 +306,10 @@ pub mod CoverageConv {
                 *(etc::runtime::memory::Runtime!{usize, *CoverageInfo}::_yrt_unsafe_cast(sym.ptr))
             };
 
-            functions ~= [CoverageFunctionEntry(info.file, info.func, info.locations, copy [0 ; info.locations.len])];
+            functions ~= [CoverageFunctionEntry(info.file,
+                                                info.func,
+                                                copy [loc._0 for loc in info.locations],
+                                                copy [0 ; info.locations.len])];
         }
 
         return CoverageReport(functions, []);
@@ -404,8 +407,8 @@ pub mod CoverageConv {
     /**
      * @returns: the "locations" array of `cfg`, converted into a list of(line, column) pairs
      * */
-    fn readLocations(cfg: &Config)-> [(u32, u32)] {
-        let dmut result: [(u32, u32)] = [];
+    fn readLocations(cfg: &Config)-> [u32] {
+        let dmut result: [u32] = [];
 
         if let Ok(locsCfg) = cfg["locations"]? {
             if let arr: &Array = locsCfg {
@@ -413,7 +416,7 @@ pub mod CoverageConv {
                     if let pairArr: &Array = pairCfg {
                         let slc = pairArr[];
                         if slc.len >= 2us {
-                            result ~= [(cast!u32(readIntCfg(slc[0])), cast!u32(readIntCfg(slc[1])))];
+                            result ~= [cast!u32(readIntCfg(slc[0]))];
                         }
                     }
                 }
