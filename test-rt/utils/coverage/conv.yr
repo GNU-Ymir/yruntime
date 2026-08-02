@@ -338,7 +338,7 @@ pub mod CoverageConv {
     /**
      * Merge the function reports into a file report list
      */
-    pub fn extractFiles(report: CoverageReport)-> [[c8] => &CoverageFileEntry] {
+    pub fn extractFiles(report: CoverageReport)-> [([c8], &CoverageFileEntry)] {
         let dmut res: [[c8] => &CoverageFileEntry] = copy [];
         for func in report.functions {
             if let Ok(dmut file) = alias res[func.file] {
@@ -350,7 +350,10 @@ pub mod CoverageConv {
             }
         }
 
-        return res;
+        let mut result: [mut([c8], &CoverageFileEntry)] = copy [(n, e) for n, e in res];
+        std::algorithm::sorting::sort(alias result, |x, y| => { x._0 < y._0 });
+
+        return result;
     }
 
     /**
