@@ -32,6 +32,7 @@
 in conv;
 
 use std::config::data;
+use etc::runtime::elf;
 
 /**
  * A coverage file entry groups all the hit locations in a given file
@@ -151,16 +152,18 @@ class FunctionMerger {
 }
 
 /**
- * @returns: `a` and `b`(the same function, seen in two different reports), combined by
- *           taking, for each location, the highest hit count seen in either
+ * @returns: `a` and `b`(the same function, seen in two different reports, e.g. one per
+ *           `.ymir_coverage_<pid>.json` file), combined by summing the hit count of each
+ *           location(each report accounts for a disjoint slice of the test run, so hits are
+ *           additive rather than a max/either-or)
  * */
 fn mergeFunctionEntry(a: CoverageFunctionEntry, b: CoverageFunctionEntry)-> CoverageFunctionEntry {
     let dmut hits: [u32] = copy [0u32 ; a.hits.len];
     for i, h in a.hits if i < hits.len {
         hits[i] = h;
     }
-    for i, h in b.hits if i < hits.len && h > hits[i] {
-        hits[i] = h;
+    for i, h in b.hits if i < hits.len {
+        hits[i] += h;
     }
 
     return CoverageFunctionEntry(a.file, a.func, a.locations, hits);
@@ -260,22 +263,52 @@ class CallTreeMerger {
 pub mod CoverageConv {
 
     /**
-     * @returns: the content of `cfg`, converted into a `CoverageReport`
-     * */
-    pub fn fromConfig(cfg: &Config)-> CoverageReport {
-        return CoverageReport(readFunctions(cfg), readCallTree(cfg));
-    }
-
-    /**
-     * @returns: the content of every config of `cfgs`, converted and merged into a single `CoverageReport`(see `merge`)
+     * @returns: the content of every config of `cfgs`, converted and merged into a single
+     *           `CoverageReport`(see `merge`), seeded with a zero-hit entry for every
+     *           coverage-instrumented function(see `rootReport`) so that functions never
+     *           entered by any run still appear in the final report instead of being silently
+     *           absent from it
      * */
     pub fn fromConfigs(cfgs: [&Config])-> CoverageReport {
-        let dmut reports: [CoverageReport] = [];
+        let dmut reports: [CoverageReport] = copy [rootReport()];
         for cfg in cfgs {
             reports ~= [fromConfig(cfg)];
         }
 
         return merge(reports);
+    }
+
+    /**
+     * @returns: the content of `cfg`, converted into a `CoverageReport`
+     * */
+    fn fromConfig(cfg: &Config)-> CoverageReport {
+        return CoverageReport(readFunctions(cfg), readCallTree(cfg));
+    }
+
+    /**
+     * Builds a baseline `CoverageReport` listing every coverage-instrumented function in the
+     * running binary(read from the ELF `COVERAGE` symbols, see `ELFLoader::getCoverageSymbols`),
+     * each with all of its locations set to 0 hits.
+     *
+     * Actual runs(`fromConfig`) only ever mention functions that were entered at least once, so
+     * merging this baseline in first(see `fromConfigs`) is what surfaces entirely-uncovered
+     * functions/files in the report, rather than just under-reporting hit counts on functions
+     * that were partially covered.
+     *
+     * @returns: the zero-hit report of every coverage block known to the program
+     */
+    fn rootReport()-> CoverageReport {
+        let covSymbols = __ELF_LOADER__.getCoverageSymbols();
+        let mut functions: [CoverageFunctionEntry] = [];
+        for _, sym in covSymbols {
+            let info = unsafe {
+                *(etc::runtime::memory::Runtime!{usize, *CoverageInfo}::_yrt_unsafe_cast(sym.ptr))
+            };
+
+            functions ~= [CoverageFunctionEntry(info.file, info.func, info.locations, copy [0 ; info.locations.len])];
+        }
+
+        return CoverageReport(functions, []);
     }
 
     /**
