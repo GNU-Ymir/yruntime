@@ -67,9 +67,9 @@ pub mod CoverageFormat {
         let mut totalCovered: usize = 0us;
         let mut totalLocations: usize = 0us;
 
-        for file, entry in fileEntries {
-            let (covered, total, missing) = coverageOfFile(entry);
-            formatFileReport(alias stream, file, covered, total, missing);
+        for entry in fileEntries {
+            let (covered, total, missing) = coverageOfFile(entry._1);
+            formatFileReport(alias stream, entry._0, covered, total, missing);
             totalCovered += covered;
             totalLocations += total;
         }
@@ -96,10 +96,10 @@ pub mod CoverageFormat {
     /**
      * @returns: the covered/total locations of `entry`, and its locations that are not covered
      * */
-    fn coverageOfFile(entry: &CoverageFileEntry)-> (usize, usize, [(u32, u32)]) {
+    fn coverageOfFile(entry: &CoverageFileEntry)-> (usize, usize, [u32]) {
         let mut covered: usize = 0us;
         let mut total: usize = 0us;
-        let dmut missing: [(u32, u32)] = [];
+        let dmut missing: [u32] = [];
 
         for loc, hits in entry.locations {
             total += 1us;
@@ -110,6 +110,7 @@ pub mod CoverageFormat {
             }
         }
 
+        std::algorithm::sorting::sort(alias missing);
         return (covered, total, missing);
     }
 
@@ -117,7 +118,7 @@ pub mod CoverageFormat {
      * Append a file's coverage line(its own percentage and totals) to `stream`,
      * followed by its missing locations if it isn't fully covered
      * */
-    fn formatFileReport(dmut stream: &StringStream, file: [c8], covered: usize, total: usize, missing: [(u32, u32)]) {
+    fn formatFileReport(dmut stream: &StringStream, file: [c8], covered: usize, total: usize, missing: [u32]) {
         let percent = percentOf(covered, total);
 
         stream:.write('[', colorFor(percent), percent, "%", Colors::RESET, "][", covered, "/", total, "] ", file);
@@ -132,11 +133,11 @@ pub mod CoverageFormat {
     /**
      * Append the(possibly truncated) list of missing locations to `stream`
      * */
-    fn writeMissingList(dmut stream: &StringStream, missing: [(u32, u32)]) {
+    fn writeMissingList(dmut stream: &StringStream, missing: [u32]) {
         // Avoid too much output: show only the first few missing ranges.
         let maxShown = if missing.len < 10us { missing.len } else { 10us };
         for j in 0us .. maxShown {
-            let (startLine, _) = missing[j];
+            let startLine = missing[j];
             if j != 0 stream:.write(", ");
             stream:.write(startLine);
         }
