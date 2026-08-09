@@ -10,6 +10,7 @@
 #include <gc/gc.h>
 #include "../rt/memory/types.h"
 
+void _yrt_init_runtime (int isDebug);
 _yrt_slice_t _yrt_create_args_slice (int len, char ** argv);
 int _yrt_run_unittests_impl (_yrt_slice_t);
 void _yrt_register_unittest_impl (_yrt_slice_t name, void (*ptr) (_yrt_slice_t));
@@ -27,6 +28,12 @@ void _yrt_register_unittest (char * func, void (*ptr) (_yrt_slice_t)) {
 }
 
 int _yrt_run_unittests (int argc, char ** argv) {
+  // The generated main of a unittest binary calls this entry point directly,
+  // instead of _yrt_run_main[_debug], so the runtime is still uninitialized
+  // here. Test binaries are always compiled with debug enabled, hence the
+  // isDebug argument, which is what makes stack traces available in tests.
+  _yrt_init_runtime (1);
+
   return _yrt_run_unittests_impl (_yrt_create_args_slice (argc, argv));
 }
 
