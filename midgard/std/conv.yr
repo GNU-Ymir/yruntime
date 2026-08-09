@@ -317,7 +317,9 @@ pub fn if (isSigned!{I} && isChar!{C} && isIntegral!{N}) to {T of [C], C, base: 
 
     let (mut n: __pragma!unproxied(I), mut len, sign) = if (a < 0) {
         (-a, 0us, true)
-    } else { (a, 0us, false) }
+    } else {
+        (a, 0us, false)
+    };
 
     while n > 0 {
         len += 1;
@@ -689,11 +691,13 @@ pub fn if (isUnsigned!{T} && isChar!{U} && isIntegral!{N}) to {T, base: N, F of 
     let mut j = 1us;
     let mut res = 0us;
     for i in str.len .. 0us {
-        res = res + (j * std::conv::utils::to!usize(str[i - 1us], base));
-        j *= base;
-    } catch {
-        _: &CastFailure => {
-            throw copy CastFailure(T::typeinfo, [U]::typeinfo);
+        {
+            res = res + (j * std::conv::utils::to!usize(str[i - 1us], base));
+            j *= base;
+        } catch {
+            _: &CastFailure => {
+                throw copy CastFailure(T::typeinfo, [U]::typeinfo);
+            }
         }
     }
 
