@@ -49,6 +49,21 @@ void installHandler () {
 #elif _WIN32
     signal (SIGSEGV, &bt_sighandler);
 #endif
+
+    // Writing on a pipe/socket whose reading end is closed must not kill the
+    // process. Ignoring SIGPIPE makes write() fail with EPIPE instead, which is
+    // what OPipe/socket writers already report as an IOError.
+    signal (SIGPIPE, SIG_IGN);
+}
+
+void _yrt_init_runtime (int isDebug) {
+    __YRT_DEBUG__ = isDebug;
+
+    GC_INIT ();
+
+    _yrt_atomic_init ();
+    installHandler ();
+    _yrt_exc_init ();
 }
 
 void _yrt_force_debug (int act) {
@@ -88,28 +103,15 @@ void _yrt_set_test_code (int i) {
 }
 
 int _yrt_run_main_debug (int argc, char ** argv, int(* y_main)(_yrt_slice_t)) {
-    __YRT_DEBUG__ = 1;
-    
-    GC_INIT ();
+    _yrt_init_runtime (1);
 
-    _yrt_atomic_init ();
-    installHandler ();
-    _yrt_exc_init ();
-            
     int ret = y_main (_yrt_create_args_slice (argc, argv));
     return ret;
 }
 
 int _yrt_run_main (int argc, char ** argv, int(* y_main)(_yrt_slice_t)) {
-    __YRT_DEBUG__ = 0;
+    _yrt_init_runtime (0);
 
-    GC_INIT ();
-
-    _yrt_atomic_init ();
-    installHandler ();
-    _yrt_exc_init ();
-    
-    
     int ret = y_main (_yrt_create_args_slice (argc, argv));
     return ret;
 }

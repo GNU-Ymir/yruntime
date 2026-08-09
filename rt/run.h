@@ -33,6 +33,17 @@ int y_run_main (int argc, char ** argv, int (*) ());
 int y_run_main_debug (int argc, char ** argv, int (*) ());
 
 /**
+ * Initialize the ymir runtime: the gc, the atomic monitors, the signal handlers
+ * and the exception thread stacks
+ * @params:
+ *    - isDebug: true to enable debug symbol reading, and thus stack trace retrieval
+ * @info: called by every entry point of a ymir program (_yrt_run_main,
+ *  _yrt_run_main_debug, and the unittest entry point of the test runtime), so
+ *  none of them can be reached with a partially initialized runtime
+ */
+void _yrt_init_runtime (int isDebug);
+
+/**
  * Display an error on the stderr stream
  * @params: 
  *    - len: the length of the error
