@@ -177,7 +177,8 @@ pub class ActorSystem {
      * Create an actor system using ipv4 protocol with a automatically selected port
      * */
     pub self (nbThreads: u32 = 0)
-        with self (SockAddr(Ipv4::UNSPECIFIED, 0), nbThreads-> nbThreads)
+        with self (SockAddr(Ipv4::UNSPECIFIED, 0),
+                   nbThreads-> nbThreads)
     {}
 
     /**
@@ -187,7 +188,7 @@ pub class ActorSystem {
      */
     pub self (addr: SockAddr, nbThreads: u32 = 0)
         with _addr = addr
-        , _nbJobThreads = if (nbThreads == 0) { etc::runtime::threads::_yrt_get_nprocs() } else { nbThreads + 1 }
+        , _nbJobThreads = (if (nbThreads == 0) { etc::runtime::threads::_yrt_get_nprocs() } else { nbThreads + 1 })
     {
         let dmut pipes: [i32 ; 2] = [0, 0];
         if (files::pipe(pipes.ptr) == 0) {
@@ -363,14 +364,14 @@ pub class ActorSystem {
             let event_count = epoll_wait(self._epoll_fd, &event, 1, -1);
             if event_count > 0 {
                 if let Ok(dmut l) = alias self._listener && l.getHandle() == event.data.fd {
-                    {
+                    ({
                         let dmut stream = l:.accept();
                         self:.receiveMessage(alias stream);
                         if (stream.isOpen()) {
                             self:.addPoll(alias stream);
                             sockets ~= [alias stream];
                         } else stream:.dispose();
-                    }?; // catch
+                    })?; // catch
                 } else if let Ok(dmut i) = alias self._triggerI && i.getHandle() == event.data.fd {
                     let code = i:.read!{u8} ()?;
                     if let Ok(Protocol::SYSTEM_KILL_ALL) = code {
@@ -566,12 +567,12 @@ pub class ActorSystem {
      * */
     fn onActorMsg(mut self, msg: ActorMessage) {
         if let Ok(dmut ac) = alias self:.getActor(msg.actorName) {
-            if ac._0.isAtomic {
-                ac._1:.lock();
-                ac._0:.onMessage(msg.content);
-                ac._1:.unlock();
+            if (ac._0).isAtomic {
+                (ac._1):.lock();
+                (ac._0):.onMessage(msg.content);
+                (ac._1):.unlock();
             } else {
-                ac._0:.onMessage(msg.content);
+                (ac._0):.onMessage(msg.content);
             }
         }
     }
@@ -584,12 +585,12 @@ pub class ActorSystem {
      * */
     fn onActorKill(mut self, msg: ActorMessage) {
         if let Ok(dmut ac) = alias self:.getActor(msg.actorName) {
-            if (ac._0.isAtomic) {
-                ac._1:.lock();
-                ac._0:.onQuit();
-                ac._1:.unlock();
+            if (ac._0).isAtomic {
+                (ac._1):.lock();
+                (ac._0):.onQuit();
+                (ac._1):.unlock();
             } else {
-                ac._0:.onQuit();
+                (ac._0):.onQuit();
             }
 
             self:.removeActor(msg.actorName);
@@ -607,7 +608,7 @@ pub class ActorSystem {
      * */
     fn onActorReq(mut self, msg: ActorMessage, local: bool) {
         if let Ok(dmut ac) = alias self:.getActor(msg.actorName) {
-            let result = if ac._0.isAtomic {
+            let result = if (ac._0).isAtomic {
                 ac._1:.lock();
                 let result = ac._0:.onRequest(msg.content);
                 ac._1:.unlock();
@@ -723,7 +724,7 @@ pub class ActorSystem {
             return self:.local(name);
         }
 
-        return copy reference::ActorRef(name, addr, alias self)
+        return copy reference::ActorRef(name, addr, alias self);
     }
 
 
@@ -1051,13 +1052,13 @@ pub class ActorSystem {
             return (alias r)?;
         }
 
-        {
+        return ({
             let dmut r = copy TcpStream::connect(addr, timeout-> self._connectionTimeout);
             r:.setSendTimeout(self._connectionTimeout);
             r:.setRecvTimeout(self._connectionTimeout);
             remotes ~= [alias r];
             alias r
-        }?
+        })?;
     }
 
     /**

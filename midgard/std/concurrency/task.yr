@@ -129,6 +129,13 @@ pub class TaskPool {
                 self._waitTask:.post();
                 self._threads[i].value; // join the worker thread
             }
+
+            // Every worker has been joined, so none of them can be blocked on the
+            // semaphores anymore, they are safe to destroy here. Doing it now rather
+            // than leaving it to their own destructors is what makes this class
+            // independent of the order the gc finalizes the pool and its fields in.
+            self._ready:.dispose();
+            self._waitTask:.dispose();
         }
     }
 

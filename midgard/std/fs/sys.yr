@@ -198,7 +198,7 @@ pub fn readDir(path: Path)-> FsEntry
         return FsEntry(path, FsEntryKind::DIR);
     }
 
-    throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr())
+    throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
 }
 
 /**
@@ -211,8 +211,8 @@ pub fn readDir(path: Path)-> FsEntry
 pub fn tempDirectory(root: Path = Path("/tmp"), prefix: [c8] = "")-> Path
     throws FsError
 {
-    let template = root.push(prefix ~ "XXXXXX").toStr();
-    let res = etc::c::files::mkdtemp(template.toStringZ());
+    let template_ = root.push(prefix ~ "XXXXXX").toStr();
+    let res = etc::c::files::mkdtemp(template_.toStringZ());
     if (res != null) {
         unsafe {
             Path(res.fromStringZ())
@@ -242,7 +242,7 @@ pub fn createFile(path: Path)
 {
     let dmut f = etc::c::files::fopen(path.toStr().toStringZ(), "w".ptr);
     if (f == null) {
-        throw copy FsError(errors::to!(FsErrorCode) (errno()), path.toStr())
+        throw copy FsError(errors::to!(FsErrorCode) (errno()), path.toStr());
     }
 
     etc::c::files::fclose(alias f);
@@ -385,10 +385,10 @@ pub fn removeFile(path: Path)
 {
     if (isFile(path)) {
         if unlink(path.toStr().toStringZ()) == -1 {
-            throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr())
+            throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
         }
     } else {
-        throw copy FsError(FsErrorCode::PERMISSION_DENIED, path.toStr())
+        throw copy FsError(FsErrorCode::PERMISSION_DENIED, path.toStr());
     }
 }
 
@@ -436,7 +436,7 @@ pub fn removeFsEntry(path: Path)
     throws FsError
 {
     if remove(path.toStr().toStringZ()) == -1 {
-        throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr())
+        throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
     }
 }
 

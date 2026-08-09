@@ -12,7 +12,7 @@ use std::stream;
 /**
  * Error code used to identify a specific filesystem error
  */
-pub enum: u8
+pub enum FsErrorCode: u8
 | FILE_CLOSED       = 1u8
 | NOT_READABLE      = 2u8
 | NOT_WRITABLE      = 3u8
@@ -24,8 +24,7 @@ pub enum: u8
 | LINK_LOOP         = 9u8
 | PATH_TOO_LONG     = 10u8
 | DIR_NOT_EMPTY     = 11u8
-| NOT_A_FILE        = 12u8
- -> FsErrorCode;
+| NOT_A_FILE        = 12u8;
 
 
 /**
@@ -66,7 +65,7 @@ pub class FsError over core::exception::io::IOError {
  *   - err: the error returned by errno
  * @returns: a FsErrorCode usable by FsError exception
  */
-pub fn if is!{T}{X of FsErrorCode} to {T} (err: ErrnoValue)-> FsErrorCode {
+pub fn if template!{T}{X of FsErrorCode} to {T} (err: ErrnoValue)-> FsErrorCode {
     match err {
         ErrnoValue::EACCES => { FsErrorCode::PERMISSION_DENIED }
         ErrnoValue::ENOTDIR => { FsErrorCode::PARENT_DONT_EXIST }
@@ -86,7 +85,7 @@ pub fn if is!{T}{X of FsErrorCode} to {T} (err: ErrnoValue)-> FsErrorCode {
  *    - err: the error code to transform into a readable string
  * @returns: a readable string
  */
-pub fn if is!{U}{X of c8} to {C of [U], U, T of FsErrorCode} (err: T)-> [c8] {
+pub fn if template!{U}{X of c8} to {C of [U], U, T of FsErrorCode} (err: T)-> [c8] {
     match err {
         FsErrorCode::FILE_CLOSED => { "FILE_CLOSED" }
         FsErrorCode::NOT_READABLE => { "NOT_READABLE" }

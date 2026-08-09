@@ -101,7 +101,7 @@ pub class UnittestLauncher {
             self.parseArguments(args)
         } catch {
             _ => { return false; } // parsing failed
-        }
+        };
 
         self.resetCoverageUnlessResuming(testArgs.hasResume);
 
@@ -145,14 +145,16 @@ pub class UnittestLauncher {
         let mut failed = false;
         for test in tests {
             if let Ok(f) = self._tests[test] {
-                self.runTest(test, f);
-                already[test] = true;
-            } catch {
-                err: &Exception => {
-                    self.exposeError(test, err);
-                    already[test] = false;
-                    if (hasStopFirst) break;
-                    failed = true;
+                {
+                    self.runTest(test, f);
+                    already[test] = true;
+                } catch {
+                    err: &Exception => {
+                        self.exposeError(test, err);
+                        already[test] = false;
+                        if (hasStopFirst) break;
+                        failed = true;
+                    }
                 }
             }
         }

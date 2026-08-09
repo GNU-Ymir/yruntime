@@ -91,8 +91,11 @@ pub class Semaphore {
 
     /**
      * Post the semaphore
+     * @info: does nothing if the semaphore was disposed
      * */
     pub fn post(mut self) {
+        if (!self._isInit) return;
+
         _yrt_thread_sem_post(&self._sem);
     }
 
@@ -100,8 +103,11 @@ pub class Semaphore {
      * Wait for the semaphore to be posted
      * @params:
      *    - timeout: the timeout in second(<= 0 means infinite)
+     * @returns: false if the semaphore was disposed, it can never be posted again
      * */
     pub fn wait(mut self, timeout: std::time::dur::Duration = std::time::dur::seconds(0))-> bool {
+        if (!self._isInit) return false;
+
         if (timeout <= std::time::dur::seconds(0)) {
             _yrt_thread_sem_wait(&self._sem);
             true
@@ -114,15 +120,20 @@ pub class Semaphore {
      * Wait for the semaphore to be posted
      * @params:
      *    - timeout: the instant in the future defining the timeout
+     * @returns: false if the semaphore was disposed, it can never be posted again
      * */
     pub fn wait(mut self, timeout: std::time::instant::Instant)-> bool {
+        if (!self._isInit) return false;
+
         _yrt_thread_sem_wait_instant(&self._sem, timeout.sec, timeout.usec * 1000u64)
     }
 
     /**
-     * @returns: the current counter of the semaphore
+     * @returns: the current counter of the semaphore, 0 if it was disposed
      * */
     pub fn get(self)-> i32 {
+        if (!self._isInit) return 0;
+
         _yrt_thread_sem_get(&self._sem)
     }
 
