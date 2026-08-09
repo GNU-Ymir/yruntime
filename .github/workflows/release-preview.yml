@@ -24,8 +24,7 @@ jobs:
           # YMIR_SHORT_VERSION names the libgymidgard-*.a artifacts; GCC_MAJOR names the gyc .deb.
           YMIR_SHORT_VERSION="$(echo "$YMIR_BOOTSTRAP_VERSION" | cut -d. -f1,2)"
           GCC_MAJOR="${GCC_VERSION%%.*}"
-          TAG_NAME="${MIDGARD_VERSION}"
-          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          echo "MIDGARD_VERSION=${MIDGARD_VERSION}" >> "$GITHUB_ENV"
           echo "gyc_release_tag=${YMIR_BOOTSTRAP_VERSION}" >> "$GITHUB_OUTPUT"
           echo "gyc_asset=gyc-${GCC_MAJOR}_${YMIR_BOOTSTRAP_VERSION}_amd64.deb" >> "$GITHUB_OUTPUT"
           echo "ymir_short_version=${YMIR_SHORT_VERSION}" >> "$GITHUB_OUTPUT"
@@ -50,37 +49,32 @@ jobs:
 
       - name: Extract build artifacts
         env:
-          TAG: ${{ steps.version.outputs.tag_name }}
           YMIR_SHORT_VERSION: ${{ steps.version.outputs.ymir_short_version }}
         run: |
           CID="$(docker create midgard-preview-build:latest)"
-          docker cp "${CID}:/midgard/.build/libgymidgard-debug_${YMIR_SHORT_VERSION}.a"   "./libmidgard_debug_${TAG}.a"
-          docker cp "${CID}:/midgard/.build/libgymidgard-release_${YMIR_SHORT_VERSION}.a" "./libmidgard_release_${TAG}.a"
-          docker cp "${CID}:/midgard/.build/libgymidgard-tests_${YMIR_SHORT_VERSION}.a"   "./libmidgard_tests_${TAG}.a"
+          docker cp "${CID}:/midgard/.build/libgymidgard-debug_${YMIR_SHORT_VERSION}.a"   "./libmidgard_debug_${MIDGARD_VERSION}.a"
+          docker cp "${CID}:/midgard/.build/libgymidgard-release_${YMIR_SHORT_VERSION}.a" "./libmidgard_release_${MIDGARD_VERSION}.a"
+          docker cp "${CID}:/midgard/.build/libgymidgard-tests_${YMIR_SHORT_VERSION}.a"   "./libmidgard_tests_${MIDGARD_VERSION}.a"
           docker rm "${CID}"
 
       - name: Build source zip
-        env:
-          TAG: ${{ steps.version.outputs.tag_name }}
-        run: zip -r "midgard-${TAG}-src.zip" midgard/
+        run: zip -r "midgard-${MIDGARD_VERSION}-src.zip" midgard/
 
       - name: Replace existing preview tag/release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ steps.version.outputs.tag_name }}
-        run: gh release delete "preview-$TAG" --yes --cleanup-tag || true
+        run: gh release delete "preview" --yes --cleanup-tag || true
 
       - name: Publish preview release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ steps.version.outputs.tag_name }}
         run: |
-          gh release create "preview-$TAG" \
+          gh release create "preview" \
             --target "${{ github.sha }}" \
-            --title "Preview $TAG" \
+            --title "Preview ${MIDGARD_VERSION}" \
             --notes "Automated preview release built from dev @ ${{ github.sha }}." \
             --prerelease \
-            "midgard-${TAG}-src.zip" \
-            "libmidgard_debug_${TAG}.a" \
-            "libmidgard_release_${TAG}.a" \
-            "libmidgard_tests_${TAG}.a"
+            "midgard-${MIDGARD_VERSION}-src.zip" \
+            "libmidgard_debug_${MIDGARD_VERSION}.a" \
+            "libmidgard_release_${MIDGARD_VERSION}.a" \
+            "libmidgard_tests_${MIDGARD_VERSION}.a"
