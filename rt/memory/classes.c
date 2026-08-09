@@ -20,7 +20,10 @@ void* _yrt_alloc_class (void* vtable) {
 
     // No need to finalize classes without destructors
     if ((*__dtor) != NULL) {
-        GC_register_finalizer (cl, _yrt_destruct_class, NULL, NULL, NULL);
+        // no_order: a class reachable from a reference cycle must still be
+        // destructed. Ordered finalization refuses to finalize cycles (warning
+        // "Finalization cycle involving 0x...", and the __dtor never runs).
+        GC_register_finalizer_no_order (cl, _yrt_destruct_class, NULL, NULL, NULL);
     }
 
     return cl;
