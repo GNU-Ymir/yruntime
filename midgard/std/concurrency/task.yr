@@ -94,13 +94,16 @@ pub class TaskPool {
      * Wait for the task pool to complete all submitted tasks
      * */
     pub fn join(mut self) {
-        if (self._finished == self._submitted) return;
         loop {
-            self._ready:.wait();
             atomic self {
-                // if not equal to zero then new tasks have been submitted since last mailbox finish
-                if (self._mails.len == 0) return;
+                // an empty mailbox is not enough, a task that was already dequeued by a
+                // worker is no longer in the mailbox but is still running
+                if (self._terminated || self._finished == self._submitted) return;
             }
+
+            // _ready may hold posts emitted while tasks were still being submitted, in
+            // which case the loop simply checks the counters again
+            if (!self._ready:.wait()) return; // the semaphore was disposed, the pool is dead
         }
     }
 

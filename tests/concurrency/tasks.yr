@@ -18,7 +18,11 @@ __test {
     for i in 0 .. 100 {
         pool:.submit(copy || => {
             computePi(i32::max / 10000);
-            res[0] += i;
+
+            // res[0] += i is a read-modify-write, and the workers run it concurrently
+            atomic {
+                res[0] += i;
+            }
         });
     }
 
