@@ -14,7 +14,10 @@ jobs:
   preview-release:
     runs-on: [self-hosted, linux, x64]
     steps:
+      # fetch-depth: 0 so the changelog step below has the history and the tags it walks.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       # The self-hosted runners have no gh CLI of their own; the release steps below need one.
       - uses: ./.github/actions/setup-gh
@@ -31,6 +34,33 @@ jobs:
           echo "gyc_release_tag=${YMIR_BOOTSTRAP_VERSION}" >> "$GITHUB_OUTPUT"
           echo "gyc_asset=gyc-${GCC_MAJOR}_${YMIR_BOOTSTRAP_VERSION}_amd64.deb" >> "$GITHUB_OUTPUT"
           echo "ymir_short_version=${YMIR_SHORT_VERSION}" >> "$GITHUB_OUTPUT"
+
+      # The preview body. The base is the last real release, never the previous preview: the
+      # `preview` tag is rolling (and deleted below), so diffing against it would be meaningless.
+      - name: Build release notes
+        run: |
+          set -euo pipefail
+
+          BASE="$(bash .github/scripts/changelog.sh --print-base)"
+
+          {
+            echo "Automated preview release of midgard ${MIDGARD_VERSION}, built from \`${GITHUB_REF_NAME}\` @ ${GITHUB_SHA}."
+            echo "This tag is rolling - it always points at the most recent preview build."
+            echo
+            if [ -n "$BASE" ]; then
+              echo "## What's changed since ${BASE}"
+            else
+              echo "## What's changed"
+            fi
+            echo
+            bash .github/scripts/changelog.sh --since "$BASE"
+            if [ -n "$BASE" ]; then
+              echo
+              echo "**Full changelog**: https://github.com/${GITHUB_REPOSITORY}/compare/${BASE}...${GITHUB_SHA}"
+            fi
+          } > "${RUNNER_TEMP}/release-notes.md"
+
+          cat "${RUNNER_TEMP}/release-notes.md" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: docker/setup-buildx-action@v4
 
@@ -75,7 +105,7 @@ jobs:
           gh release create "preview" \
             --target "${{ github.sha }}" \
             --title "Preview ${MIDGARD_VERSION}" \
-            --notes "Automated preview release built from dev @ ${{ github.sha }}." \
+            --notes-file "${RUNNER_TEMP}/release-notes.md" \
             --prerelease \
             "midgard-${MIDGARD_VERSION}-src.zip" \
             "libmidgard_debug_${MIDGARD_VERSION}.a" \
