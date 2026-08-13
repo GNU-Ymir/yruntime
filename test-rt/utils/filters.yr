@@ -117,6 +117,15 @@ pub mod TestFilters {
     }
 
     /**
+     * @returns: the path of the success fragment file of the worker whose pid is `pid`(see
+     *           `dumpSuccessFragment`), so a parent can address a specific worker's fragment
+     *           without waiting for `mergeFragments` to pick it up
+     * */
+    pub fn fragmentPathOf(pid: u32)-> [c8] {
+        return SUCCESS_FRAGMENT_PREFIX ~ std::conv::to!{[c8]} (pid) ~ SUCCESS_FRAGMENT_SUFFIX;
+    }
+
+    /**
      * Delete every leftover success fragment file(see `dumpSuccessFragment`), e.g. left behind
      * by a previous run that crashed before merging them
      * */
@@ -221,7 +230,7 @@ pub mod TestFilters {
      * @returns: the path of this worker's own success fragment file(see `SUCCESS_FRAGMENT_PREFIX`)
      * */
     fn fragmentPath()-> [c8] {
-        return SUCCESS_FRAGMENT_PREFIX ~ std::conv::to!{[c8]} (getpid()) ~ SUCCESS_FRAGMENT_SUFFIX;
+        return fragmentPathOf(cast!u32(getpid()));
     }
 
     /**

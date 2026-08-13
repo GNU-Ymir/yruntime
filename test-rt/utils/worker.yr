@@ -46,10 +46,14 @@ extern (C) fn _yrt_fflush_stdout();
  * */
 pub mod TestWorker {
 
+    // Passed to `waitpid` to reap whichever child exits first: the C side takes a signed
+    // `pid_t`, where that is spelled -1(see `TestWorker::waitAny`).
+    def ANY_CHILD = 0xFFFFFFFFu32;
+
     /**
      * Fork the calling process.
      * @returns:
-     *    - in the parent: the pid of the spawned child(see `TestWorker::wait`)
+     *    - in the parent: the pid of the spawned child(see `TestWorker::waitAny`)
      *    - in the child: none -- from this point on the caller IS the forked child, and MUST
      *      terminate via `TestWorker::exit` and never return normally(otherwise it would keep
      *      running the rest of the parent's flow, e.g. forking further siblings of its own)
@@ -67,15 +71,34 @@ pub mod TestWorker {
     }
 
     /**
-     * Wait for the child `pid`(as returned by `TestWorker::fork`) to terminate
-     * @returns: the exit code passed to `TestWorker::exit` by the child, or -1 if it did not
-     *           exit normally(e.g. killed by a signal)
+     * Wait for *whichever* child of the calling process terminates first, rather than for one
+     * designated pid -- so a caller watching several workers learns about a failure as soon as
+     * it happens, instead of only when the pid it happens to be blocked on exits
+     *
+     * @returns: the pid of the child that terminated, and the exit code it passed to
+     *           `TestWorker::exit`(-1 if it did not exit normally, e.g. it was killed by a
+     *           signal); `(0, -1)` if there is no child left to wait for
      * */
-    pub fn wait(pid: u32)-> i32 {
+    pub fn waitAny()-> (u32, i32) {
         let mut status: i32 = 0;
-        process::waitpid(pid, &status, 0);
+        let pid = process::waitpid(ANY_CHILD, &status, 0);
+        if pid <= 0 {
+            return (0u32, -1);
+        }
 
-        return decodeExitCode(status);
+        return (cast!u32(pid), decodeExitCode(status));
+    }
+
+    /**
+     * Kill the child `pid` outright(SIGKILL), used to cancel workers that are still running
+     * tests once a sibling has already failed(see `--stop-first`)
+     *
+     * @info: SIGKILL cannot be caught, so a cancelled worker never gets to write its success
+     *        fragment/coverage file -- its caller is expected to discard whatever it may have
+     *        left half-written(see `UnittestLauncher::discardWorkerFiles`)
+     * */
+    pub fn kill(pid: u32) {
+        process::kill(pid, cast!i32(SignalCodes::SIGKILL));
     }
 
     /**

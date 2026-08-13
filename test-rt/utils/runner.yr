@@ -31,7 +31,7 @@
 
 in runner;
 
-use std::{io, config::_, algorithm::searching, fs::path};
+use std::{io, config::_, algorithm::searching, fs::_};
 
 use core::exception::_;
 use utils::{colors, filters, args, worker};
@@ -167,9 +167,6 @@ pub class UnittestLauncher {
      * `TestWorker` subprocess per chunk, wait for all of them, and merge their results into
      * `already`
      *
-     * @info: each worker independently honors `--stop-first` *within its own chunk* only --
-     *        siblings are never signaled/cancelled when one of them fails first(no cross-process
-     *        cancellation)
      * @info: worker stdout/stderr is inherited and unpiped, so it freely interleaves across
      *        workers -- this is the accepted, expected behaviour of a parallel test runner
      *
@@ -194,7 +191,7 @@ pub class UnittestLauncher {
             }
         }
 
-        return self.collectWorkers(pids, ref already);
+        return self.collectWorkers(pids, testArgs.hasStopFirst, ref already);
     }
 
     /**
@@ -220,22 +217,89 @@ pub class UnittestLauncher {
      * Wait for every worker of `pids` to terminate, then merge their success fragments into
      * `already`(see `TestFilters::mergeFragments`)
      *
+     * Workers are reaped in completion order rather than in `pids` order(see
+     * `TestWorker::waitAny`), so that a failure is observed as soon as it happens and not only
+     * once the pid this was blocked on finally exits. When `hasStopFirst` is set, the first
+     * failure cancels every sibling still running(see `cancelWorkers`); the loop then keeps
+     * reaping so that no worker is left a zombie.
+     *
      * @params:
      *    - pids: the pid of every forked worker(see `TestWorker::fork`)
+     *    - hasStopFirst: true iff a single worker's failure must cancel all the others
      *    - already: the map to merge the workers' results into
      *
      * @returns: true iff at least one worker exited with a non-zero status
      * */
-    fn collectWorkers(self, pids: [u32], ref dmut already: [[c8] => bool])-> bool {
-        let mut failed = false;
+    fn collectWorkers(self, pids: [u32], hasStopFirst: bool, ref dmut already: [[c8] => bool])-> bool {
+        let dmut running: [u32 => bool] = copy [];
         for pid in pids {
-            if (TestWorker::wait(pid) != 0) {
+            running[pid] = true;
+        }
+
+        let mut failed = false, mut cancelled: [u32] = [];
+        for _ in 0us .. pids.len {
+            let (pid, code) = TestWorker::waitAny();
+            if (pid == 0u32) break; // no child left to reap
+
+            running[pid] = false;
+            if (code != 0) {
                 failed = true;
+                if (hasStopFirst && cancelled.len == 0us) {
+                    cancelled = self.cancelWorkers(running);
+                }
             }
         }
 
+        self.discardWorkerFiles(cancelled);
         TestFilters::mergeFragments(ref already);
+
         return failed;
+    }
+
+    /**
+     * Kill every worker still flagged as running in `running`(see `TestWorker::kill`) -- called
+     * under `--stop-first` once one worker has already failed, so the others do not keep running
+     * tests whose result the run will discard anyway
+     *
+     * @params:
+     *    - running: whether each forked worker is still running(false once it has been reaped)
+     *
+     * @returns: the pid of every worker that was killed
+     * */
+    fn cancelWorkers(self, running: [u32 => bool])-> [u32] {
+        let dmut killed: [u32] = [];
+        for pid, isRunning in running {
+            if (isRunning) {
+                TestWorker::kill(pid);
+                killed ~= [pid];
+            }
+        }
+
+        return killed;
+    }
+
+    /**
+     * Delete the success fragment and coverage file of every worker of `pids`
+     *
+     * A killed worker(see `cancelWorkers`) did not choose its moment to die: it may have been
+     * halfway through writing either file, and a truncated one would either be merged as bogus
+     * results or make a later `--resume` run fail to parse it. Its chunk did not run to
+     * completion anyway, so the safe reading of both files is "no results at all" -- the tests
+     * it did pass are simply run again next time.
+     *
+     * @params:
+     *    - pids: the pid of every worker that was cancelled
+     * */
+    fn discardWorkerFiles(self, pids: [u32]) {
+        for pid in pids {
+            for path in [CoverageStore::pidPathOf(pid), TestFilters::fragmentPathOf(pid)] {
+                {
+                    removeFile(Path(path));
+                } catch {
+                    _ => {} // never written(the usual case): nothing to discard
+                }
+            }
+        }
     }
 
     /**

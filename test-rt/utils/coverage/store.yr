@@ -103,7 +103,15 @@ pub mod CoverageStore {
      * @returns: the path of the per-process coverage file of the running process(see `PID_FILE_PREFIX`)
      * */
     pub fn pidPath()-> [c8] {
-        return PID_FILE_PREFIX ~ std::conv::to!{[c8]} (getpid()) ~ PID_FILE_SUFFIX;
+        return pidPathOf(cast!u32(getpid()));
+    }
+
+    /**
+     * @returns: the path of the coverage file of the process whose pid is `pid`(see `pidPath`),
+     *           so a parent can address a specific worker's coverage file directly
+     * */
+    pub fn pidPathOf(pid: u32)-> [c8] {
+        return PID_FILE_PREFIX ~ std::conv::to!{[c8]} (pid) ~ PID_FILE_SUFFIX;
     }
 
     /**
