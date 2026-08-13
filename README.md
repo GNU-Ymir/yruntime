@@ -91,6 +91,8 @@ Useful flags (see `test-rt/utils/args.yr`):
 - `--resume` — re-run only tests that failed (or didn't run) last time.
 - `-cov, --coverage` — print a branch/line coverage report after the run.
 - `-ct, --call-tree` — print a call-tree report after the run.
+- `-m, --missing` — list the uncovered lines (and half taken branches) of each file, as line
+  ranges, under its entry of the coverage report (implies `-cov`).
 
 ## Contributing
 

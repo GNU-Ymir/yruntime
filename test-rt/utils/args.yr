@@ -52,6 +52,9 @@ pub record TestRunnerArgument {
     // True iff a call tree report is expected
     pub let mut hasCallTree: bool = false;
 
+    // True iff the uncovered lines/branches are listed under each file of the coverage report
+    pub let mut hasMissing: bool = false;
+
     // True iff only executing failed or not run tests
     pub let mut hasResume: bool = false;
 
@@ -70,6 +73,7 @@ pub record TestRunnerArgument {
             :.flag("stop-first", short-> "sf", comments-> "stop after first test failure")
             :.flag("coverage", short-> "cov", comments-> "print coverage report")
             :.flag("call-tree", short-> "ct", comments-> "print call tree report")
+            :.flag("missing", short-> "m", comments-> "list the uncovered lines of each file (implies --coverage)")
             :.flag("resume", comments-> "re-run only failed tests")
             :.option!{i64} ("jobs", short-> "j", comments-> "number of worker subprocesses to run tests in parallel (default: 1, sequential)")
             :.help("help", short-> "h", comments-> "print this help and exit");
@@ -91,6 +95,12 @@ pub record TestRunnerArgument {
 
             if let Ok(Bool(value-> b)) = ret["call-tree"]? {
                 self.hasCallTree = b;
+            }
+
+            if let Ok(Bool(value-> b)) = ret["missing"]? {
+                self.hasMissing = b;
+                // listing the uncovered lines is only meaningful within a coverage report
+                if b { self.hasCoverage = true; }
             }
 
             if let Ok(Bool(value-> b)) = ret["resume"]? {

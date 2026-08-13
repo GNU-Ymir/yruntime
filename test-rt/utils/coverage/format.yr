@@ -37,6 +37,13 @@ use std::{syntax::tokenizer, stream, fs::_, char};
 use utils::colors;
 use utils::coverage::conv;
 
+// The indentation of the uncovered location lists(see `CoverageFormat::writeMissingBlock`), of the
+// width of the "  <title> : " prefix they are written under, so that a wrapped list stays aligned
+def MISSING_INDENT = "                  "s8;
+
+// The number of line ranges written before wrapping to the next line
+def MISSING_PER_LINE = 12us;
+
 /**
  * Formats a `CoverageReport`(see `CoverageConv`) into a human readable report, and prints it to
  * the console.
@@ -46,9 +53,9 @@ pub mod CoverageFormat {
     /**
      * Print the coverage and/or call-tree report described by `rep` to the console
      * */
-    pub fn report(rep: CoverageReport, withCov: bool, withCallTree: bool) {
+    pub fn report(rep: CoverageReport, withCov: bool, withCallTree: bool, withMissing: bool = false) {
         if withCov {
-            reportCoverage(rep);
+            reportCoverage(rep, withMissing);
         }
         if withCallTree {
             reportCallTree(rep);
@@ -58,23 +65,32 @@ pub mod CoverageFormat {
     /**
      * Print the per-file coverage report(functions grouped by their file) and the overall total,
      * skipping frames whose name is a lambda(see `isLambdaName`)
+     *
+     * @params:
+     *    - withMissing: list the uncovered lines/half taken branches under each file
      * */
-    fn reportCoverage(rep: CoverageReport) {
+    fn reportCoverage(rep: CoverageReport, withMissing: bool) {
         let dmut stream = copy StringStream();
         let filtered = CoverageReport(filterFunctions(rep.functions), rep.callTree);
         let fileEntries = CoverageConv::extractFiles(filtered);
 
         let mut totalCovered: usize = 0us;
-        let mut totalLocations: usize = 0us;
+        let mut totalLines: usize = 0us;
+        let mut totalBrCovered: usize = 0us;
+        let mut totalBranches: usize = 0us;
 
         for entry in fileEntries {
-            let (covered, total, missing) = coverageOfFile(entry._1);
-            formatFileReport(alias stream, entry._0, covered, total, missing);
+            let (covered, total, missing) = lineCoverageOfFile(entry._1);
+            let (brCovered, brTotal, brPartial) = branchCoverageOfFile(entry._1);
+            formatFileReport(alias stream, entry._0, covered, total, missing, brCovered, brTotal, brPartial, withMissing);
             totalCovered += covered;
-            totalLocations += total;
+            totalLines += total;
+            totalBrCovered += brCovered;
+            totalBranches += brTotal;
         }
 
-        writeTotalLine(alias stream, totalCovered, totalLocations);
+        writeTotalLine(alias stream, totalCovered, totalLines);
+        writeBranchTotalLine(alias stream, totalBrCovered, totalBranches);
 
         printReport("COVERAGE", stream[]);
     }
@@ -94,19 +110,19 @@ pub mod CoverageFormat {
     }
 
     /**
-     * @returns: the covered/total locations of `entry`, and its locations that are not covered
+     * @returns: the reached/total lines of `entry`, and the lines that were never reached
      * */
-    fn coverageOfFile(entry: &CoverageFileEntry)-> (usize, usize, [u32]) {
+    fn lineCoverageOfFile(entry: &CoverageFileEntry)-> (usize, usize, [u32]) {
         let mut covered: usize = 0us;
         let mut total: usize = 0us;
         let dmut missing: [u32] = [];
 
-        for loc, hits in entry.locations {
+        for line, hits in entry.lines {
             total += 1us;
             if hits > 0u32 {
                 covered += 1us;
             } else {
-                missing ~= [loc];
+                missing ~= [line];
             }
         }
 
@@ -115,35 +131,136 @@ pub mod CoverageFormat {
     }
 
     /**
-     * Append a file's coverage line(its own percentage and totals) to `stream`,
-     * followed by its missing locations if it isn't fully covered
+     * @returns: the fully covered/total branches of `entry`, and the lines of the branches that
+     *           were only exercised one way.
+     *
+     * A branch counts as covered only when both of its outcomes were taken at least once: a
+     * conditional that was always true tells nothing about what happens when it is false.
      * */
-    fn formatFileReport(dmut stream: &StringStream, file: [c8], covered: usize, total: usize, missing: [u32]) {
+    fn branchCoverageOfFile(entry: &CoverageFileEntry)-> (usize, usize, [u32]) {
+        let mut covered: usize = 0us;
+        let mut total: usize = 0us;
+        let dmut partial: [u32] = [];
+
+        for loc, hits in entry.branches {
+            total += 1us;
+            if hits._0 > 0u32 && hits._1 > 0u32 {
+                covered += 1us;
+            } else {
+                partial ~= [loc._0];
+            }
+        }
+
+        std::algorithm::sorting::sort(alias partial);
+        return (covered, total, partial);
+    }
+
+    /**
+     * Append a file's coverage line(its own percentage and totals) to `stream`, followed - only
+     * when `withMissing` is set(`--missing`) - by the list of the locations it never reached
+     *
+     * The uncovered locations are hidden by default: they are long enough to push the
+     * percentages of every file out of sight, which is what one usually reads the report for.
+     * */
+    fn formatFileReport(dmut stream: &StringStream, file: [c8], covered: usize, total: usize, missing: [u32],
+                        brCovered: usize, brTotal: usize, brPartial: [u32], withMissing: bool) {
         let percent = percentOf(covered, total);
 
-        stream:.write('[', colorFor(percent), percent, "%", Colors::RESET, "][", covered, "/", total, "] ", file);
+        stream:.write('[', colorFor(percent), percent, "%", Colors::RESET, "][", covered, "/", total, "] ", nameOfFile(file));
 
-        if missing.len > 0us {
-            stream:.write(Colors::BOLD, " | missing: ", Colors::RESET);
-            writeMissingList(alias stream, missing);          
+        if brTotal > 0us {
+            let brPercent = percentOf(brCovered, brTotal);
+            stream:.write(Colors::BOLD, " | branches: ", Colors::RESET,
+                          '[', colorFor(brPercent), brPercent, "%", Colors::RESET, "][", brCovered, "/", brTotal, ']');
         }
+
+        stream:.writeln();
+
+        if withMissing {
+            writeMissingBlock(alias stream, "missing lines", missing);
+            writeMissingBlock(alias stream, "half taken   ", brPartial);
+        }
+    }
+
+    /**
+     * @returns: `file`, or "<unknown>" if it is empty
+     *
+     * A function whose coverage info carries no file(a compiler that failed to record it, see
+     * `GlobalExpander::finalizeCoverageLocTable` in the bootstrap) is grouped under an entry with
+     * no name at all, which would otherwise be printed as a blank file line.
+     * */
+    fn nameOfFile(file: [c8])-> [c8] {
+        if file.len == 0us { "<unknown>" } else { file }
+    }
+
+    /**
+     * Append an indented "`title` : l1, l2-l4, ..." block listing every location of `lines` to
+     * `stream`, wrapping over several lines if needed. Nothing is written if `lines` is empty
+     * */
+    fn writeMissingBlock(dmut stream: &StringStream, title: [c8], lines: [u32]) {
+        if lines.len == 0us { return; }
+
+        stream:.write("  ", Colors::BOLD, title, Colors::RESET, " : ");
+        writeRanges(alias stream, collapseRanges(lines));
         stream:.writeln();
     }
 
     /**
-     * Append the(possibly truncated) list of missing locations to `stream`
+     * Append the comma separated list of `ranges` to `stream`, breaking the list over several
+     * lines every `MISSING_PER_LINE` ranges
      * */
-    fn writeMissingList(dmut stream: &StringStream, missing: [u32]) {
-        // Avoid too much output: show only the first few missing ranges.
-        let maxShown = if missing.len < 10us { missing.len } else { 10us };
-        for j in 0us .. maxShown {
-            let startLine = missing[j];
-            if j != 0 stream:.write(", ");
-            stream:.write(startLine);
+    fn writeRanges(dmut stream: &StringStream, ranges: [(u32, u32)]) {
+        for i, r in ranges {
+            if i != 0us {
+                stream:.write(',');
+                if i % MISSING_PER_LINE == 0us {
+                    stream:.writeln();
+                    stream:.write(MISSING_INDENT);
+                } else {
+                    stream:.write(' ');
+                }
+            }
+
+            if r._0 == r._1 {
+                stream:.write(r._0);
+            } else {
+                stream:.write(r._0, '-', r._1);
+            }
         }
-        if missing.len > maxShown {
-            stream:.write("   ... (", missing.len - maxShown, " more)");
+    }
+
+    /**
+     * Group the(sorted) locations of `lines` into contiguous ranges, so that a whole uncovered
+     * block reads as "33-48" rather than as sixteen separate numbers. Duplicated locations(two
+     * branches on the same line) are only listed once.
+     *
+     * @returns: the(start, end) of each range, both ends included
+     * */
+    fn collapseRanges(lines: [u32])-> [(u32, u32)] {
+        let dmut result: [(u32, u32)] = [];
+        let mut start = 0u32;
+        let mut prev = 0u32;
+        let mut started = false;
+
+        for l in lines {
+            if !started {
+                start = l;
+                prev = l;
+                started = true;
+            } else if l == prev || l == prev + 1u32 {
+                prev = l;
+            } else {
+                result ~= [(start, prev)];
+                start = l;
+                prev = l;
+            }
         }
+
+        if started {
+            result ~= [(start, prev)];
+        }
+
+        return result;
     }
 
     /**
@@ -152,6 +269,20 @@ pub mod CoverageFormat {
     fn writeTotalLine(dmut stream: &StringStream, covered: usize, total: usize) {
         let percent = percentOf(covered, total);
         stream:.writeln('[', colorFor(percent), percent, "%", Colors::RESET, ']', ' ', "TOTAL:", covered, '/', total);
+    }
+
+    /**
+     * Append the overall branch coverage line to `stream`
+     *
+     * @warning: this line must not read as "TOTAL:" - the CI badge of the bootstrap repo picks
+     * the overall percentage with `grep -E 'TOTAL:' | tail -1`, and would report branch coverage
+     * instead of line coverage.
+     * */
+    fn writeBranchTotalLine(dmut stream: &StringStream, covered: usize, total: usize) {
+        if total == 0us { return; }
+
+        let percent = percentOf(covered, total);
+        stream:.writeln('[', colorFor(percent), percent, "%", Colors::RESET, ']', ' ', "BRANCHES ", covered, '/', total);
     }
 
     /**

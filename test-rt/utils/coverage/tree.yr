@@ -34,10 +34,35 @@ in tree;
 use utils::coverage::list;
 use core::types::array;
 
+/**
+ * The kind of a coverage location, the third member of every entry of a `CoverageInfo`.
+ *
+ * LINE answers "was this source line reached", and a function has exactly one LINE entry per
+ * source line. BRANCH_TRUE/BRANCH_FALSE answer "were both outcomes of this conditional
+ * exercised": both members of a pair carry the location of the conditional itself, so they can
+ * be paired back together.
+ *
+ * These values are ABI: they mirror `CoverageLocKinds` in the compiler
+ * (`ymirc/lexing/keys.yr`), and any change here must be made there too.
+ * */
+pub enum CoverageLocKind: u32
+| LINE         = 0u32
+| BRANCH_TRUE  = 1u32
+| BRANCH_FALSE = 2u32;
+
+/**
+ * The static description of one instrumented function, emitted by the compiler as a `__COI__`
+ * symbol and passed by reference to every `_yrt_unittest_coverage_hit_*` call.
+ *
+ * @warning: the layout is an ABI contract with `GlobalExpander::finalizeCoverageLocTable`.
+ * */
 pub record CoverageInfo {
     pub let file: [c8];
     pub let func: [c8];
-    pub let locations: [(u32, u32)];
+
+    // (line, column, kind) of every coverable location of the function, the index of an entry
+    // being the id passed to `hitBranch`
+    pub let locations: [(u32, u32, u32)];
 }
 
 @final
