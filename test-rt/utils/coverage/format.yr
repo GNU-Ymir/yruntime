@@ -166,7 +166,7 @@ pub mod CoverageFormat {
                         brCovered: usize, brTotal: usize, brPartial: [u32], withMissing: bool) {
         let percent = percentOf(covered, total);
 
-        stream:.write('[', colorFor(percent), percent, "%", Colors::RESET, "][", covered, "/", total, "] ", file);
+        stream:.write('[', colorFor(percent), percent, "%", Colors::RESET, "][", covered, "/", total, "] ", nameOfFile(file));
 
         if brTotal > 0us {
             let brPercent = percentOf(brCovered, brTotal);
@@ -180,6 +180,17 @@ pub mod CoverageFormat {
             writeMissingBlock(alias stream, "missing lines", missing);
             writeMissingBlock(alias stream, "half taken   ", brPartial);
         }
+    }
+
+    /**
+     * @returns: `file`, or "<unknown>" if it is empty
+     *
+     * A function whose coverage info carries no file(a compiler that failed to record it, see
+     * `GlobalExpander::finalizeCoverageLocTable` in the bootstrap) is grouped under an entry with
+     * no name at all, which would otherwise be printed as a blank file line.
+     * */
+    fn nameOfFile(file: [c8])-> [c8] {
+        if file.len == 0us { "<unknown>" } else { file }
     }
 
     /**
