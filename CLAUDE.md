@@ -185,7 +185,8 @@ workflows.
   `core/*.c`, `std/*.c`, `rt/*.c`, then finally `midgard_tests`, the compiled test binary.
 - Run tests: `.build/midgard_tests` (add `-f <substr>` to filter, `-sf` to stop on first
   failure, `--resume` to re-run only previously-failed tests, `-cov` for a coverage report,
-  `-ct` for a call-tree report — see `test-rt/utils/args.yr`).
+  `-ct` for a call-tree report, `-m` to list each file's uncovered lines under the coverage
+  report — see `test-rt/utils/args.yr`).
 - Install system-wide: `sudo make install` (libs to `/usr/lib/`) and `sudo ./install` (copies
   `midgard/**/*.yr` into `/usr/include/ymir/<ymirShortVersion>` and the `gyc` internal include
   dir, both derived from `YMIR_VERSION`).
