@@ -291,11 +291,17 @@ already pid-keyed and multi-process-safe; `TestFilters::dumpSuccessFragment`, wh
 own `.ymir_test_success_<pid>.part` instead of the shared `.ymir_test_success`, since concurrent
 writers would otherwise clobber each other) and terminates via `TestWorker::exit` (this call never
 returns — a worker must never fall through and re-enter the parent's fork loop for the remaining
-chunks). The parent `TestWorker::wait`s every child, then `TestFilters::mergeFragments` folds
-every fragment into the run's `already` map and deletes the fragment files, before the unchanged
-single `TestFilters::dumpSuccessFile`/`reportCoverage` calls at the tail of `run()`. Known,
-accepted simplifications: `--stop-first` only stops a worker's own chunk early (no cross-process
-cancellation of siblings), and worker stdout/stderr is inherited/unpiped and therefore interleaves
-across workers. `TestWorker::fork` flushes stdout right before forking to avoid a real fork+stdio
+chunks). The parent reaps children in *completion* order (`TestWorker::waitAny`, a `waitpid(-1)`
+wrapper) rather than in pid order, so a failure is seen as soon as it happens instead of when the
+pid it happened to be blocked on exits; under `--stop-first` the first non-zero exit code makes
+`cancelWorkers` SIGKILL every sibling still running, and `discardWorkerFiles` then deletes those
+workers' `.ymir_coverage_<pid>.json`/`.ymir_test_success_<pid>.part` — a killed worker can have
+died halfway through writing either, and a truncated one would be merged as bogus results or break
+a later `--resume`. Dropping them costs nothing, since a cancelled chunk's tests simply run again
+next time. The parent then `TestFilters::mergeFragments` folds every surviving fragment into the
+run's `already` map and deletes the fragment files, before the unchanged single
+`TestFilters::dumpSuccessFile`/`reportCoverage` calls at the tail of `run()`. Known, accepted
+simplification: worker stdout/stderr is inherited/unpiped and therefore interleaves across
+workers. `TestWorker::fork` flushes stdout right before forking to avoid a real fork+stdio
 artifact: buffered-but-unflushed output gets printed a second time, independently, by both the
 parent and the child otherwise.
