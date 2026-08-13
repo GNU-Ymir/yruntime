@@ -65,16 +65,22 @@ pub mod CoverageFormat {
         let fileEntries = CoverageConv::extractFiles(filtered);
 
         let mut totalCovered: usize = 0us;
-        let mut totalLocations: usize = 0us;
+        let mut totalLines: usize = 0us;
+        let mut totalBrCovered: usize = 0us;
+        let mut totalBranches: usize = 0us;
 
         for entry in fileEntries {
-            let (covered, total, missing) = coverageOfFile(entry._1);
-            formatFileReport(alias stream, entry._0, covered, total, missing);
+            let (covered, total, missing) = lineCoverageOfFile(entry._1);
+            let (brCovered, brTotal, brPartial) = branchCoverageOfFile(entry._1);
+            formatFileReport(alias stream, entry._0, covered, total, missing, brCovered, brTotal, brPartial);
             totalCovered += covered;
-            totalLocations += total;
+            totalLines += total;
+            totalBrCovered += brCovered;
+            totalBranches += brTotal;
         }
 
-        writeTotalLine(alias stream, totalCovered, totalLocations);
+        writeTotalLine(alias stream, totalCovered, totalLines);
+        writeBranchTotalLine(alias stream, totalBrCovered, totalBranches);
 
         printReport("COVERAGE", stream[]);
     }
@@ -94,19 +100,19 @@ pub mod CoverageFormat {
     }
 
     /**
-     * @returns: the covered/total locations of `entry`, and its locations that are not covered
+     * @returns: the reached/total lines of `entry`, and the lines that were never reached
      * */
-    fn coverageOfFile(entry: &CoverageFileEntry)-> (usize, usize, [u32]) {
+    fn lineCoverageOfFile(entry: &CoverageFileEntry)-> (usize, usize, [u32]) {
         let mut covered: usize = 0us;
         let mut total: usize = 0us;
         let dmut missing: [u32] = [];
 
-        for loc, hits in entry.locations {
+        for line, hits in entry.lines {
             total += 1us;
             if hits > 0u32 {
                 covered += 1us;
             } else {
-                missing ~= [loc];
+                missing ~= [line];
             }
         }
 
@@ -115,17 +121,54 @@ pub mod CoverageFormat {
     }
 
     /**
+     * @returns: the fully covered/total branches of `entry`, and the lines of the branches that
+     *           were only exercised one way.
+     *
+     * A branch counts as covered only when both of its outcomes were taken at least once: a
+     * conditional that was always true tells nothing about what happens when it is false.
+     * */
+    fn branchCoverageOfFile(entry: &CoverageFileEntry)-> (usize, usize, [u32]) {
+        let mut covered: usize = 0us;
+        let mut total: usize = 0us;
+        let dmut partial: [u32] = [];
+
+        for loc, hits in entry.branches {
+            total += 1us;
+            if hits._0 > 0u32 && hits._1 > 0u32 {
+                covered += 1us;
+            } else {
+                partial ~= [loc._0];
+            }
+        }
+
+        std::algorithm::sorting::sort(alias partial);
+        return (covered, total, partial);
+    }
+
+    /**
      * Append a file's coverage line(its own percentage and totals) to `stream`,
      * followed by its missing locations if it isn't fully covered
      * */
-    fn formatFileReport(dmut stream: &StringStream, file: [c8], covered: usize, total: usize, missing: [u32]) {
+    fn formatFileReport(dmut stream: &StringStream, file: [c8], covered: usize, total: usize, missing: [u32],
+                        brCovered: usize, brTotal: usize, brPartial: [u32]) {
         let percent = percentOf(covered, total);
 
         stream:.write('[', colorFor(percent), percent, "%", Colors::RESET, "][", covered, "/", total, "] ", file);
 
+        if brTotal > 0us {
+            let brPercent = percentOf(brCovered, brTotal);
+            stream:.write(Colors::BOLD, " | branches: ", Colors::RESET,
+                          '[', colorFor(brPercent), brPercent, "%", Colors::RESET, "][", brCovered, "/", brTotal, ']');
+        }
+
         if missing.len > 0us {
             stream:.write(Colors::BOLD, " | missing: ", Colors::RESET);
             writeMissingList(alias stream, missing);          
+        }
+
+        if brPartial.len > 0us {
+            stream:.write(Colors::BOLD, " | half taken: ", Colors::RESET);
+            writeMissingList(alias stream, brPartial);
         }
         stream:.writeln();
     }
@@ -152,6 +195,20 @@ pub mod CoverageFormat {
     fn writeTotalLine(dmut stream: &StringStream, covered: usize, total: usize) {
         let percent = percentOf(covered, total);
         stream:.writeln('[', colorFor(percent), percent, "%", Colors::RESET, ']', ' ', "TOTAL:", covered, '/', total);
+    }
+
+    /**
+     * Append the overall branch coverage line to `stream`
+     *
+     * @warning: this line must not read as "TOTAL:" - the CI badge of the bootstrap repo picks
+     * the overall percentage with `grep -E 'TOTAL:' | tail -1`, and would report branch coverage
+     * instead of line coverage.
+     * */
+    fn writeBranchTotalLine(dmut stream: &StringStream, covered: usize, total: usize) {
+        if total == 0us { return; }
+
+        let percent = percentOf(covered, total);
+        stream:.writeln('[', colorFor(percent), percent, "%", Colors::RESET, ']', ' ', "BRANCHES ", covered, '/', total);
     }
 
     /**

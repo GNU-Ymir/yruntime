@@ -33,24 +33,49 @@ in conv;
 
 use std::config::data;
 use etc::runtime::elf;
+use utils::coverage::tree;
 
 /**
- * A coverage file entry groups all the hit locations in a given file
+ * A coverage file entry groups all the hit locations in a given file, keeping line coverage and
+ * branch coverage apart: they answer two different questions("was this line reached" versus
+ * "were both outcomes of this conditional exercised"), and mixing them makes a file's percentage
+ * depend on how its conditions happen to be written.
  */
 pub class CoverageFileEntry {
     pub let file: [c8];
-    pub let dmut locations: [u32 => u32] = copy [];
+
+    // line => number of times the line was reached
+    pub let dmut lines: [u32 => u32] = copy [];
+
+    // (line, column) of a conditional => (times taken, times not taken)
+    pub let dmut branches: [(u32, u32) => (u32, u32)] = copy [];
 
     pub self(file: [c8])
         with file = file
     {}
 
     pub fn addFunction(mut self, function: CoverageFunctionEntry) {
-        for i, line in function.locations {
-            if let Ok(nb) = self.locations[line] {
-                self.locations[line] = nb + function.hits[i];
-            } else {
-                self.locations[line] = function.hits[i];
+        for i, loc in function.locations {
+            let (line, col, kind) = loc;
+            let hits = function.hits[i];
+
+            match kind {
+                CoverageLocKind::LINE => {
+                    if let Ok(nb) = self.lines[line] {
+                        self.lines[line] = nb + hits;
+                    } else {
+                        self.lines[line] = hits;
+                    }
+                }
+                _ => {
+                    let key = (line, col);
+                    let prev = if let Ok(p) = self.branches[key] { p } else { (0u32, 0u32) };
+                    self.branches[key] = if kind == CoverageLocKind::BRANCH_TRUE {
+                        (prev._0 + hits, prev._1)
+                    } else {
+                        (prev._0, prev._1 + hits)
+                    };
+                }
             }
         }
     }
@@ -62,10 +87,12 @@ pub class CoverageFileEntry {
 pub record CoverageFunctionEntry {
     pub let file: [c8];
     pub let func: [c8];
-    pub let locations: [u32];
+
+    // (line, column, kind) of each coverable location, parallel to `hits`
+    pub let locations: [(u32, u32, u32)];
     pub let hits: [u32];
 
-    pub self (file: [c8], func: [c8], locations: [u32], hits: [u32])
+    pub self (file: [c8], func: [c8], locations: [(u32, u32, u32)], hits: [u32])
         with file = file
         , func = func
         , locations = locations
@@ -308,7 +335,7 @@ pub mod CoverageConv {
 
             functions ~= [CoverageFunctionEntry(info.file,
                                                 info.func,
-                                                copy [loc._0 for loc in info.locations],
+                                                info.locations,
                                                 copy [0 ; info.locations.len])];
         }
 
@@ -408,18 +435,26 @@ pub mod CoverageConv {
     }
 
     /**
-     * @returns: the "locations" array of `cfg`, converted into a list of(line, column) pairs
+     * @returns: the "locations" array of `cfg`, converted into a list of(line, column, kind)
+     *           triples. A file written by an older build only has(line, column) pairs, and its
+     *           locations are read back as lines(`--resume` can pick such a file up).
      * */
-    fn readLocations(cfg: &Config)-> [u32] {
-        let dmut result: [u32] = [];
+    fn readLocations(cfg: &Config)-> [(u32, u32, u32)] {
+        let dmut result: [(u32, u32, u32)] = [];
 
         if let Ok(locsCfg) = cfg["locations"]? {
             if let arr: &Array = locsCfg {
-                for pairCfg in arr[] {
-                    if let pairArr: &Array = pairCfg {
-                        let slc = pairArr[];
-                        if slc.len >= 2us {
-                            result ~= [cast!u32(readIntCfg(slc[0]))];
+                for tupleCfg in arr[] {
+                    if let tupleArr: &Array = tupleCfg {
+                        let slc = tupleArr[];
+                        if slc.len >= 3us {
+                            result ~= [(cast!u32(readIntCfg(slc[0])),
+                                        cast!u32(readIntCfg(slc[1])),
+                                        cast!u32(readIntCfg(slc[2])))];
+                        } else if slc.len >= 2us {
+                            result ~= [(cast!u32(readIntCfg(slc[0])),
+                                        cast!u32(readIntCfg(slc[1])),
+                                        CoverageLocKind::LINE)];
                         }
                     }
                 }
