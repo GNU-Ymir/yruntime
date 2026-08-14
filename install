@@ -3,16 +3,19 @@ set -e
 
 . ./YMIR_VERSION
 
-YMIR_SHORT_VERSION=$(echo "$YMIR_BOOTSTRAP_VERSION" | cut -d. -f1,2)
+# The include dir is named after midgard's own release (VERSION), not after the gyc it was built
+# with (YMIR_BOOTSTRAP_VERSION) - gyc looks under include/ymir/<midgard major.minor>. Same value
+# CMakeLists.txt suffixes the libs with; keep the two in step.
+MIDGARD_SHORT_VERSION=$(tr -d '[:space:]' < VERSION | cut -d. -f1,2)
 GCC_MAJOR_VERSION=$(echo "$GCC_VERSION" | cut -d. -f1)
 
-rm -rf "/usr/include/ymir/${YMIR_SHORT_VERSION}"
-mkdir -p "/usr/include/ymir/${YMIR_SHORT_VERSION}"
+rm -rf "/usr/include/ymir/${MIDGARD_SHORT_VERSION}"
+mkdir -p "/usr/include/ymir/${MIDGARD_SHORT_VERSION}"
 cd midgard
-find * -regex '.*\.\(yr\)$' | cpio -updm "/usr/include/ymir/${YMIR_SHORT_VERSION}"
+find * -regex '.*\.\(yr\)$' | cpio -updm "/usr/include/ymir/${MIDGARD_SHORT_VERSION}"
 
 cd ..
-rm -rf "/usr/libexec/gcc/x86_64-linux-gnu/${GCC_MAJOR_VERSION}/include/ymir/${YMIR_SHORT_VERSION}"
-mkdir -p "/usr/libexec/gcc/x86_64-linux-gnu/${GCC_MAJOR_VERSION}/include/ymir/${YMIR_SHORT_VERSION}"
+rm -rf "/usr/libexec/gcc/x86_64-linux-gnu/${GCC_MAJOR_VERSION}/include/ymir/${MIDGARD_SHORT_VERSION}"
+mkdir -p "/usr/libexec/gcc/x86_64-linux-gnu/${GCC_MAJOR_VERSION}/include/ymir/${MIDGARD_SHORT_VERSION}"
 cd midgard/
-find * -regex '.*\.\(yr\)$' | cpio -updm "/usr/libexec/gcc/x86_64-linux-gnu/${GCC_MAJOR_VERSION}/include/ymir/${YMIR_SHORT_VERSION}"
+find * -regex '.*\.\(yr\)$' | cpio -updm "/usr/libexec/gcc/x86_64-linux-gnu/${GCC_MAJOR_VERSION}/include/ymir/${MIDGARD_SHORT_VERSION}"
