@@ -56,14 +56,15 @@ cmake ..
 make
 ```
 
-The ymir bootstrap version this library is built/versioned against comes from `YMIR_VERSION`
-at the repo root (not hardcoded); midgard's own version lives in `VERSION`. This produces, per
-build mode:
+Midgard's own version lives in `VERSION` and is what names the built libraries; the ymir
+bootstrap version this library is *compiled with* is a separate value, in `YMIR_VERSION` at the
+repo root (neither is hardcoded). This produces, per build mode:
 
-- `libgymidgard-release_<ymirShortVersion>.a` / `libgymidgard-debug_<ymirShortVersion>.a` — the
-  compiled Midgard library (release and debug builds), e.g. `libgymidgard-release_1.1.a` for a
-  `YMIR_BOOTSTRAP_VERSION` of `1.1.x`.
-- `libgymidgard-tests_<ymirShortVersion>.a` — the test-runner support library.
+- `libgymidgard-release_<midgardShortVersion>.a` / `libgymidgard-debug_<midgardShortVersion>.a` —
+  the compiled Midgard library (release and debug builds), e.g. `libgymidgard-release_1.2.a` for
+  a `VERSION` of `1.2.x`. This is the name `gyc` resolves `-lgymidgard-*` to, from the midgard
+  release it was built against — so it tracks `VERSION`, never `YMIR_BOOTSTRAP_VERSION`.
+- `libgymidgard-tests_<midgardShortVersion>.a` — the test-runner support library.
 - `libruntime.a` — the standalone C runtime.
 - `midgard_tests` — the compiled Midgard test suite binary.
 
@@ -74,9 +75,10 @@ sudo make install       # installs the static libraries to /usr/lib/
 sudo ./install          # installs the .yr sources as system Ymir includes
 ```
 
-`install` copies `midgard/**/*.yr` into `/usr/include/ymir/<ymirShortVersion>` and the `gyc`
-internal include path (both derived from `YMIR_VERSION`), so other Ymir projects can
-`use std::...` / `use core::...` against this library.
+`install` copies `midgard/**/*.yr` into `/usr/include/ymir/<midgardShortVersion>` and the `gyc`
+internal include path (the version component from `VERSION`, matching the lib names above; the
+GCC major from `YMIR_VERSION`), so other Ymir projects can `use std::...` / `use core::...`
+against this library.
 
 ## Running tests
 
