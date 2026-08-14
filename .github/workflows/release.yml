@@ -27,13 +27,14 @@ jobs:
         run: |
           . ./YMIR_VERSION
           MIDGARD_VERSION="$(tr -d '[:space:]' < VERSION)"
-          # YMIR_SHORT_VERSION names the libgymidgard-*.a artifacts; GCC_MAJOR names the gyc .deb.
-          YMIR_SHORT_VERSION="$(echo "$YMIR_BOOTSTRAP_VERSION" | cut -d. -f1,2)"
+          # MIDGARD_SHORT_VERSION names the libgymidgard-*.a artifacts (see CMakeLists.txt - the midgard
+          # release, not the gyc it is built with); GCC_MAJOR names the gyc .deb.
+          MIDGARD_SHORT_VERSION="$(echo "$MIDGARD_VERSION" | cut -d. -f1,2)"
           GCC_MAJOR="${GCC_VERSION%%.*}"
           TAG_NAME="${MIDGARD_VERSION}"
           echo "midgard_version=${MIDGARD_VERSION}" >> "$GITHUB_OUTPUT"
           echo "ymir_bootstrap_version=${YMIR_BOOTSTRAP_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "ymir_short_version=${YMIR_SHORT_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "midgard_short_version=${MIDGARD_SHORT_VERSION}" >> "$GITHUB_OUTPUT"
           echo "gcc_version=${GCC_VERSION}" >> "$GITHUB_OUTPUT"
           echo "gyc_asset=gyc-${GCC_MAJOR}_${YMIR_BOOTSTRAP_VERSION}_amd64.deb" >> "$GITHUB_OUTPUT"
           echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
@@ -104,12 +105,12 @@ jobs:
       - name: Extract build artifacts
         env:
           TAG: ${{ steps.version.outputs.tag_name }}
-          YMIR_SHORT_VERSION: ${{ steps.version.outputs.ymir_short_version }}
+          MIDGARD_SHORT_VERSION: ${{ steps.version.outputs.midgard_short_version }}
         run: |
           CID="$(docker create midgard-release-build:latest)"
-          docker cp "${CID}:/midgard/.build/libgymidgard-debug_${YMIR_SHORT_VERSION}.a"   "./libmidgard_debug_${TAG}.a"
-          docker cp "${CID}:/midgard/.build/libgymidgard-release_${YMIR_SHORT_VERSION}.a" "./libmidgard_release_${TAG}.a"
-          docker cp "${CID}:/midgard/.build/libgymidgard-tests_${YMIR_SHORT_VERSION}.a"   "./libmidgard_tests_${TAG}.a"
+          docker cp "${CID}:/midgard/.build/libgymidgard-debug_${MIDGARD_SHORT_VERSION}.a"   "./libmidgard_debug_${TAG}.a"
+          docker cp "${CID}:/midgard/.build/libgymidgard-release_${MIDGARD_SHORT_VERSION}.a" "./libmidgard_release_${TAG}.a"
+          docker cp "${CID}:/midgard/.build/libgymidgard-tests_${MIDGARD_SHORT_VERSION}.a"   "./libmidgard_tests_${TAG}.a"
           docker rm "${CID}"
 
       - name: Build source zip
