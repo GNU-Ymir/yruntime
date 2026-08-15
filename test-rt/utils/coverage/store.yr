@@ -59,8 +59,8 @@ pub mod CoverageStore {
         for framePtr, hits in tree.frames() {
             let info = unsafe {*framePtr};
             let dmut fnEntry = copy Dict();
-            fnEntry:["file"] = copy Str(info.file);
-            fnEntry:["func"] = copy Str(info.func);
+            fnEntry["file"] = copy Str(info.file);
+            fnEntry["func"] = copy Str(info.func);
 
             let dmut locs = copy Array();
             for loc in info.locations {
@@ -71,18 +71,18 @@ pub mod CoverageStore {
                 triple:.push(copy Int(cast!i64(kind)));
                 locs:.push(triple);
             }
-            fnEntry:["locations"] = locs;
+            fnEntry["locations"] = locs;
 
             let dmut hitsArr = copy Array();
             for h in hits {
                 hitsArr:.push(copy Int(cast!i64(h)));
             }
-            fnEntry:["hits"] = hitsArr;
+            fnEntry["hits"] = hitsArr;
 
             functions:.push(fnEntry);
         }
-        root:["functions"] = functions;
-        root:["callTree"] = callTreeToConfig(tree);
+        root["functions"] = functions;
+        root["callTree"] = callTreeToConfig(tree);
 
         return root;
     }
@@ -150,22 +150,22 @@ pub mod CoverageStore {
         for callerPtr, callees in tree.callTree() {
             let dmut entry = copy Dict();
             if let Ok(cinfo) = tree.funcInfos()[callerPtr] {
-                entry:["file"] = copy Str(cinfo.file);
-                entry:["func"] = copy Str(cinfo.func);
+                entry["file"] = copy Str(cinfo.file);
+                entry["func"] = copy Str(cinfo.func);
             }
 
             let dmut calleesArr = copy Array();
             for calleePtr, nb in callees {
                 let dmut c = copy Dict();
                 if let Ok(cinfo) = tree.funcInfos()[calleePtr] {
-                    c:["file"] = copy Str(cinfo.file);
-                    c:["func"] = copy Str(cinfo.func);
+                    c["file"] = copy Str(cinfo.file);
+                    c["func"] = copy Str(cinfo.func);
                 }
-                c:["count"] = copy Int(cast!i64(nb));
+                c["count"] = copy Int(cast!i64(nb));
                 calleesArr:.push(c);
             }
 
-            entry:["callees"] = calleesArr;
+            entry["callees"] = calleesArr;
             callTreeArr:.push(entry);
         }
 

@@ -63,12 +63,12 @@ pub class ArgumentParser {
             let (name, isHyphenated) = self.parseOptionName(rest[0]);
             if (isHyphenated) {
                 if let Ok(sub) = self.isSubCommand(name, true) {
-                    resultConfig:[sub.long] = self.parseSubCommand(sub, rest);
+                    resultConfig[sub.long] = self.parseSubCommand(sub, rest);
                     break;
                 }
 
                 else if let Ok(flg) = self.isFlag(name) {
-                    resultConfig:[flg.long] = copy Bool(true);
+                    resultConfig[flg.long] = copy Bool(true);
                     rest = rest[1 .. $];
                 }
 
@@ -84,17 +84,17 @@ pub class ArgumentParser {
                             let dmut nLst = copy Array();
                             for i in lst[] { nLst:.push(i); }
                             nLst:.push(val);
-                            resultConfig:[opt.long] = nLst;
+                            resultConfig[opt.long] = nLst;
                         } else {
                             let dmut lst = copy Array();
                             lst:.push(val);
-                            resultConfig:[opt.long] = lst;
+                            resultConfig[opt.long] = lst;
                         }
                     } else {
                         if opt.long in resultConfig {
                             throw copy DuplicateArgument(opt.long);
                         } else {
-                            resultConfig:[opt.long] = val;
+                            resultConfig[opt.long] = val;
                         }
                     }
                 }
@@ -104,14 +104,14 @@ pub class ArgumentParser {
                 }
             } else {
                 if let Ok(sub) = self.isSubCommand(name, false) {
-                    resultConfig:[sub.long] = self.parseSubCommand(sub, rest);
+                    resultConfig[sub.long] = self.parseSubCommand(sub, rest);
                     break;
                 }
 
                 else if currentPositional < self._positions.len {
                     let opt = self._positions[currentPositional];
                     let (val, rest_) = self.parseOption(opt, rest);
-                    resultConfig:[opt.long] = val;
+                    resultConfig[opt.long] = val;
                     currentPositional += 1;
                     rest = rest_;
                 }
@@ -889,7 +889,7 @@ pub class ArgumentParser {
     prv fn insertMissingFlags(self, dmut cfg: &Dict) {
         for f in self._flags {
             if (f.long !in cfg) {
-                cfg:[f.long] = copy Bool(false);
+                cfg[f.long] = copy Bool(false);
             }
         }
     }

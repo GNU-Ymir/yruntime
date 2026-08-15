@@ -85,7 +85,7 @@ pub record TomlParser {
             else {
                 self.assertIsIdentifier(tok, l, c);
                 self:.assertRead(["="]);
-                result:[tok] = self:.parseValue();
+                result[tok] = self:.parseValue();
             }
         }
 
@@ -138,7 +138,7 @@ pub record TomlParser {
             self.assertIsIdentifier(name, l, c);
             self:.assertRead(["="]);
 
-            result:[name] = self:.parseValue();
+            result[name] = self:.parseValue();
 
             if (!isGlobal) {
                 let (n, _, _) = self:.assertRead([",", "}"]);
@@ -328,9 +328,9 @@ pub record TomlParser {
         if path.len == 1 {
             let dmut res = copy Dict();
             for k, v in dict[] {
-                res:[k] = v;
+                res[k] = v;
             }
-            res:[path[0]] = value;
+            res[path[0]] = value;
             return alias res;
         }
 
@@ -338,17 +338,17 @@ pub record TomlParser {
         let mut found = false;
         for k, v in dict[] {
             if let d: &Dict = v && k == path[0] {
-                res:[k] = self.insertInPath(d, path[1 .. $], value);
+                res[k] = self.insertInPath(d, path[1 .. $], value);
                 found = true;
             }
 
             else {
-                res:[k] = v;
+                res[k] = v;
             }
         }
 
         if !found {
-            res:[path[0]] = self.insertInPath(copy Dict(), path[1 .. $], value);
+            res[path[0]] = self.insertInPath(copy Dict(), path[1 .. $], value);
         }
 
         return alias res;
