@@ -75,3 +75,21 @@ __test {
         assert(v == "a\\b\nc\td\"e");
     } else assert(false);
 }
+
+
+__test {
+    // json returns deeply mutable values
+    let dmut d = json#{"foo": true};
+    d["bar"] = copy Bool(false);
+    if let Ok(Bool(value-> b)) = d["foo"]? {
+        assert(b);
+    } else {
+        assert(false);
+    }
+
+    if let Ok(Bool(value-> b)) = d["bar"]? {
+        assert(!b);
+    } else {
+        assert(false);
+    }
+}
