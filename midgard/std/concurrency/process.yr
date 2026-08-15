@@ -27,7 +27,7 @@
 in process;
 
 use std::fs::{path, errors};
-use etc::runtime::gc;
+use etc::runtime::{gc, threads};
 use etc::c::{env, process, memory};
 use core::concurrency::pipes::{iopipe, ipipe, opipe};
 use core::exception::io;
@@ -89,7 +89,7 @@ pub class SubProcess {
         let mut cmds: [*c8] = [std::conv::toStringZ(self._cmd)] ~ copy [std::conv::toStringZ(a) for a in self._args];
         let mut cwd = std::conv::toStringZ(self._cwd.toStr());
 
-        self._pid = etc::c::process::fork();
+        self._pid = threads::_yrt_fork();
         if (self._pid == 0) self:.child(cmds, cwd);
 
         if let Ok(dmut stdin) = alias self._stdin {

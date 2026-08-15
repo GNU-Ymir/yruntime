@@ -230,6 +230,25 @@ uint64_t _yrt_thread_self_id () {
     return pthread_self ();
 }
 
+// Boehm GC registers pthread_atfork handlers automatically, but that automatic protection is not
+// reliable enough on its own (see the intermittent segfaults in CoverageTree::hitEnter racing
+// SubProcess::start's fork() under concurrent TaskPool compilation, YMI-104): calling
+// GC_atfork_prepare/parent/child explicitly around every fork() is the pattern the GC itself
+// documents (gc.h) for programs that call fork() directly rather than through a GC-provided
+// wrapper. This makes fork() quiesce all other threads (so none of them are mid-GC_malloc) before
+// forking, and resume them right after.
+uint32_t _yrt_fork () {
+    GC_atfork_prepare ();
+    pid_t pid = fork ();
+    if (pid == 0) {
+        GC_atfork_child ();
+    } else {
+        GC_atfork_parent ();
+    }
+
+    return (uint32_t) pid;
+}
+
 
 void _yrt_atomic_init () {
     pthread_mutexattr_t attr;
