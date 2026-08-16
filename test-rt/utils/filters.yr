@@ -258,12 +258,64 @@ pub mod TestFilters {
     /**
      * @returns: true if the test pass the filter and must be executed at this run
      *
+     * `filter` is a "::"-separated path of glob segments(each segment matched independently,
+     * '*' standing for "any characters" within that segment). The filter must have exactly as
+     * many segments as the test name — use a literal "*" segment to match an arbitrary segment
+     * at that depth, e.g. "algorithm::*" matches direct tests of `algorithm`, but not tests
+     * nested one level deeper under a submodule such as `algorithm::sorting`(use
+     * "algorithm::*::*" for that).
+     *
      * */
-    fn passFilter(name: [c8], filter: [c8])-> bool {
-        if filter.len > 1 && filter[$ - 1] == '*' {
-            return name.startsWith(filter[0 .. $ - 1]);
+    pub fn passFilter(name: [c8], filter: [c8])-> bool {
+        let testFile = Path(name, sep-> "::").file();
+        let testName = Path(name, sep-> "::").parent().parent().push(testFile);
+        let nameParts = testName.parts();
+        let filterParts = Path(filter, sep-> "::").parts();
+
+        if nameParts.len != filterParts.len {
+            return false;
         }
 
-        return Path(filter, sep-> "::") == Path(name, sep-> "::").parent().parent(); // remove __test::id
+        for i in 0us .. filterParts.len {
+            if !globMatch(filterParts[i], nameParts[i]) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @returns: true if `text` matches `pattern`, where '*' in `pattern` stands for "zero or
+     * more of any character"(the only wildcard supported — no other character is special)
+     * */
+    pub fn globMatch(pattern: [c8], text: [c8])-> bool {
+        let mut pIdx = 0us;
+        let mut tIdx = 0us;
+        let mut starIdx: i64 = -1;
+        let mut matchIdx = 0us;
+
+        while tIdx < text.len {
+            if pIdx < pattern.len && pattern[pIdx] == '*' {
+                starIdx = cast!i64(pIdx);
+                matchIdx = tIdx;
+                pIdx += 1us;
+            } else if pIdx < pattern.len && pattern[pIdx] == text[tIdx] {
+                pIdx += 1us;
+                tIdx += 1us;
+            } else if starIdx != -1i64 {
+                pIdx = cast!usize(starIdx) + 1us;
+                matchIdx += 1us;
+                tIdx = matchIdx;
+            } else {
+                return false;
+            }
+        }
+
+        while pIdx < pattern.len && pattern[pIdx] == '*' {
+            pIdx += 1us;
+        }
+
+        return pIdx == pattern.len;
     }
 }
