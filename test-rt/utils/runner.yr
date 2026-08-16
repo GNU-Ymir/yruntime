@@ -75,7 +75,13 @@ pub class UnittestLauncher {
      *
      * */
     pub fn register(mut self, name: [c8], func: fn ()-> void) {
-        self._tests[name] = func;
+        let realName = if name.len > 0 && name[$-1] == '\u{0}' {
+            name[0 .. $-1]
+        } else {
+            name
+        };
+
+        self._tests[realName] = func;
     }
 
     /*!
@@ -145,8 +151,11 @@ pub class UnittestLauncher {
         let mut failed = false;
         for test in tests {
             if let Ok(f) = self._tests[test] {
+                let testFile = Path(test, sep-> "::").file();
+                let testName = Path(test, sep-> "::").parent().parent().push(testFile);
+
                 {
-                    self.runTest(test, f);
+                    self.runTest(testName.toStr(sep-> "::"), f);
                     already[test] = true;
                 } catch {
                     err: &Exception => {
