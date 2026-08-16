@@ -60,6 +60,7 @@ void _yrt_init_runtime (int isDebug) {
     __YRT_DEBUG__ = isDebug;
 
     GC_INIT ();
+    _yrt_gc_add_tls_roots (); // spawned threads get theirs in _yrt_thread_create
 
     _yrt_atomic_init ();
     installHandler ();

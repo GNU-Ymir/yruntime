@@ -45,13 +45,63 @@ void _yrt_write_pipe (int stream, void * data, unsigned long long size) {
 #endif
 
 
-void GC_pthread_create (_yrt_thread_t * id, _yrt_attr_t* attr, void*(*call)(void*), void* data);
+int GC_pthread_create (_yrt_thread_t * id, _yrt_attr_t* attr, void*(*call)(void*), void* data);
 int GC_pthread_join (_yrt_thread_t p, void** retval);
 void GC_pthread_detach (_yrt_thread_t p);
 
+/**
+ * What a spawned thread needs to know to get going. It is left in the frame of the thread that
+ * spawns it rather than allocated: 'data' is usually a GC pointer, and the collector scans the
+ * spawning thread's stack -- it would not scan a malloc'ed struct, and a GC_malloc'ed one would
+ * itself be unreachable during the hand-over. The spawning thread waits on 'copied' so that its
+ * frame outlives the read.
+ * */
+typedef struct {
+    void * (*call) (void*);
+    void * data;
+    sem_t copied;
+} _yrt_thread_start_t;
+
+static void _yrt_thread_remove_tls_roots (void * unused) {
+    (void) unused;
+
+    _yrt_gc_remove_tls_roots ();
+}
+
+static void * _yrt_thread_main (void * raw) {
+    _yrt_thread_start_t * start = (_yrt_thread_start_t*) raw;
+    void * (*call) (void*) = start-> call;
+    void * data = start-> data;
+
+    // '@thread' globals of this thread are unreachable for the collector until this call, so it
+    // has to come before any Ymir code runs
+    _yrt_gc_add_tls_roots ();
+
+    // 'start' belongs to the spawning thread's frame and must not be touched from here on
+    sem_post (&start-> copied);
+
+    void * result = NULL;
+
+    // a cleanup handler rather than a plain call after 'call', so that the roots also go away
+    // when the thread is cancelled(see _yrt_thread_cancel) or exits early
+    pthread_cleanup_push (&_yrt_thread_remove_tls_roots, NULL);
+    result = call (data);
+    pthread_cleanup_pop (1);
+
+    return result;
+}
 
 void _yrt_thread_create (_yrt_thread_t * id, _yrt_attr_t* attr, void*(*call)(void*), void* data) {
-    GC_pthread_create (id, attr, call, data);
+    _yrt_thread_start_t start;
+    start.call = call;
+    start.data = data;
+    sem_init (&start.copied, 0, 0);
+
+    if (GC_pthread_create (id, attr, &_yrt_thread_main, &start) == 0) {
+        sem_wait (&start.copied);
+    }
+
+    sem_destroy (&start.copied);
 }
 
 void _yrt_thread_join (_yrt_thread_t p, void** retval) {
