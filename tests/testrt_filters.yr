@@ -1,0 +1,44 @@
+in testrt_filters;
+
+use utils::filters;
+
+__test {
+    // exact match, same number of "::" segments
+    assert(TestFilters::passFilter("algorithm::sorting::__test::0", "algorithm::sorting::0"), "a");
+
+    // a single '*' segment matches exactly one segment, at that depth
+    assert(TestFilters::passFilter("algorithm::sorting::__test::0", "algorithm::sorting::*"), "b");
+    assert(TestFilters::passFilter("algorithm::sorting::__test::0", "algorithm::*::0"), "c");
+    assert(TestFilters::passFilter("algorithm::sorting::__test::0", "*::*::*"), "d");
+
+    // a '*' segment does not match across a "::" boundary(no recursion into deeper segments)
+    assert(!TestFilters::passFilter("algorithm::sorting::__test::0", "algorithm::*"), "e");
+
+    // segment counts must match exactly
+    assert(!TestFilters::passFilter("algorithm::sorting::__test::0", "algorithm::sorting::0::extra"), "f");
+
+    // '*' can match inside a segment, alongside literal characters
+    assert(TestFilters::passFilter("algorithm::sorting::__test::0", "algorithm::sort*::0"), "g");
+    assert(TestFilters::passFilter("algorithm::sorting::__test::0", "algorithm::*ing::0"), "h");
+    assert(TestFilters::passFilter("algorithm::sorting::__test::0", "algorithm::s*g::0"), "i");
+    assert(!TestFilters::passFilter("algorithm::sorting::__test::0", "algorithm::search*::0"), "j");
+
+    // a literal segment without '*' must match exactly
+    assert(!TestFilters::passFilter("algorithm::sorting::__test::0", "algorithm::sortin::0"), "k");
+}
+
+__test {
+    // globMatch in isolation
+    assert(TestFilters::globMatch("*", ""), "a");
+    assert(TestFilters::globMatch("*", "anything"), "b");
+    assert(TestFilters::globMatch("", ""), "c");
+    assert(!TestFilters::globMatch("", "anything"), "d");
+    assert(TestFilters::globMatch("abc", "abc"), "e");
+    assert(!TestFilters::globMatch("abc", "abd"), "f");
+    assert(TestFilters::globMatch("a*c", "abbbc"), "g");
+    assert(TestFilters::globMatch("a*c", "ac"), "h");
+    assert(!TestFilters::globMatch("a*c", "abbbd"), "i");
+    assert(TestFilters::globMatch("*a*b*", "xxaxxbxx"), "j");
+    assert(TestFilters::globMatch("**", "anything"), "k");
+    assert(!TestFilters::globMatch("a*c", "ab"), "l");
+}

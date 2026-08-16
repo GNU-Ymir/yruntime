@@ -69,7 +69,7 @@ add_custom_target (lib_debug ALL
 
 add_custom_target (midgard_tests ALL
   COMMENT "Building midgard tests"
-  COMMAND ${CMAKE_YMIR_COMPILER} ${CMAKE_YMIR_DEBUG_FLAGS} ${CMAKE_CURRENT_SOURCE_DIR}/tests/__lib__.yr -fversion=DEBUG_LIB  -o ${CMAKE_CURRENT_BINARY_DIR}/midgard_tests -funittest -nostdinc -nomidgardlib -I ${CMAKE_CURRENT_SOURCE_DIR}/midgard -lgc  ${CMAKE_CURRENT_BINARY_DIR}/libgymidgard-debug_${MIDGARD_SHORT_VERSION}.a ${CMAKE_CURRENT_BINARY_DIR}/libgymidgard-tests_${MIDGARD_SHORT_VERSION}.a  ${CMAKE_CURRENT_BINARY_DIR}/libgymidgard-debug_${MIDGARD_SHORT_VERSION}.a
+  COMMAND ${CMAKE_YMIR_COMPILER} ${CMAKE_YMIR_DEBUG_FLAGS} ${CMAKE_CURRENT_SOURCE_DIR}/tests/__lib__.yr -fversion=DEBUG_LIB  -o ${CMAKE_CURRENT_BINARY_DIR}/midgard_tests -funittest -nostdinc -nomidgardlib -I ${CMAKE_CURRENT_SOURCE_DIR}/midgard -I ${CMAKE_CURRENT_SOURCE_DIR}/test-rt -lgc  ${CMAKE_CURRENT_BINARY_DIR}/libgymidgard-debug_${MIDGARD_SHORT_VERSION}.a ${CMAKE_CURRENT_BINARY_DIR}/libgymidgard-tests_${MIDGARD_SHORT_VERSION}.a  ${CMAKE_CURRENT_BINARY_DIR}/libgymidgard-debug_${MIDGARD_SHORT_VERSION}.a
 )
 
 
