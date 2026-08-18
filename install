@@ -5,7 +5,7 @@ set -e
 
 # The include dir is named after midgard's own release (VERSION), not after the gyc it was built
 # with (YMIR_BOOTSTRAP_VERSION) - gyc looks under include/ymir/<midgard major.minor>. Same value
-# CMakeLists.txt suffixes the libs with; keep the two in step.
+# the installed libs are suffixed with (see gycspec.c's LIBYMIDGARD_VERSION); keep the two in step.
 MIDGARD_SHORT_VERSION=$(tr -d '[:space:]' < VERSION | cut -d. -f1,2)
 GCC_MAJOR_VERSION=$(echo "$GCC_VERSION" | cut -d. -f1)
 
@@ -19,3 +19,17 @@ rm -rf "/usr/libexec/gcc/x86_64-linux-gnu/${GCC_MAJOR_VERSION}/include/ymir/${MI
 mkdir -p "/usr/libexec/gcc/x86_64-linux-gnu/${GCC_MAJOR_VERSION}/include/ymir/${MIDGARD_SHORT_VERSION}"
 cd midgard/
 find * -regex '.*\.\(yr\)$' | cpio -updm "/usr/libexec/gcc/x86_64-linux-gnu/${GCC_MAJOR_VERSION}/include/ymir/${MIDGARD_SHORT_VERSION}"
+cd ..
+
+# gyllir build produces unversioned libs at the repo root (libgymidgard_debug.a, ...); gyc itself
+# looks them up as -lgymidgard-{debug,release,tests}_<MIDGARD_SHORT_VERSION>, so install renames
+# them into that shape rather than gyllir doing it - same suffix `install` uses for the include
+# dir above.
+for name in debug release tests; do
+    src="libgymidgard_${name}.a"
+    if [ ! -f "$src" ]; then
+        echo "install: ${src} not found - run 'gyllir build' first" >&2
+        exit 1
+    fi
+    install -m 644 "$src" "/usr/lib/libgymidgard-${name}_${MIDGARD_SHORT_VERSION}.a"
+done
