@@ -85,9 +85,8 @@ typedef struct _yrt_lazy_closure_t {
 
 typedef struct _yrt_lazy_value_t {
     unsigned char set;
-    void* data;
-    uint32_t size;
     struct _yrt_lazy_closure_t closure;
+    char data;
 } _yrt_lazy_value_t;
 
 
