@@ -1,14 +1,11 @@
 #include <rt/memory/lazy.h>
 
-#include <rt/utils/gc.h>
-
 void* _yrt_call_lazy (_yrt_lazy_value_t * value) {
+    void* data = &value-> data;
     if (!value-> set) {
-        void * data = GC_malloc (value-> size);
-        value-> closure.func (value-> closure.closure, data); // value-> data);
-        value-> data = data;
+        value-> closure.func (value-> closure.closure, data);
         value-> set = 1;
     }
 
-    return value-> data;
+    return data;
 }
