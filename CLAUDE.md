@@ -167,36 +167,42 @@ passes the address of the caller's storage slot itself. Confirmed by compiling w
 
 ## Build / run / test
 
-Build system is plain CMake (no `gyllir` here, unlike the compiler frontend repo). The Ymir
-compiler is looked up as `gyc` on `PATH` (`CMAKE_YMIR_COMPILER` in `CMakeLists.txt`).
+Build system is `gyllir` (`gyllir.toml` at the repo root), driven by targets that each invoke the
+Ymir compiler, looked up as `gyc` on `PATH` (`compiler = "gyc"` in `gyllir.toml`). CMake
+(`CMakeLists.txt`) has been removed — do not reintroduce a `.build/`/`cmake ..`/`make` flow.
 
 Two separate versions live at the repo root, and mixing them up is the classic bug here:
 
-- `VERSION` — midgard's own release (also the git tag each release is cut under). `CMakeLists.txt`
-  and `install` read it to derive `MIDGARD_SHORT_VERSION` (major.minor, e.g. `1.2`), which is what
-  names the static libs and the install include dir below. It has to be this one: `gyc` resolves
-  `-lgymidgard-*` and `include/ymir/<ver>` from the midgard release *it* was built against, so a
-  lib named after anything else is a lib no compiler looks for.
-- `YMIR_VERSION` (`YMIR_BOOTSTRAP_VERSION`/`GCC_VERSION`) — the gyc release this library is
-  *compiled with*, used to fetch that compiler in CI/`dev/init-dev-env.sh`. It runs ahead of
-  `VERSION` and must never leak into an artifact name.
+- `VERSION` — midgard's own release (also the git tag each release is cut under), and the version
+  `install` derives `MIDGARD_SHORT_VERSION` (major.minor, e.g. `1.2`) from for the install include
+  dir below. It has to be this one: `gyc` resolves `include/ymir/<ver>` from the midgard release
+  *it* was built against. Note `gyllir.toml` also carries its own `version` field, tracking the
+  in-progress release (e.g. `1.3.1` while `VERSION` still reads `1.3.0`) — the two are expected to
+  diverge between a version bump commit and the matching release, not a bug to "fix" on sight.
+- `YMIR_VERSION` (`YMIR_BOOTSTRAP_VERSION`/`GYLLIR_VERSION`/`GCC_VERSION`) — the gyc/gyllir release
+  this library is *built with*, used to fetch those compilers' `.deb`s in CI/the `Dockerfile`. It
+  runs ahead of `VERSION` and must never leak into an artifact name.
 
-Neither is hardcoded in `CMakeLists.txt`/`install`.
-
-- Build: `mkdir -p .build && cd .build && cmake .. && make`.
-- This builds four CMake targets in dependency order: `lib_release`/`lib_debug` (compile
-  `midgard/__lib__.yr` via `gyc -c`), `lib_tests` (compiles `test-rt/__lib__.yr`), then the
-  static libs (`gymidgard-release_<midgardShortVersion>`, `gymidgard-debug_<midgardShortVersion>`,
-  `gymidgard-tests_<midgardShortVersion>`, `runtime`) that bundle the `.o` plus the C sources under
-  `core/*.c`, `std/*.c`, `rt/*.c`, then finally `midgard_tests`, the compiled test binary.
-- Run tests: `.build/midgard_tests` (add `-f <substr>` to filter, `-sf` to stop on first
-  failure, `--resume` to re-run only previously-failed tests, `-cov` for a coverage report,
-  `-ct` for a call-tree report, `-m` to list each file's uncovered lines under the coverage
-  report — see `test-rt/utils/args.yr`).
-- Install system-wide: `sudo make install` (libs to `/usr/lib/`) and `sudo ./install` (copies
-  `midgard/**/*.yr` into `/usr/include/ymir/<midgardShortVersion>` and the `gyc` internal include
-  dir — version component from `VERSION`, GCC major from `YMIR_VERSION`).
-- `.build/.ymir_test_success` caches per-test pass/fail state, consumed by `--resume`.
+- Build: `gyllir build`. Builds every target in `gyllir.toml` in dependency order: `gymidgard_debug`
+  and `gymidgard_release` (compile `midgard/__lib__.yr`), `gymidgard_debug_unit` (same, with
+  `-funittest`), `gymidgard_tests` (compiles `test-rt/__lib__.yr`) — each bundling the C sources
+  under `rt/*.c` (`c-sources` in its `gyllir.toml` target) alongside its own `.yr` object code —
+  then `midgard_tests`, the compiled test binary, linked against `gymidgard_debug_unit` and
+  `gymidgard_tests`. Intermediate objects land under `.target/`; the final artifacts
+  (`libgymidgard_debug.a`, `libgymidgard_release.a`, `libgymidgard_tests.a`, `libgymidgard_debug_unit.a`,
+  `midgard_tests`) are copied to the repo root — unversioned names, unlike the old CMake
+  `gymidgard-*_<midgardShortVersion>` scheme.
+- Run tests: `./midgard_tests` (add `-f <substr>` to filter, `-sf` to stop on first failure,
+  `--resume` to re-run only previously-failed tests, `-cov` for a coverage report, `-ct` for a
+  call-tree report, `-m` to list each file's uncovered lines under the coverage report — see
+  `test-rt/utils/args.yr`).
+- `sudo ./install` copies `midgard/**/*.yr` into `/usr/include/ymir/<midgardShortVersion>` and the
+  `gyc` internal include dir (version component from `VERSION`, GCC major from `YMIR_VERSION`).
+  There is currently no equivalent step for installing the built static libs system-wide (the old
+  `sudo make install` rule went away with `CMakeLists.txt`) — copy `libgymidgard_*.a` to
+  `/usr/lib/` by hand if you need that, until this is scripted.
+- `./.ymir_test_success` (repo root, not `.build/`) caches per-test pass/fail state, consumed by
+  `--resume`.
 
 ## Architecture
 

@@ -38,7 +38,8 @@ Once `gyc` is available, see [Building](#building) below to compile Midgard itse
     `concurrency`).
   - `etc/` — bindings to the C runtime and other externals (`etc::c`, `etc::runtime::*`).
 - `rt/` — the C runtime backing Midgard (memory/GC, exceptions/stacktraces, threading,
-  low-level utils). Built as a static library (`runtime`) and linked into every Midgard target.
+  low-level utils). Compiled directly into each Midgard static library target (`c-sources` in
+  `gyllir.toml`), rather than as a standalone runtime library.
 - `tests/` — the Ymir test suite (`__test { ... }` blocks), mirroring the `std`/`core` module
   layout.
 - `test-rt/` — the unit-test runner and its support library (`utils::runner`, `utils::args`,
@@ -47,43 +48,40 @@ Once `gyc` is available, see [Building](#building) below to compile Midgard itse
 
 ## Building
 
-Requires a working `gyc` toolchain (looked up as `gyc` on `PATH`, see `CMAKE_YMIR_COMPILER` in
-`CMakeLists.txt`).
+Requires a working `gyc` toolchain (looked up as `gyc` on `PATH`, `compiler = "gyc"` in
+`gyllir.toml`) and `gyllir` itself.
 
 ```sh
-mkdir -p .build && cd .build
-cmake ..
-make
+gyllir build
 ```
 
-Midgard's own version lives in `VERSION` and is what names the built libraries; the ymir
-bootstrap version this library is *compiled with* is a separate value, in `YMIR_VERSION` at the
-repo root (neither is hardcoded). This produces, per build mode:
+Midgard's own version lives in `VERSION` (also mirrored, and occasionally ahead of it while a
+release is in flight, in `gyllir.toml`'s own `version` field); the ymir bootstrap version this
+library is *compiled with* is a separate value, in `YMIR_VERSION` at the repo root (neither is
+hardcoded). Intermediate objects land under `.target/`; this produces at the repo root:
 
-- `libgymidgard-release_<midgardShortVersion>.a` / `libgymidgard-debug_<midgardShortVersion>.a` —
-  the compiled Midgard library (release and debug builds), e.g. `libgymidgard-release_1.2.a` for
-  a `VERSION` of `1.2.x`. This is the name `gyc` resolves `-lgymidgard-*` to, from the midgard
-  release it was built against — so it tracks `VERSION`, never `YMIR_BOOTSTRAP_VERSION`.
-- `libgymidgard-tests_<midgardShortVersion>.a` — the test-runner support library.
-- `libruntime.a` — the standalone C runtime.
+- `libgymidgard_release.a` / `libgymidgard_debug.a` — the compiled Midgard library (release and
+  debug builds).
+- `libgymidgard_debug_unit.a` / `libgymidgard_tests.a` — the unit-test-instrumented library build
+  and the test-runner support library.
 - `midgard_tests` — the compiled Midgard test suite binary.
 
 ### Installing
 
 ```sh
-sudo make install       # installs the static libraries to /usr/lib/
 sudo ./install          # installs the .yr sources as system Ymir includes
 ```
 
 `install` copies `midgard/**/*.yr` into `/usr/include/ymir/<midgardShortVersion>` and the `gyc`
-internal include path (the version component from `VERSION`, matching the lib names above; the
-GCC major from `YMIR_VERSION`), so other Ymir projects can `use std::...` / `use core::...`
-against this library.
+internal include path (the version component from `VERSION`, GCC major from `YMIR_VERSION`), so
+other Ymir projects can `use std::...` / `use core::...` against this library. There is currently
+no equivalent step for installing the built static libraries system-wide — copy
+`libgymidgard_*.a` to `/usr/lib/` by hand if you need that.
 
 ## Running tests
 
 ```sh
-.build/midgard_tests
+./midgard_tests
 ```
 
 Useful flags (see `test-rt/utils/args.yr`):
