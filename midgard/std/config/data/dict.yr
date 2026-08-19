@@ -1,6 +1,7 @@
 in dict;
 
 use std::{stream, conv};
+use std::algorithm::sorting;
 use std::config::errors;
 
 /**
@@ -158,6 +159,30 @@ pub class Dict over Config {
      */
     pub over opContains(self, k: [c8])-> bool {
         k in self._content
+    }
+
+    /**
+     * @returns: the keys of the dictionnary, sorted in ascending order
+     * @info: iterating a dictionnary(`d[]`) traverses the underlying hash map in bucket order,
+     *   which is neither the insertion order, nor stable when the map grows and is rehashed.
+     *   Serializers use this function instead, so that dumping a configuration twice produces the
+     *   same text, and so that adding a key does not reorder the ones already there.
+     * @example:
+     * ```
+     * let dmut dict = copy Dict();
+     * dict["version"] = copy Int(2);
+     * dict["name"] = copy Str("foo");
+     *
+     * assert(dict.sortedKeys() == ["name", "version"]);
+     * ```
+     */
+    pub fn sortedKeys(self)-> [[c8]] {
+        let dmut keys: [[c8]] = [];
+        for k, _ in self._content {
+            keys ~= [k];
+        }
+
+        sorting::sort(alias keys)
     }
 
     /**
