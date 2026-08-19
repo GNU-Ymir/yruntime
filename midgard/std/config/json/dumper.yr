@@ -131,18 +131,21 @@ pub record JsonDumper {
         }
 
         let mut z = 0us;
-        for k, v in d[] {
-            if z != 0 {
-                stream:.write(",\n");
-                for _ in 0 .. indent + 3 {
-                    stream:.write(" ");
+        let content = d[];
+        for k in d.sortedKeys() { // sorted, so that dumping twice produces the same text
+            if let Ok(v) = content[k] {
+                if z != 0 {
+                    stream:.write(",\n");
+                    for _ in 0 .. indent + 3 {
+                        stream:.write(" ");
+                    }
                 }
-            }
 
-            self.dumpString(k, alias stream);
-            stream:.write(" : ");
-            self.dump(v, alias stream, indent + cast!i32(k.len) + 3, indent + 3);
-            z += 1;
+                self.dumpString(k, alias stream);
+                stream:.write(" : ");
+                self.dump(v, alias stream, indent + cast!i32(k.len) + 3, indent + 3);
+                z += 1;
+            }
         }
 
         if d[].len != 0 {

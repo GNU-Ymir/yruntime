@@ -232,3 +232,62 @@ __test {
         _ => assert(false);
     }
 }
+
+__test {
+    // keys are dumped sorted, whatever the insertion order, for both toml and json
+    let dmut d = copy Dict();
+    d["version"] = copy Int(1);
+    d["name"] = copy Str("foo");
+    d["about"] = copy Str("bar");
+
+    assert(toml::dump(d) == "about = \"bar\"\nname = \"foo\"\nversion = 1\n");
+    assert(json::dump(d) == "{\n   \"about\" : \"bar\",\n   \"name\" : \"foo\",\n   \"version\" : 1\n}");
+
+    // and the same configuration always dumps to the same text
+    assert(toml::dump(d) == toml::dump(toml::parse(toml::dump(d))));
+    assert(json::dump(d) == json::dump(json::parse(json::dump(d))));
+}
+
+__test {
+    // adding a key never reorders the keys already dumped, whatever the hash map does under it
+    let names = ["a"s8, "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"];
+    let dmut d = copy Dict();
+    let mut previous: [c8] = "";
+
+    for i in 0us .. names.len {
+        d[names[i]] = copy Int(cast!i64(i));
+        let dumped = toml::dump(d);
+
+        // every line of the previous dump is still there, in the same order
+        assert(dumped[0us .. previous.len] == previous);
+        previous = dumped;
+    }
+}
+
+__test {
+    // an inline dict separates its entries, and thus round trips(the keys being sorted)
+    let dmut inl = copy Dict();
+    inl["b"] = copy Int(2);
+    inl["a"] = copy Int(1);
+
+    let dmut arr = copy Array();
+    arr:.push(copy Int(0));
+    arr:.push(inl); // not a table array, so it stays inline
+
+    let dmut d = copy Dict();
+    d["mixed"] = arr;
+
+    assert(toml::dump(d) == "mixed = [0, {a = 1, b = 2}]\n");
+
+    let parsed = toml::parse(toml::dump(d));
+    {
+        if let a: &Array = parsed["mixed"] {
+            assert(a.len == 2us);
+            assert(a[0u32] == 0);
+            assert(a[1u32]["a"] == 1);
+            assert(a[1u32]["b"] == 2);
+        } else assert(false);
+    } catch {
+        _ => assert(false);
+    }
+}

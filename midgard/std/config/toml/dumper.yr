@@ -109,32 +109,35 @@ pub record TomlDumper {
         let dmut inner = copy StringStream();
         let dmut superStream = copy StringStream();
 
-        for k, v in d[] {
-            if let a: &Array = v && self.isTableArray(a) {
-                self.dumpTableArray(a, baseName ~ k, alias inner);
-            }
+        let content = d[];
+        for k in d.sortedKeys() { // sorted, so that dumping twice produces the same text
+            if let Ok(v) = content[k] {
+                if let a: &Array = v && self.isTableArray(a) {
+                    self.dumpTableArray(a, baseName ~ k, alias inner);
+                }
 
-            else if let iD: &Dict = v {
-                let mut others = false;
-                for _, iV in iD[] { // check wether the inner dict contains only tables
-                    if (iV !of Dict) && !self.isTableArray(iV) {
-                        others = true;
-                        break;
+                else if let iD: &Dict = v {
+                    let mut others = false;
+                    for _, iV in iD[] { // check wether the inner dict contains only tables
+                        if (iV !of Dict) && !self.isTableArray(iV) {
+                            others = true;
+                            break;
+                        }
+                    }
+
+                    if (others) {
+                        inner:.write("\n[", baseName, k, "]\n");
+                        self.dumpGlobalDict(iD, baseName-> baseName ~ k ~ ".", alias inner, 0);
+                    } else {
+                        self.dumpSuperDict(iD, baseName ~ k ~ ".", alias inner);
                     }
                 }
 
-                if (others) {
-                    inner:.write("\n[", baseName, k, "]\n");
-                    self.dumpGlobalDict(iD, baseName-> baseName ~ k ~ ".", alias inner, 0);
-                } else {
-                    self.dumpSuperDict(iD, baseName ~ k ~ ".", alias inner);
+                else {
+                    superStream:.write(k, " = ");
+                    self.dump(v, alias superStream, false, 0);
+                    superStream:.write("\n");
                 }
-            }
-
-            else {
-                superStream:.write(k, " = ");
-                self.dump(v, alias superStream, false, 0);
-                superStream:.write("\n");
             }
         }
 
@@ -189,20 +192,23 @@ pub record TomlDumper {
     prv fn dumpGlobalDict(self, d: &Dict, baseName: [c8], dmut stream: &StringStream, indent: i32) {
         let dmut post = copy StringStream(); // the '[[name]]' sections, written after the pairs
         let mut z = 0us;
-        for k, v in d[] {
-            if let a: &Array = v && self.isTableArray(a) {
-                self.dumpTableArray(a, baseName ~ k, alias post);
-            }
-
-            else {
-                if z != 0 for _ in 0 .. indent {
-                    stream:.write(" ");
+        let content = d[];
+        for k in d.sortedKeys() { // sorted, so that dumping twice produces the same text
+            if let Ok(v) = content[k] {
+                if let a: &Array = v && self.isTableArray(a) {
+                    self.dumpTableArray(a, baseName ~ k, alias post);
                 }
 
-                stream:.write(k, " = ");
-                self.dump(v, alias stream, false, indent + cast!i32(k.len) + 3);
-                stream:.write("\n");
-                z += 1;
+                else {
+                    if z != 0 for _ in 0 .. indent {
+                        stream:.write(" ");
+                    }
+
+                    stream:.write(k, " = ");
+                    self.dump(v, alias stream, false, indent + cast!i32(k.len) + 3);
+                    stream:.write("\n");
+                    z += 1;
+                }
             }
         }
 
@@ -219,11 +225,15 @@ pub record TomlDumper {
     prv fn dumpLocalDict(self, d: &Dict, dmut stream: &StringStream, indent: i32) {
         stream:.write('{');
         let mut z = 0us;
-        for k, v in d[] {
-            if z != 0 { stream:.write(", "); }
+        let content = d[];
+        for k in d.sortedKeys() { // sorted, so that dumping twice produces the same text
+            if let Ok(v) = content[k] {
+                if z != 0 { stream:.write(", "); }
 
-            stream:.write(k, " = ");
-            self.dump(v, alias stream, false, indent + cast!i32(k.len) + 3);
+                stream:.write(k, " = ");
+                self.dump(v, alias stream, false, indent + cast!i32(k.len) + 3);
+                z += 1;
+            }
         }
         stream:.write("}");
     }
