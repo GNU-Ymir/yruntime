@@ -380,15 +380,12 @@ pub class TcpStream {
      * */
     pub fn dispose(mut self) {
         if self._sockFd > 0 {
+            // No SO_LINGER(on, 0) here : that forces an abortive close (RST, dropping any data
+            // still queued in the kernel send buffer), which truncated responses larger than a
+            // few TCP segments (e.g. the doc generator's HttpServer serving a >100KB static
+            // file). A plain shutdown()+close() lets the kernel flush pending data before
+            // tearing down the connection.
             socket::shutdown(self._sockFd, ShutdownCodes::SHUT_RDWR);
-
-            let ling = linger(1, 0);
-            socket::setsockopt(self._sockFd, // free the port of the socket
-                               SocketOptions::SOL_SOCKET,
-                               SocketOptions::SO_LINGER,
-                               cast!{*void} (&ling),
-                               cast!u32(linger::size));
-
             socket::close(self._sockFd);
 
             self._sockFd = 0;

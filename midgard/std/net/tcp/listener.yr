@@ -245,6 +245,12 @@ pub class TcpListener {
             throw copy errors::TcpError(errors::TcpErrorCode::SOCKET_CREATION, "failed to create socket: (errno = " ~ errStr ~ ")");
         }
 
+        // Without this, a restart (e.g. after SIGINT) fails to rebind the same port while a
+        // previous connection accepted on it is still in TIME_WAIT
+        let mut reuse: i32 = 1;
+        socket::setsockopt(self._sockFd, socket::SOL_SOCKET, socket::SocketOptions::SO_REUSEADDR,
+                            cast!{*void} (&reuse), cast!u32(i32::size));
+
         let ina = in_addr(s_addr-> addr.toN());
         let mut servaddr = sockaddr_in(sin_family-> AddressFamily::AF_INET,
                                        sin_addr-> ina,
@@ -296,6 +302,12 @@ pub class TcpListener {
 
             throw copy errors::TcpError(errors::TcpErrorCode::SOCKET_CREATION, "failed to create socket: (errno = " ~ errStr ~ ")");
         }
+
+        // Without this, a restart (e.g. after SIGINT) fails to rebind the same port while a
+        // previous connection accepted on it is still in TIME_WAIT
+        let mut reuse: i32 = 1;
+        socket::setsockopt(self._sockFd, socket::SOL_SOCKET, socket::SocketOptions::SO_REUSEADDR,
+                            cast!{*void} (&reuse), cast!u32(i32::size));
 
         let ina = in6_addr(s6_addr-> addr.toN());
         let mut servaddr = sockaddr_in6(sin6_family-> AddressFamily::AF_INET6,
