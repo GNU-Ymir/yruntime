@@ -93,3 +93,142 @@ __test {
         assert(false);
     }
 }
+
+/**
+ * @returns: the number of times `sub` appears in `s`
+ * */
+fn countSub(s: [c8], sub: [c8])-> usize {
+    let mut res = 0us;
+    if (sub.len == 0us || s.len < sub.len) return res;
+
+    for i in 0us .. (s.len - sub.len + 1us) {
+        if (s[i .. i + sub.len] == sub) { res += 1us; }
+    }
+
+    res
+}
+
+__test {
+    // toml array of tables: '[[x]]' declares a new element of the array stored at 'x'
+    let parsed = toml::parse("[[x]]\na = 1\n[[x]]\na = 2\n");
+
+    {
+        if let a: &Array = parsed["x"] {
+            assert(a.len == 2us);
+            assert(a[0u32]["a"] == 1);
+            assert(a[1u32]["a"] == 2);
+        } else assert(false);
+    } catch {
+        _ => assert(false);
+    }
+}
+
+__test {
+    // an array of dicts is dumped as repeated '[[x]]' headers, not as an inline array
+    let dmut arr = copy Array();
+    let dmut e0 = copy Dict();
+    e0["name"] = copy Str("foo");
+    e0["v"] = copy Int(1);
+
+    let dmut e1 = copy Dict();
+    e1["name"] = copy Str("bar");
+    e1["v"] = copy Int(2);
+
+    arr:.push(e0);
+    arr:.push(e1);
+
+    let dmut d = copy Dict();
+    d["package"] = arr;
+
+    let dumped = toml::dump(d);
+    assert(countSub(dumped, "[[package]]") == 2us);
+
+    let parsed = toml::parse(dumped);
+    {
+        if let a: &Array = parsed["package"] {
+            assert(a.len == 2us);
+            assert(a[0u32]["name"] == "foo");
+            assert(a[0u32]["v"] == 1);
+            assert(a[1u32]["name"] == "bar");
+            assert(a[1u32]["v"] == 2);
+        } else assert(false);
+    } catch {
+        _ => assert(false);
+    }
+}
+
+__test {
+    // dotted path arrays of tables, under a global table that also holds plain values
+    let content = "[deps]\nstrict = true\n\n[[deps.pkg]]\nname = \"a\"\n\n[[deps.pkg]]\nname = \"b\"\n";
+    let parsed = toml::parse(content);
+
+    {
+        assert(parsed["deps"]["strict"] == true);
+        if let a: &Array = parsed["deps"]["pkg"] {
+            assert(a.len == 2us);
+            assert(a[0u32]["name"] == "a");
+            assert(a[1u32]["name"] == "b");
+        } else assert(false);
+    } catch {
+        _ => assert(false);
+    }
+
+    // and it round trips through the dumper
+    let dumped = toml::dump(parsed);
+    assert(countSub(dumped, "[[deps.pkg]]") == 2us);
+
+    let reparsed = toml::parse(dumped);
+    {
+        assert(reparsed["deps"]["strict"] == true);
+        if let a: &Array = reparsed["deps"]["pkg"] {
+            assert(a.len == 2us);
+            assert(a[0u32]["name"] == "a");
+            assert(a[1u32]["name"] == "b");
+        } else assert(false);
+    } catch {
+        _ => assert(false);
+    }
+}
+
+__test {
+    // a sub table of an array of tables applies to the last element read, and round trips
+    let content = "[[srv]]\nport = 80\n\n[srv.tls]\nenabled = false\n\n[[srv]]\nport = 443\n\n[srv.tls]\nenabled = true\n";
+    let parsed = toml::parse(content);
+    let reparsed = toml::parse(toml::dump(parsed));
+
+    {
+        for cfg in [parsed, reparsed] {
+            if let a: &Array = cfg["srv"] {
+                assert(a.len == 2us);
+                assert(a[0u32]["port"] == 80);
+                assert(a[0u32]["tls"]["enabled"] == false);
+                assert(a[1u32]["port"] == 443);
+                assert(a[1u32]["tls"]["enabled"] == true);
+            } else assert(false);
+        }
+    } catch {
+        _ => assert(false);
+    }
+}
+
+__test {
+    // an empty array, or an array that is not made only of dicts, stays an inline array
+    let dmut mixed = copy Array();
+    mixed:.push(copy Int(1));
+    mixed:.push(copy Dict());
+
+    let dmut d = copy Dict();
+    d["empty"] = copy Array();
+    d["mixed"] = mixed;
+
+    let dumped = toml::dump(d);
+    assert(countSub(dumped, "[[") == 0us);
+
+    let parsed = toml::parse(dumped);
+    {
+        if let a: &Array = parsed["empty"] { assert(a.len == 0us); } else assert(false);
+        if let a: &Array = parsed["mixed"] { assert(a.len == 2us); } else assert(false);
+    } catch {
+        _ => assert(false);
+    }
+}

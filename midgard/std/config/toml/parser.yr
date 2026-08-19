@@ -63,8 +63,17 @@ pub record TomlParser {
                 break;
             }
 
-            // Global dict entry
+            // Global dict entry, or array of tables entry
             else if tok == TomlTokens::LCRO {
+                let cursor = self._lex.getCursor();
+                let (second, _, _) = self._lex:.next();
+
+                // a doubled header '[[name]]' declares an element of an array of tables
+                let isTableArray = (second == TomlTokens::LCRO);
+                if (!isTableArray) {
+                    self._lex:.rewind(expand cursor); // rewind the read
+                }
+
                 let (name, lName, cName) = self._lex:.next();
                 let names = self._nameTzer.tokenizeWithoutSkips(name);
                 if (names.len == 0) {
@@ -78,7 +87,12 @@ pub record TomlParser {
                 }
 
                 self:.assertRead(["]"]);
-                result = self.insertInPath(result, names, self:.parseDict(isGlobal-> true));
+                if (isTableArray) {
+                    self:.assertRead(["]"]);
+                    result = self.pushInPath(result, names, self:.parseDict(isGlobal-> true));
+                } else {
+                    result = self.insertInPath(result, names, self:.parseDict(isGlobal-> true));
+                }
             }
 
             // Global var
@@ -132,6 +146,10 @@ pub record TomlParser {
             let (name, l, c) = self._lex:.next();
             if isGlobal && (name == "[" || name.len == 0) {  // read the next global dict
                 self._lex:.rewind(expand cursor); // rewind the read
+                break;
+            }
+
+            if !isGlobal && name == TomlTokens::RACC { // an empty local dict '{}'
                 break;
             }
 
@@ -319,6 +337,8 @@ pub record TomlParser {
 
     /**
      * Insert a value at a specific path
+     * @info: an intermediate node that is an array of tables(created by '[[name]]') is traversed
+     *   through its last element, as the toml specification mandates
      * @params:
      *    - dict: the old configuration
      *    - path: the path of insertion
@@ -342,6 +362,11 @@ pub record TomlParser {
                 found = true;
             }
 
+            else if let a: &Array = v && k == path[0] {
+                res[k] = self.insertInLast(a, path[1 .. $], value, isPush-> false);
+                found = true;
+            }
+
             else {
                 res[k] = v;
             }
@@ -349,6 +374,99 @@ pub record TomlParser {
 
         if !found {
             res[path[0]] = self.insertInPath(copy Dict(), path[1 .. $], value);
+        }
+
+        return alias res;
+    }
+
+    /**
+     * Append a value to the array of tables located at a specific path
+     * @info: if there is no value at `path`, an array is created, if the value at `path` is not an
+     *   array it is replaced by a fresh array containing only `value`
+     * @params:
+     *    - dict: the old configuration
+     *    - path: the path of the array of tables
+     *    - value: the element to append
+     * */
+    prv fn pushInPath(self, dict: &Dict, path: [[c8]], value: &Config)-> dmut &Dict {
+        if path.len == 1 {
+            let dmut res = copy Dict();
+            let dmut arr = copy Array();
+            for k, v in dict[] {
+                if k != path[0] {
+                    res[k] = v;
+                }
+
+                else if let a: &Array = v { // keep the elements already read for that path
+                    for e in a[] {
+                        arr:.push(e);
+                    }
+                }
+            }
+
+            arr:.push(value);
+            res[path[0]] = arr;
+            return alias res;
+        }
+
+        let dmut res = copy Dict();
+        let mut found = false;
+        for k, v in dict[] {
+            if let d: &Dict = v && k == path[0] {
+                res[k] = self.pushInPath(d, path[1 .. $], value);
+                found = true;
+            }
+
+            else if let a: &Array = v && k == path[0] {
+                res[k] = self.insertInLast(a, path[1 .. $], value, isPush-> true);
+                found = true;
+            }
+
+            else {
+                res[k] = v;
+            }
+        }
+
+        if !found {
+            res[path[0]] = self.pushInPath(copy Dict(), path[1 .. $], value);
+        }
+
+        return alias res;
+    }
+
+    /**
+     * Insert(or append) a value inside the last element of an array of tables
+     * @params:
+     *    - array: the array of tables to traverse
+     *    - path: the path of insertion, relative to the last element of `array`
+     *    - value: the value to insert
+     *    - isPush: true iif `value` is a new element of an array of tables at `path`
+     * */
+    prv fn insertInLast(self, array: &Array, path: [[c8]], value: &Config, isPush: bool)-> dmut &Array {
+        let dmut res = copy Array();
+        if (array.len == 0us) { // no element to traverse, the sub table creates the first one
+            if (isPush) {
+                res:.push(self.pushInPath(copy Dict(), path, value));
+            } else {
+                res:.push(self.insertInPath(copy Dict(), path, value));
+            }
+
+            return alias res;
+        }
+
+        let last = array.len - 1us;
+        for i, v in array[] {
+            if let d: &Dict = v && i == last {
+                if (isPush) {
+                    res:.push(self.pushInPath(d, path, value));
+                } else {
+                    res:.push(self.insertInPath(d, path, value));
+                }
+            }
+
+            else {
+                res:.push(v);
+            }
         }
 
         return alias res;
