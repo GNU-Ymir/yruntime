@@ -24,6 +24,15 @@ enum JsonTokens
 | ESCAPE = "\\";
 
 /**
+ * Build the tokenizer used internally by `JsonParser`, so it can be built once and reused
+ * across several parsers instead of being rebuilt for each one(see `JsonParser::self(content,
+ * tzer)`).
+ * */
+pub fn buildTokenizer()-> Tokenizer!{c8} {
+    return std::syntax::lexer::buildTokenizer!{c8} (tokens-> copy JsonTokens::__members__);
+}
+
+/**
  * A json parser that consumes an utf8 string and generate a configuration
  * */
 pub record JsonParser {
@@ -38,6 +47,16 @@ pub record JsonParser {
     pub self (content: [c8])
         with _lex = copy Lexer!{c8} (content,
                                      tokens-> copy JsonTokens::__members__)
+    {}
+
+    /**
+     * @params:
+     *    - content: the content of the json configuration file
+     *    - tzer: a tokenizer previously built by `buildTokenizer`, reused instead of being
+     *      rebuilt for this parser
+     * */
+    pub self (content: [c8], tzer: Tokenizer!{c8})
+        with _lex = copy Lexer!{c8} (content, tzer)
     {}
 
 

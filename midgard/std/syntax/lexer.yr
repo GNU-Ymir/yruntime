@@ -116,13 +116,42 @@ use std::syntax::{errors, tokenizer};
 use std::traits;
 
 /**
+ * Build the `Tokenizer` a `Lexer` would build internally from the same `tokens`/`comments`/
+ * `skips` triple(the return line token, the skip tokens, and the comment-opening tokens, on top
+ * of `tokens`).
+ * @info:
+ * =====
+ * A `Tokenizer` is immutable once built(`Tokenizer::next`/`find` never mutate it), so when many
+ * `Lexer`s are created back to back for the same fixed grammar(e.g. one per call to a `parse`
+ * function), building it once with this function and passing it to `Lexer::self(content, tzer)`
+ * avoids repeating the (`insert` + sort) cost of the whole token set on every single one of them.
+ * ====
+ * */
+pub fn if isChar!{C} buildTokenizer {C} (tokens: [[C]] = copy [" ", "\n"],
+                                         comments: [([C], [C])] = copy [("#", "\n")],
+                                         skips: [[C]] = copy [" ", "\r", "\t", "\n"])-> Tokenizer!{C}
+{
+    let dmut tzer = Tokenizer!{C} (tokens-> tokens);
+    tzer:.insert("\n");
+    for i in skips {
+        tzer:.insert(i, isSkip-> true);
+    }
+
+    for i in comments {
+        tzer:.insert(i._0, isComment-> i._1);
+    }
+
+    return tzer;
+}
+
+/**
  * The lexer class used to split a string into lexical tokens.
  */
 @final
 pub class if isChar!{C} Lexer {C} {
 
     // The tokenizer used to split the content string
-    let mut _tzer: Tokenizer!{C};
+    let _tzer: Tokenizer!{C};
 
     // The content string to split
     let mut _content: [C];
@@ -154,18 +183,21 @@ pub class if isChar!{C} Lexer {C} {
               tokens: [[C]] = copy [" ", "\n"],
               comments: [([C], [C])] = copy [("#", "\n")],
               skips: [[C]] = copy [" ", "\r", "\t", "\n"])
-        with _tzer = Tokenizer!{C} (tokens-> tokens)
+        with _tzer = buildTokenizer!{C} (tokens-> tokens, comments-> comments, skips-> skips)
         , _content = content
-    {
-        self._tzer:.insert("\n");
-        for i in skips {
-            self._tzer:.insert(i, isSkip-> true);
-        }
+    {}
 
-        for i in comments {
-            self._tzer:.insert(i._0, isComment-> i._1);
-        }
-    }
+    /**
+     * Create a new lexer from a `Tokenizer` already built by `buildTokenizer`, skipping the
+     * cost of rebuilding it.
+     * @params:
+     *    - content: the string to split
+     *    - tzer: a tokenizer previously returned by `buildTokenizer`
+     * */
+    pub self (content: [C], tzer: Tokenizer!{C})
+        with _tzer = tzer
+        , _content = content
+    {}
 
     /*!
      * ====================================================================================================

@@ -25,6 +25,34 @@ pub fn parse(content: [c8])-> &Config
     return parser:.parse();
 }
 
+/**
+ * Parse a json content string, reusing a tokenizer built by `buildTokenizer` instead of
+ * rebuilding one.
+ * @info:
+ * =====
+ * When parsing many json contents in a row(e.g. one file per loop iteration), building the
+ * tokenizer once with `buildTokenizer` and passing it to every call amortizes away the cost of
+ * rebuilding the same fixed token set on each individual `parse` call.
+ * ====
+ * @returns: the read configuration
+ * @throws:
+ *    - SyntaxError: if the json is malformed
+ * */
+pub fn parse(content: [c8], tzer: std::syntax::tokenizer::Tokenizer!{c8})-> &Config
+    throws std::syntax::errors::SyntaxError
+{
+    let mut parser = JsonParser(content, tzer);
+    return parser:.parse();
+}
+
+/**
+ * Build the tokenizer used internally by `parse`, so it can be built once and reused across
+ * several calls to `parse(content, tzer)`.
+ * */
+pub fn buildTokenizer()-> std::syntax::tokenizer::Tokenizer!{c8} {
+    return parser::buildTokenizer();
+}
+
 
 /**
  * Dump a configuration in a utf8 string in json format
