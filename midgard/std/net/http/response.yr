@@ -135,6 +135,12 @@ pub record HttpResponse {
         sock:.sendRaw("Content-Length: ");
         sock:.sendRaw(std::conv::to!{[c8]} (self.body.len));
         sock:.sendRaw("\r\n");
+
+        // The worker thread always disposes the socket right after this response is sent
+        // (see HttpServer::workerJobThread), so keep-alive is not actually supported yet;
+        // advertising anything else makes clients (esp. Firefox) try to reuse a dead
+        // connection and eat a stall+reconnect on every following request.
+        sock:.sendRaw("Connection: close\r\n");
         sock:.sendRaw("\r\n");
 
         sock:.sendRaw(self.body);
