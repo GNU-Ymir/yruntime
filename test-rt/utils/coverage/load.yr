@@ -59,22 +59,6 @@ pub mod CoverageLoad {
     }
 
     /**
-     * Read the json file at `path`, reusing a tokenizer built by `json::buildTokenizer` instead
-     * of rebuilding one(see `loadAll`, which loads every pid file with a single tokenizer).
-     * @throws:
-     *    - FsError: if the file could not be opened/read
-     *    - SyntaxError: if the file does not contain valid json
-     * */
-    pub fn load(path: [c8], tzer: std::syntax::tokenizer::Tokenizer!{c8})-> &Config
-        throws FsError, std::syntax::errors::SyntaxError
-    {
-        let dmut file = File::open(Path(path), read-> true);
-        let content = file:.readAll();
-
-        return parse(content, tzer);
-    }
-
-    /**
      * @returns: the path of every per-process coverage file(see `CoverageStore::PID_FILE_PREFIX`)
      *           found in the current directory
      * */
@@ -104,11 +88,10 @@ pub mod CoverageLoad {
      * */
     pub fn loadAll(paths: [Path])-> [&Config] {
         let dmut result: [&Config] = [];
-        let tzer = json::buildTokenizer();
 
         for path in paths {
             {
-                result ~= [load(path.toStr(), tzer)];
+                result ~= [load(path.toStr())];
             } catch {
                 _ => {}
             }
