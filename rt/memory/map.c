@@ -183,7 +183,7 @@ void _yrt_map_fit (_yrt_map_t * mp, uint64_t newSize) {
     result.data-> loaded = 0;
     result.data-> len = 0;
 
-    _yrt_map_copy_entries (&result, mp);
+    _yrt_map_relink_entries (&result, mp);
     mp-> data-> loaded = data.loaded;
     mp-> data-> len = data.len;
     mp-> data-> cap = data.cap;
@@ -202,6 +202,26 @@ void _yrt_map_copy_entries (_yrt_map_t * result, _yrt_map_t * old) {
                 _yrt_map_insert_no_resize (result, hash, key, value);
                 head = head-> next;
             }
+        }
+    }
+}
+
+void _yrt_map_relink_entries (_yrt_map_t * result, _yrt_map_t * old) {
+    for (uint64_t i = 0 ; i < old-> data-> cap ; i++) {
+        _yrt_map_entry_t * head = old-> data-> entries [i];
+        while (head != NULL) {
+            _yrt_map_entry_t * next = head-> next;
+            uint64_t index = head-> hash % result-> data-> cap;
+
+            if (result-> data-> entries [index] == NULL) {
+                result-> data-> loaded += 1;
+            }
+
+            head-> next = result-> data-> entries [index];
+            result-> data-> entries [index] = head;
+            result-> data-> len += 1;
+
+            head = next;
         }
     }
 }

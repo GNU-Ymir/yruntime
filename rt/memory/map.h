@@ -107,6 +107,17 @@ void _yrt_map_fit (_yrt_map_t * mp, uint64_t newSize);
  */
 void _yrt_map_copy_entries (_yrt_map_t * result, _yrt_map_t * old);
 
+/**
+ * Move all the entries of old into result, rebucketing them for result's capacity
+ * @info: unlike _yrt_map_copy_entries, this does not allocate new entry nodes - the
+ *   existing nodes are relinked into result's bucket array. Only valid when old and
+ *   result are the same logical map being resized in place (e.g. from _yrt_map_fit),
+ *   since old's nodes are consumed rather than duplicated - never use this to produce
+ *   an independent copy of a map still in use.
+ * @assume: result has allocated data array
+ */
+void _yrt_map_relink_entries (_yrt_map_t * result, _yrt_map_t * old);
+
 
 
 /*!
