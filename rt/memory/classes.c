@@ -1,6 +1,6 @@
 #include <rt/memory/classes.h>
 
-void _yrt_destruct_class (GC_PTR obj, GC_PTR x) {
+void _destruct_class (GC_PTR obj, GC_PTR x) {
     void* vtable = *((void**)obj); // vtable
     // the second element is the destructor
     void(*__dtor) (void*) = *(void(**)(void*)) ((void**) vtable + 1);
@@ -23,7 +23,7 @@ void* _yrt_alloc_class (void* vtable) {
         // no_order: a class reachable from a reference cycle must still be
         // destructed. Ordered finalization refuses to finalize cycles (warning
         // "Finalization cycle involving 0x...", and the __dtor never runs).
-        GC_register_finalizer_no_order (cl, _yrt_destruct_class, NULL, NULL, NULL);
+        GC_register_finalizer_no_order (cl, _destruct_class, NULL, NULL, NULL);
     }
 
     return cl;

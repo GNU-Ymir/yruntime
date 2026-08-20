@@ -5,7 +5,7 @@
 
 // _Y4core5array10OutOfArray4selfFxP24x4core5array10OutOfArrayZxP24x4core5array10OutOfArray0
 
-int _yrt_demangle_number (char * data, int * current) {
+int _demangle_number (char * data, int * current) {
     int nb = 0;
     while (*data >= '0' && *data <= '9') {
 		*current += 1;
@@ -16,7 +16,7 @@ int _yrt_demangle_number (char * data, int * current) {
     return nb;
 }
 					  
-_yrt_slice_t _yrt_demangle_symbol (char * data, uint64_t len) {
+_yrt_slice_t _demangle_symbol (char * data, uint64_t len) {
 
     if (len <= 2 || data [0] != '_' || data [1] != 'Y') {
 		return str_create_len (data, len);
@@ -27,7 +27,7 @@ _yrt_slice_t _yrt_demangle_symbol (char * data, uint64_t len) {
     int i = 0;
     while (current < len) {
 
-		int nb = _yrt_demangle_number (data + current, &current);
+		int nb = _demangle_number (data + current, &current);
 		if (nb != 0 && nb + current < len) {
 			if (i != 0) {
 				_yrt_slice_t tmp = str_create ("::");
@@ -50,11 +50,11 @@ _yrt_slice_t _yrt_demangle_symbol (char * data, uint64_t len) {
     return ret;    
 }
 
-_yrt_slice_t _yrt_demangle_symbol_to_slice (char * data, uint64_t len) {
-    return _yrt_demangle_symbol (data, len);
+_yrt_slice_t _demangle_symbol_to_slice (char * data, uint64_t len) {
+    return _demangle_symbol (data, len);
 }
 
-_yrt_slice_t _yrt_mangle_path (_yrt_slice_t data) {
+_yrt_slice_t _mangle_path (_yrt_slice_t data) {
     _yrt_slice_t str = str_empty ();
     int current = 0;
     int start = 0;

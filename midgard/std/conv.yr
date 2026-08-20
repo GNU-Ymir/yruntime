@@ -190,10 +190,20 @@ pub fn if (isUnsigned!{I} && isChar!{C} && isIntegral!{N}) to {T of [C], C, base
     }
 
     let dmut res = core::types::array::allocArray!(C) (len);
-    let mut j: typeof(n) = 1;
-    for i in len .. 0us {
-        res[i - 1us] = std::conv::utils::to!C((cast!{typeof(n)} (a) / j) % cast!{typeof(n)} (base), cast!{typeof(n)} (base), upper-> upper);
-        j *= cast!{typeof(n)} (base);
+    let mut m: typeof(n) = cast!{typeof(n)} (a);
+    let b: typeof(n) = cast!{typeof(n)} (base);
+
+    cte if (base == 10) {
+        upper;
+        for i in len .. 0us {
+            res[i - 1us] = cast!C(cast!c8(cast!u8('0') + cast!u8(m % b)));
+            m /= b;
+        }
+    } else {
+        for i in len .. 0us {
+            res[i - 1us] = std::conv::utils::to!C(m % b, b, upper-> upper);
+            m /= b;
+        }
     }
 
     alias res
@@ -321,27 +331,48 @@ pub fn if (isSigned!{I} && isChar!{C} && isIntegral!{N}) to {T of [C], C, base: 
         (a, 0us, false)
     };
 
+    let absVal: typeof(n) = cast!{typeof(n)} (n);
+    let b: typeof(n) = cast!{typeof(n)} (base);
+
     while n > 0 {
         len += 1;
-        n /= cast!{typeof(n)} (base);
+        n /= b;
     }
 
-    let mut j: __pragma!unproxied(I) = 1;
     if (!sign) {
         let dmut res = core::types::array::allocArray!(C)(len);
-        for i in len .. 0us {
-            res[i - 1us] = std::conv::utils::to!C((cast!{typeof(n)} (a) / j) % cast!{typeof(n)} (base), cast!{typeof(n)} (base), upper);
-            j *= cast!{typeof(n)} (base);
+        let mut m: typeof(n) = absVal;
+
+        cte if (base == 10) {
+            upper;
+            for i in len .. 0us {
+                res[i - 1us] = cast!C(cast!c8(cast!u8('0') + cast!u8(m % b)));
+                m /= b;
+            }
+        } else {
+            for i in len .. 0us {
+                res[i - 1us] = std::conv::utils::to!C(m % b, b, upper);
+                m /= b;
+            }
         }
 
         return alias res;
     } else {
         let dmut res = core::types::array::allocArray!(C)(len + 1us);
         res[0] = '-';
+        let mut m: typeof(n) = absVal;
 
-        for i in len .. 0us {
-            res[i] = std::conv::utils::to!C((cast!{typeof(n)} (-a) / j) % cast!{typeof(n)} (base), cast!{typeof(n)} (base), upper);
-            j *= cast!{typeof(n)} (base);
+        cte if (base == 10) {
+            upper;
+            for i in len .. 0us {
+                res[i] = cast!C(cast!c8(cast!u8('0') + cast!u8(m % b)));
+                m /= b;
+            }
+        } else {
+            for i in len .. 0us {
+                res[i] = std::conv::utils::to!C(m % b, b, upper);
+                m /= b;
+            }
         }
 
         return alias res;

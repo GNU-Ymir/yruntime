@@ -52,6 +52,6 @@ uint8_t _yrt_check_finished_future (_yrt_future_t f);
 /**
  * The main fonction spawned in a thread computing the value of the future
  */
-void* _yrt_future_main (void * f);
+void* _future_main (void * f);
 
 #endif // FUTURE_H_

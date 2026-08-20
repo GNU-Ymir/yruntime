@@ -26,7 +26,7 @@ int __YRT_MAXIMUM_TRACE_LEN__ = 128;
 
 #define PATH_MAX 255
 
-char* _yrt_resolve_path (const char * filename, char * resolved, int size) {
+char* _resolve_path (const char * filename, char * resolved, int size) {
     int len_f = strlen (filename);
     if (access (filename, F_OK) == 0) {
         memcpy (resolved, filename, len_f);
@@ -80,7 +80,7 @@ _yrt_slice_t _yrt_exc_resolve_stack_trace (_yrt_slice_t syms) {
         filename [p] = '\0';
 
         char resolved [PATH_MAX];
-        char* succ = _yrt_resolve_path (filename, resolved, PATH_MAX);
+        char* succ = _resolve_path (filename, resolved, PATH_MAX);
 
         void * sym = ((void**) syms.data)[i];
         struct _yrt_reflect_symbol_t ref_sym;
@@ -107,7 +107,7 @@ _yrt_slice_t _yrt_exc_resolve_stack_trace (_yrt_slice_t syms) {
 
             int need_break = 0;
             if (ref_sym.name.data != NULL) {
-                _yrt_slice_t name = _yrt_demangle_symbol (ref_sym.name.data, ref_sym.name.len);
+                _yrt_slice_t name = _demangle_symbol (ref_sym.name.data, ref_sym.name.len);
 
                 tmp = str_create (" in function \e[33m");
                 _yrt_append_slice (&result, &tmp, sizeof (uint8_t));

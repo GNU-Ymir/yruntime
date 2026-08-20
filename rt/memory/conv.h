@@ -57,7 +57,7 @@ long double _yrt_string_to_fsize (_yrt_slice_t str, uint8_t * succ);
  * ====================================================================================================
  */
 
-char* _yrt_to_utf8 (uint32_t code, char chars [5], int * nb);
+char* _to_utf8 (uint32_t code, char chars [5], int * nb);
 size_t utf8_codepoint_size (char c);
 
 #endif

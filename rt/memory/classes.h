@@ -24,6 +24,6 @@ void* _yrt_alloc_class (void* vtable);
 /**
  * Called when a class is destroyed by the gc
  *  */
-void _yrt_destruct_class (GC_PTR obj, GC_PTR x);
+void _destruct_class (GC_PTR obj, GC_PTR x);
 
 #endif // CLASSES_H_

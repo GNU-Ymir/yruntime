@@ -27,9 +27,9 @@ typedef pthread_barrier_t _yrt_barrier_t;
  * @warning: this function is blocking until everything is read, or the pipe is closed
  */
 #ifdef _WIN32
-void * _yrt_read_pipe (void * stream, unsigned long long size);
+void * _read_pipe (void * stream, unsigned long long size);
 #else
-void * _yrt_read_pipe (int stream, unsigned long long size);
+void * _read_pipe (int stream, unsigned long long size);
 #endif
 
 /**
@@ -40,9 +40,9 @@ void * _yrt_read_pipe (int stream, unsigned long long size);
  *    - size: the size (in bytes)
  */
 #ifdef _WIN32
-void _yrt_write_pipe (void * stream, void * data, unsigned long long size);
+void _write_pipe (void * stream, void * data, unsigned long long size);
 #else
-void _yrt_write_pipe (int stream, void * data, unsigned long long size);
+void _write_pipe (int stream, void * data, unsigned long long size);
 #endif
 
 /**
@@ -54,7 +54,7 @@ void _yrt_write_pipe (int stream, void * data, unsigned long long size);
  * @returns:
  *    - id: the id of the created thread
  */
-void _yrt_thread_create (_yrt_thread_t * id, _yrt_attr_t* attr, void*(*call)(void*), void* data);
+void _thread_create (_yrt_thread_t * id, _yrt_attr_t* attr, void*(*call)(void*), void* data);
 
 /**
  * Wait for the completion of a thread
@@ -63,14 +63,14 @@ void _yrt_thread_create (_yrt_thread_t * id, _yrt_attr_t* attr, void*(*call)(voi
  * @returns:
  *    - retval: the return value of the thread
  */
-void _yrt_thread_join (_yrt_thread_t p, void** retval);
+void _thread_join (_yrt_thread_t p, void** retval);
 
 /**
  * Detach a thread from the main thread, but does not kill it
  * @params:
  *    - p: the id of the thread
  */
-void _yrt_thread_detach (_yrt_thread_t p);
+void _thread_detach (_yrt_thread_t p);
 
 /**
  * Create a new mutex
@@ -205,7 +205,7 @@ void _yrt_thread_sem_post (sem_t * sem);
  * @params:
  *   - object: a pointer to an object
  */
-_yrt_mutex_t * _yrt_ensure_monitor (void* object);
+_yrt_mutex_t * _ensure_monitor (void* object);
 
 /**
  * Lock a mutex in an atomic block
@@ -239,7 +239,7 @@ void _yrt_atomic_monitor_exit (void * lock);
 /**
  * Initialize global monitor mutexes
  */
-void _yrt_atomic_init ();
+void _atomic_init ();
 
 /**
  * fork() the calling process, quiescing the GC around the call (GC_atfork_prepare/parent/child)

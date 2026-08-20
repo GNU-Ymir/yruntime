@@ -17,7 +17,7 @@ _yrt_future_t _yrt_spawn_future (_yrt_lazy_closure_t closure, uint32_t valueSize
     result.content-> valueSize = valueSize;
     result.content-> value = NULL;
 
-    _yrt_thread_create (&result.id, NULL, &_yrt_future_main, result.content);
+    _thread_create (&result.id, NULL, &_future_main, result.content);
     _yrt_thread_sem_wait (&result.content-> wait);
 
     return result;
@@ -26,7 +26,7 @@ _yrt_future_t _yrt_spawn_future (_yrt_lazy_closure_t closure, uint32_t valueSize
 void* _yrt_wait_future (_yrt_future_t f) {
     if (f.content == NULL) return NULL;
     if (selfId == f.id) {
-        _yrt_exc_terminate ("Waiting self thread %lx\n", __FILE__, __FUNCTION__, __LINE__);
+        _exc_terminate ("Waiting self thread %lx\n", __FILE__, __FUNCTION__, __LINE__);
     }
 
     _yrt_thread_mutex_lock (&f.content-> mutex);
@@ -39,7 +39,7 @@ void* _yrt_wait_future (_yrt_future_t f) {
 }
 
 
-void* _yrt_future_main (void * data) {
+void* _future_main (void * data) {
     _yrt_future_content_t * content = (_yrt_future_content_t*) data;
     _yrt_thread_sem_post (&content-> wait);
 

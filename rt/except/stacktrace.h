@@ -18,7 +18,7 @@ extern int __YRT_TEST_CODE__;
  * @returns:
  *    - resolved: the path to the file resolved
  */
-char* _yrt_resolve_path (const char* filename, char* resolved, int size);
+char* _resolve_path (const char* filename, char* resolved, int size);
 
 #endif
 
