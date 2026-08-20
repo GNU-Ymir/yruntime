@@ -57,6 +57,11 @@ pub record if isChar!{C} Tokenizer {C} {
     // The tokens heads of the tokenizer
     let dmut _heads: [&(node::Node!{C})] = [];
 
+    // The key of each entry of `_heads`, same order, kept in sync by `insert` - `find`'s hot
+    // loop binary searches this directly instead of calling `_heads[i].key` (an out-of-line
+    // call through the class pointer) on every comparison
+    let dmut _headKeys: [C] = [];
+
     /**
      * Create a new tokenizer, with a set of tokens
      * @params:
@@ -131,6 +136,11 @@ pub record if isChar!{C} Tokenizer {C} {
             n:.insert(token[1 .. $], isSkip-> isSkip, isComment-> isComment);
             self._heads ~= [alias n];
             std::algorithm::sorting::sort(alias self._heads, |x, y| => { x.key < y.key });
+
+            self._headKeys = [];
+            for h in self._heads {
+                self._headKeys ~= [h.key];
+            }
         }
     }
 
@@ -297,17 +307,18 @@ pub record if isChar!{C} Tokenizer {C} {
      * @returns: the token index or none
      * */
     prv fn find(self, c: C)-> (usize)? {
-        if self._heads.len == 0 {
+        if self._headKeys.len == 0 {
             return none;
         }
 
-        let mut begin = 0is, mut end = cast!isize(self._heads.len) - 1;
+        let mut begin = 0is, mut end = cast!isize(self._headKeys.len) - 1;
         while begin <= end {
             let center = (begin + end) / 2;
-            if self._heads[center].key == c {
+            let key = self._headKeys[center];
+            if key == c {
                 return (cast!usize(center))?;
             } else {
-                if c > self._heads[center].key {
+                if c > key {
                     begin = center + 1;
                 } else {
                     end = center - 1;

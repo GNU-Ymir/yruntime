@@ -6,40 +6,35 @@
 
 in parser;
 
-use std::{syntax::_, stream};
-use std::{config::_, char};
-
-/**
- * The list of tokens that can be found inside a Json file
- *
- */
-enum JsonTokens
-| LCRO   = "["
-| RCRO   = "]"
-| LACC   = "{"
-| RACC   = "}"
-| EQUALS = ":"
-| COMA   = ","
-| DQUOTE = "\""
-| ESCAPE = "\\";
+use std::stream;
+use std::{config::_, syntax::errors};
 
 /**
  * A json parser that consumes an utf8 string and generate a configuration
+ * @info: hand-rolled recursive-descent scanner over `_content` directly - JSON's grammar is
+ * small enough (7 structural chars, strings, numbers, `true`/`false`) that routing it through
+ * the generic `std::syntax::lexer`/`tokenizer` machinery cost more than it saved(see YMI-35):
+ * every token, including every digit of every number, paid for a token-trie lookup that a
+ * direct byte scan skips entirely.
  * */
 pub record JsonParser {
 
-    // The lexer used to split the json content
-    let dmut _lex: &Lexer!{c8};
+    // The content left to parse
+    let mut _content: [c8];
+
+    // The current line of the cursor, for error reporting
+    let mut _line: usize = 1us;
+
+    // The current column of the cursor, for error reporting
+    let mut _col: usize = 1us;
 
     /**
      * @params:
      *    - content: the content of the json configuration file
      * */
     pub self (content: [c8])
-        with _lex = copy Lexer!{c8} (content,
-                                     tokens-> copy JsonTokens::__members__)
+        with _content = content
     {}
-
 
     /**
      * Parse the json content
@@ -48,16 +43,20 @@ pub record JsonParser {
     pub fn parse(mut self)-> &Config
         throws SyntaxError
     {
-        let (fst, l, c) = self._lex:.next();
-        if (fst == "[") {
-            return self:.parseArray();
+        self:.skipTrivia();
+        if self._content.len == 0 {
+            throw copy SyntaxError("Unexpected end of input", self._line, self._col);
         }
 
-        else if (fst == "{") {
+        if self._content[0] == '[' {
+            self:.advance();
+            return self:.parseArray();
+        } else if self._content[0] == '{' {
+            self:.advance();
             return self:.parseDict();
         }
 
-        throw copy SyntaxError("Unexpected '" ~  fst ~ "'", l, c);
+        throw copy SyntaxError("Unexpected '" ~ [self._content[0]] ~ "'", self._line, self._col);
     }
 
     /*!
@@ -69,26 +68,39 @@ pub record JsonParser {
      */
 
     /**
-     * Parse a dictionnary
+     * Parse a dictionnary, having already consumed the opening '{'
      * */
     prv fn parseDict(mut self)-> &Dict
         throws SyntaxError
     {
         let dmut dict = copy Dict();
-        let cursor = self._lex.getCursor();
-        let (n, _, _) = self._lex:.next();
-        if n != "}" {
-            self._lex:.rewind(expand cursor);
-            loop {
-                let (b, l, c) = self:.assertRead(["'", "\""]);
-                let name = self:.parseIdentifier(b, l, c);
-                self:.assertRead([":"]);
+        self:.skipTrivia();
 
-                dict[name] = self:.parseValue();
-                let (e, _, _) = self:.assertRead([",", "}"]);
-                if (e == "}") {
-                    break;
-                }
+        if self._content.len != 0 && self._content[0] == '}' {
+            self:.advance();
+            return dict;
+        }
+
+        loop {
+            self:.skipTrivia();
+            let (l, c) = (self._line, self._col);
+            if self._content.len == 0 || (self._content[0] != '"' && self._content[0] != '\'') {
+                throw copy SyntaxError(self.unexpectedMsg("'\"'"), l, c);
+            }
+
+            let quote = self:.advance();
+            let name = self:.parseString(quote, l, c);
+
+            self:.skipTrivia();
+            self:.expectChar(':');
+
+            self:.skipTrivia();
+            dict[name] = self:.parseValue();
+
+            self:.skipTrivia();
+            let e = self:.expectOneOf([',', '}']);
+            if (e == '}') {
+                break;
             }
         }
 
@@ -96,22 +108,25 @@ pub record JsonParser {
     }
 
     /**
-     * Parse an array value
+     * Parse an array value, having already consumed the opening '['
      * */
     prv fn parseArray(mut self)-> &Array
         throws SyntaxError
     {
         let dmut res = copy Array();
-        let cursor = self._lex.getCursor();
-        let (n, _, _) = self._lex:.next();
-        if n != "]" {
-            self._lex:.rewind(expand cursor);
-            loop {
-                res:.push(self:.parseValue());
-                let (e, _, _) = self:.assertRead([",", "]"]);
-                if (e == "]") {
-                    break;
-                }
+        self:.skipTrivia();
+
+        if self._content.len != 0 && self._content[0] == ']' {
+            self:.advance();
+            return res;
+        }
+
+        loop {
+            res:.push(self:.parseValue());
+            self:.skipTrivia();
+            let e = self:.expectOneOf([',', ']']);
+            if (e == ']') {
+                break;
             }
         }
 
@@ -119,23 +134,64 @@ pub record JsonParser {
     }
 
     /**
-     * Parse a value in the toml
+     * Parse a value in the json
      * */
     prv fn parseValue(mut self)-> &Config
         throws SyntaxError
     {
-        let (begin, l, c) = self._lex:.next();
-        match begin {
-            "{" => return self:.parseDict();
-            "[" => return self:.parseArray();
-            "false" => return copy Bool(false);
-            "true" => return copy Bool(true);
-            "'" => return copy Str(self:.parseIdentifier(begin, l, c));
-            "\"" => return copy Str(self:.parseIdentifier(begin, l, c));
-            _ => return self:.parseIntOrFloat(begin, l, c);
+        self:.skipTrivia();
+        if self._content.len == 0 {
+            throw copy SyntaxError("Unexpected end of input", self._line, self._col);
         }
+
+        let c = self._content[0];
+        if c == '{' {
+            self:.advance();
+            return self:.parseDict();
+        } else if c == '[' {
+            self:.advance();
+            return self:.parseArray();
+        } else if c == '"' || c == '\'' {
+            let (l, col) = (self._line, self._col);
+            self:.advance();
+            return copy Str(self:.parseString(c, l, col));
+        } else if self:.matchLiteral("true") {
+            return copy Bool(true);
+        } else if self:.matchLiteral("false") {
+            return copy Bool(false);
+        }
+
+        return self:.parseNumber();
     }
 
+    /**
+     * Parse a number(int or float), starting at the current cursor
+     * */
+    prv fn parseNumber(mut self)-> &Config
+        throws SyntaxError
+    {
+        let (l, c) = (self._line, self._col);
+        let mut idx = 0us;
+        while idx < self._content.len && self.isNumberChar(self._content[idx]) {
+            idx += 1;
+        }
+
+        if idx == 0us {
+            throw copy SyntaxError(self.unexpectedMsg("a value"), l, c);
+        }
+
+        let val = self._content[0 .. idx];
+        self:.advanceBy(idx);
+
+        return self:.parseIntOrFloat(val, l, c);
+    }
+
+    /**
+     * @returns: true iif `c` can be part of a json number literal
+     * */
+    prv fn isNumberChar(self, c: c8)-> bool {
+        (c >= '0' && c <= '9') || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E'
+    }
 
     /**
      * Parse a int or float value
@@ -167,48 +223,128 @@ pub record JsonParser {
      */
 
     /**
-     * Parse an identifier from content
+     * Parse a string content, having already consumed the opening quote `endC`
+     * @info: scans `_content` directly for the closing quote/escape char instead of pulling
+     * one lexer token at a time, so a ':' (or any other structural char) inside the string
+     * content is never treated as a boundary.
      * */
-    prv fn parseIdentifier(mut self, end: [c8], lB: usize, cB: usize)-> [c8]
+    prv fn parseString(mut self, endC: c8, lB: usize, cB: usize)-> [c8]
         throws SyntaxError
     {
-        let dmut res = copy StringStream();
+        // fast path: scan for the end/escape char without allocating anything; if the string
+        // has no escape sequence(the common case for object keys and most values), return a
+        // direct slice of `_content` - no StringStream, no copy at all.
+        let (idx0, line0, col0) = self.scanStringSpan(endC, lB, cB);
 
-        self._lex:.setSkipTokens(false);
-        self._lex:.setSkipComments(false);
+        if self._content[idx0] == endC {
+            let res = self._content[0 .. idx0];
+            self._content = self._content[idx0 + 1 .. $];
+            self._line = line0;
+            self._col = col0 + 1us;
+            return res;
+        }
+
+        // slow path: at least one escape sequence, fall back to a StringStream
+        let dmut res = copy StringStream();
+        res:.write(self._content[0 .. idx0]);
+        self._content = self._content[idx0 .. $];
+        self._line = line0;
+        self._col = col0;
 
         loop {
-            let (n, l, c) = self._lex:.next();
-            if n.len == 0 { throw copy SyntaxError("Unterminated string literal", lB, cB); }
-            else if n == end {
+            let (l, c) = (self._line, self._col);
+            self:.advance(); // consumes the '\\'
+            if self._content.len == 0 { throw copy SyntaxError("Unterminated string literal", lB, cB); }
+
+            let af = self:.advance();
+            match af {
+                'a' => { res:.write("\a"); }
+                'b' => { res:.write("\b"); }
+                'f' => { res:.write("\f"); }
+                'n' => { res:.write("\n"); }
+                'r' => { res:.write("\r"); }
+                't' => { res:.write("\t"); }
+                'v' => { res:.write("\v"); }
+                '\\' => { res:.write("\\"); }
+                '\'' => { res:.write("'"); }
+                '"' => { res:.write("\""); }
+                'u' => { self:.parseUnicode(alias res); }
+                _ => throw copy SyntaxError("Undefined escape sequence: \\" ~ [af], l, c);
+            }
+
+            let (idx, line, col) = self.scanStringSpan(endC, lB, cB);
+            res:.write(self._content[0 .. idx]);
+
+            if self._content[idx] == endC {
+                self._content = self._content[idx + 1 .. $];
+                self._line = line;
+                self._col = col + 1us;
                 break;
             }
 
-            if n == JsonTokens::ESCAPE {
-                let (af, _, _) = self._lex:.nextChar();
-                match af {
-                    "a" => { res:.write("\a"); }
-                    "b" => { res:.write("\b"); }
-                    "f" => { res:.write("\f"); }
-                    "n" => { res:.write("\n"); }
-                    "r" => { res:.write("\r"); }
-                    "t" => { res:.write("\t"); }
-                    "v" => { res:.write("\v"); }
-                    "\\" => { res:.write("\\"); }
-                    "\'" => { res:.write("'"); }
-                    "\"" => { res:.write("\""); }
-                    "u" => { self:.parseUnicode(alias res); }
-                    _ => throw copy SyntaxError("Undefined escape sequence: \\" ~ af, l, c);
-                }
-            } else {
-                res:.write(n);
-            }
+            self._content = self._content[idx .. $];
+            self._line = line;
+            self._col = col;
         }
 
-        self._lex:.setSkipTokens(true);
-        self._lex:.setSkipComments(true);
-
         res[]
+    }
+
+    /**
+     * Scan `_content` for the next `endC`/`\` char.
+     * @returns: its index, and the (line, col) that would be reached right before it -
+     * `_content`/`_line`/`_col` themselves are left untouched, the caller applies the move.
+     * */
+    prv fn scanStringSpan(self, endC: c8, lB: usize, cB: usize)-> (usize, usize, usize)
+        throws SyntaxError
+    {
+        let mut idx = 0us;
+        let mut line = self._line;
+        let mut col = self._col;
+
+        while idx < self._content.len {
+            let ch = self._content[idx];
+            if (ch == endC || ch == '\\') { break; }
+
+            if ch == '\n' { line += 1; col = 1us; } else { col += 1; }
+            idx += 1;
+        }
+
+        if idx == self._content.len { throw copy SyntaxError("Unterminated string literal", lB, cB); }
+
+        (idx, line, col)
+    }
+
+    /**
+     * Parse an unicode in a string, having already consumed the leading '\u'
+     * @example: "\u{0x1F3B5}"
+     * */
+    prv fn parseUnicode(mut self, dmut stream: &StringStream)
+        throws SyntaxError
+    {
+        let (lB, cB) = (self._line, self._col);
+        self:.expectChar('{');
+
+        let (l, c) = (self._line, self._col);
+        if let Ok(idx) = std::algorithm::searching::find(self._content, |x| => { x == '}' }) {
+            let code = self._content[0 .. idx];
+            self:.advanceBy(idx + 1); // consume up to and including '}'
+
+            let i = {
+                cast!c32(std::conv::to!{u32, "x"} (code))
+            } catch {
+                _ => throw copy SyntaxError("expected hexa code (not '" ~ code ~ "')", l, c);
+            };
+
+            let dmut res: [c8 ; 4] = ['\u{0}' ; 4];
+            let nbProduced = std::conv::utf::toUtf8(i, ref res);
+
+            for z in 0 .. nbProduced {
+                stream:.write(res[z]);
+            }
+        } else {
+            throw copy SyntaxError("Unterminated unicode escape", lB, cB);
+        }
     }
 
     /*!
@@ -220,46 +356,138 @@ pub record JsonParser {
      */
 
     /**
-     * Parse an unicode in a string
-     * @example: "\u{0x1F3B5}"
+     * Consume and return the current char, updating the line/column cursor
      * */
-    prv fn parseUnicode(mut self, dmut stream: &StringStream)
-        throws SyntaxError
-    {
-        self:.assertRead(["{"]);
-        let (code, l, c) = self._lex:.next();
-        let i = {
-            cast!c32(std::conv::to!{u32, "x"} (code))
-        } catch {
-            _ => throw copy SyntaxError("expected hexa code (not '" ~ code ~ "')", l, c);
-        };
+    prv fn advance(mut self)-> c8 {
+        let c = self._content[0];
+        self._content = self._content[1 .. $];
+        if c == '\n' {
+            self._line += 1;
+            self._col = 1us;
+        } else {
+            self._col += 1;
+        }
 
-        self:.assertRead(["}"]);
-        let dmut res: [c8 ; 4] = ['\u{0}' ; 4];
-        let nbProduced = std::conv::utf::toUtf8(i, ref res);
+        return c;
+    }
 
-        for z in 0 .. nbProduced {
-            stream:.write(res[z]);
+    /**
+     * Consume `n` chars at once, updating the line/column cursor for the whole skipped span
+     * */
+    prv fn advanceBy(mut self, n: usize) {
+        let (nl, nc) = self.countPos(self._content[0 .. n], self._line, self._col);
+        self._content = self._content[n .. $];
+        self._line = nl;
+        self._col = nc;
+    }
+
+    /**
+     * Compute the (line, column) reached after skipping over 'chunk' starting at (line, col)
+     * */
+    prv fn countPos(self, chunk: [c8], line: usize, col: usize)-> (usize, usize) {
+        let dmut l = line;
+        let dmut c = col;
+        for ch in chunk {
+            if ch == '\n' {
+                l += 1;
+                c = 1us;
+            } else {
+                c += 1;
+            }
+        }
+
+        (l, c)
+    }
+
+    /**
+     * Skip whitespace(space, tab, carriage return, newline)
+     * */
+    prv fn skipTrivia(mut self) {
+        let mut idx = 0us;
+        let mut line = self._line;
+        let mut col = self._col;
+
+        while idx < self._content.len {
+            let c = self._content[idx];
+            if c == ' ' || c == '\t' || c == '\r' {
+                col += 1;
+            } else if c == '\n' {
+                line += 1;
+                col = 1us;
+            } else {
+                break;
+            }
+
+            idx += 1;
+        }
+
+        if idx != 0 {
+            self._content = self._content[idx .. $];
+            self._line = line;
+            self._col = col;
         }
     }
 
     /**
-     * Read next token and ensure it can be found in the list of accepted tokens
-     * @params:
-     *    - lst: the list of accepted tokens
-     *    - canEof: iif true eof is also accepted
+     * If `_content` starts with `lit`, consume it and return true, otherwise leave the cursor
+     * untouched and return false
      * */
-    prv fn assertRead {N: usize} (mut self, lst: [[c8] ; N])-> ([c8], usize, usize)
-        throws SyntaxError
-    {
-        let (wd, l, c) = self._lex:.next();
-        for i in lst {
-            if i == wd { return (wd, l, c); }
+    prv fn matchLiteral(mut self, lit: [c8])-> bool {
+        if self._content.len < lit.len || self._content[0 .. lit.len] != lit {
+            return false;
         }
 
-        let dmut err = copy StringStream();
-        err:.write("read '", wd, "' when excepting ", lst);
+        self:.advanceBy(lit.len);
+        return true;
+    }
 
-        throw copy SyntaxError(err[], l, c);
+    /**
+     * Consume the current char if it is `c`, throw otherwise
+     * */
+    prv fn expectChar(mut self, c: c8)
+        throws SyntaxError
+    {
+        self:.skipTrivia();
+        let (l, col) = (self._line, self._col);
+        if self._content.len == 0 || self._content[0] != c {
+            throw copy SyntaxError(self.unexpectedMsg("'" ~ [c] ~ "'"), l, col);
+        }
+
+        self:.advance();
+    }
+
+    /**
+     * Consume the current char if it is one of `opts`, and return it, throw otherwise
+     * */
+    prv fn expectOneOf {N: usize} (mut self, opts: [c8 ; N])-> c8
+        throws SyntaxError
+    {
+        self:.skipTrivia();
+        let (l, c) = (self._line, self._col);
+        if self._content.len != 0 {
+            for o in opts {
+                if self._content[0] == o {
+                    self:.advance();
+                    return o;
+                }
+            }
+        }
+
+        throw copy SyntaxError(self.unexpectedMsg(opts), l, c);
+    }
+
+    /**
+     * @returns: an error message describing what was read against what was expected, for the
+     * char currently under the cursor(or "EOF")
+     * */
+    prv fn unexpectedMsg {T} (self, expected: T)-> [c8] {
+        let dmut err = copy StringStream();
+        if self._content.len != 0 {
+            err:.write("read '", [self._content[0]], "' when expecting ", expected);
+        } else {
+            err:.write("read EOF when expecting ", expected);
+        }
+
+        err[]
     }
 }
