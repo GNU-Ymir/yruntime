@@ -32,7 +32,7 @@ uint8_t _yrt_is_GC_enabled () {
 static size_t __TLS_BLOCK_SIZE__ = 0;
 static int __TLS_BLOCK_SIZE_READ__ = 0;
 
-static int _yrt_read_tls_phdr (struct dl_phdr_info * info, size_t size, void * data) {
+static int _read_tls_phdr (struct dl_phdr_info * info, size_t size, void * data) {
     (void) size;
 
     // The main executable is the only object with an empty name. Shared objects are skipped on
@@ -52,11 +52,11 @@ static int _yrt_read_tls_phdr (struct dl_phdr_info * info, size_t size, void * d
 
 /**
  * Compute the bounds of the calling thread's static TLS block
- * @info: primed by _yrt_gc_add_tls_roots from _yrt_init_runtime, while still single threaded
+ * @info: primed by _gc_add_tls_roots from _yrt_init_runtime, while still single threaded
  * */
-static void _yrt_tls_bounds (char ** lo, char ** hi) {
+static void _tls_bounds (char ** lo, char ** hi) {
     if (!__TLS_BLOCK_SIZE_READ__) {
-        dl_iterate_phdr (&_yrt_read_tls_phdr, &__TLS_BLOCK_SIZE__);
+        dl_iterate_phdr (&_read_tls_phdr, &__TLS_BLOCK_SIZE__);
         __TLS_BLOCK_SIZE_READ__ = 1;
     }
 
@@ -65,23 +65,23 @@ static void _yrt_tls_bounds (char ** lo, char ** hi) {
     *lo = tp - __TLS_BLOCK_SIZE__;
 }
 
-void _yrt_gc_add_tls_roots () {
+void _gc_add_tls_roots () {
     char * lo, * hi;
-    _yrt_tls_bounds (&lo, &hi);
+    _tls_bounds (&lo, &hi);
 
     if (lo != hi) GC_add_roots (lo, hi);
 }
 
-void _yrt_gc_remove_tls_roots () {
+void _gc_remove_tls_roots () {
     char * lo, * hi;
-    _yrt_tls_bounds (&lo, &hi);
+    _tls_bounds (&lo, &hi);
 
     if (lo != hi) GC_remove_roots (lo, hi);
 }
 
 #else
 
-void _yrt_gc_add_tls_roots () {}
-void _yrt_gc_remove_tls_roots () {}
+void _gc_add_tls_roots () {}
+void _gc_remove_tls_roots () {}
 
 #endif

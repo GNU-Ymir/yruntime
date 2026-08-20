@@ -9,13 +9,13 @@
 void _yrt_putwchar (uint32_t code) {
     char c[5];
     int nb = 0;
-    printf ("%s", _yrt_to_utf8 (code, c, &nb));
+    printf ("%s", _to_utf8 (code, c, &nb));
 }
 
 void _yrt_eputwchar (uint32_t code) {
     char c[5];
     int nb = 0;
-    fprintf (stderr, "%s", _yrt_to_utf8 (code, c, &nb));
+    fprintf (stderr, "%s", _to_utf8 (code, c, &nb));
 }
 
 void _yrt_printf32 (float x) {
@@ -96,7 +96,7 @@ void _yrt_eprintfsize (long double x) {
     }
 }
 
-void _yrt_print_error (char * format) {
+void _print_error (char * format) {
     fprintf (stderr, "%s", format);
 }
 

@@ -31,7 +31,7 @@ void bt_sighandler(int sig
     static int first = 0;
     if (first == 0) {
         first = 1;
-        _yrt_exc_panic_seg_fault ();
+        _exc_panic_seg_fault ();
     } else {
         _yrt_exc_panic_no_trace ();
     }
@@ -60,11 +60,11 @@ void _yrt_init_runtime (int isDebug) {
     __YRT_DEBUG__ = isDebug;
 
     GC_INIT ();
-    _yrt_gc_add_tls_roots (); // spawned threads get theirs in _yrt_thread_create
+    _gc_add_tls_roots (); // spawned threads get theirs in _thread_create
 
-    _yrt_atomic_init ();
+    _atomic_init ();
     installHandler ();
-    _yrt_exc_init ();
+    _exc_init ();
 }
 
 void _yrt_force_debug (int act) {
@@ -95,11 +95,11 @@ _yrt_slice_t _yrt_get_main_args () {
     return __MAIN_ARGS__;
 }
 
-int _yrt_get_test_code () {
+int _get_test_code () {
     return __YRT_TEST_CODE__;
 }
 
-void _yrt_set_test_code (int i) {
+void _set_test_code (int i) {
     __YRT_TEST_CODE__ = i;
 }
 

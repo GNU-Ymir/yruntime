@@ -74,49 +74,49 @@ typedef struct _yrt_exc_thread_stack_t {
 /**
  * Initialize exception system
  */
-void _yrt_exc_init ();
+void _exc_init ();
 
 /**
  * @returns: the stack for the current thread NULL if none
  */
-_yrt_exc_thread_stack_t* _yrt_exc_get_thread_stack_current (pthread_t id, _yrt_exc_thread_stack_t * current);
+_yrt_exc_thread_stack_t* _exc_get_thread_stack_current (pthread_t id, _yrt_exc_thread_stack_t * current);
 
 /**
  * Insert a new exception stack into the thread stack
  */
-_yrt_exc_thread_stack_t* _yrt_exc_insert_thread (pthread_t id);
+_yrt_exc_thread_stack_t* _exc_insert_thread (pthread_t id);
 
 /**
  * Remove the exception stack for the thread 'id'
  */
-void _yrt_exc_remove_thread (_yrt_exc_thread_stack_t* stack);
+void _exc_remove_thread (_yrt_exc_thread_stack_t* stack);
 
 
 /**
  * Get the exception stack of the current thread
  * Insert a new one if not found
  */
-_yrt_exc_thread_stack_t* _yrt_exc_get_thread_stack (pthread_t id);
+_yrt_exc_thread_stack_t* _exc_get_thread_stack (pthread_t id);
 
 /**
  * Allocate and init an _yrt_exception_header_
  */
-_yrt_exception_header_t* _yrt_exc_create_header (void* object, _yrt_exc_thread_stack_t* stack);
+_yrt_exception_header_t* _exc_create_header (void* object, _yrt_exc_thread_stack_t* stack);
 
 /**
  * Free exception created by create ()
  */
-void _yrt_exc_free_header (_yrt_exception_header_t* head, _yrt_exc_thread_stack_t* stack);
+void _exc_free_header (_yrt_exception_header_t* head, _yrt_exc_thread_stack_t* stack);
 
 /**
  * Push the exception header onto the stack
  */
-void _yrt_exc_push (_yrt_exception_header_t* e, _yrt_exc_thread_stack_t * stack);
+void _exc_push (_yrt_exception_header_t* e, _yrt_exc_thread_stack_t * stack);
 
 /**
  * Pop the last pushed exception of the stack
  */
-_yrt_exception_header_t* _yrt_exc_pop (_yrt_exc_thread_stack_t* stack);
+_yrt_exception_header_t* _exc_pop (_yrt_exc_thread_stack_t* stack);
 
 
 /**
@@ -130,18 +130,18 @@ _yrt_exception_header_t* _yrt_exc_pop (_yrt_exc_thread_stack_t* stack);
 /**
  * Terminate the program due to a uncaught exception error
  */
-void _yrt_exc_panic_exception (_yrt_exception_header_t* eh);
+void _exc_panic_exception (_yrt_exception_header_t* eh);
 
 /**
  * Cast an _Unwind_Exception into a _yrt_exception header
  */
-_yrt_exception_header_t* _yrt_to_exception_header (struct _Unwind_Exception* exc);
+_yrt_exception_header_t* _to_exception_header (struct _Unwind_Exception* exc);
 
 
 /**
  * Called by unwinder when exception object needs destruction outside of ymir runtime
  */
-void _yrt_exc_exception_cleanup (_Unwind_Reason_Code code, struct _Unwind_Exception* exc);
+void _exc_exception_cleanup (_Unwind_Reason_Code code, struct _Unwind_Exception* exc);
 
 
 /**

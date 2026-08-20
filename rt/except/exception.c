@@ -15,7 +15,7 @@ _yrt_exc_thread_stack_t global_stack;
 
 pthread_mutex_t _yrt_exc_mutex;
 
-void _yrt_exc_init () {
+void _exc_init () {
     _yrt_thread_mutex_init (&_yrt_exc_mutex, NULL);
     global_stack.id = pthread_self ();
     global_stack.next = NULL;
@@ -35,7 +35,7 @@ void _yrt_exc_init () {
 /**
  * @returns: the stack for the current thread NULL if none
  */
-_yrt_exc_thread_stack_t* _yrt_exc_get_thread_stack_current (pthread_t id, _yrt_exc_thread_stack_t * current) {
+_yrt_exc_thread_stack_t* _exc_get_thread_stack_current (pthread_t id, _yrt_exc_thread_stack_t * current) {
     while (current != NULL) {
         if (pthread_equal (current-> id, id)) return current;
         current = current-> next;
@@ -48,10 +48,10 @@ _yrt_exc_thread_stack_t* _yrt_exc_get_thread_stack_current (pthread_t id, _yrt_e
 /**
  * Insert a new exception stack into the thread stack
  */
-_yrt_exc_thread_stack_t* _yrt_exc_insert_thread (pthread_t id) {
+_yrt_exc_thread_stack_t* _exc_insert_thread (pthread_t id) {
     _yrt_exc_thread_stack_t * head = (_yrt_exc_thread_stack_t*) __builtin_calloc (sizeof (_yrt_exc_thread_stack_t), 1);
     if (head == NULL) {
-        _yrt_exc_terminate ("out of memory\n", __FILE__, __FUNCTION__, __LINE__);
+        _exc_terminate ("out of memory\n", __FILE__, __FUNCTION__, __LINE__);
     }
 
     head-> id = id;
@@ -75,7 +75,7 @@ _yrt_exc_thread_stack_t* _yrt_exc_insert_thread (pthread_t id) {
 /**
  * Remove the exception stack for the thread 'id'
  */
-void _yrt_exc_remove_thread (_yrt_exc_thread_stack_t* stack) {
+void _exc_remove_thread (_yrt_exc_thread_stack_t* stack) {
     if (stack != &global_stack) {
         _yrt_thread_mutex_lock (&_yrt_exc_mutex);
         // we have to look up the thread in the list as it could have changed since insertion
@@ -98,13 +98,13 @@ void _yrt_exc_remove_thread (_yrt_exc_thread_stack_t* stack) {
  * Get the exception stack of the current thread
  * Insert a new one if not found
  */
-_yrt_exc_thread_stack_t* _yrt_exc_get_thread_stack (pthread_t id) {
+_yrt_exc_thread_stack_t* _exc_get_thread_stack (pthread_t id) {
     _yrt_thread_mutex_lock (&_yrt_exc_mutex);
-    _yrt_exc_thread_stack_t* got = _yrt_exc_get_thread_stack_current (id, &global_stack);
+    _yrt_exc_thread_stack_t* got = _exc_get_thread_stack_current (id, &global_stack);
     _yrt_thread_mutex_unlock (&_yrt_exc_mutex);
 
     if (got == NULL) {
-        return _yrt_exc_insert_thread (id);
+        return _exc_insert_thread (id);
     }
 
     return got;
@@ -113,12 +113,12 @@ _yrt_exc_thread_stack_t* _yrt_exc_get_thread_stack (pthread_t id) {
 /**
  * Allocate and init an _yrt_exception_header_
  */
-_yrt_exception_header_t* _yrt_exc_create_header (void* object, _yrt_exc_thread_stack_t* stack) {
+_yrt_exception_header_t* _exc_create_header (void* object, _yrt_exc_thread_stack_t* stack) {
     _yrt_exception_header_t* eh = &(stack-> ehstorage);
     if (eh-> object != NULL) { // pre allocate already in use
         eh = (_yrt_exception_header_t*) __builtin_calloc (sizeof (_yrt_exception_header_t), 1);
         if (!eh) {
-            _yrt_exc_terminate ("out of memory\n", __FILE__, __FUNCTION__, __LINE__);
+            _exc_terminate ("out of memory\n", __FILE__, __FUNCTION__, __LINE__);
         }
     }
 
@@ -131,21 +131,21 @@ _yrt_exception_header_t* _yrt_exc_create_header (void* object, _yrt_exc_thread_s
 /**
  * Free exception created by create ()
  */
-void _yrt_exc_free_header (_yrt_exception_header_t* head, _yrt_exc_thread_stack_t* stack) {
+void _exc_free_header (_yrt_exception_header_t* head, _yrt_exc_thread_stack_t* stack) {
     memset (head, 0, sizeof (_yrt_exception_header_t));
     if (head != &(stack-> ehstorage)) {
         __builtin_free (head);
     }
 
     if (stack-> stack == NULL) {
-        _yrt_exc_remove_thread (stack);
+        _exc_remove_thread (stack);
     }
 }
 
 /**
  * Push the exception header onto the stack
  */
-void _yrt_exc_push (_yrt_exception_header_t* e, _yrt_exc_thread_stack_t * stack) {
+void _exc_push (_yrt_exception_header_t* e, _yrt_exc_thread_stack_t * stack) {
     e-> next = stack-> stack;
     stack-> stack = e;
 }
@@ -153,7 +153,7 @@ void _yrt_exc_push (_yrt_exception_header_t* e, _yrt_exc_thread_stack_t * stack)
 /**
  * Pop the last pushed exception of the stack
  */
-_yrt_exception_header_t* _yrt_exc_pop (_yrt_exc_thread_stack_t* stack) {
+_yrt_exception_header_t* _exc_pop (_yrt_exc_thread_stack_t* stack) {
     _yrt_exception_header_t* eh = stack-> stack;
     stack-> stack = eh-> next;
     return eh;
@@ -169,7 +169,7 @@ _yrt_exception_header_t* _yrt_exc_pop (_yrt_exc_thread_stack_t* stack) {
  */
 
 
-void _yrt_exc_panic_exception (_yrt_exception_header_t* eh)
+void _exc_panic_exception (_yrt_exception_header_t* eh)
 {
     fprintf (stderr, "Panic in file \"%s\", at line %lu", eh-> file, eh-> line);
     fprintf (stderr, ", in function \"%s\" !!! \n", eh-> function);
@@ -181,7 +181,7 @@ void _yrt_exc_panic_exception (_yrt_exception_header_t* eh)
     abort ();
 }
 
-_yrt_exception_header_t* _yrt_to_exception_header (struct _Unwind_Exception* exc) {
+_yrt_exception_header_t* _to_exception_header (struct _Unwind_Exception* exc) {
     // the unwindHeader is the first field of the _yrt_exception_header_
     // So it has the same address
     return (_yrt_exception_header_t*) ((void*) exc);
@@ -191,20 +191,20 @@ _yrt_exception_header_t* _yrt_to_exception_header (struct _Unwind_Exception* exc
 /**
  * Called by unwinder when exception object needs destruction outside of ymir runtime
  */
-void _yrt_exc_exception_cleanup (_Unwind_Reason_Code code, struct _Unwind_Exception* exc) {
-    _yrt_exception_header_t* eh = _yrt_to_exception_header (exc);
+void _exc_exception_cleanup (_Unwind_Reason_Code code, struct _Unwind_Exception* exc) {
+    _yrt_exception_header_t* eh = _to_exception_header (exc);
     if (code != _URC_FOREIGN_EXCEPTION_CAUGHT && code != _URC_NO_REASON) {
-        _yrt_exc_panic_exception (eh);
+        _exc_panic_exception (eh);
     }
 
-    _yrt_exc_thread_stack_t* stack = _yrt_exc_get_thread_stack (eh-> thread_id);
-    _yrt_exc_free_header (eh, stack);
+    _yrt_exc_thread_stack_t* stack = _exc_get_thread_stack (eh-> thread_id);
+    _exc_free_header (eh, stack);
 }
 
 
 void _yrt_exc_throw (char *file, char *function, unsigned line, void* data) {
-    _yrt_exc_thread_stack_t* stack = _yrt_exc_get_thread_stack (pthread_self ());
-    _yrt_exception_header_t* eh = _yrt_exc_create_header (data, stack);
+    _yrt_exc_thread_stack_t* stack = _exc_get_thread_stack (pthread_self ());
+    _yrt_exception_header_t* eh = _exc_create_header (data, stack);
 
     eh-> file = file;
     eh-> function = function;
@@ -212,26 +212,26 @@ void _yrt_exc_throw (char *file, char *function, unsigned line, void* data) {
 
 
     // Add to thrown exception stack
-    _yrt_exc_push (eh, stack);
+    _exc_push (eh, stack);
 
-    eh-> unwindHeader.exception_cleanup = &_yrt_exc_exception_cleanup;
+    eh-> unwindHeader.exception_cleanup = &_exc_exception_cleanup;
     _Unwind_Reason_Code r = _Unwind_RaiseException (&eh-> unwindHeader);
 
     if (r == _URC_END_OF_STACK) {
-        _yrt_exc_panic_exception (eh);
+        _exc_panic_exception (eh);
     }
 
-    _yrt_exc_terminate ("unwind error ", __FILE__, __FUNCTION__, __LINE__);
+    _exc_terminate ("unwind error ", __FILE__, __FUNCTION__, __LINE__);
 }
 
 void* _yrt_exc_begin_catch (struct _Unwind_Exception* unwindHeader) {
-    _yrt_exc_thread_stack_t* stack = _yrt_exc_get_thread_stack (pthread_self ());
-    _yrt_exception_header_t* header = _yrt_to_exception_header (unwindHeader);
+    _yrt_exc_thread_stack_t* stack = _exc_get_thread_stack (pthread_self ());
+    _yrt_exception_header_t* header = _to_exception_header (unwindHeader);
     void* object = header-> object;
 
     // Something went wront when stacking headers
-    if (header != _yrt_exc_pop (stack)) {
-        _yrt_exc_terminate ("Catch error", __FILE__, __FUNCTION__, __LINE__);
+    if (header != _exc_pop (stack)) {
+        _exc_terminate ("Catch error", __FILE__, __FUNCTION__, __LINE__);
     }
 
     // The exception handling is complete

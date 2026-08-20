@@ -59,7 +59,7 @@ typedef struct _yrt_map_content_t {
     uint64_t loaded;
 
     // Bump allocator used to carve entry nodes out of a shared block, instead of
-    // one GC_malloc per entry - see _yrt_map_entry_alloc in map.c
+    // one GC_malloc per entry - see _map_entry_alloc in map.c
     uint8_t * slabCur;
     uint8_t * slabEnd;
     uint64_t slabSize; // size in bytes of the slab slabCur/slabEnd currently point into

@@ -7,7 +7,7 @@
 #include <string.h>
 
 
-uint64_t _yrt_next_pow2 (uint64_t x) {
+uint64_t _next_pow2 (uint64_t x) {
 	if (x == 1) return 1;
 	else {
 		return 1 << (64 - __builtin_clzl (x - 1));
@@ -20,7 +20,7 @@ void _yrt_alloc_slice_no_set (_yrt_slice_t * result, uint64_t len, uint64_t size
 		return;
 	}
 
-	size_t allocLen = _yrt_next_pow2 (len);
+	size_t allocLen = _next_pow2 (len);
 	size_t allocSize = allocLen * size;
 	uint8_t* x = (uint8_t*) GC_malloc (allocSize + sizeof (_yrt_slice_blk_info_t));
 	_yrt_slice_blk_info_t * blk = (_yrt_slice_blk_info_t*) (x);

@@ -16,7 +16,7 @@ void _yrt_eprintf32 (float x);
 void _yrt_eprintf64 (double x);
 void _yrt_eprintf80 (long double x);
 void _yrt_eprintfsize (long double x);
-void _yrt_print_error (char * format);
+void _print_error (char * format);
 
 void _yrt_fflush_stdout ();
 

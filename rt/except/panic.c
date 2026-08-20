@@ -12,7 +12,7 @@
 /**
  * Terminate the program due to a irrecoverable error
  */
-void _yrt_exc_terminate (const char * msg, const char * file, const char * func, unsigned int line) {
+void _exc_terminate (const char * msg, const char * file, const char * func, unsigned int line) {
     static char terminating = 0;
     if (terminating) {
         fprintf (stderr, "terminating called recursively\n");
@@ -46,7 +46,7 @@ void _yrt_exc_panic (const char* file, const char * function, unsigned int line)
     abort ();
 }
 
-void _yrt_exc_panic_seg_fault () {
+void _exc_panic_seg_fault () {
     fprintf (stderr, "Segfault - ");
     _yrt_slice_t trace = _yrt_exc_resolve_stack_trace (_yrt_exc_get_stack_trace ());
     if (trace.len != 0) {
