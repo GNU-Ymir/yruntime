@@ -21,6 +21,10 @@
 // fields keep the same alignment they would get from a standalone GC_malloc
 #define MAP_ENTRY_ALIGN (sizeof (void*))
 
+// cap is always 0 or a power of two (see _yrt_map_fit/_next_pow2), so bucket index
+// computation can use a mask instead of a division
+#define MAP_BUCKET_INDEX(hash, cap) ((hash) & ((cap) - 1))
+
 /*!
  * ====================================================================================================
  * ====================================================================================================
@@ -88,7 +92,7 @@ void _yrt_dup_map (_yrt_map_t * result, _yrt_map_info_t * info, _yrt_map_t * old
 void _yrt_map_insert (_yrt_map_t * mp, uint8_t * key, uint8_t * value) {
     if (mp-> data-> cap == 0) {
         _map_fit (mp, 1);
-    } else if ((mp-> data-> loaded * 100 / mp-> data-> cap) > MAP_MAX_LOADED_FACTOR) {
+    } else if ((mp-> data-> loaded * 100) > (MAP_MAX_LOADED_FACTOR * mp-> data-> cap)) {
         _map_fit (mp, _next_pow2 (mp-> data-> cap + 1));
     }
 
@@ -97,7 +101,7 @@ void _yrt_map_insert (_yrt_map_t * mp, uint8_t * key, uint8_t * value) {
 }
 
 void _map_insert_no_resize (_yrt_map_t * mp, uint64_t hash, uint8_t * key, uint8_t * value) {
-    uint64_t index = hash % mp-> data-> cap;
+    uint64_t index = MAP_BUCKET_INDEX (hash, mp-> data-> cap);
     if (mp-> data-> entries [index] != NULL) {
         _yrt_map_entry_t * entry = mp-> data-> entries [index];
         if (_map_entry_insert (mp-> data, entry, hash, key, value) == 1) {
@@ -151,7 +155,7 @@ void _yrt_map_erase (_yrt_map_t * mp, uint8_t * key) {
     }
 
     uint64_t hash = mp-> data-> minfo-> hash (key);
-    uint64_t index = hash % mp-> data-> cap;
+    uint64_t index = MAP_BUCKET_INDEX (hash, mp-> data-> cap);
     if (mp-> data-> entries [index] == NULL) {
         return;
     }
@@ -164,7 +168,7 @@ void _yrt_map_erase (_yrt_map_t * mp, uint8_t * key) {
         mp-> data-> loaded -= 1;
     }
 
-    if (((mp-> data-> loaded * 100) / mp-> data-> cap) < MAP_MIN_LOADED_FACTOR) {
+    if ((mp-> data-> loaded * 100) < (MAP_MIN_LOADED_FACTOR * mp-> data-> cap)) {
         _map_fit (mp, _next_pow2 (mp-> data-> loaded + 1));
     }
 }
@@ -190,7 +194,7 @@ uint8_t * _yrt_map_find (_yrt_map_t * mp, uint8_t * key) {
     }
 
     uint64_t hash = mp-> data-> minfo-> hash (key);
-    uint64_t index = hash % mp-> data-> cap;
+    uint64_t index = MAP_BUCKET_INDEX (hash, mp-> data-> cap);
     if (mp-> data-> entries [index] == NULL) {
         return NULL;
     }
@@ -258,7 +262,7 @@ void _map_relink_entries (_yrt_map_t * result, _yrt_map_t * old) {
         _yrt_map_entry_t * head = old-> data-> entries [i];
         while (head != NULL) {
             _yrt_map_entry_t * next = head-> next;
-            uint64_t index = head-> hash % result-> data-> cap;
+            uint64_t index = MAP_BUCKET_INDEX (head-> hash, result-> data-> cap);
 
             if (result-> data-> entries [index] == NULL) {
                 result-> data-> loaded += 1;
