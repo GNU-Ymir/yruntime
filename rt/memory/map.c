@@ -119,7 +119,7 @@ void _map_insert_no_resize (_yrt_map_t * mp, uint64_t hash, uint8_t * key, uint8
 uint8_t _map_entry_insert (_yrt_map_content_t * data, _yrt_map_entry_t * mp, uint64_t hash, uint8_t * key, uint8_t * value) {
     _yrt_map_info_t * minfo = data-> minfo;
     uint8_t * keyEntry = ((uint8_t*) mp) + sizeof (_yrt_map_entry_t);
-    if (minfo-> cmp (key, keyEntry) == 1) {
+    if (mp-> hash == hash && minfo-> cmp (key, keyEntry) == 1) {
         uint8_t * valEntry = keyEntry + minfo-> keySize;
         memcpy (valEntry, value, minfo-> valueSize);
         return 0;
@@ -160,7 +160,7 @@ void _yrt_map_erase (_yrt_map_t * mp, uint8_t * key) {
         return;
     }
 
-    if (_map_erase_entry (&(mp-> data-> entries [index]), key, mp-> data-> minfo) == 1) {
+    if (_map_erase_entry (&(mp-> data-> entries [index]), hash, key, mp-> data-> minfo) == 1) {
         mp-> data-> len -= 1;
     }
 
@@ -173,16 +173,16 @@ void _yrt_map_erase (_yrt_map_t * mp, uint8_t * key) {
     }
 }
 
-uint8_t _map_erase_entry (_yrt_map_entry_t ** en, uint8_t * key, _yrt_map_info_t * minfo) {
+uint8_t _map_erase_entry (_yrt_map_entry_t ** en, uint64_t hash, uint8_t * key, _yrt_map_info_t * minfo) {
     uint8_t * keyEntry = ((uint8_t*) (*en)) + sizeof (_yrt_map_entry_t);
-    if (minfo-> cmp (key, keyEntry) == 1) {
+    if ((*en)-> hash == hash && minfo-> cmp (key, keyEntry) == 1) {
         *en = (*en)-> next;
 
         return 1;
     }
 
     if ((*en)-> next != NULL) {
-        return _map_erase_entry (&(*en)-> next, key, minfo);
+        return _map_erase_entry (&(*en)-> next, hash, key, minfo);
     }
 
     return 0;
@@ -199,12 +199,12 @@ uint8_t * _yrt_map_find (_yrt_map_t * mp, uint8_t * key) {
         return NULL;
     }
 
-    return _map_find_entry (mp-> data-> entries [index], key, mp-> data-> minfo);
+    return _map_find_entry (mp-> data-> entries [index], hash, key, mp-> data-> minfo);
 }
 
-uint8_t * _map_find_entry (_yrt_map_entry_t * en, uint8_t * key, _yrt_map_info_t * minfo) {
+uint8_t * _map_find_entry (_yrt_map_entry_t * en, uint64_t hash, uint8_t * key, _yrt_map_info_t * minfo) {
     uint8_t * keyEntry = ((uint8_t*) en) + sizeof (_yrt_map_entry_t);
-    if (minfo-> cmp (key, keyEntry) == 1) {
+    if (en-> hash == hash && minfo-> cmp (key, keyEntry) == 1) {
         uint8_t * valueEntry = keyEntry + minfo-> keySize;
         return valueEntry;
     }
@@ -213,7 +213,7 @@ uint8_t * _map_find_entry (_yrt_map_entry_t * en, uint8_t * key, _yrt_map_info_t
         return NULL;
     }
 
-    return _map_find_entry (en-> next, key, minfo);
+    return _map_find_entry (en-> next, hash, key, minfo);
 }
 
 void _map_fit (_yrt_map_t * mp, uint64_t newSize) {
