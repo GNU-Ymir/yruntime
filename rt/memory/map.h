@@ -55,12 +55,12 @@ void _yrt_map_insert_no_resize (_yrt_map_t * mp, uint64_t hash, uint8_t * key, u
  *    - value: the data of the value
  * @returns: true if new entry, false if replaced
  */
-uint8_t _yrt_map_entry_insert (_yrt_map_entry_t * en, uint64_t hash, uint8_t * key, uint8_t * value, _yrt_map_info_t * minfo);
+uint8_t _yrt_map_entry_insert (_yrt_map_content_t * data, _yrt_map_entry_t * en, uint64_t hash, uint8_t * key, uint8_t * value);
 
 /**
- * Allocate a map entry
+ * Allocate a map entry, bump-allocated out of data's entry slab (see _yrt_map_entry_alloc in map.c)
  */
-void _yrt_map_create_entry (_yrt_map_entry_t ** en, uint64_t hash, uint8_t * key, uint8_t * value, _yrt_map_info_t * minfo);
+void _yrt_map_create_entry (_yrt_map_content_t * data, _yrt_map_entry_t ** en, uint64_t hash, uint8_t * key, uint8_t * value);
 
 /**
  * Erase data from the map

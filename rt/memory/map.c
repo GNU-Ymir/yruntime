@@ -10,6 +10,17 @@
 #define MAP_MAX_LOADED_FACTOR 75
 #define MAP_MIN_LOADED_FACTOR 40
 
+// Entry count of the first slab allocated for a map (see _yrt_map_entry_alloc). Each
+// subsequent slab for the same map doubles in size, up to MAP_SLAB_MAX_BYTES, so a map
+// that only ever holds a handful of entries (e.g. one JSON object) does not pay for a
+// slab sized for a map that ends up holding millions.
+#define MAP_SLAB_INITIAL_ENTRIES 1
+#define MAP_SLAB_MAX_BYTES 4096
+
+// All entry nodes are aligned on this boundary within a slab, so hash/next/key/value
+// fields keep the same alignment they would get from a standalone GC_malloc
+#define MAP_ENTRY_ALIGN (sizeof (void*))
+
 /*!
  * ====================================================================================================
  * ====================================================================================================
@@ -25,6 +36,40 @@ void _yrt_map_empty (_yrt_map_t * mp, _yrt_map_info_t * info) {
     mp-> data-> loaded = 0;
     mp-> data-> cap = 0;
     mp-> data-> entries = NULL;
+    mp-> data-> slabCur = NULL;
+    mp-> data-> slabEnd = NULL;
+    mp-> data-> slabSize = 0;
+}
+
+/**
+ * Carve `nodeSize` bytes for a new entry out of `data`'s bump-allocated slab,
+ * allocating a fresh slab first if the current one does not have enough room left.
+ * This turns what used to be one GC_malloc per entry into one GC_malloc per slab,
+ * with slabs growing geometrically (like a vector) instead of a single fixed size,
+ * so a map with few entries does not over-allocate.
+ */
+static uint8_t * _yrt_map_entry_alloc (_yrt_map_content_t * data, uint64_t nodeSize) {
+    uint64_t stride = (nodeSize + MAP_ENTRY_ALIGN - 1) & ~(MAP_ENTRY_ALIGN - 1);
+
+    if (data-> slabCur == NULL || (uint64_t) (data-> slabEnd - data-> slabCur) < stride) {
+        uint64_t slabSize = data-> slabSize == 0 ? stride * MAP_SLAB_INITIAL_ENTRIES : data-> slabSize * 2;
+        if (slabSize > MAP_SLAB_MAX_BYTES && stride <= MAP_SLAB_MAX_BYTES) {
+            slabSize = MAP_SLAB_MAX_BYTES;
+        }
+        if (slabSize < stride) {
+            slabSize = stride;
+        }
+        slabSize = ((slabSize + stride - 1) / stride) * stride;
+
+        data-> slabCur = (uint8_t *) GC_malloc (slabSize);
+        data-> slabEnd = data-> slabCur + slabSize;
+        data-> slabSize = slabSize;
+    }
+
+    uint8_t * result = data-> slabCur;
+    data-> slabCur += stride;
+
+    return result;
 }
 
 void _yrt_dup_map (_yrt_map_t * result, _yrt_map_info_t * info, _yrt_map_t * old) {
@@ -55,19 +100,20 @@ void _yrt_map_insert_no_resize (_yrt_map_t * mp, uint64_t hash, uint8_t * key, u
     uint64_t index = hash % mp-> data-> cap;
     if (mp-> data-> entries [index] != NULL) {
         _yrt_map_entry_t * entry = mp-> data-> entries [index];
-        if (_yrt_map_entry_insert (entry, hash, key, value, mp-> data-> minfo) == 1) {
+        if (_yrt_map_entry_insert (mp-> data, entry, hash, key, value) == 1) {
             mp-> data-> len += 1;
         }
 
         return;
     }
 
-    _yrt_map_create_entry (&(mp-> data-> entries [index]), hash, key, value, mp-> data-> minfo);
+    _yrt_map_create_entry (mp-> data, &(mp-> data-> entries [index]), hash, key, value);
     mp-> data-> loaded += 1;
     mp-> data-> len += 1;
 }
 
-uint8_t _yrt_map_entry_insert (_yrt_map_entry_t * mp, uint64_t hash, uint8_t * key, uint8_t * value, _yrt_map_info_t * minfo) {
+uint8_t _yrt_map_entry_insert (_yrt_map_content_t * data, _yrt_map_entry_t * mp, uint64_t hash, uint8_t * key, uint8_t * value) {
+    _yrt_map_info_t * minfo = data-> minfo;
     uint8_t * keyEntry = ((uint8_t*) mp) + sizeof (_yrt_map_entry_t);
     if (minfo-> cmp (key, keyEntry) == 1) {
         uint8_t * valEntry = keyEntry + minfo-> keySize;
@@ -76,16 +122,17 @@ uint8_t _yrt_map_entry_insert (_yrt_map_entry_t * mp, uint64_t hash, uint8_t * k
     }
 
     if (mp-> next != NULL) {
-        return _yrt_map_entry_insert (mp-> next, hash, key, value, minfo);
+        return _yrt_map_entry_insert (data, mp-> next, hash, key, value);
     }
 
-    _yrt_map_create_entry (&(mp-> next), hash, key, value, minfo);
+    _yrt_map_create_entry (data, &(mp-> next), hash, key, value);
     return 1;
 }
 
-void _yrt_map_create_entry (_yrt_map_entry_t ** entry, uint64_t hash, uint8_t * key, uint8_t * value, _yrt_map_info_t * minfo) {
+void _yrt_map_create_entry (_yrt_map_content_t * data, _yrt_map_entry_t ** entry, uint64_t hash, uint8_t * key, uint8_t * value) {
+    _yrt_map_info_t * minfo = data-> minfo;
     uint64_t nodeSize = sizeof (_yrt_map_entry_t) + (minfo-> keySize + minfo-> valueSize);
-    uint8_t * newEntry = (uint8_t *) GC_malloc (nodeSize);
+    uint8_t * newEntry = _yrt_map_entry_alloc (data, nodeSize);
     uint8_t * keyEntry = newEntry + sizeof (_yrt_map_entry_t);
     uint8_t * valueEntry = keyEntry + minfo-> keySize;
 
