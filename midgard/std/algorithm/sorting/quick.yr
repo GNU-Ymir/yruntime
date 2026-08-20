@@ -13,16 +13,37 @@ in quick;
  *    - predicate: the predicate function used to compare elements
  */
 pub fn quicksort {U} (mut a: mut[mut U], predicate: dg (U, U)-> bool) {
-    if (a.len < 2us) {
+    // Below this size, a subrange is sorted with insertion sort rather than
+    // being recursed into further. Insertion sort has less overhead per
+    // element than a quicksort partition, and quicksort's own worst case is
+    // concentrated on small ranges, so this cutoff is a net win in both
+    // average and worst case, matching what libstdc++'s introsort does.
+    if (a.len < 16us) {
+        insertionSort(alias a, predicate);
         return;
     }
 
-    let pivot = a[a.len / 2us];
+    let i = partition(alias a, predicate);
+
+    quicksort(alias a[0us .. i], predicate);
+    quicksort(alias a[i .. $], predicate);
+}
+
+/**
+ * Hoare partition scheme, using the median of the first, middle and last
+ * elements as the pivot, so already sorted (or reverse sorted) input,
+ * a common case in practice, does not degrade into the O(n^2) worst case
+ * that picking a fixed position (e.g. always the middle) would cause.
+ * @returns: the split index `i`, such that `a[0 .. i]` and `a[i .. $]`
+ * can be sorted independently
+ */
+fn partition {U} (mut a: mut[mut U], predicate: dg (U, U)-> bool)-> usize {
+    let pivot = medianOfThree (a, predicate);
     let mut i = 0us, mut j = a.len - 1us;
     loop {
         while (predicate(a[i], pivot)) {
             if (i == a.len) {
-                return;
+                return i;
             }
 
             i += 1us;
@@ -30,7 +51,7 @@ pub fn quicksort {U} (mut a: mut[mut U], predicate: dg (U, U)-> bool) {
 
         while (predicate(pivot, a[j])) {
             if (j == 0us) {
-                return;
+                return j;
             }
 
             j -= 1us;
@@ -54,6 +75,58 @@ pub fn quicksort {U} (mut a: mut[mut U], predicate: dg (U, U)-> bool) {
         j -= 1us;
     }
 
-    quicksort(alias a[0us .. i], predicate);
-    quicksort(alias a[i .. $], predicate);
+    return i;
+}
+
+/**
+ * @returns: the median value of `a[0]`, `a[a.len / 2]` and `a[a.len - 1]`
+ * according to `predicate`
+ */
+fn medianOfThree {U} (a: [U], predicate: dg (U, U)-> bool)-> U {
+    let mid = a.len / 2us;
+    let last = a.len - 1us;
+
+    if (predicate(a[mid], a[0us])) {
+        if (predicate(a[last], a[mid])) {
+            a[mid]
+        } else if (predicate(a[last], a[0us])) {
+            a[last]
+        } else {
+            a[0us]
+        }
+    } else {
+        if (predicate(a[last], a[0us])) {
+            a[0us]
+        } else if (predicate(a[last], a[mid])) {
+            a[last]
+        } else {
+            a[mid]
+        }
+    }
+}
+
+/**
+ * Plain insertion sort, used by `quicksort` to finish off small subranges.
+ */
+fn insertionSort {U} (mut a: mut[mut U], predicate: dg (U, U)-> bool) {
+    if (a.len < 2us) {
+        return;
+    }
+
+    for i in 1us .. a.len {
+        let mut j = i;
+        while (j > 0us && predicate(a[j], a[j - 1us])) {
+            cte if __pragma!compile({a[j] = a[j - 1us];}) {
+                let temp = a[j];
+                a[j] = a[j - 1us];
+                a[j - 1us] = temp;
+            } else { // even if U is not deeply mutable, it may be a structure containing aliasable stuff
+                let mut temp = alias a[j];
+                a[j] = alias a[j - 1us];
+                a[j - 1us] = alias temp;
+            }
+
+            j -= 1us;
+        }
+    }
 }
