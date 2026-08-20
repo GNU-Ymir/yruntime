@@ -231,37 +231,27 @@ pub record JsonParser {
     prv fn parseString(mut self, endC: c8, lB: usize, cB: usize)-> [c8]
         throws SyntaxError
     {
+        // fast path: scan for the end/escape char without allocating anything; if the string
+        // has no escape sequence(the common case for object keys and most values), return a
+        // direct slice of `_content` - no StringStream, no copy at all.
+        let (idx0, line0, col0) = self.scanStringSpan(endC, lB, cB);
+
+        if self._content[idx0] == endC {
+            let res = self._content[0 .. idx0];
+            self._content = self._content[idx0 + 1 .. $];
+            self._line = line0;
+            self._col = col0 + 1us;
+            return res;
+        }
+
+        // slow path: at least one escape sequence, fall back to a StringStream
         let dmut res = copy StringStream();
+        res:.write(self._content[0 .. idx0]);
+        self._content = self._content[idx0 .. $];
+        self._line = line0;
+        self._col = col0;
 
         loop {
-            // scan for the next end/escape char and track line/col in the same pass, instead
-            // of a separate `find` + `countPos` each rescanning the same span
-            let mut idx = 0us;
-            let mut line = self._line;
-            let mut col = self._col;
-
-            while idx < self._content.len {
-                let ch = self._content[idx];
-                if (ch == endC || ch == '\\') { break; }
-
-                if ch == '\n' { line += 1; col = 1us; } else { col += 1; }
-                idx += 1;
-            }
-
-            if idx == self._content.len { throw copy SyntaxError("Unterminated string literal", lB, cB); }
-            res:.write(self._content[0 .. idx]);
-
-            if self._content[idx] == endC {
-                self._content = self._content[idx + 1 .. $];
-                self._line = line;
-                self._col = col + 1us;
-                break;
-            }
-
-            self._content = self._content[idx .. $];
-            self._line = line;
-            self._col = col;
-
             let (l, c) = (self._line, self._col);
             self:.advance(); // consumes the '\\'
             if self._content.len == 0 { throw copy SyntaxError("Unterminated string literal", lB, cB); }
@@ -281,9 +271,48 @@ pub record JsonParser {
                 'u' => { self:.parseUnicode(alias res); }
                 _ => throw copy SyntaxError("Undefined escape sequence: \\" ~ [af], l, c);
             }
+
+            let (idx, line, col) = self.scanStringSpan(endC, lB, cB);
+            res:.write(self._content[0 .. idx]);
+
+            if self._content[idx] == endC {
+                self._content = self._content[idx + 1 .. $];
+                self._line = line;
+                self._col = col + 1us;
+                break;
+            }
+
+            self._content = self._content[idx .. $];
+            self._line = line;
+            self._col = col;
         }
 
         res[]
+    }
+
+    /**
+     * Scan `_content` for the next `endC`/`\` char.
+     * @returns: its index, and the (line, col) that would be reached right before it -
+     * `_content`/`_line`/`_col` themselves are left untouched, the caller applies the move.
+     * */
+    prv fn scanStringSpan(self, endC: c8, lB: usize, cB: usize)-> (usize, usize, usize)
+        throws SyntaxError
+    {
+        let mut idx = 0us;
+        let mut line = self._line;
+        let mut col = self._col;
+
+        while idx < self._content.len {
+            let ch = self._content[idx];
+            if (ch == endC || ch == '\\') { break; }
+
+            if ch == '\n' { line += 1; col = 1us; } else { col += 1; }
+            idx += 1;
+        }
+
+        if idx == self._content.len { throw copy SyntaxError("Unterminated string literal", lB, cB); }
+
+        (idx, line, col)
     }
 
     /**
