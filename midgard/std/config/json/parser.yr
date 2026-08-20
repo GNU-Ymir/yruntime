@@ -168,23 +168,34 @@ pub record JsonParser {
 
     /**
      * Parse an identifier from content
+     *
+     * @info: scans self._lex's remaining content directly for the closing quote/escape
+     * char instead of pulling one lexer token at a time, so a ':' (or any other registered
+     * token char) inside the string content no longer forces a token-boundary split.
      * */
     prv fn parseIdentifier(mut self, end: [c8], lB: usize, cB: usize)-> [c8]
         throws SyntaxError
     {
         let dmut res = copy StringStream();
-
-        self._lex:.setSkipTokens(false);
-        self._lex:.setSkipComments(false);
+        let endC = end[0];
 
         loop {
-            let (n, l, c) = self._lex:.next();
-            if n.len == 0 { throw copy SyntaxError("Unterminated string literal", lB, cB); }
-            else if n == end {
-                break;
-            }
+            let (content, line, col) = self._lex.getCursor();
+            if content.len == 0 { throw copy SyntaxError("Unterminated string literal", lB, cB); }
 
-            if n == JsonTokens::ESCAPE {
+            if let Ok(idx) = std::algorithm::searching::find(content, copy |x| => { x == endC || x == '\\' }) {
+                if content[idx] == endC {
+                    res:.write(content[0 .. idx]);
+                    let (nl, nc) = self.countPos(content[0 .. idx + 1], line, col);
+                    self._lex:.rewind(content[idx + 1 .. $], nl, nc);
+                    break;
+                }
+
+                res:.write(content[0 .. idx]);
+                let (nl, nc) = self.countPos(content[0 .. idx], line, col);
+                self._lex:.rewind(content[idx .. $], nl, nc);
+
+                let (_, l, c) = self._lex:.next(); // consumes the '\\' token
                 let (af, _, _) = self._lex:.nextChar();
                 match af {
                     "a" => { res:.write("\a"); }
@@ -201,14 +212,29 @@ pub record JsonParser {
                     _ => throw copy SyntaxError("Undefined escape sequence: \\" ~ af, l, c);
                 }
             } else {
-                res:.write(n);
+                throw copy SyntaxError("Unterminated string literal", lB, cB);
             }
         }
 
-        self._lex:.setSkipTokens(true);
-        self._lex:.setSkipComments(true);
-
         res[]
+    }
+
+    /**
+     * Compute the (line, column) reached after skipping over 'chunk' starting at (line, col)
+     * */
+    prv fn countPos(self, chunk: [c8], line: usize, col: usize)-> (usize, usize) {
+        let dmut l = line;
+        let dmut c = col;
+        for ch in chunk {
+            if ch == '\n' {
+                l += 1;
+                c = 1us;
+            } else {
+                c += 1;
+            }
+        }
+
+        (l, c)
     }
 
     /*!
