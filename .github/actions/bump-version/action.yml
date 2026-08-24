@@ -1,5 +1,7 @@
 name: Bump VERSION
-description: Bumps the major/minor/patch segment of the root VERSION file, commits, and pushes.
+description: >-
+  Bumps the major/minor/patch segment of the root VERSION file and of gyllir.toml's 'version'
+  key, commits, and pushes.
 inputs:
   part:
     description: Which segment to bump - "major", "minor", or "patch".
@@ -26,9 +28,23 @@ runs:
         NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
         echo "$NEW_VERSION" > VERSION
 
+        # VERSION is the source of truth for the release tag/workflows, but gyllir.toml's own
+        # 'version' key is what gyllir(the package manager) reports for this package when it is
+        # resolved as a dependency - left unsynced, it silently drifts behind every bump that
+        # only touches VERSION (only the key above the first [table] header is top-level, so a
+        # 'version' under e.g. [dependencies.foo] is never touched by mistake)
+        awk -v new="$NEW_VERSION" '
+          !done && /^[[:space:]]*\[/ { done = 1 }
+          !done && /^[[:space:]]*version[[:space:]]*=/ {
+            sub(/"[^"]*"/, "\"" new "\""); done = 1
+          }
+          { print }
+        ' gyllir.toml > gyllir.toml.tmp
+        mv gyllir.toml.tmp gyllir.toml
+
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add VERSION
+        git add VERSION gyllir.toml
         git commit -m "chore: bump version ${OLD_VERSION} -> ${NEW_VERSION}"
         git push
 
