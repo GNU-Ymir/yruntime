@@ -1,0 +1,83 @@
+in rand;
+
+use std::rand;
+use etc::runtime::rand;
+use std::conv;
+
+__test {
+    runtime::rand::setSeed (42u32);
+
+    let dmut seen = copy [false ; 10u64];
+    for _ in 0 .. 10_000 {
+        let v = uniform (1, 10);
+        assert (v >= 1 && v <= 10, "out of bounds: " ~ v.to![c8] ());
+        seen [v - 1] = true;
+    }
+
+    for i in 0 .. 10 {
+        assert (seen [i], "never drawn: " ~ (i + 1).to![c8] ());
+    }
+}
+
+__test {
+    runtime::rand::setSeed (7u32);
+
+    // every value of the interval must be reachable, not only the multiples of its width
+    let mut nbOdd = 0;
+    for _ in 0 .. 1_000 {
+        let v = uniform (0, 100);
+        assert (v >= 0 && v <= 100, "out of bounds: " ~ v.to![c8] ());
+        if v % 2 != 0 { nbOdd += 1; }
+    }
+
+    assert (nbOdd > 300 && nbOdd < 700, "unbalanced: " ~ nbOdd.to![c8] ());
+}
+
+__test {
+    runtime::rand::setSeed (1u32);
+
+    // degenerated intervals
+    assert (uniform (5, 5) == 5);
+    assert (uniform (10, 1) == 10);
+
+    // an interval of two values must draw both of them
+    let mut low = false, mut high = false;
+    for _ in 0 .. 100 {
+        let v = uniform (0, 1);
+        assert (v == 0 || v == 1);
+        if v == 0 { low = true; } else { high = true; }
+    }
+    assert (low && high);
+}
+
+__test {
+    runtime::rand::setSeed (3u32);
+
+    // unsigned, and intervals spanning the whole domain of T
+    let mut allSame = true;
+    let first = uniform (i32::min, i32::max);
+    for _ in 0 .. 100 {
+        let v = uniform (200u8, 255u8);
+        assert (v >= 200u8 && v <= 255u8);
+
+        if uniform (i32::min, i32::max) != first { allSame = false; }
+    }
+
+    assert (!allSame);
+    assert (uniform (u64::min, u64::max) != uniform (u64::min, u64::max));
+}
+
+__test {
+    runtime::rand::setSeed (11u32);
+
+    for _ in 0 .. 1_000 {
+        let f = uniform (1.0, 10.0);
+        assert (f >= 1.0 && f <= 10.0);
+
+        let g = uniform (-2.5f, 2.5f);
+        assert (g >= -2.5f && g <= 2.5f);
+
+        let h = rand!f64 ();
+        assert (h >= 0.0 && h <= 1.0);
+    }
+}

@@ -10,7 +10,27 @@ use etc::runtime::rand;
 use std::traits;
 
 /**
- * @returns: a random number uniformly selected between low and high
+ * @returns: a random 64 bits word, uniformly distributed over the whole domain of u64.
+ * @info: the underlying generator only produces 31 bits at a time, so three draws are
+ * assembled into a single word.
+ */
+fn randBits ()-> u64 {
+    runtime::rand::init ();
+
+    let a = cast!{u64} (runtime::rand::rand ());
+    let b = cast!{u64} (runtime::rand::rand ());
+    let c = cast!{u64} (runtime::rand::rand ());
+
+    (a << 33u64) | (b << 2u64) | (c & 0x3u64)
+}
+
+/**
+ * @params:
+ *    - low: the lower bound of the interval (included)
+ *    - high: the upper bound of the interval (included)
+ * @returns: a random number uniformly selected in `[low, high]`, or `low` if `high <= low`
+ * @info: the selection is free of modulo bias, values are drawn again until they land in a
+ * range that is an exact multiple of the width of the interval.
  * @example:
  * ```
  * // Select a number between 1 and 10 with uniform probability
@@ -20,15 +40,30 @@ use std::traits;
  * ```
  */
 pub fn if isIntegral!{T} uniform {T} (low: T, high: T)-> T {
-    runtime::rand::init();
+    if high <= low { return low; }
 
-    let x = cast!{T} (runtime::rand::rand());
-    (x * (high - low)) % (high - low) + low
+    // computed in u64 so that the width of an interval spanning the whole domain of T is
+    // still representable (e.g. uniform (i32::min, i32::max))
+    let span = cast!{u64} (high) - cast!{u64} (low) + 1u64;
+    if span == 0u64 { // the interval covers the whole domain of a 64 bits T
+        return low + cast!{T} (randBits ());
+    }
+
+    let rem = (u64::max % span + 1u64) % span; // == 2 ^ 64 % span
+    let mut r = randBits ();
+    while r < rem { // [0, rem[ would make the low values slightly more likely
+        r = randBits ();
+    }
+
+    low + cast!{T} (r % span)
 }
 
 
 /**
- * @returns: an random number uniformly selected between low and high
+ * @params:
+ *    - low: the lower bound of the interval (included)
+ *    - high: the upper bound of the interval (included)
+ * @returns: an random number uniformly selected in `[low, high]`
  * @example:
  * ```
  * // Select a number between 1 and 10 with uniform probability
@@ -39,7 +74,8 @@ pub fn if isIntegral!{T} uniform {T} (low: T, high: T)-> T {
  */
 pub fn if isFloating!{T} uniform {T} (low: T, high: T)-> T {
     let x = rand!{T} ();
-    (x * (high - low)) % (high - low)  + low
+
+    low + x * (high - low)
 }
 
 /**
