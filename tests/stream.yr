@@ -113,3 +113,38 @@ __test {
     str:.write(f);
     assert(str[] == "stream::F([stream::F(...)])");
 }
+
+
+class G {
+    let _i: i32;
+    pub self (i: i32) with _i = i {}
+    impl Streamable;
+}
+
+/**
+ * The recursion guard used to break cycles is thread local, so concurrent streamings never race on it (YMI-161)
+ * */
+__test {
+    let dmut pool = copy std::concurrency::task::TaskPool(nbThreads-> 8u64);
+    let dmut res = copy [true];
+
+    for i in 0 .. 8 {
+        pool:.submit(copy || => {
+            let mut ok = true;
+            for _ in 0 .. 5000 {
+                let dmut str = copy StringStream();
+                str:.write(copy G(i));
+                if (str[] != "stream::G(" ~ std::conv::to![c8](i) ~ ")") {
+                    ok = false;
+                }
+            }
+
+            atomic {
+                res[0] = res[0] && ok;
+            }
+        });
+    }
+
+    pool:.join();
+    assert(res[0]);
+}
