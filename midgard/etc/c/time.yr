@@ -37,11 +37,17 @@ pub record tm_t {
     pub let mut tm_wday: i32 = 0;
     pub let mut tm_yday: i32 = 0;
     pub let mut tm_isdst: i32 = 0;
+
+    // glibc's `struct tm` has two more members after `tm_isdst`, and `mktime`/`localtime` write
+    // them back into the struct they are given, so they have to be part of the binding.
+    pub let mut tm_gmtoff: i64 = 0i64;
+    pub let mut tm_zone: u64 = 0u64;
+
     pub self () {}
 }
 
 pub extern (C) fn gettimeofday(dmut tv: *timeval_t, tz: *void)-> i32;
 pub extern (C) fn time(ignore: *void)-> u32;
-pub extern (C) fn localtime(tv: *timeval_t)-> *tm_t;
-pub extern (C) fn gmtime(tv: *timeval_t)-> *tm_t;
-pub extern (C) fn mktime(tv: *tm_t)-> timeval_t;
+pub extern (C) fn localtime(t: *u64)-> *tm_t;
+pub extern (C) fn gmtime(t: *u64)-> *tm_t;
+pub extern (C) fn mktime(tm: *tm_t)-> u64;

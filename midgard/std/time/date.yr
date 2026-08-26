@@ -66,15 +66,13 @@ pub record DateTime {
      * Create the date time from an instant
      * */
     pub self (instant: Instant, gmt: bool = false) {
-        let tv = etc::c::time::timeval_t(instant.sec, instant.usec);
-        if gmt {
-            __DATE_MUTEX__:.lock();
-            self._value = unsafe { *gmtime(&tv) };
-            __DATE_MUTEX__:.unlock();
-        } else {
-            __DATE_MUTEX__:.lock();
-            self._value = unsafe { *localtime(&tv) };
-            __DATE_MUTEX__:.unlock();
+        let sec = instant.sec;
+        atomic __DATE_MUTEX__ {
+            if gmt {
+                self._value = unsafe { *gmtime(&sec) };
+            } else {
+                self._value = unsafe { *localtime(&sec) };
+            }
         }
 
         self._usec = instant.usec;
@@ -92,10 +90,14 @@ pub record DateTime {
         self._value.tm_mon = month;
         self._value.tm_year = year;
 
-        __DATE_MUTEX__:.lock();
-        let tv = mktime(&self._value);
-        self._value = unsafe { *localtime(&tv) };
-        __DATE_MUTEX__:.unlock();
+        // -1 lets mktime figure out whether DST is in effect for that local date, instead of
+        // asserting it is not (which shifts the result by an hour in DST).
+        self._value.tm_isdst = -1;
+
+        atomic __DATE_MUTEX__ {
+            let t = mktime(&self._value);
+            self._value = unsafe { *localtime(&t) };
+        }
 
         self._usec = usec;
     }
@@ -112,11 +114,11 @@ pub record DateTime {
      * @returns: the instant of the date
      * */
     pub fn instant(self)-> Instant {
-        __DATE_MUTEX__:.lock();
-        let tv = mktime(&self._value);
-        __DATE_MUTEX__:.lock();
+        let sec = atomic __DATE_MUTEX__ {
+            mktime(&self._value)
+        };
 
-        Instant(tv.tv_sec, tv.tv_usec)
+        Instant(sec, self._usec)
     }
 
     /**

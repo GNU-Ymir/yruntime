@@ -21,3 +21,26 @@ __test {
 
     assert(res > (10).millis() && res < (200).millis());
 }
+
+__test {
+    // YMI-163: DateTime::instant() used to lock __DATE_MUTEX__ twice, deadlocking on the first call
+    let now = Instant::now();
+    let d = DateTime(now);
+    let i = d.instant();
+
+    assert(i.sec == now.sec);
+    assert(i.usec == now.usec);
+
+    // and the mutex is still usable afterwards
+    let d2 = DateTime(sec-> 30, min-> 15, hour-> 12, day-> 24, month-> 11, year-> 121);
+    assert(d2.second == 30 && d2.minute == 15 && d2.hour == 12);
+    assert(d2.day == 24 && d2.month == 11 && d2.year == 2021);
+
+    assert(DateTime(d2.instant()).instant().sec == d2.instant().sec);
+}
+
+__test {
+    // january 33rd is normalized to february 2nd (cf. mktime)
+    let d = DateTime(day-> 33, month-> 0, year-> 121);
+    assert(d.month == 1 && d.day == 2);
+}
