@@ -59,11 +59,14 @@ use std::{format::_, stream, traits};
 
 /**
  * Format the parameters passed to the function according to the format given as first parameter.
+ *
+ * Formatting never fails. A formatter that cannot be applied to the value it designates is
+ * replaced by that value written with its default representation, and a formatter that
+ * designates no value at all is left in the result as it was written in the format. Use
+ * `formatStrict` to be told about those instead of ignoring them.
  * @params:
  *   - str: the format
  *   - a: the list of values to format
- * @throws:
- *   - FormatError: if the format is not valid for the type of values
  *
  * @Grammar:
  * ```text
@@ -80,10 +83,22 @@ use std::{format::_, stream, traits};
  * width:= ([0-9])* | '*'
  * precision:= ([0-9])* | '*'
  * ```
+ *
+ * @example:
+ * ```
+ * use std::format;
+ *
+ * // 'x' is not a valid type formatter for a string, so the value is written unformatted
+ * assert(format("value: {:x}"s8, "foo"s8) == "value: foo"s8);
+ *
+ * // there is no argument 3, so the formatter is left as-is
+ * assert(format("value: {3}"s8, 12) == "value: {3}"s8);
+ *
+ * // and a '{' that closes no formatter is just a '{'
+ * assert(format("value: {"s8, 12) == "value: {"s8);
+ * ```
  */
-pub fn format {T...} (str: [c8], a: T)-> [c8]
-    throws FormatError
-{
+pub fn format {T...} (str: [c8], a: T)-> [c8] {
     let dmut stream = copy StringStream();
     cte if (T,)::arity > 1 {
         let z = (expand a,);
@@ -91,6 +106,49 @@ pub fn format {T...} (str: [c8], a: T)-> [c8]
     } else {
         let z = (a,);
         implem::format(str, z, alias stream);
+    }
+
+    stream[]
+}
+
+/**
+ * Format the parameters passed to the function according to the format given as first parameter,
+ * throwing on the first formatter that cannot be applied.
+ *
+ * This is the strict counterpart of `format`, for callers that would rather hear about an
+ * invalid format than see it silently written out. The accepted formats are exactly the same,
+ * see `format` for the grammar.
+ * @params:
+ *   - str: the format
+ *   - a: the list of values to format
+ * @throws:
+ *   - FormatError: if the format is not valid for the type of values
+ *
+ * @example:
+ * ```
+ * use std::format::_;
+ *
+ * // a valid format is written exactly like format writes it
+ * assert(formatStrict("i: {}, j: {}"s8, 89, "test"s8) == "i: 89, j: test"s8);
+ *
+ * // but an invalid one is not let through
+ * {
+ *     println(formatStrict("value: {3}"s8, 12));
+ * } catch {
+ *     err: &FormatError => { println("invalid format: ", err); }
+ * }
+ * ```
+ */
+pub fn formatStrict {T...} (str: [c8], a: T)-> [c8]
+    throws FormatError
+{
+    let dmut stream = copy StringStream();
+    cte if (T,)::arity > 1 {
+        let z = (expand a,);
+        implem::formatStrict(str, z, alias stream);
+    } else {
+        let z = (a,);
+        implem::formatStrict(str, z, alias stream);
     }
 
     stream[]

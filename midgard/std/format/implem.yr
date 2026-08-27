@@ -71,7 +71,7 @@ record Placeholder {
 }
 
 /**
- * Format a tuple into the stream
+ * Format a tuple into the stream, throwing on the first invalid formatter
  * @params:
  *    - str: the format
  *    - a: the tuple containing the values to format
@@ -79,7 +79,7 @@ record Placeholder {
  * @throws:
  *    - FormatError: if a formatter is invalid, or does not apply to the value it designates
  * */
-pub fn if isTuple!{T} format {T} (str: [c8], ref a: T, dmut stream: &StringStream)
+pub fn if isTuple!{T} formatStrict {T} (str: [c8], ref a: T, dmut stream: &StringStream)
     throws FormatError
 {
     let mut i = 0us, mut current = 0us;
@@ -101,6 +101,111 @@ pub fn if isTuple!{T} format {T} (str: [c8], ref a: T, dmut stream: &StringStrea
             i += 1us;
         }
     }
+}
+
+/**
+ * Format a tuple into the stream, leaving the text that cannot be formatted as-is
+ *
+ * A formatter that does not apply to the value it designates is replaced by that value written
+ * with its default representation. A formatter that designates no value at all, and a '{' that
+ * closes no formatter, are written verbatim.
+ * @params:
+ *    - str: the format
+ *    - a: the tuple containing the values to format
+ *    - stream: the stream to fill
+ * */
+pub fn if isTuple!{T} format {T} (str: [c8], ref a: T, dmut stream: &StringStream) {
+    let mut i = 0us, mut current = 0us;
+    while i < str.len {
+        if str[i] == '{' && i + 1us < str.len && str[i + 1us] == '{' {
+            stream:.write('{');
+            i += 2us;
+        }
+
+        else if str[i] == '{' {
+            let (len, next) = lenientPlaceholder!{T} (str, i, a, alias stream, current);
+            current = next;
+            i += len;
+        }
+
+        else {
+            stream:.write(str[i]);
+            i += 1us;
+        }
+    }
+}
+
+/**
+ * Write the formatter starting at str[start] in the stream, falling back to unformatted text
+ * when it cannot be applied
+ * @params:
+ *    - str: the format
+ *    - start: the index of the opening '{' of the formatter
+ *    - a: the tuple containing the values to format
+ *    - stream: the stream to fill
+ *    - current: the value of the implicit argument counter
+ * @returns:
+ *    - .0: the number of chars consumed from 'str'
+ *    - .1: the value of the implicit argument counter after this formatter
+ * */
+fn if isTuple!{T} lenientPlaceholder {T} (str: [c8], start: usize, ref a: T, dmut stream: &StringStream, current: usize)-> (usize, usize) {
+    let (ok, ph, len) = tryParsePlaceholder(str[start .. $], current, start);
+    if ok {
+        if !tryRender!{T} (ph, a, alias stream, start)
+            && !tryWriteValue!{T} (a, alias stream, ph.index)
+        {
+            stream:.write(str[start .. start + len]);
+        }
+
+        return (len, ph.next);
+    }
+
+    // The formatter is malformed, find the '}' closing it to know how much to skip
+    let end = placeholderEnd(str, start);
+    if end == 0us {
+        // There is none, so this '{' opens no formatter at all
+        stream:.write(str[start .. $]);
+        return (str.len - start, current);
+    }
+
+    let (index, explicit) = fallbackIndex(str, start, current);
+    if !tryWriteValue!{T} (a, alias stream, index) {
+        stream:.write(str[start .. end]);
+    }
+
+    (end - start, if explicit { current } else { current + 1us })
+}
+
+/**
+ * @returns: the index just after the '}' closing the formatter opened at str[start], or 0us if
+ *           there is no such '}'
+ * */
+fn placeholderEnd(str: [c8], start: usize)-> usize {
+    for i in start + 1us .. str.len {
+        if str[i] == '}' { return i + 1us; }
+    }
+
+    0us
+}
+
+/**
+ * Read the argument index of a malformed formatter, ignoring everything else about it
+ * @params:
+ *    - str: the format
+ *    - start: the index of the opening '{' of the formatter
+ *    - current: the value of the implicit argument counter
+ * @returns:
+ *    - .0: the index of the argument the formatter designates
+ *    - .1: true if that index was written explicitly in the formatter
+ * */
+fn fallbackIndex(str: [c8], start: usize, current: usize)-> (usize, bool) {
+    let mut i = start + 1us, mut index = 0us;
+    while i < str.len && str[i] >= '0' && str[i] <= '9' {
+        index = index * 10us + cast!usize(cast!u8(str[i]) - cast!u8('0'));
+        i += 1us;
+    }
+
+    if i == start + 1us { (current, false) } else { (index, true) }
 }
 
 /**
@@ -181,6 +286,22 @@ fn parsePlaceholder(str: [c8], current: usize, globalIndex: usize)-> (Placeholde
 } catch {
     x: &FormatError => throw x;
     err => throw copy FormatError(globalIndex, "", subError-> err?);
+}
+
+/**
+ * Same as parsePlaceholder, but reporting a malformed formatter instead of throwing
+ * @returns:
+ *    - .0: true if the formatter is well formed, in which case .1 and .2 are meaningful
+ *    - .1: the parsed formatter
+ *    - .2: the number of chars of the formatter, closing '}' included
+ * */
+fn tryParsePlaceholder(str: [c8], current: usize, globalIndex: usize)-> (bool, Placeholder, usize) {
+    {
+        let (ph, len) = parsePlaceholder(str, current, globalIndex);
+        (true, ph, len)
+    } catch {
+        _ => { (false, Placeholder(), 0us) }
+    }
 }
 
 /**
@@ -317,6 +438,43 @@ fn if isTuple!{T} renderPlaceholder {T} (ph: Placeholder, ref a: T, dmut stream:
             return;
         }
     }
+}
+
+/**
+ * Same as renderPlaceholder, but reporting the failure instead of throwing
+ *
+ * Nothing is written in the stream when the formatter cannot be applied.
+ * @returns: true if the value was written
+ * */
+fn if isTuple!{T} tryRender {T} (ph: Placeholder, ref a: T, dmut stream: &StringStream, globalIndex: usize)-> bool {
+    let dmut scratch = copy StringStream();
+    {
+        renderPlaceholder!{T} (ph, a, alias scratch, globalIndex);
+    } catch {
+        _ => { return false; }
+    }
+
+    stream:.write(scratch[]);
+    true
+}
+
+/**
+ * Write the value at 'index' in the stream with its default representation, reporting the
+ * failure instead of throwing when there is no such value
+ *
+ * Nothing is written in the stream when there is no such value.
+ * @returns: true if the value was written
+ * */
+fn if isTuple!{T} tryWriteValue {T} (ref a: T, dmut stream: &StringStream, index: usize)-> bool {
+    let dmut scratch = copy StringStream();
+    {
+        formatValue!{T} (a, alias scratch, index, 0us);
+    } catch {
+        _ => { return false; }
+    }
+
+    stream:.write(scratch[]);
+    true
 }
 
 /**
