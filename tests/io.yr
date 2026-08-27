@@ -1,4 +1,17 @@
 use std::io;
+use std::stream;
+use std::algorithm::searching;
+
+/**
+ * @returns: the text `print` would have written for `a`, captured in a string
+ * rather than sent to the standard output.
+ */
+fn toStr {T} (a: T)-> [c8] {
+    let dmut ss = copy StringStream ();
+    ss:.write (a);
+
+    ss []
+}
 
 __test {
     println("Chars ");
@@ -125,18 +138,23 @@ __test {
 
 
 __test {
-    println("Options");
-    print(1?);
-    let a: i32? = none;
-    print(a);
+    assert(toStr(1?) == "Ok(1)"s8, toStr(1?));
 
+    let a: i32? = none;
+    assert(toStr(a) == "Err()"s8, toStr(a));
+
+    // An errored option carries the exception that escaped the block. In a
+    // DEBUG_LIB build that exception embeds the stack trace captured when it was
+    // constructed, which is machine dependent, so only the leading part of the
+    // rendering is checked. This is captured rather than printed on purpose: the
+    // trace on the standard output reads as a genuine test failure otherwise.
     let z: void? = { assert(false, "message"); }?;
-    print(z);
+    let zs = toStr(z);
+    assert(zs.startsWith("Err(core::exception::assertion::AssertError (message)"s8), zs);
 
     let mut f = true;
     let w: void? = { assert(f); }?;
-    print(w);
-    println();
+    assert(toStr(w) == "Ok()"s8, toStr(w));
 }
 
 

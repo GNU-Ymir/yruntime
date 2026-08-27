@@ -1,0 +1,328 @@
+in math;
+
+use core::math;
+use core::exception::assertion;
+
+use std::math;
+use std::traits;
+use std::conv;
+use std::algorithm::comparison;
+
+/**
+ * @returns: a value equal to `v`, but built in a way the compiler cannot constant fold,
+ * so that the tested functions are exercised at runtime and not by the CTE evaluator.
+ */
+fn opaque {T} (v: T)-> T {
+    let dmut box = copy [v];
+    box [0]
+}
+
+/**
+ * @returns: the distance between `a` and `b`, counted in units in the last place. The
+ *  unit is taken at the magnitude of the compared values, but never below the one of
+ *  `1.0`, so that values around zero are compared absolutely. Values that are not
+ *  comparable at all (a NaN, or a lone infinity) are `u64::max` apart.
+ */
+fn ulps {T} (a: T, b: T)-> u64 {
+    if (a == b) return 0u64;
+    if (core::math::isNaN (a) || core::math::isNaN (b)) return u64::max;
+    if (core::math::isInf (a) || core::math::isInf (b)) return u64::max;
+
+    let unit = T::epsilon * max (max (core::math::abs (a), core::math::abs (b)), cast!{T} (1.0));
+    let d = core::math::abs (a - b) / unit;
+
+    if (d >= cast!{T} (u64::max)) { u64::max } else { cast!u64 (d) }
+}
+
+/**
+ * Assert that `a` and `b` are within `tol` units in the last place of each other, and
+ * report both values and their actual distance on failure.
+ * @info: this deliberately does not go through `core::math::fcmp`. That function is
+ *  itself under test in this file, and building every other assertion on top of it
+ *  would let it mask its own bugs.
+ */
+fn near {T} (a: T, b: T, msg: [c8], tol: u64 = 4u64)
+    throws AssertError
+{
+    let d = ulps (a, b);
+    assert (d <= tol, msg ~ " : " ~ a.to![c8] () ~ " != " ~ b.to![c8] ()
+                          ~ " (" ~ d.to![c8] () ~ " ulps, tolerating " ~ tol.to![c8] () ~ ")");
+}
+
+/**
+ * Assert that the relative error between `a` and `b` is at most `tol`.
+ * @info: `ffpow` is an iterative approximation whose accuracy is bounded by its `prec`
+ *  parameter, `1e-7` by default. That is orders of magnitude coarser than the last
+ *  place of any of the floating point types, so its results are compared relatively
+ *  rather than in ulps.
+ */
+fn nearRel {T} (a: T, b: T, msg: [c8], tol: f64 = 0.000_001)
+    throws AssertError
+{
+    let scale = max (max (core::math::abs (a), core::math::abs (b)), cast!{T} (1.0));
+    let err = cast!f64 (core::math::abs (a - b) / scale);
+
+    assert (err <= tol, msg ~ " : " ~ a.to![c8] () ~ " != " ~ b.to![c8] ()
+                            ~ " (relative error " ~ err.to![c8] () ~ ")");
+}
+
+/*!
+ * ================================================================================
+ * ================================================================================
+ * =========================          CORE MATH          ==========================
+ * ================================================================================
+ * ================================================================================
+ */
+
+fn coreAbs {T} ()
+    throws AssertError
+{
+    near (core::math::abs (opaque (cast!{T} (-10.5))), cast!{T} (10.5), "abs neg");
+    near (core::math::abs (opaque (cast!{T} (10.5))), cast!{T} (10.5), "abs pos");
+    near (core::math::abs (opaque (cast!{T} (0.0))), cast!{T} (0.0), "abs zero");
+
+    near (core::math::fabs (opaque (cast!{T} (-10.5))), cast!{T} (10.5), "fabs neg");
+    near (core::math::fabs (opaque (cast!{T} (10.5))), cast!{T} (10.5), "fabs pos");
+}
+
+fn coreNaNInf {T} ()
+    throws AssertError
+{
+    let zero = opaque (cast!{T} (0.0));
+    let one = opaque (cast!{T} (1.0));
+    let nan = zero / zero;
+    let inf = one / zero;
+
+    assert (core::math::isNaN (nan), "runtime nan");
+    assert (core::math::isNaN (T::nan), "constant nan");
+    assert (!core::math::isNaN (inf), "inf is not a nan");
+    assert (!core::math::isNaN (zero), "zero is not a nan");
+    assert (!core::math::isNaN (opaque (cast!{T} (-1.5))), "-1.5 is not a nan");
+
+    assert (core::math::isInf (inf), "runtime inf");
+    assert (core::math::isInf (-inf), "runtime -inf");
+    assert (core::math::isInf (T::inf), "constant inf");
+    assert (core::math::isInf (-T::inf), "constant -inf");
+    assert (!core::math::isInf (nan), "nan is not an inf");
+    assert (!core::math::isInf (T::max), "max is not an inf");
+}
+
+fn coreFcmp {T} ()
+    throws AssertError
+{
+    let zero = opaque (cast!{T} (0.0));
+    let one = opaque (cast!{T} (1.0));
+    let nan = zero / zero;
+    let inf = one / zero;
+
+    // exact equality
+    assert (core::math::fcmp (one, opaque (cast!{T} (1.0))), "1 == 1");
+    assert (core::math::fcmp (zero, -zero), "0 == -0");
+
+    // a rounding error of a few ulps is congruent
+    assert (core::math::fcmp (opaque (cast!{T} (0.1)) + opaque (cast!{T} (0.2)),
+                              opaque (cast!{T} (0.3))), "0.1 + 0.2 == 0.3");
+    assert (core::math::fcmp (one, one + T::epsilon / cast!{T} (2.0)), "1 == 1 + eps / 2");
+
+    // the tolerance is one rounding step, and follows the magnitude of the compared
+    // values: at 1e6 a difference of T::epsilon is far below the last place, while the
+    // same difference is the whole tolerance at 1.0
+    let big = opaque (cast!{T} (1_000_000.0));
+    assert (core::math::fcmp (big, big + big * T::epsilon / cast!{T} (2.0)), "relative tolerance");
+    assert (!core::math::fcmp (big, big + big * T::epsilon * cast!{T} (8.0)), "beyond one step");
+    assert (!core::math::fcmp (big, big * cast!{T} (1.1)), "1e6 != 1.1e6");
+
+    assert (core::math::fcmp (one, one + T::epsilon), "1 == 1 + eps");
+    assert (!core::math::fcmp (one, one + T::epsilon * cast!{T} (4.0)), "1 != 1 + 4 eps");
+
+    // clearly different values are not congruent
+    assert (!core::math::fcmp (one, opaque (cast!{T} (2.0))), "1 != 2");
+    assert (!core::math::fcmp (zero, one), "0 != 1");
+
+    // NaN is congruent with itself only
+    assert (core::math::fcmp (nan, nan), "nan == nan");
+    assert (core::math::fcmp (T::nan, T::nan), "constant nan == nan");
+    assert (!core::math::fcmp (nan, one), "nan != 1");
+    assert (!core::math::fcmp (one, nan), "1 != nan");
+    assert (!core::math::fcmp (nan, inf), "nan != inf");
+
+    // infinities are congruent with themselves only
+    assert (core::math::fcmp (inf, inf), "inf == inf");
+    assert (core::math::fcmp (-inf, -inf), "-inf == -inf");
+    assert (!core::math::fcmp (inf, -inf), "inf != -inf");
+    assert (!core::math::fcmp (inf, one), "inf != 1");
+    assert (!core::math::fcmp (inf, T::max), "inf != max");
+}
+
+fn coreTrunc {T} ()
+    throws AssertError
+{
+    near (core::math::trunc (opaque (cast!{T} (12.9))), cast!{T} (12.0), "trunc pos");
+    near (core::math::trunc (opaque (cast!{T} (-12.9))), cast!{T} (-12.0), "trunc neg");
+    near (core::math::trunc (opaque (cast!{T} (12.0))), cast!{T} (12.0), "trunc exact");
+}
+
+fn coreSqrt {T} ()
+    throws AssertError
+{
+    near (core::math::sqrt (opaque (cast!{T} (16.0))), cast!{T} (4.0), "sqrt 16");
+    near (core::math::sqrt (opaque (cast!{T} (0.0))), cast!{T} (0.0), "sqrt 0");
+    near (core::math::sqrt (opaque (cast!{T} (2.0))) * core::math::sqrt (opaque (cast!{T} (2.0))),
+          cast!{T} (2.0), "sqrt 2 squared");
+}
+
+fn corePow {T} ()
+    throws AssertError
+{
+    near (core::math::fipow (opaque (cast!{T} (2.0)), 3), cast!{T} (8.0), "fipow 2^3");
+    near (core::math::fipow (opaque (cast!{T} (2.0)), 0), cast!{T} (1.0), "fipow 2^0");
+    near (core::math::fipow (opaque (cast!{T} (2.0)), -2), cast!{T} (0.25), "fipow 2^-2");
+    near (core::math::fipow (opaque (cast!{T} (-3.0)), 3), cast!{T} (-27.0), "fipow -3^3");
+
+    nearRel (core::math::ffpow (opaque (cast!{T} (4.0)), opaque (cast!{T} (0.5))),
+             cast!{T} (2.0), "ffpow 4^0.5");
+    nearRel (core::math::ffpow (opaque (cast!{T} (2.0)), opaque (cast!{T} (10.0))),
+             cast!{T} (1024.0), "ffpow 2^10");
+}
+
+fn coreMod {T} ()
+    throws AssertError
+{
+    near (core::math::ffmod (opaque (cast!{T} (12.5)), opaque (cast!{T} (5.0))),
+          cast!{T} (2.5), "ffmod pos");
+    near (core::math::ffmod (opaque (cast!{T} (-12.5)), opaque (cast!{T} (5.0))),
+          cast!{T} (-2.5), "ffmod neg");
+}
+
+fn coreIPow {T} ()
+    throws AssertError
+{
+    assert (core::math::ipow (opaque (cast!{T} (2)), 10) == cast!{T} (1024), "ipow 2^10");
+    assert (core::math::ipow (opaque (cast!{T} (2)), 0) == cast!{T} (1), "ipow 2^0");
+    assert (core::math::ipow (opaque (cast!{T} (3)), 4) == cast!{T} (81), "ipow 3^4");
+    assert (core::math::ipow (opaque (cast!{T} (2)), -1) == cast!{T} (0), "ipow 2^-1");
+    assert (core::math::ipow (opaque (cast!{T} (1)), -3) == cast!{T} (1), "ipow 1^-3");
+}
+
+__test {
+    coreAbs!f32 (); coreAbs!f64 (); coreAbs!f80 (); coreAbs!fsize ();
+}
+
+__test {
+    coreNaNInf!f32 (); coreNaNInf!f64 (); coreNaNInf!f80 (); coreNaNInf!fsize ();
+}
+
+__test {
+    coreFcmp!f32 (); coreFcmp!f64 (); coreFcmp!f80 (); coreFcmp!fsize ();
+}
+
+__test {
+    coreTrunc!f32 (); coreTrunc!f64 (); coreTrunc!f80 (); coreTrunc!fsize ();
+}
+
+__test {
+    coreSqrt!f32 (); coreSqrt!f64 (); coreSqrt!f80 (); coreSqrt!fsize ();
+}
+
+__test {
+    corePow!f32 (); corePow!f64 (); corePow!f80 (); corePow!fsize ();
+}
+
+__test {
+    coreMod!f32 (); coreMod!f64 (); coreMod!f80 (); coreMod!fsize ();
+}
+
+__test {
+    coreIPow!i32 (); coreIPow!i64 (); coreIPow!isize ();
+    coreIPow!u32 (); coreIPow!u64 (); coreIPow!usize ();
+}
+
+__test {
+    // the ^^ operator is rewritten into ipow/fipow/ffpow, which never compiled for
+    // floating point values before, since fipow's template guard was ill formed
+    assert (opaque (2) ^^ 10 == 1024, "i32 ^^");
+    near (opaque (2.0f) ^^ 3, 8.0f, "f32 ^^");
+    near (opaque (2.0) ^^ 3, 8.0, "f64 ^^");
+    near (opaque (2.0l) ^^ 3, 8.0l, "f80 ^^");
+    nearRel (opaque (4.0) ^^ opaque (0.5), 2.0, "f64 ^^ f64");
+}
+
+__test {
+    // the <=> operator is rewritten into fcmp, and was just as unusable, since fcmp
+    // could not be instantiated for any type at all. One unit in the last place at
+    // magnitude 1.0 is exactly T::epsilon, which makes the boundary exact here.
+    assert (opaque (1.0f) <=> opaque (1.0f + f32::epsilon), "f32 <=>");
+    assert (opaque (1.0) <=> opaque (1.0 + f64::epsilon), "f64 <=>");
+    assert (opaque (1.0l) <=> opaque (1.0l + f80::epsilon), "f80 <=>");
+
+    assert (!(opaque (1.0) <=> opaque (1.0 + 4.0 * f64::epsilon)), "f64 <=> four steps away");
+    assert (!(opaque (10.0) <=> opaque (11.0)), "f64 <=> differing");
+
+    // the documented example of the operator
+    assert (opaque (10.0) <=> opaque (10.0 + (f64::epsilon / 2.0)), "f64 <=> doc example");
+}
+
+/*!
+ * ================================================================================
+ * ================================================================================
+ * =========================           STD MATH          ==========================
+ * ================================================================================
+ * ================================================================================
+ */
+
+fn stdRound {T} ()
+    throws AssertError
+{
+    near (std::math::round (opaque (cast!{T} (1.234_5)), 2u32), cast!{T} (1.23), "round down");
+    near (std::math::round (opaque (cast!{T} (1.236)), 2u32), cast!{T} (1.24), "round up");
+    near (std::math::round (opaque (cast!{T} (-1.236)), 2u32), cast!{T} (-1.24), "round neg");
+    near (std::math::round (opaque (cast!{T} (1.5)), 0u32), cast!{T} (2.0), "round to unit");
+}
+
+fn stdTrigo {T} ()
+    throws AssertError
+{
+    let pi = cast!{T} (std::math::PI);
+
+    near (std::math::sin (opaque (cast!{T} (0.0))), cast!{T} (0.0), "sin 0");
+    near (std::math::sin (opaque (pi / cast!{T} (2.0))), cast!{T} (1.0), "sin pi/2");
+    near (std::math::cos (opaque (cast!{T} (0.0))), cast!{T} (1.0), "cos 0");
+    near (std::math::tan (opaque (cast!{T} (0.0))), cast!{T} (0.0), "tan 0");
+
+    near (std::math::asin (opaque (cast!{T} (1.0))), pi / cast!{T} (2.0), "asin 1");
+    near (std::math::acos (opaque (cast!{T} (1.0))), cast!{T} (0.0), "acos 1");
+    near (std::math::atan (opaque (cast!{T} (0.0))), cast!{T} (0.0), "atan 0");
+
+    // std::math::tan {T} (x, y) is the two argument arc tangent (atan2)
+    near (std::math::tan (opaque (cast!{T} (0.0)), opaque (cast!{T} (1.0))),
+          cast!{T} (0.0), "atan2 (0, 1)");
+    near (std::math::tan (opaque (cast!{T} (1.0)), opaque (cast!{T} (0.0))),
+          pi / cast!{T} (2.0), "atan2 (1, 0)");
+
+    // the trigonometric identities must hold on a few arbitrary angles
+    for i in 0 .. 8 {
+        let a = opaque (cast!{T} (cast!f64 (i)) / cast!{T} (8.0));
+        near (std::math::sin (a) * std::math::sin (a) + std::math::cos (a) * std::math::cos (a),
+              cast!{T} (1.0), "sin^2 + cos^2");
+        near (std::math::asin (std::math::sin (a)), a, "asin (sin a)");
+        near (std::math::acos (std::math::cos (a)), a, "acos (cos a)");
+        near (std::math::atan (std::math::tan (a)), a, "atan (tan a)");
+    }
+}
+
+__test {
+    stdRound!f32 (); stdRound!f64 (); stdRound!f80 (); stdRound!fsize ();
+}
+
+__test {
+    stdTrigo!f32 (); stdTrigo!f64 (); stdTrigo!f80 (); stdTrigo!fsize ();
+}
+
+__test {
+    // the constants must be consistent with each other
+    near (std::math::TAU, 2.0l * std::math::PI, "tau");
+    near (std::math::PI_2, std::math::PI / 2.0l, "pi_2");
+    near (std::math::PI_4, std::math::PI / 4.0l, "pi_4");
+    near (std::math::M_1_PI, 1.0l / std::math::PI, "m_1_pi");
+    near (std::math::M_2_PI, 2.0l / std::math::PI, "m_2_pi");
+}
