@@ -55,30 +55,28 @@ pub class if isChar!{C} Node {C} {
      * Insert sub tokens accepted tokens
      * @params:
      *     - str: the rest to read to create a valid token
+     * @info: `node` is a private module, the example below is not compilable from outside of it.
      * @example:
-     * ```
+     * ```text
      * // let say that "[+]" is a token, but "[" is not, nor is "[+"
-     * let dmut node = copy Node('[');
-     * node:.insert("+]");
-     * println(node); // [:false, +:false, ]:true
+     * let dmut node = copy Node!{c8} ('[');
+     * node:.insert("+]", false, "");
+     *
      * // In that configuration the only token that will be accepted is "[+]"
-     * assert(node.len("[+]") == 3); // accepted
-     * assert(node.len("[") == 0u64); // not accepted
-     * assert(node.len("[+") == 0u64); // not accepted
+     * // node.len returns the length of the token read at the beginning of the content
+     * node.len("+]")._0; // 3us, accepted
+     * node.len("")._0;   // 0us, not accepted
+     * node.len("+")._0;  // 0us, not accepted
      *
-     * // Now we want to accept "[-]"
-     * node = node:.insert("-]");
-     * // and simply "["
-     * node = node:.insert("");
-     * println(node); // [:true,
-     *                 //     +:false, ]:true
-     *                 //     -: false, ]:true
+     * // Now we want to accept "[-]", and simply "["
+     * node:.insert("-]", false, "");
+     * node:.insert("", false, "");
      *
-     * assert(node.len("[+]") == 3); // still accepted
-     * assert(node.len("[") == 1u64); // accepted this time
-     * assert(node.len("[+") == 1u64); // accept only the '['
-     * assert(node.len("[-]") == 3); // accepted
-     * assert(node.len("[-") == 1u64); // accept only the '['
+     * node.len("+]")._0; // 3us, still accepted
+     * node.len("")._0;   // 1us, accepted this time
+     * node.len("+")._0;  // 1us, accept only the '['
+     * node.len("-]")._0; // 3us, accepted
+     * node.len("-")._0;  // 1us, accept only the '['
      * ```
      * */
     pub fn insert(mut self, str: [C], isSkip: bool, isComment: [C]) {
@@ -116,16 +114,17 @@ pub class if isChar!{C} Node {C} {
      *    - .0: the length of the token at the beginning of the string content
      *    - .1: true iif this is a skip token
      *    - .2: the closing token iif this is a comment token
+     * @info: `node` is a private module, the example below is not compilable from outside of it.
      * @example:
-     * ```
-     * let mut node = copy Node!{c8} ('+', isToken-> true);
-     * node:.insert("=");
+     * ```text
+     * let dmut node = copy Node!{c8} ('+');
+     * node:.insert("", false, "");  // "+" alone is a token
+     * node:.insert("=", false, "");
      *
      * // Our grammar accepts the tokens, "+" and "+="
-     * assert(node.len("+")._0 == 1u64); // "+" is accepted
-     * assert(node.len("+=")._0 == 2u64); // "+=" is accepted
-     * assert(node.len(" +=")._0 == 0u64); // " +=" is not accepted
-     * assert(node.len("+ and some rest")._0 == 1u64); // "+" is accepted
+     * node.len("")._0;               // 1us, "+" is accepted
+     * node.len("=")._0;              // 2us, "+=" is accepted
+     * node.len(" and some rest")._0; // 1us, only the "+" is read
      * ```
      */
     pub fn len(self, content: [C])-> (usize, bool, [c8]) {
