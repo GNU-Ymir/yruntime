@@ -34,7 +34,8 @@ __test {
     // and the mutex is still usable afterwards
     let d2 = DateTime(sec-> 30, min-> 15, hour-> 12, day-> 24, month-> 11, year-> 121);
     assert(d2.second == 30 && d2.minute == 15 && d2.hour == 12);
-    assert(d2.day == 24 && d2.month == 11 && d2.year == 2021);
+    // the ctor takes a 0-based month (tm_mon), the getter reports it 1-based
+    assert(d2.day == 24 && d2.month == 12 && d2.year == 2021);
 
     assert(DateTime(d2.instant()).instant().sec == d2.instant().sec);
 }
@@ -42,5 +43,15 @@ __test {
 __test {
     // january 33rd is normalized to february 2nd (cf. mktime)
     let d = DateTime(day-> 33, month-> 0, year-> 121);
-    assert(d.month == 1 && d.day == 2);
+    assert(d.month == 2 && d.day == 2);
+}
+
+__test {
+    // YMI-168: yearDay must return tm_yday, not the weekday, and toStream must print
+    // a 1-based month and a two-digit (year % 100) year.
+    let d = DateTime(usec-> 0u64, sec-> 0, min-> 0, hour-> 12, day-> 25, month-> 11, year-> 126);
+    assert(d.month == 12);
+    assert(d.yearDay == 358);
+    assert(d.weekDay != d.yearDay);
+    assert(d.to![c8] () == "25/12/26 12:00:00");
 }
