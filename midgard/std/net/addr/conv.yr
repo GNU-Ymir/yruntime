@@ -108,7 +108,6 @@ pub fn to {I of &Ipv6Addr, T of [c8]} (addr: T)-> &Ipv6Addr
 {
     let dmut tzer = Tokenizer!{c8} ();
     tzer:.insert("::");
-    tzer:.insert(":::");
     tzer:.insert(":", isSkip-> true);
 
     let components = tzer.tokenizeWithoutSkips(addr);
@@ -146,13 +145,23 @@ pub fn to {I of &Ipv6Addr, T of [c8]} (addr: T)-> &Ipv6Addr
                 if (startI + endI >= 8us) break;
             } else { // Maybe we reached an end with an ipv4 addr
                 if let Ok(v4: &Ipv4Addr) = net::addr::conv::to!{&Ipv4Addr, [c8]} (v)? {
-                    let dmut pack1: *u8 = cast!{*u8} (cast!{dmut *void} (&end[endI]));
-                    let dmut pack2: *u8 = cast!{*u8} (cast!{dmut *void} (&end[endI + 1]));
-                    unsafe { // u8 to u16
-                        pack1[0] = v4[][1];
-                        pack1[1] = v4[][0];
-                        pack2[0] = v4[][3];
-                        pack2[1] = v4[][2];
+                    // An ipv4 tail is only legal as the very last component, and only if
+                    // there is room left for the two groups it expands into
+                    if (index != components.len) || (startI + endI + 2 > 8) {
+                        throw copy CastFailure(T::__typeinfo__, I::__typeinfo__);
+                    }
+
+                    let g1 = (cast!u16 (v4[][0]) << 8) | cast!u16 (v4[][1]);
+                    let g2 = (cast!u16 (v4[][2]) << 8) | cast!u16 (v4[][3]);
+
+                    if (readEnd) {
+                        end[endI] = g1;
+                        end[endI + 1] = g2;
+                        endI += 2;
+                    } else {
+                        start[startI] = g1;
+                        start[startI + 1] = g2;
+                        startI += 2;
                     }
 
                     break;
