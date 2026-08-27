@@ -154,11 +154,11 @@ pub record DateTime {
     }
 
     /**
-     * @returns: the month in the year
+     * @returns: the month in the year, 1-based (`1` = January, `12` = December)
      * */
     @field
     pub fn month(self)-> i32 {
-        self._value.tm_mon
+        self._value.tm_mon + 1
     }
 
     /**
@@ -178,11 +178,11 @@ pub record DateTime {
     }
 
     /**
-     * @returns: the day in the year
+     * @returns: the day in the year, 0-based (`0` = January 1st)
      * */
     @field
     pub fn yearDay(self)-> i32 {
-        self._value.tm_wday
+        self._value.tm_yday
     }
 
     /*!
@@ -202,15 +202,15 @@ pub record DateTime {
                 stream:.write(self._value.tm_mday);
             }
 
-            if self._value.tm_mon < 10 {
-                stream:.write("/0", self._value.tm_mon);
-            } else { stream:.write("/", self._value.tm_mon); }
+            if self.month < 10 {
+                stream:.write("/0", self.month);
+            } else { stream:.write("/", self.month); }
 
             if self.year > 2000 {
-                if (self.year % 2000) < 10 {
-                    stream:.write("/0", self.year % 2000);
+                if (self.year % 100) < 10 {
+                    stream:.write("/0", self.year % 100);
                 } else {
-                    stream:.write("/", self.year % 2000);
+                    stream:.write("/", self.year % 100);
                 }
             } else {
                 stream:.write("/", self.year);
