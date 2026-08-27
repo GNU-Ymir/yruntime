@@ -228,14 +228,14 @@ pub entity File {
         }
 
         if (!c::files::feof(self._handle)) {
-            let cursor = c::files::ftell(self._handle);
-            c::files::fseek(self._handle, 0u32, c::files::SeekWhence::SEEK_END);
-            let len = c::files::ftell(self._handle) - cursor;
-            c::files::fseek(self._handle, cursor, c::files::SeekWhence::SEEK_SET);
+            let cursor = c::files::ftello(self._handle);
+            c::files::fseeko(self._handle, 0i64, c::files::SeekWhence::SEEK_END);
+            let len = c::files::ftello(self._handle) - cursor;
+            c::files::fseeko(self._handle, cursor, c::files::SeekWhence::SEEK_SET);
 
-            if (len != 0u32) {
+            if (len != 0i64) {
                 let dmut res = core::types::array::allocArray!{c8} (cast!usize(len));
-                c::files::fread(alias cast!{dmut *void} (res.ptr), c8::size, len, alias self._handle);
+                c::files::fread(alias cast!{dmut *void} (res.ptr), cast!usize(c8::size), cast!usize(len), alias self._handle);
 
                 return alias res;
             }
@@ -329,7 +329,7 @@ pub entity File {
             throw copy FsError(FsErrorCode::NOT_WRITABLE, self._filename.toStr());
         }
 
-        c::files::fwrite(cast!{*void} (text.ptr), c8::size, cast!{u32} (text.len), alias self._handle);
+        c::files::fwrite(cast!{*void} (text.ptr), cast!usize(c8::size), text.len, alias self._handle);
     }
 
 
@@ -365,14 +365,14 @@ pub entity File {
         }
 
         if (!c::files::feof(self._handle)) {
-            let cursor = c::files::ftell(self._handle);
-            c::files::fseek(self._handle, 0u32, c::files::SeekWhence::SEEK_END);
-            let len = c::files::ftell(self._handle) - cursor;
-            c::files::fseek(self._handle, cursor, c::files::SeekWhence::SEEK_SET);
+            let cursor = c::files::ftello(self._handle);
+            c::files::fseeko(self._handle, 0i64, c::files::SeekWhence::SEEK_END);
+            let len = c::files::ftello(self._handle) - cursor;
+            c::files::fseeko(self._handle, cursor, c::files::SeekWhence::SEEK_SET);
 
-            if (len != 0u32) {
+            if (len != 0i64) {
                 let dmut res = core::types::array::allocArray!{u8} (cast!(usize) (len));
-                c::files::fread(alias cast!{dmut *void} (res.ptr), u8::size, cast!(u32) (len), alias self._handle);
+                c::files::fread(alias cast!{dmut *void} (res.ptr), cast!usize(u8::size), cast!usize(len), alias self._handle);
 
                 return alias res;
             }
@@ -451,16 +451,16 @@ pub entity File {
         }
 
         if (!c::files::feof(self._handle)) {
-            let cursor = c::files::ftell(self._handle);
-            c::files::fseek(self._handle, 0u32, c::files::SeekWhence::SEEK_END);
-            let len = c::files::ftell(self._handle) - cursor;
-            c::files::fseek(self._handle, cursor, c::files::SeekWhence::SEEK_SET);
+            let cursor = c::files::ftello(self._handle);
+            c::files::fseeko(self._handle, 0i64, c::files::SeekWhence::SEEK_END);
+            let len = c::files::ftello(self._handle) - cursor;
+            c::files::fseeko(self._handle, cursor, c::files::SeekWhence::SEEK_SET);
 
             let canRead  = cast!usize(len) / cast!usize(U::size);
             let toRead = if (canRead >= result.len) { result.len } else { canRead };
             if (toRead == 0) return [];
 
-            c::files::fread(alias cast!{dmut *void} (result.ptr), U::size, cast!u32(toRead), alias self._handle);
+            c::files::fread(alias cast!{dmut *void} (result.ptr), cast!usize(U::size), cast!usize(toRead), alias self._handle);
             return alias result[0 .. toRead];
         }
 
@@ -496,7 +496,7 @@ pub entity File {
             throw copy FsError(FsErrorCode::NOT_WRITABLE, self._filename.toStr());
         }
 
-        c::files::fwrite(cast!{*void} (text.ptr), u8::size, cast!(u32) (text.len), alias self._handle);
+        c::files::fwrite(cast!{*void} (text.ptr), cast!usize(u8::size), text.len, alias self._handle);
     }
 
     /**
@@ -528,7 +528,7 @@ pub entity File {
             throw copy FsError(FsErrorCode::NOT_WRITABLE, self._filename.toStr());
         }
 
-        c::files::fwrite(cast!{*void} (text.ptr), U::size, cast!(u32) (text.len), alias self._handle);
+        c::files::fwrite(cast!{*void} (text.ptr), cast!usize(U::size), text.len, alias self._handle);
     }
 
     /**
@@ -537,14 +537,14 @@ pub entity File {
      * @throws:
      *   - FsError: if the file is not opened
      */
-    pub fn seek(mut self, cursor: u32)-> void
+    pub fn seek(mut self, cursor: u64)-> void
         throws FsError
     {
         if (self._handle == null) {
             throw copy FsError(FsErrorCode::FILE_CLOSED, self._filename.toStr());
         }
 
-        c::files::fseek(self._handle, cursor, c::files::SeekWhence::SEEK_SET);
+        c::files::fseeko(self._handle, cast!i64(cursor), c::files::SeekWhence::SEEK_SET);
     }
 
     /**
@@ -552,20 +552,20 @@ pub entity File {
      * @throws:
      *   - FsError: if the file is not opened
      */
-    pub fn tell(self)-> u32
+    pub fn tell(self)-> u64
         throws FsError
     {
         if (self._handle == null) {
             throw copy FsError(FsErrorCode::FILE_CLOSED, self._filename.toStr());
         }
 
-        c::files::ftell(self._handle)
+        cast!u64(c::files::ftello(self._handle))
     }
 
     /**
      * @returns: the len of the file(from current cursor position to end) in number of bytes.
      */
-    pub fn len(self)-> u32
+    pub fn len(self)-> u64
         throws FsError
     {
         if self._handle == null {
@@ -573,9 +573,9 @@ pub entity File {
         }
 
         let cursor = self.tell();
-        c::files::fseek(self._handle, 0u32, c::files::SeekWhence::SEEK_END);
+        c::files::fseeko(self._handle, 0i64, c::files::SeekWhence::SEEK_END);
         let len = self.tell();
-        c::files::fseek(self._handle, cursor, c::files::SeekWhence::SEEK_SET);
+        c::files::fseeko(self._handle, cast!i64(cursor), c::files::SeekWhence::SEEK_SET);
 
         len
     }

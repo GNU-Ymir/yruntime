@@ -50,6 +50,26 @@ __test {
         assert(content == "Hello World!\nAppending content");
     }
 
+    // seek / tell / len are 64-bit offsets
+    {
+        let (fullLen, afterSeek, restLen, rest) = {
+            let dmut file = File::open(Path("foo.txt"));
+            let l = file.len();
+            file:.seek(6u64);
+            (l, file.tell(), file.len(), file:.readAll())
+        } catch {
+            err: &FsError => {
+                println(err);
+                (0u64, 0u64, 0u64, "")
+            }
+        };
+
+        assert(fullLen == 30u64);
+        assert(afterSeek == 6u64);
+        assert(restLen == 30u64);
+        assert(rest == "World!\nAppending content");
+    }
+
     assert(sys::isFile(Path("foo.txt")));
     sys::removeFile(Path("foo.txt"));
     assert(!sys::isFile(Path("foo.txt")));
