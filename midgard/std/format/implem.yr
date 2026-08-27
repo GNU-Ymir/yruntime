@@ -32,7 +32,7 @@ pub fn if isTuple!{T} format {T} (str: [c8], ref a: T, dmut stream: &StringStrea
 
                 else if str[i + 1] == ':' {
                     let (endI, current_) = specialFormat(str[i + 2 .. $], a, alias stream, current, i);
-                    current = current_ + 1;
+                    current = current_;
                     i += endI + 2;
                     if (str[i] != '}') throw copy FormatError(current, "Expected '}', not " ~ str[i .. i + 1]);
                 }
@@ -188,7 +188,7 @@ fn isType(c: c8)-> bool {
 fn if isTuple!{T} formatValue {T} (ref a: T, dmut stream: &StringStream, index: usize, globalIndex: usize)
     throws FormatError
 {
-    if (index > T::arity) throw copy FormatError(globalIndex, "No argument " ~ std::conv::to!{[c8]} (index));
+    if (index >= T::arity) throw copy FormatError(globalIndex, "No argument " ~ std::conv::to!{[c8]} (index));
     for i, j in a {
         if i == index {
             stream:.write(j);
@@ -208,7 +208,7 @@ fn if isTuple!{T} formatValue {T} (ref a: T, dmut stream: &StringStream, index: 
 fn if isTuple!{T} formatValueT {T} (ref a: T, dmut stream: &StringStream, fill: c8, align: c8, sign: bool, type: c8, width: u32, startWidth: bool, prec: u32, startPrec: bool, index: usize, globalIndex: usize)
     throws FormatError
 {
-    if (index > T::arity) throw copy FormatError(globalIndex, "No argument " ~ std::conv::to!{[c8]} (index));
+    if (index >= T::arity) throw copy FormatError(globalIndex, "No argument " ~ std::conv::to!{[c8]} (index));
     let mut gotWidth = false, mut gotPrec = false, mut resWidth = width, mut resPrec = prec;
 
     for j, x in a {

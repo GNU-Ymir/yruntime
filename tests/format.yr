@@ -26,3 +26,18 @@ __test {
     // a value wider than the alignment is not truncated
     assert(format("{:.^2}"s8, 12345) == "12345"s8);
 }
+
+/**
+ * Every formatter of a format consumes an argument, whether or not it has a ':' specification
+ * */
+__test {
+    assert(format("{} {:x} {}"s8, 1, 2, 3) == "1 0x2 3"s8);
+    assert(format("{:x} {}"s8, 1, 2) == "0x1 2"s8);
+    assert(format("{:+} {}"s8, 1, 2) == "+1 2"s8);
+
+    // a '*' width consumes the argument placed before the value
+    assert(format("{:^*} {}"s8, 4u32, 2, 3) == " 2   3"s8);
+
+    // but an explicit index consumes nothing
+    assert(format("{1} {} {}"s8, 1, 2) == "2 1 2"s8);
+}
