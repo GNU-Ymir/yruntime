@@ -203,6 +203,10 @@ Two separate versions live at the repo root, and mixing them up is the classic b
   `/usr/lib/` by hand if you need that, until this is scripted.
 - `./.ymir_test_success` (repo root, not `.build/`) caches per-test pass/fail state, consumed by
   `--resume`.
+- `dev/check-examples.sh` compiles the code examples of the doc comments (`-j N` for parallelism,
+  `-f SUBSTR` to restrict to source paths matching `SUBSTR`, `-k` to keep the generated files,
+  `-v` for the full compiler output of a failure). It runs as its own CI job — see "Doc example
+  checking" below.
 
 ## Architecture
 
@@ -269,6 +273,33 @@ CoverageTree singleton.
   file (most recent work on this repo has been here — see `git log --oneline` for the
   progression from "load/store as JSON" through "format module" to "group by files" to "convert
   Config to a plain record before formatting" to "persist/merge coverage across pid files").
+
+### Doc example checking (`dev/check-examples.sh`), if you're extending it
+
+Almost every public symbol carries an `@example:` doc comment, and those blocks are what the
+exported HTML documentation shows, so they have to compile. `dev/extract-examples.awk` pulls every
+fenced block out of every `/** ... */` comment in `midgard/**/*.yr` and writes each one as a
+standalone `.yr` file under `.examples/` (gitignored), which `dev/check-examples.sh` then hands to
+`gyc -fsyntax-only -funittest -nostdinc -nomidgardlib -I midgard` — the working tree, never the
+installed midgard. Compiling is enough; the examples are not run, several of them open sockets,
+spawn processes or write files.
+
+Because an example is a fragment rather than a whole program, the extractor wraps it: top level
+declarations found in the block (`use`, `fn`, `class`, `record`, ...) are hoisted out and the rest
+goes into a `__test` body, which - unlike `fn main` - needs no `throws` annotation. Two `use` lines
+are injected on top: `std::io`, and the module the documented symbol lives in (walking up to the
+closest publicly declared parent, since a submodule declared `mod ::stream;` is not importable on
+its own). Everything else an example needs it must import itself, the way a reader copying it
+would have to.
+
+A bare ```` ``` ```` fence (or ```` ```ymir ````/```` ```yr ````) is compiled; any other info
+string is the opt-out marker for a block that is not meant to compile - a grammar in
+`std/format.yr`, the internals of the private `std::syntax::tokenizer::node` module. Use
+```` ```text ```` for those, and keep them rare: a skipped block is a block free to rot again.
+
+Note that `gyc` stops compiling on an unused symbol (it prints it as a `Warning`, then terminates),
+so an example that declares a value it never uses does not compile for a reader either - `println`
+it rather than dropping the diagnostic.
 
 ### Coverage/call-tree feature, if you're extending it
 
