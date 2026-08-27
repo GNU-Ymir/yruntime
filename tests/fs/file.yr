@@ -50,6 +50,23 @@ __test {
         assert(content == "Hello World!\nAppending content");
     }
 
+    // seek / tell / len are 64-bit offsets
+    {
+        let dmut file = File::open(Path("foo.txt"));
+        assert(file.len() == 29u64);
+        file:.seek(6u64);
+        assert(file.tell() == 6u64);
+        assert(file.len() == 23u64); // len is from the current cursor to the end
+
+        let rest = file:.readAll();
+        assert(rest == "World!\nAppending content");
+    } catch {
+        err: &FsError => {
+            println(err);
+            assert(false);
+        }
+    }
+
     assert(sys::isFile(Path("foo.txt")));
     sys::removeFile(Path("foo.txt"));
     assert(!sys::isFile(Path("foo.txt")));
