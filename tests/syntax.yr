@@ -65,3 +65,107 @@ __test {
     // Last token is '#' token, and it was flagged as being a comment, ending with '\n'
     assert(lst[$ - 1us]._0 == "#" && lst[$ - 1us]._2 == "\n");
 }
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =====================================          REGEX          ======================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+use std::syntax::regex;
+use std::syntax::errors;
+
+__test {
+    let r = copy Regex("@[a-zA-Z0-9_]+");
+
+    let lst = r.apply("@alice, @bob");
+    assert(lst.len == 2us);
+    assert(lst[0]._0 == 0us && lst[0]._1 == "@alice");
+    assert(lst[1]._0 == 8us && lst[1]._1 == "@bob");
+
+    let lst2 = r.apply("@charlie");
+    assert(lst2.len == 1us);
+    assert(lst2[0]._0 == 0us && lst2[0]._1 == "@charlie");
+}
+
+__test {
+    let r = copy Regex("[0-9]+");
+    let lst = r.apply("a12b345");
+
+    assert(lst.len == 2us);
+    assert(lst[0]._0 == 1us && lst[0]._1 == "12");
+    assert(lst[1]._0 == 4us && lst[1]._1 == "345");
+}
+
+__test {
+    // a pattern matching the empty string used to loop forever, one empty match
+    // is reported per position, and the scan then steps over one char
+    let r = copy Regex("[0-9]*");
+    let lst = r.apply("abc");
+
+    assert(lst.len == 4us);
+    for i in 0us .. lst.len {
+        assert(lst[i]._0 == i && lst[i]._1 == "");
+    }
+}
+
+__test {
+    let r = copy Regex("a*");
+    let lst = r.apply("baaac");
+
+    assert(lst.len == 4us);
+    assert(lst[0]._0 == 0us && lst[0]._1 == "");
+    assert(lst[1]._0 == 1us && lst[1]._1 == "aaa");
+    assert(lst[2]._0 == 4us && lst[2]._1 == "");
+    assert(lst[3]._0 == 5us && lst[3]._1 == "");
+}
+
+__test {
+    let r = copy Regex("x?");
+    let lst = r.apply("");
+
+    assert(lst.len == 1us);
+    assert(lst[0]._0 == 0us && lst[0]._1 == "");
+}
+
+__test {
+    // stepping over an empty match must skip a whole utf8 code point, never land
+    // in the middle of one ('é' is encoded on two c8)
+    let r = copy Regex("x?");
+    let lst = r.apply("éb");
+
+    assert(lst.len == 3us);
+    assert(lst[0]._0 == 0us);
+    assert(lst[1]._0 == 2us);
+    assert(lst[2]._0 == 3us);
+}
+
+__test {
+    // '^' anchors the beginning of the text, not the offset the scan resumes from
+    let r = copy Regex("^a");
+    let lst = r.apply("aaa");
+
+    assert(lst.len == 1us);
+    assert(lst[0]._0 == 0us && lst[0]._1 == "a");
+}
+
+__test {
+    let r = copy Regex("^");
+    let lst = r.apply("ab");
+
+    assert(lst.len == 1us);
+    assert(lst[0]._0 == 0us && lst[0]._1 == "");
+}
+
+__test {
+    let mut failed = false;
+    {
+        let _ = copy Regex("[unclosed");
+    } catch {
+        SyntaxError() => { failed = true; }
+    }
+
+    assert(failed);
+}
