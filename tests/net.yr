@@ -1,0 +1,60 @@
+in net;
+
+use std::net::addr::_;
+use std::conv;
+
+__test {
+    let a = ("127.0.0.1"s8).to!{&Ipv4Addr} ();
+    assert(a == copy Ipv4Addr([127u8, 0u8, 0u8, 1u8]), "1");
+
+    let b = ("192.168.128.32"s8).to!{&Ipv4Addr} ();
+    assert(b == copy Ipv4Addr([192u8, 168u8, 128u8, 32u8]), "2");
+}
+
+__test {
+    { ("256.0.0.1"s8).to!{&Ipv4Addr} (); assert(false, "should have thrown"); }
+    catch { _ => {} }
+}
+
+__test { // plain hextets, no compression
+    let a = ("2001:db8:1:2:3:4:5:6"s8).to!{&Ipv6Addr} ();
+    assert(a == copy Ipv6Addr([0x2001u16, 0xdb8u16, 1u16, 2u16, 3u16, 4u16, 5u16, 6u16]), "1");
+}
+
+__test { // "::" compression at the start
+    let a = ("::1"s8).to!{&Ipv6Addr} ();
+    assert(a == copy Ipv6Addr([0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 1u16]), "1");
+}
+
+__test { // "::" compression in the middle
+    let a = ("fe80:1::8:2"s8).to!{&Ipv6Addr} ();
+    assert(a == copy Ipv6Addr([0xfe80u16, 1u16, 0u16, 0u16, 0u16, 0u16, 8u16, 2u16]), "1");
+}
+
+__test { // ipv4-mapped ipv6 address, YMI-166
+    let a = ("::ffff:127.0.0.1"s8).to!{&Ipv6Addr} ();
+    assert(a == copy Ipv6Addr([0u16, 0u16, 0u16, 0u16, 0u16, 0xffffu16, 0x7f00u16, 1u16]), "1");
+
+    let b = ("::ffff:192.168.1.1"s8).to!{&Ipv6Addr} ();
+    assert(b == copy Ipv6Addr([0u16, 0u16, 0u16, 0u16, 0u16, 0xffffu16, 0xc0a8u16, 0x0101u16]), "2");
+
+    assert(a != b, "3");
+}
+
+__test { // ipv4 tail without any "::" compression
+    let a = ("2001:db8:1:2:3:4:1.2.3.4"s8).to!{&Ipv6Addr} ();
+    assert(a == copy Ipv6Addr([0x2001u16, 0xdb8u16, 1u16, 2u16, 3u16, 4u16, 0x0102u16, 0x0304u16]), "1");
+}
+
+__test { // an ipv4 tail is only legal as the last component
+    { ("::1.2.3.4:ffff"s8).to!{&Ipv6Addr} (); assert(false, "should have thrown"); }
+    catch { _ => {} }
+}
+
+__test {
+    let a = ("::1"s8).to!{&IpAddr} ();
+    assert(a == copy Ipv6Addr([0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 1u16]), "1");
+
+    let b = ("127.0.0.1"s8).to!{&IpAddr} ();
+    assert(b == copy Ipv4Addr([127u8, 0u8, 0u8, 1u8]), "2");
+}
