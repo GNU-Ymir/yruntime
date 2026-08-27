@@ -29,19 +29,29 @@ use core::concurrency::pipes::_;
  * @example:
  * ```
  * use std::concurrency::actor;
+ * use std::config::_;
+ * use std::net::addr::_;
+ * use std::conv;
+ * use std::conv::errors;
  *
- * fn main() {
+ * class MyActor over ActorBase {
+ *    pub self () {}
+ * }
+ *
+ * fn main()
+ *    throws CastFailure, ActorError
+ * {
  *    // Actor system accepting connection from any address on port 8080
- *    let dmut sys = copy ActorSystem(SockAddr("0.0.0.0", 8080));
+ *    let dmut sys = copy ActorSystem(SockAddr(("0.0.0.0"s8).to!{&IpAddr} (), 8080u16));
  *
  *    // Add actors to the system
- *    sys:.add("alice", copy AliceActor());
- *    sys:.add("bob", copy BobActor());
+ *    sys:.add("alice", copy MyActor());
+ *    sys:.add("bob", copy MyActor());
  *
  *    sys:.start(); // start the actor system
  *
  *    // Access to a remote actor managed by a remote actor system
- *    let dmut charlie = sys:.remote("charlie", SockAddr("192.168.1.10", 8081));
+ *    let dmut charlie = sys:.remote("charlie", SockAddr(("192.168.1.10"s8).to!{&IpAddr} (), 8081u16));
  *
  *    // send a message to charlie
  *    charlie:.send(json#{"message" : "Hello"})?;
@@ -265,16 +275,19 @@ pub class ActorSystem {
      * For example: if an actor add an new actor instance during its 'onQuit' method, the actor system won't send kill message to that new actor
      * @example:
      * ```
-     * class MyActor over ActorBase {
-     *   pub self () {}
-
-     *   pub over onMessage(mut self, msg: &Config) {
-     *     println("Receive a message: ", msg);
-     *      self:.system:.kill(); // kill the actor system once message is received
-     *   }
+     * use std::concurrency::actor;
+     * use std::config::_;
      *
-     *   pub over onQuit(mut self) {
-     *      println("Killing actor: ", self._name);
+     * class MyActor over ActorBase {
+     *    pub self () {}
+     *
+     *    pub over onMessage(mut self, msg: &Config) {
+     *       println("Receive a message: ", msg);
+     *       self.system:.kill(); // kill the actor system once message is received
+     *    }
+     *
+     *    pub over onQuit(mut self) {
+     *       println("Killing actor: ", self._name);
      *    }
      * }
      * ```
