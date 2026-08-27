@@ -5,117 +5,183 @@ on:
     branches: [master]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE: midgard-build:${{ github.run_id }}-${{ github.run_attempt }}
+
 jobs:
-  examples:
+  build:
+    name: Build midgard
     runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v7
 
-      - name: Compute gyc/gyllir build-args from YMIR_VERSION
-        id: gyc
-        run: |
-          . ./YMIR_VERSION
-          GCC_MAJOR="${GCC_VERSION%%.*}"
-          echo "release_tag=${YMIR_BOOTSTRAP_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "asset=gyc-${GCC_MAJOR}_${YMIR_BOOTSTRAP_VERSION}_amd64.deb" >> "$GITHUB_OUTPUT"
-          echo "gyllir_release_tag=${GYLLIR_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "gyllir_asset=gyllir_${GYLLIR_VERSION}_amd64.deb" >> "$GITHUB_OUTPUT"
-
-      - uses: docker/setup-buildx-action@v4
-
-      - uses: docker/build-push-action@v7
+      - uses: ./.github/actions/build-image
         with:
-          context: .
-          target: toolchain
-          push: false
-          load: true
-          tags: midgard-toolchain:ci
-          build-args: |
-            GYC_RELEASE_TAG=${{ steps.gyc.outputs.release_tag }}
-            GYC_ASSET=${{ steps.gyc.outputs.asset }}
-            GYLLIR_RELEASE_TAG=${{ steps.gyc.outputs.gyllir_release_tag }}
-            GYLLIR_ASSET=${{ steps.gyc.outputs.gyllir_asset }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tag: ${{ env.IMAGE }}
+          cache-to: "true"
 
-      - name: Compile the examples of the doc comments
-        run: |
-          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src midgard-toolchain:ci ./dev/check-examples.sh
-
-  test:
-    runs-on: [self-hosted, linux, x64]    
+  examples:
+    name: examples
+    needs: build
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v7
 
-      - name: Compute gyc/gyllir build-args from YMIR_VERSION
-        id: gyc
-        run: |
-          . ./YMIR_VERSION
-          GCC_MAJOR="${GCC_VERSION%%.*}"
-          echo "release_tag=${YMIR_BOOTSTRAP_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "asset=gyc-${GCC_MAJOR}_${YMIR_BOOTSTRAP_VERSION}_amd64.deb" >> "$GITHUB_OUTPUT"
-          echo "gyllir_release_tag=${GYLLIR_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "gyllir_asset=gyllir_${GYLLIR_VERSION}_amd64.deb" >> "$GITHUB_OUTPUT"
-
-      - uses: docker/setup-buildx-action@v4
-
-      - uses: docker/build-push-action@v7
+      - uses: ./.github/actions/build-image
         with:
-          context: .
-          target: build
-          push: false
-          load: true
-          tags: midgard-build:ci
-          build-args: |
-            GYC_RELEASE_TAG=${{ steps.gyc.outputs.release_tag }}
-            GYC_ASSET=${{ steps.gyc.outputs.asset }}
-            GYLLIR_RELEASE_TAG=${{ steps.gyc.outputs.gyllir_release_tag }}
-            GYLLIR_ASSET=${{ steps.gyc.outputs.gyllir_asset }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tag: ${{ env.IMAGE }}
 
-      - name: Run tests and collect coverage
+      - name: Compile the examples of the doc comments
+        run: docker run --rm "$IMAGE" ./dev/check-examples.sh
+
+  shard:
+    name: ${{ matrix.shard }}
+    needs: build
+    runs-on: [self-hosted, linux, x64]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: algorithm
+            filters: >-
+              algorithm::*::*
+              algorithm::searching::*::*
+
+          - shard: text
+            filters: >-
+              char::*
+              conv::*
+              format::*
+              syntax::*
+
+          - shard: io
+            filters: >-
+              io::*
+              stream::*
+
+          - shard: fs
+            filters: >-
+              fs::*::*
+
+          - shard: config
+            filters: >-
+              config::*
+              env::*
+              testrt_filters::*
+
+          - shard: math
+            filters: >-
+              math::*
+              rand::*
+              time::*
+
+          - shard: concurrency
+            filters: >-
+              concurrency::*::*
+              any::*
+              box::*
+              collection::*::*
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/build-image
+        with:
+          tag: ${{ env.IMAGE }}
+
+      - name: Run the ${{ matrix.shard }} tests
+        env:
+          CONTAINER: midgard-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
+          SHARD: ${{ matrix.shard }}
+          FILTERS: ${{ matrix.filters }}
+          JOBS: ${{ matrix.jobs }}
+        run: |
+          set -uo pipefail
+          docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+
+          code=0
+          set -f
+          docker run --name "$CONTAINER" -e JOBS="$JOBS" "$IMAGE" \
+              bash .github/scripts/run-shard.sh "$SHARD" $FILTERS || code=$?
+          set +f
+
+          rm -rf ./shard-out
+          docker cp "$CONTAINER:/tmp/shard-out" ./shard-out || true
+          docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+
+          exit "$code"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: shard-${{ matrix.shard }}
+          path: shard-out/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+  coverage:
+    name: Coverage
+    needs: shard
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/build-image
+        with:
+          tag: ${{ env.IMAGE }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: shard-*
+          merge-multiple: true
+          path: merged
+
+      - name: Merge the shard results
+        run: |
+          set -euo pipefail
+          ls -l merged
+
+          awk -F';' 'NF == 2 {
+                       if ($2 == "false") failed[$1] = 1
+                       seen[$1] = 1
+                     }
+                     END {
+                       for (test in seen) print test ";" (test in failed ? "false" : "true")
+                     }' merged/success-*.txt > merged/.ymir_test_success
+          rm -f merged/success-*.txt
+
+          echo "$(wc -l < merged/.ymir_test_success) test result(s) merged from" \
+               "$(find merged -name '.ymir_coverage_*.json' | wc -l) coverage file(s)"
+
+      - name: Report the whole-suite coverage
         id: run_tests
         run: |
-          set -o pipefail
-          docker run --rm midgard-build:ci ./midgard_tests -sf -cov | tee coverage.txt
+          set -uo pipefail
+
+          CID="$(docker create "$IMAGE" ./midgard_tests --resume -cov)"
+          docker cp merged/. "$CID:/midgard/"
+
+          set +e
+          docker start -a "$CID" 2>&1 | tee coverage.txt
+          code="$(docker wait "$CID")"
+          docker rm -f "$CID" >/dev/null 2>&1
+
+          exit "${code:-1}"
 
       - name: Publish coverage summary
         if: always()
-        run: |
-          CLEAN="$(sed -E 's/\x1b\[[0-9;]*m//g' coverage.txt)"
+        run: bash .github/scripts/coverage-summary.sh coverage.txt "${{ steps.run_tests.outcome }}"
 
-          if [ "${{ steps.run_tests.outcome }}" = "success" ]; then
-            HEADER_LINE="$(echo "$CLEAN" | grep -n 'COVERAGE' | head -1 | cut -d: -f1)"
-            REPORT="$(echo "$CLEAN" | tail -n "+$((HEADER_LINE - 1))")"
-            TOTAL_LINE="$(echo "$CLEAN" | grep -E 'TOTAL:' | tail -1)"
-            TOTAL_PCT="$(echo "$TOTAL_LINE" | grep -oE '^\[[0-9]+%\]' | tr -d '[]')"
-            TOTAL_NUM="${TOTAL_PCT%\%}"
-
-            if [ -z "$TOTAL_NUM" ]; then
-              BADGE_COLOR="lightgrey"
-              TOTAL_NUM="unknown"
-            elif [ "$TOTAL_NUM" -lt 50 ]; then
-              BADGE_COLOR="red"
-            elif [ "$TOTAL_NUM" -gt 95 ]; then
-              BADGE_COLOR="brightgreen"
-            else
-              BADGE_COLOR="yellow"
-            fi
-
-            {
-              echo "## Coverage ![coverage](https://img.shields.io/badge/coverage-${TOTAL_NUM}%25-${BADGE_COLOR})"
-              echo
-              echo '```'
-              echo "$REPORT"
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-          else
-            {
-              echo "## Tests failed - no coverage report"
-              echo
-              echo '```'
-              echo "$CLEAN"
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
+  cleanup:
+    name: Cleanup
+    if: always()
+    needs: [build, examples, shard, coverage]
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - name: Drop this run's image tag
+        run: docker image rm -f "$IMAGE" || true
