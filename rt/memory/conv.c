@@ -40,12 +40,24 @@ uint64_t _yrt_dg_to_u64 (void * closure, void * ptr) {
  */
 
 
+/**
+ * Drop the null char written by snprintf from the length of a slice, so that it is not part of
+ * the string as it is seen from Ymir. The byte itself is left in the block, only the lengths
+ * shrink, so the slice still grows in place on an append.
+ */
+static void _yrt_drop_null_char (_yrt_slice_t * slice) {
+	if (slice-> len == 0) return;
+
+	slice-> len -= 1;
+	slice-> blk_info-> len = slice-> len;
+}
 _yrt_slice_t  _yrt_f32_to_string (float f, uint32_t prec) {
     int nb = snprintf (NULL, 0, "%.*f", prec, f);
 
 	_yrt_slice_t result;
 	_yrt_alloc_slice_no_set (&result, nb + 1, 1);	 // + 1 for the null char
     snprintf (result.data, nb+1, "%.*f", prec, f);
+    _yrt_drop_null_char (&result);
 
     return result;
 }
@@ -56,6 +68,7 @@ _yrt_slice_t  _yrt_f64_to_string (double f, uint32_t prec) {
 	_yrt_slice_t result;
 	_yrt_alloc_slice_no_set (&result, nb + 1, 1);	 // + 1 for the null char
     snprintf (result.data, nb+1, "%.*lf", prec, f);
+    _yrt_drop_null_char (&result);
 
     return result;
 }
@@ -66,6 +79,7 @@ _yrt_slice_t  _yrt_f80_to_string (long double f, uint32_t prec) {
 	_yrt_slice_t result;
 	_yrt_alloc_slice_no_set (&result, nb + 1, 1);	 // + 1 for the null char
     snprintf (result.data, nb+1, "%.*Lf", prec, f);
+    _yrt_drop_null_char (&result);
 
     return result;
 }
@@ -76,6 +90,7 @@ _yrt_slice_t  _yrt_fsize_to_string (long double f, uint32_t prec) {
 	_yrt_slice_t result;
 	_yrt_alloc_slice_no_set (&result, nb + 1, 1);	 // + 1 for the null char
     snprintf (result.data, nb+1, "%.*Lf", prec, f);
+    _yrt_drop_null_char (&result);
 
     return result;
 }
@@ -94,6 +109,7 @@ _yrt_slice_t  _yrt_f32_to_string_exp (float f, uint32_t prec) {
 	_yrt_slice_t result;
 	_yrt_alloc_slice_no_set (&result, nb + 1, 1);	 // + 1 for the null char
     snprintf (result.data, nb+1, "%.*e", prec, f);
+    _yrt_drop_null_char (&result);
 
     return result;
 }
@@ -104,6 +120,7 @@ _yrt_slice_t  _yrt_f64_to_string_exp (double f, uint32_t prec) {
 	_yrt_slice_t result;
 	_yrt_alloc_slice_no_set (&result, nb + 1, 1);	 // + 1 for the null char
     snprintf (result.data, nb+1, "%.*le", prec, f);
+    _yrt_drop_null_char (&result);
 
     return result;
 }
@@ -114,6 +131,7 @@ _yrt_slice_t  _yrt_f80_to_string_exp (long double f, uint32_t prec) {
 	_yrt_slice_t result;
 	_yrt_alloc_slice_no_set (&result, nb + 1, 1);	 // + 1 for the null char
     snprintf (result.data, nb+1, "%.*Le", prec, f);
+    _yrt_drop_null_char (&result);
 
     return result;
 }
@@ -124,6 +142,7 @@ _yrt_slice_t  _yrt_fsize_to_string_exp (long double f, uint32_t prec) {
 	_yrt_slice_t result;
 	_yrt_alloc_slice_no_set (&result, nb + 1, 1);	 // + 1 for the null char
     snprintf (result.data, nb+1, "%.*Le", prec, f);
+    _yrt_drop_null_char (&result);
 
     return result;
 }
