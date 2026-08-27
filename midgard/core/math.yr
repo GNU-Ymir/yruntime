@@ -5,6 +5,9 @@
  */
 in math;
 
+use std::traits;
+use std::algorithm::comparison;
+
 mod internal {
     pub extern (C) fn truncf(f: f32)-> f32;
     pub extern (C) fn trunc(f: f64)-> f64;
@@ -86,7 +89,7 @@ pub fn if (std::traits::isIntegral!{T}) ipow {T} (base: T, exp: i32)-> T {
  * let f = 12.9f ^^ 9; // rewritten into fipow!f32(12.9f, 9)
  * ```
  * */
-pub fn if isFloating!{T}() fipow {T} (base: T, exp: i32)-> T {
+pub fn if isFloating!{T} fipow {T} (base: T, exp: i32)-> T {
     let mut v: __pragma!unproxied(T) = 1.0;
     let mut expV = exp;
     let mut pow = if (exp < 0) {1.0 / base} else {base};
@@ -151,20 +154,29 @@ pub fn fabs {T} (a: T)-> T {
 }
 
 /**
- * Compare two float values
+ * Compare two floating point values for congruence. This is the function the `<=>`
+ * operator is rewritten into, `a <=> b` standing for `fcmp!{typeof a} (a, b)`.
+ * Two values are congruent when they are at most one rounding step apart, that is
+ * when their absolute difference fits within one unit in the last place taken at the
+ * magnitude of the compared values, floored at `T::epsilon` so that values below
+ * `1.0` are compared absolutely rather than relatively.
+ * @info: two NaNs are congruent, and a NaN is congruent with nothing else. Two equal
+ *  infinities are congruent, and an infinity is congruent with nothing else.
  * @example:
  * ```
- * 10. < => (10. + (f64::epsilon / 2.))
+ * assert(10. <=> (10. + (f64::epsilon / 2.)));
+ * assert(!(10. <=> 11.));
  * ```
  * */
 @inline
-pub fn fcmp {T} (a: T, b: T)-> bool {
+pub fn if isFloating!{T} fcmp {T} (a: T, b: T)-> bool {
     // 1. NaN handling
     if isNaN(a) && isNaN(b) return true;
     if isNaN(a) || isNaN(b) return false;
 
     // 2. Infinities and signed zero
     if a == b return true;
+    if isInf(a) || isInf(b) return false;
 
     // 3. Absolute difference
     let diff = abs(a - b);
@@ -179,13 +191,48 @@ pub fn fcmp {T} (a: T, b: T)-> bool {
     return diff <= tol;
 }
 
+/**
+ * @returns: true iif `a` is a NaN value.
+ * @example:
+ * ```
+ * assert(isNaN(f64::nan));
+ * assert(!isNaN(0.0));
+ * ```
+ * */
 @inline
-pub fn isNaN {T} (a: T)-> bool {
-    return a != a;
+pub fn if isFloating!{T} isNaN {T} (a: T)-> bool {
+    // A NaN is unordered with respect to every value, itself included, so both
+    // of these ordered comparisons are false for a NaN and exactly one of them
+    // is true for anything else. The usual `a != a` cannot be used here: the
+    // compiler folds a comparison of an expression with itself before code
+    // generation, and always answers false.
+    return !(a <= cast!{T} (0.0)) && !(a >= cast!{T} (0.0));
 }
 
+/**
+ * @returns: true iif `a` is either the positive or the negative infinity.
+ * @example:
+ * ```
+ * assert(isInf(f64::inf));
+ * assert(isInf(-f64::inf));
+ * assert(!isInf(f64::nan));
+ * ```
+ * */
 @inline
-pub fn abs {T} (a: T) {
+pub fn if isFloating!{T} isInf {T} (a: T)-> bool {
+    return a == T::inf || a == -T::inf;
+}
+
+/**
+ * Absolute value of 'a'
+ * @example:
+ * ```
+ * assert(abs(-10) == 10);
+ * assert(abs(-10.0) == 10.0);
+ * ```
+ * */
+@inline
+pub fn abs {T} (a: T)-> T {
     if (a < cast!{T} (0)) {
         return -a;
     } else {
