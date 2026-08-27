@@ -170,3 +170,38 @@ __test {
     assert(("18446744073709551615").to!u64 () == u64::max);
     assert(("-42").to!{i32, 10us} () == -42);
 }
+
+/**
+ * A float is converted to exactly the digits it is worth, with no trailing null char left inside
+ * the slice
+ * */
+__test {
+    assert(to!{[c8]} (3.5) == "3.500000", "YMI-186: expected the default precision, and nothing after it");
+    assert(to!{[c8]} (314.0, prec-> 3u32) == "314.000");
+    assert(to!{[c8]} (12.8, prec-> 1u32) == "12.8");
+    assert(to!{[c32]} (12.8, prec-> 1u32) == "12.8"s32);
+    assert(to!{[c8]} (12.8f, prec-> 1u32) == "12.8");
+    assert(to!{[c8]} (0.125, prec-> 4u32) == "0.1250");
+
+    assert(to!{[c8]} (3.5, prec-> 1u32).len == 3us, "YMI-186: the null char must not be part of the slice");
+}
+
+/**
+ * Same, in scientific notation
+ * */
+__test {
+    assert(to!{[c8], "e"} (314.0, prec-> 3u32) == "3.140e+02", "YMI-186: expected no trailing null char");
+    assert(to!{[c8], "e"} (81792.983, prec-> 1u32) == "8.2e+04");
+    assert(to!{[c32], "e"} (12.9834982f, prec-> 4u32) == "1.2983e+01"s32);
+
+    assert(to!{[c8], "e"} (1.0, prec-> 2u32).len == 8us, "YMI-186: the null char must not be part of the slice");
+}
+
+/**
+ * The slice keeps growing in place once the null char has been dropped from its length
+ * */
+__test {
+    let str = to!{[c8]} (3.5, prec-> 1u32) ~ "!";
+
+    assert(str == "3.5!", "YMI-186: expected the append to land after the digits");
+}
