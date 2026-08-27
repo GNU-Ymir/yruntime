@@ -127,14 +127,17 @@ pub class HttpServer {
      * Set a route
      * @example:
      * ```
+     * use std::net::http;
+     * use std::fs::path;
+     *
      * fn onAdd(rqt: HttpRequest)-> HttpResponse {
      *    println("/add route: ", rqt);
-     *    HttpResponse(200)
+     *    HttpResponse(200u32)
      * }
      *
      * fn onGet(rqt: HttpRequest)-> HttpResponse {
      *    println("/get route: ", rqt);
-     *    HttpResponse(200)
+     *    HttpResponse(200u32)
      * }
      *
      * let dmut server = copy HttpServer();
@@ -220,24 +223,31 @@ pub class HttpServer {
      * @example:
      * ```
      * use std::net::http;
+     * use std::fs::path;
+     *
+     * // a lazy global is how a mutable value is shared between a route and the main function
+     * lazy dmut __GLOBAL_SERVER__: [u32 => &HttpServer] = copy [];
      *
      * fn quit(_: HttpRequest)-> HttpResponse {
-     *     if let Ok(dmut g) = alias __GLOBAL_SERVER__ {
+     *     if let Ok(dmut g) = alias __GLOBAL_SERVER__[0u32] {
      *        g:.kill(); // Kill the server
      *     }
      *
-     *     HttpResponse(200)
+     *     HttpResponse(200u32)
      * }
      *
+     * fn main ()
+     *    throws HttpError
+     * {
+     *    let dmut server = copy HttpServer();
      *
-     * let dmut server = copy HttpServer();
+     *    // add a route that once reached kills the server
+     *    server:.route(Path("/quit"), &quit, method-> HttpRequestKind::POST);
      *
-     * // add a route that once reach kills the server
-     * server:.addRoute(HttpRequestKind::POST, "/quit", &killServer);
-     *
-     * __GLOBAL_SERVER__ = (alias server)?;
-     * server:.start(); // start the server
-     * server:.join(); // And wait until it is killed
+     *    __GLOBAL_SERVER__[0u32] = alias server;
+     *    server:.start(); // start the server
+     *    server:.join(); // And wait until it is killed
+     * }
      * ```
      * */
     pub fn kill(mut self) {

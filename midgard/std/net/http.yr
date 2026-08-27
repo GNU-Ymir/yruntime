@@ -36,32 +36,36 @@ pub def HttpResponseCode: response::HttpResponseCode;
  * @example:
  * ```
  * use std::io; // println
- * use std::net::_; // http, tcp, and address
+ * use std::net::http;
+ * use std::net::addr::_;
  * use std::fs::path; // Path
  * use std::config::_; // json
+ * use std::conv;
+ * use std::conv::errors;
  *
  * fn onHome(rqt: HttpRequest)-> HttpResponse {
  *    println("Resquesting home: ", rqt);
- *    HttpResponse(200, body-> "OK")
+ *    HttpResponse(200u32, body-> "OK")
  * }
  *
  * fn onLogin(rqt: HttpRequest)-> HttpResponse {
  *    println("Resquesting login: ", rqt);
  *
- *    if let Ok(js) = json::parse(rqt.body)? {
- *        match (js["user"], js["password"]) {
- *            (Str(value-> "alice"), Str(value-> "password")) => {
- *                return HttpResponse(200, body-> "Logged in");
- *            }
- *        }?;
+ *    {
+ *        let js = json::parse(rqt.body);
+ *        if let (Str(value-> "alice"), Str(value-> "password")) = (js["user"], js["password"]) {
+ *            return HttpResponse(200u32, body-> "Logged in");
+ *        }
+ *    } catch {
+ *        _ => {} // malformed body, or missing keys
  *    }
  *
- *
- *    HttpResponse(403)
+ *    HttpResponse(403u32)
  * }
  *
  * fn main() {
- *    let dmut server = copy HttpServer(SockAddr(Ipv4::UNSPECIFIED, 8080)); // accept connection coming from anywhere
+ *    // accept connection coming from anywhere
+ *    let dmut server = copy HttpServer(SockAddr(("0.0.0.0"s8).to!{&IpAddr} (), 8080u16));
  *
  *    server:.route(Path("/home"), &onHome);
  *    server:.route(Path("/login"), &onLogin, method-> HttpRequestKind::POST);
@@ -70,6 +74,7 @@ pub def HttpResponseCode: response::HttpResponseCode;
  *    server:.join(); // wait until server is killed(indefinitely in that example)
  * } catch {
  *    err: &HttpError => eprintln(err);
+ *    err: &CastFailure => eprintln(err);
  * }
  * ```
  * */
