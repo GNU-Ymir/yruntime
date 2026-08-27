@@ -401,11 +401,19 @@ pub class StringStream {
      * @params:
      *     - a: an option of a streamable value.
      */
-    pub fn write {T} (mut self, a: T?)-> dmut &StringStream {
-        match a {
-            Ok(x:_) => self:.write("Ok("s8, x, ')'c8);
-            Err(msg:_) => self:.write("Err("s8, msg, ')'c8);
-            Err() => self:.write("Err()"s8);
+    pub fn write {T of U?, U} (mut self, a: T)-> dmut &StringStream {
+        cte if (template!{U}{X of void}) {
+            match a {
+                Ok() => self:.write("Ok()"s8);
+                Err(msg:_) => self:.write("Err("s8, msg, ')'c8);
+                Err() => self:.write("Err()"s8);
+            }
+        } else {
+            match a {
+                Ok(x:_) => self:.write("Ok("s8, x, ')'c8);
+                Err(msg:_) => self:.write("Err("s8, msg, ')'c8);
+                Err() => self:.write("Err()"s8);
+            }
         }
         alias self
     }
