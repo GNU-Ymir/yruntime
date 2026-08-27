@@ -291,3 +291,59 @@ __test {
         _ => assert(false);
     }
 }
+
+__test {
+    // a config array converts to a tuple of the types of its elements
+    let dmut a = copy Array();
+    a:.push(copy Int(1));
+    a:.push(copy Str("test"));
+
+    assert(a.to!{(i32, [c8])} () == (1, "test"));
+}
+
+__test {
+    // a config dict converts to a map, either of a scalar type
+    let dmut d = copy Dict();
+    d["foo"] = copy Int(1);
+    d["bar"] = copy Int(2);
+
+    let m = d.to!{[[c8] => i32]} ();
+    assert(m["foo"] == (1)? && m["bar"] == (2)?);
+
+    // or of &Config, when the values are not all of the same type
+    let dmut mixed = copy Dict();
+    mixed["foo"] = copy Int(12);
+    mixed["bar"] = copy Str("test");
+
+    let partial = mixed.to!{[[c8] => &Config]} ();
+    assert(partial.len == 2us);
+    if let Ok(v) = partial["foo"] {
+        assert(v of Int);
+    } else assert(false);
+}
+
+__test {
+    // getOr returns the converted value of the key, or the default when it is absent
+    let dmut d = copy Dict();
+    d["foo"] = copy Str("foo");
+    d["bar"] = copy Int(42);
+
+    assert(d.getOr("bar", 56) == 42);
+    assert(d.getOr("baz", 56) == 56);
+
+    // and also when the value is of a type that does not convert
+    assert(d.getOr("foo", 56) == 56);
+}
+
+__test {
+    // '$' inside an index of a config array is the length of the array
+    let dmut a = copy Array();
+    a:.push(copy Int(1));
+    a:.push(copy Int(2));
+
+    {
+        assert(a[$ - 1u32] == 2);
+    } catch {
+        _ => assert(false);
+    }
+}

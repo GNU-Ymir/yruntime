@@ -21,6 +21,7 @@ in conv;
 
 use std::{traits, config::data};
 use std::conv::errors;
+use std::config::errors;
 
 /*!
  * ====================================================================================================
@@ -241,6 +242,9 @@ pub fn if isTuple!{T} to {T, C of &Config} (cfg: C)-> T
             inn: &ConfigError => {
                 throw copy CastFailure(to-> T::typeinfo, from-> cfg.__typeinfo__, subError-> inn?);
             }
+            fail: &CastFailure => {
+                throw fail;
+            }
         }
     }
 
@@ -264,7 +268,7 @@ pub fn to {T of [[c8] => V], V, C of &Config} (cfg: C)-> T
 {
     if let m: &Dict = cfg {
         {
-            let mut res: [[c8] => mut V] = [];
+            let mut res: [[c8] => mut V] = copy [];
             for k, v in m[] {
                 res[k] = config::conv::to!{V} (v);
             }
@@ -598,6 +602,7 @@ pub fn if (template!{T}{entity E} || template!{T}{record R}) to {C of &Config, T
  * ```
  * */
 pub fn if (template!{T}{entity E} || template!{T}{record R}) to {C of &Config, T} (ref value: T)-> C {
+    value;
     return copy Dict();
 }
 
@@ -617,7 +622,7 @@ pub fn if (template!{T}{entity E} || template!{T}{record R}) to {C of &Config, T
  * let cfg = a.to!{&Config} ();
  * ```
  * */
-pub fn if (template!{T}{class D} || template!{T}{record R}) to {C of &Config} (value: T)-> C {
+pub fn if (template!{T}{class D} || template!{T}{record R}) to {C of &Config, T} (value: T)-> C {
     value;
     return copy Dict();
 }

@@ -135,13 +135,15 @@ pub class Dict over Config {
      * ```
      */
     pub fn getOr {T} (self, k: [c8], value: T)-> T {
-        if (k in self._content) {
-            {
-                return std::config::conv::to!{T} (self._content[k]);
-            } catch {
-                _ => return value;
+        {
+            if let Ok(v) = self._content[k] {
+                return std::config::conv::to!{T} (v);
             }
-        } else return value;
+        } catch {
+            _ => {}
+        }
+
+        value
     }
 
     /**
