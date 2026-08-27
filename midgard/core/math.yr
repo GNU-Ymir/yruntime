@@ -65,12 +65,20 @@ pub fn if (std::traits::isIntegral!{T}) ipow {T} (base: T, exp: i32)-> T {
     let mut expV = exp;
 
     if (exp < cast!i32(0)) {
-        return if (base * base != 1) {
-            cast!{typeof(v)} (0)
-        } else if ((exp & 1) != 0) {
-            cast!{typeof(v)} (base)
-        } else {
+        cte if (std::traits::isSigned!{T}) {
+            if (base == cast!{T} (-1)) {
+                return if ((exp & 1) != 0) {
+                    cast!{typeof(v)} (base)
+                } else {
+                    cast!{typeof(v)} (1)
+                };
+            }
+        }
+
+        return if (base == cast!{T} (1)) {
             cast!{typeof(v)} (1)
+        } else {
+            cast!{typeof(v)} (0)
         };
     }
 

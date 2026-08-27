@@ -326,3 +326,20 @@ __test {
     near (std::math::M_1_PI, 1.0l / std::math::PI, "m_1_pi");
     near (std::math::M_2_PI, 2.0l / std::math::PI, "m_2_pi");
 }
+
+__test {
+    // negative exponents: 2^^-n is a fraction below 1, so ipow truncates to 0
+    // unless the base is 1 (all types) or -1 (signed types).
+    assert (core::math::ipow!u8 (opaque (255u8), -3) == 0u8, "ipow u8 255 ^^ -3");
+    assert (core::math::ipow!u8 (opaque (1u8), -3) == 1u8, "ipow u8 1 ^^ -3");
+    assert (core::math::ipow!u32 (opaque (7u32), -2) == 0u32, "ipow u32 7 ^^ -2");
+
+    assert (core::math::ipow!i32 (opaque (5i32), -2) == 0, "ipow i32 5 ^^ -2");
+    assert (core::math::ipow!i32 (opaque (1i32), -5) == 1, "ipow i32 1 ^^ -5");
+    assert (core::math::ipow!i32 (opaque (-1i32), -5) == -1, "ipow i32 -1 ^^ -5 (odd)");
+    assert (core::math::ipow!i32 (opaque (-1i32), -4) == 1, "ipow i32 -1 ^^ -4 (even)");
+    assert (core::math::ipow!i8 (opaque (-1i8), -3) == -1i8, "ipow i8 -1 ^^ -3");
+
+    // positive exponents still behave
+    assert (core::math::ipow!i32 (opaque (2i32), 9) == 512, "ipow i32 2 ^^ 9");
+}
