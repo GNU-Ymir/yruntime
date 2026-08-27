@@ -50,12 +50,16 @@ else
   RANGE="$TO"
 fi
 
-# --first-parent so only the merges made *into* the released branch are walked, never the merges
-# a feature branch took from master along the way. Both the subject and the body are needed to
-# recover the PR title - which of the two holds it depends on the merge shape, see below - hence
-# \037 (unit separator) between the fields and \036 (record separator) between commits: neither
-# can appear in a commit message.
-git log --first-parent --merges --pretty=format:'%h%x1f%s%x1f%b%x1e' "$RANGE" | awk '
+# --first-parent so only what landed *on* the released branch is walked, never the commits a
+# feature branch carries or the merges it took from master along the way. It is deliberately not
+# `--merges`: a squash-merged pull request is a single-parent commit, so filtering on merge
+# commits would drop every squashed PR before awk could even report the skip. Selecting the pull
+# requests is the parser's job below - a first-parent commit matching neither merge shape is a
+# direct push, and is skipped there. Both the subject and the body are needed to recover the PR
+# title - which of the two holds it depends on the merge shape, see below - hence \037 (unit
+# separator) between the fields and \036 (record separator) between commits: neither can appear
+# in a commit message.
+git log --first-parent --pretty=format:'%h%x1f%s%x1f%b%x1e' "$RANGE" | awk '
 function trim(s) {
   gsub(/^[ \t\r\n]+|[ \t\r\n]+$/, "", s)
   return s
@@ -103,7 +107,8 @@ BEGIN {
   # GitHub writes a pull request merge in one of two shapes, and this repository has both:
   #   - `Merge pull request #N from owner/branch`, the PR title being the first body line;
   #   - `<PR title> (#N)`, the body holding the PR description instead - often empty.
-  # Anything else is a plain branch merge, not a change of its own.
+  # Anything else went to the branch outside a pull request - a direct push, a version bump - and
+  # is not a change the notes announce.
   pr = ""; head = ""
 
   if (match(subj, /^Merge pull request #[0-9]+/)) {
