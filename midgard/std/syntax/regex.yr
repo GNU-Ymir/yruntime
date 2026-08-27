@@ -9,16 +9,16 @@
  * ```
  * use std::syntax::regex;
  *
- * let dmut r = copy Regex("@[a-zA-Z0-9_]+");
+ * let r = copy Regex("@[a-zA-Z0-9_]+");
  *
- * let lst = r:.apply("@alice, @bob");
+ * let lst = r.apply("@alice, @bob");
  * assert(lst.len == 2);
- * assert(lst[0].0 == 0 && lst[0].1 == "@alice");
- * assert(lst[1].0 == 9 && lst[1].1 == "@bob");
+ * assert(lst[0]._0 == 0 && lst[0]._1 == "@alice");
+ * assert(lst[1]._0 == 8 && lst[1]._1 == "@bob");
  *
- * let lst2 = r:.apply("@charlie");
+ * let lst2 = r.apply("@charlie");
  * assert(lst2.len == 1);
- * assert(lst2[0].0 == 0 && lst2[0].1 == "@charlie");
+ * assert(lst2[0]._0 == 0 && lst2[0]._1 == "@charlie");
  * ```
  */
 in regex;
@@ -52,6 +52,9 @@ pub class Regex {
 
     /**
      * Apply the rule on a given text
+     * @info: a rule that can match the empty string (`a*`, `x?`, ...) reports one
+     * empty match per code point of the text, plus one at its end, as the scan
+     * steps over a whole code point after an empty match.
      * @params:
      *    - text: the text on which to apply the regex rule
      * @returns: the list of matching where(.0-> offset, .1-> content of matching)
@@ -60,14 +63,14 @@ pub class Regex {
         let dmut result: [(usize, [c8])] = [];
 
         if let Ok(z) = self._content {
-            let mut strZ = std::conv::toStringZ(text);
-            let mut strB = strZ;
+            let strZ = std::conv::toStringZ(text);
 
             let mut current = 0us;
+            let mut flags = RegexExecFlag::REG_NONE;
             let dmut pmatch = regmatch_t();
 
             loop {
-                if (regexec(&z, strB, 1, &pmatch, 0) != 0) {
+                if (regexec(&z, strZ + current, 1, &pmatch, flags) != 0) {
                     break;
                 }
 
@@ -76,8 +79,18 @@ pub class Regex {
 
                 result ~= [(off, text[off .. end])];
 
-                current = end;
-                strB = strZ + current;
+                if (off == end) {
+                    // an empty match leaves the scan position untouched, and the very
+                    // same span would be matched again forever, so step over one char
+                    if (off >= text.len) break;
+                    current = off + cast!usize(std::conv::utf::getUtf8CodePointSize(text[off]));
+                } else {
+                    current = end;
+                }
+
+                // the resuming offsets are not the beginning of the text anymore, '^'
+                // must not match there
+                flags = RegexExecFlag::REG_NOTBOL;
             }
         }
 
@@ -130,7 +143,7 @@ pub class Regex {
     {
         if let Err() = self._content {
             let dmut f = regex_t();
-            let code = regcomp(&f, std::conv::toStringZ(self.rule), 1);
+            let code = regcomp(&f, std::conv::toStringZ(self.rule), RegexCompFlag::REG_EXTENDED);
             if code != 0 {
                 let errStr: [c8 ; 255] = ['\u{0}' ; 255];
                 let size = regerror(code, &f, errStr.ptr, 255);
