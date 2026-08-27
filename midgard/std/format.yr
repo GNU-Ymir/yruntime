@@ -20,11 +20,11 @@
  *
  * // aligning the parameter, char = '=', left = '<', len = '8'
  * // and put the sign '+' if the value is positive, and in hexadecimal 'x'
- * f = format("{:=<+8x}"s8, 12u32);
- * assert(f == "+0xc====="s8);
+ * f = format("{:=<8+x}"s8, 12u32);
+ * assert(f == "+0xc===="s8);
  *
  * // aligning the parameter 1, char = '=', right = '>' len = '8', parameter 0 is ignored
- * f = format("{1: => 8}"s8, 89u32, 78u32);
+ * f = format("{1:=>8}"s8, 89u32, 78u32);
  * assert(f == "======78"s8);
  *
  * // aligning parameter '1', char = '-', center = '^', len = parameter[i - 0] (parameter 0 here)
@@ -35,13 +35,8 @@
  * f = format("{1:+<*x} {0}"s8, 10, 255u32);
  * assert(f == "0xff++++++ 10"s8);
  *
- * // parameter '3' is centered and formated in scientific format, aligned with '=',
- * // the width is the parameter '0', the precision the parameter '1' and the value the parameter '2'
- * f = format("{:=^*.*e}"s8, 20, 3, 314.0);
- * assert(f == "======3.140e+02======"s8);
- *
  * // parameter '1' is right aligned in binary format, width is 10, and parameter '0' is formated after
- * f = format("{1:-> 10b} {0}"s8, "foo", 4u32);
+ * f = format("{1:->10b} {0}"s8, "foo", 4u32);
  * assert(f == "-----0b100 foo"s8);
  *
  * // formatter are ignored if the { are doubled, so we can write the value { in a format
@@ -64,11 +59,14 @@ use std::{format::_, stream, traits};
 
 /**
  * Format the parameters passed to the function according to the format given as first parameter.
+ *
+ * Formatting never fails. A formatter that cannot be applied to the value it designates is
+ * replaced by that value written with its default representation, and a formatter that
+ * designates no value at all is left in the result as it was written in the format. Use
+ * `formatStrict` to be told about those instead of ignoring them.
  * @params:
  *   - str: the format
  *   - a: the list of values to format
- * @throws:
- *   - FormatError: if the format is not valid for the type of values
  *
  * @Grammar:
  * ```text
@@ -81,14 +79,26 @@ use std::{format::_, stream, traits};
  * fill:= any_c8
  * align:= (fill? ('<' | '^' | '>') width)?
  * sign:= '+'
- * type:= 'o' | 'x' | 'b' | 'e'
+ * type:= 'o' | 'x' | 'X' | 'b' | 'e'
  * width:= ([0-9])* | '*'
  * precision:= ([0-9])* | '*'
  * ```
+ *
+ * @example:
+ * ```
+ * use std::format;
+ *
+ * // 'x' is not a valid type formatter for a string, so the value is written unformatted
+ * assert(format("value: {:x}"s8, "foo"s8) == "value: foo"s8);
+ *
+ * // there is no argument 3, so the formatter is left as-is
+ * assert(format("value: {3}"s8, 12) == "value: {3}"s8);
+ *
+ * // and a '{' that closes no formatter is just a '{'
+ * assert(format("value: {"s8, 12) == "value: {"s8);
+ * ```
  */
-pub fn format {T...} (str: [c8], a: T)-> [c8]
-    throws FormatError
-{
+pub fn format {T...} (str: [c8], a: T)-> [c8] {
     let dmut stream = copy StringStream();
     cte if (T,)::arity > 1 {
         let z = (expand a,);
@@ -96,6 +106,49 @@ pub fn format {T...} (str: [c8], a: T)-> [c8]
     } else {
         let z = (a,);
         implem::format(str, z, alias stream);
+    }
+
+    stream[]
+}
+
+/**
+ * Format the parameters passed to the function according to the format given as first parameter,
+ * throwing on the first formatter that cannot be applied.
+ *
+ * This is the strict counterpart of `format`, for callers that would rather hear about an
+ * invalid format than see it silently written out. The accepted formats are exactly the same,
+ * see `format` for the grammar.
+ * @params:
+ *   - str: the format
+ *   - a: the list of values to format
+ * @throws:
+ *   - FormatError: if the format is not valid for the type of values
+ *
+ * @example:
+ * ```
+ * use std::format::_;
+ *
+ * // a valid format is written exactly like format writes it
+ * assert(formatStrict("i: {}, j: {}"s8, 89, "test"s8) == "i: 89, j: test"s8);
+ *
+ * // but an invalid one is not let through
+ * {
+ *     println(formatStrict("value: {3}"s8, 12));
+ * } catch {
+ *     err: &FormatError => { println("invalid format: ", err); }
+ * }
+ * ```
+ */
+pub fn formatStrict {T...} (str: [c8], a: T)-> [c8]
+    throws FormatError
+{
+    let dmut stream = copy StringStream();
+    cte if (T,)::arity > 1 {
+        let z = (expand a,);
+        implem::formatStrict(str, z, alias stream);
+    } else {
+        let z = (a,);
+        implem::formatStrict(str, z, alias stream);
     }
 
     stream[]

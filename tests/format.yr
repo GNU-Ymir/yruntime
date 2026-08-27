@@ -1,6 +1,6 @@
 in format;
 
-use std::format::_;
+use std::{format::_, io};
 
 __test {
     let msg = format("Hello {}, {}", "a", ["a", "b"]);
@@ -12,4 +12,128 @@ __test {
     let msg = format("Hello {}, {}", "a", copy ["a", "b"]);
 
     assert(msg == "Hello a, [a, b]");
+}
+
+/**
+ * The examples documented on std::format::format
+ * */
+__test {
+    assert(format("i: {}, j: {}"s8, 89, "test"s8) == "i: 89, j: test"s8);
+    assert(format("{:+<8}"s8, 12u32) == "12++++++"s8);
+    assert(format("{:=<8+x}"s8, 12u32) == "+0xc===="s8);
+    assert(format("{1:=>8}"s8, 89u32, 78u32) == "======78"s8);
+    assert(format("{1:-^*}"s8, 8u32, 19u32) == "---19---"s8);
+    assert(format("{1:+<*x} {0}"s8, 10, 255u32) == "0xff++++++ 10"s8);
+    assert(format("{1:->10b} {0}"s8, "foo", 4u32) == "-----0b100 foo"s8);
+    assert(format("{{} {0:}"s8, 9) == "{} 9"s8);
+    assert(format("{} and {}"s8, 1, true) == "1 and true"s8);
+}
+
+/**
+ * An alignment writes exactly 'width' chars, whatever the direction
+ * */
+__test {
+    assert(format("{:.<6}"s8, 12) == "12...."s8);
+    assert(format("{:.>6}"s8, 12) == "....12"s8);
+    assert(format("{:.^6}"s8, 12) == "..12.."s8);
+    assert(format("{:.^7}"s8, 12) == "..12..."s8);
+
+    // a value wider than the alignment is not truncated
+    assert(format("{:.^2}"s8, 12345) == "12345"s8);
+}
+
+/**
+ * Every formatter of a format consumes an argument, whether or not it has a ':' specification
+ * */
+__test {
+    assert(format("{} {:x} {}"s8, 1, 2, 3) == "1 0x2 3"s8);
+    assert(format("{:x} {}"s8, 1, 2) == "0x1 2"s8);
+    assert(format("{:+} {}"s8, 1, 2) == "+1 2"s8);
+
+    // a '*' width consumes the argument placed before the value
+    assert(format("{:^*} {}"s8, 4u32, 2, 3) == " 2   3"s8);
+
+    // but an explicit index consumes nothing
+    assert(format("{1} {} {}"s8, 1, 2) == "2 1 2"s8);
+}
+
+/**
+ * A formatter that does not apply to the value it designates is replaced by that value, written
+ * with its default representation
+ * */
+__test {
+    // 'z' is not a type formatter
+    assert(format("a {:z} b"s8, 12) == "a 12 b"s8);
+
+    // a precision only applies to floating point values
+    assert(format("a {:.2} b"s8, "x"s8) == "a x b"s8);
+
+    // and a sign only to numbers
+    assert(format("a {:+} b"s8, "x"s8) == "a x b"s8);
+
+    // the value is still consumed, so the formatters that follow keep their arguments
+    assert(format("{} {:z} {}"s8, 1, 2, 3) == "1 2 3"s8);
+}
+
+/**
+ * A formatter that designates no value at all is left in the result as it was written
+ * */
+__test {
+    assert(format("a {5} b"s8, 12) == "a {5} b"s8);
+    assert(format("a {5:x} b"s8, 12) == "a {5:x} b"s8);
+    assert(format("a {5:z} b"s8, 12) == "a {5:z} b"s8);
+
+    // an explicit index consumes nothing, valid or not
+    assert(format("{5} {}"s8, 1) == "{5} 1"s8);
+}
+
+/**
+ * A '{' that closes no formatter is written as-is, along with the rest of the format
+ * */
+__test {
+    assert(format("a {"s8, 12) == "a {"s8);
+    assert(format("{:>8"s8, 12) == "{:>8"s8);
+    assert(format("{:"s8, 12) == "{:"s8);
+    assert(format("a {} b {"s8, 1, 2) == "a 1 b {"s8);
+
+    // a doubled '{' is not a formatter either
+    assert(format("{{}}"s8, 12) == "{}}"s8);
+}
+
+/**
+ * The fill char of an alignment can be anything, '}' included
+ * */
+__test {
+    assert(format("{:}<8}"s8, 12) == "12}}}}}}"s8);
+    assert(format("{:{>4}"s8, 12) == "{{12"s8);
+}
+
+/**
+ * formatStrict formats exactly like format, as long as the format is valid
+ * */
+__test {
+    assert(formatStrict("i: {}, j: {}"s8, 89, "test"s8) == "i: 89, j: test"s8);
+    assert(formatStrict("{:=<8+x}"s8, 12u32) == "+0xc===="s8);
+    assert(formatStrict("{1:-^*}"s8, 8u32, 19u32) == "---19---"s8);
+    assert(formatStrict("{} {:x} {}"s8, 1, 2, 3) == "1 0x2 3"s8);
+    assert(formatStrict("{{} {0:}"s8, 9) == "{} 9"s8);
+    assert(formatStrict("{:}<8}"s8, 12) == "12}}}}}}"s8);
+}
+
+/**
+ * formatStrict throws instead of falling back to unformatted text
+ * */
+__test {
+    let mut nbErrors = 0;
+
+    for f in ["a {5} b"s8, "a {:z} b"s8, "a {:.2} b"s8, "a {"s8, "{:>8"s8, "{:"s8] {
+        {
+            let res = formatStrict(f, "x"s8);
+            println("formatStrict(", f, ") did not throw, and returned ", res);
+        } catch {
+            _: &FormatError => { nbErrors += 1; }
+        }
+    }
+
+    assert(nbErrors == 6);
 }
