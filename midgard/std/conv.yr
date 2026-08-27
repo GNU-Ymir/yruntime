@@ -325,33 +325,34 @@ pub fn if (isSigned!{I} && isChar!{C} && isIntegral!{N}) to {T of [C], C, base: 
         return copy cast!{T} ("0");
     }
 
-    let (mut n: __pragma!unproxied(I), mut len, sign) = if (a < 0) {
-        (-a, 0us, true)
-    } else {
-        (a, 0us, false)
-    };
+    let sign = a < 0;
 
-    let absVal: typeof(n) = cast!{typeof(n)} (n);
-    let b: typeof(n) = cast!{typeof(n)} (base);
+    // digits are extracted from the negative side: -I::min overflows, but I::min
+    // itself is representable, so every value of I goes through the same path
+    let negVal: __pragma!unproxied(I) = if (sign) { a } else { -a };
+    let b: __pragma!unproxied(I) = cast!{__pragma!unproxied(I)} (base);
 
-    while n > 0 {
+    let mut n = negVal;
+    let mut len = 0us;
+
+    while n < 0 {
         len += 1;
         n /= b;
     }
 
     if (!sign) {
         let dmut res = core::types::array::allocArray!(C)(len);
-        let mut m: typeof(n) = absVal;
+        let mut m = negVal;
 
         cte if (base == 10) {
             upper;
             for i in len .. 0us {
-                res[i - 1us] = cast!C(cast!c8(cast!u8('0') + cast!u8(m % b)));
+                res[i - 1us] = cast!C(cast!c8(cast!u8('0') + cast!u8(-(m % b))));
                 m /= b;
             }
         } else {
             for i in len .. 0us {
-                res[i - 1us] = std::conv::utils::to!C(m % b, b, upper);
+                res[i - 1us] = std::conv::utils::to!C(-(m % b), b, upper);
                 m /= b;
             }
         }
@@ -360,17 +361,17 @@ pub fn if (isSigned!{I} && isChar!{C} && isIntegral!{N}) to {T of [C], C, base: 
     } else {
         let dmut res = core::types::array::allocArray!(C)(len + 1us);
         res[0] = '-';
-        let mut m: typeof(n) = absVal;
+        let mut m = negVal;
 
         cte if (base == 10) {
             upper;
             for i in len .. 0us {
-                res[i] = cast!C(cast!c8(cast!u8('0') + cast!u8(m % b)));
+                res[i] = cast!C(cast!c8(cast!u8('0') + cast!u8(-(m % b))));
                 m /= b;
             }
         } else {
             for i in len .. 0us {
-                res[i] = std::conv::utils::to!C(m % b, b, upper);
+                res[i] = std::conv::utils::to!C(-(m % b), b, upper);
                 m /= b;
             }
         }

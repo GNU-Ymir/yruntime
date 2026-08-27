@@ -86,3 +86,60 @@ __test {
     std::io::println(utf16, " ", utf16.len);
     assert(utf16 == "😉"s16 && utf16.len == 2us, "6");
 }
+
+/**
+ * The minimum value of a signed int cannot be negated, the conversion has to
+ * compute the magnitude on the unsigned side (cf. YMI-164).
+ */
+__test {
+    assert(i8::min.to![c8] () == "-128", "Conversion error i8::min");
+    assert(i16::min.to![c8] () == "-32768", "Conversion error i16::min");
+    assert(i32::min.to![c8] () == "-2147483648", "Conversion error i32::min");
+    assert(i64::min.to![c8] () == "-9223372036854775808", "Conversion error i64::min");
+    assert(isize::min.to![c8] () == "-9223372036854775808", "Conversion error isize::min");
+
+    assert(i32::min.to![c32] () == "-2147483648"s32, "Conversion error i32::min to c32");
+}
+
+__test {
+    assert(i8::min.to!{[c8], "x"} () == "-0x80", "Conversion error i8::min hex");
+    assert(i8::min.to!{[c8], "b"} () == "-0b10000000", "Conversion error i8::min bin");
+    assert(i8::min.to!{[c8], "o"} () == "-0o200", "Conversion error i8::min oct");
+    assert(i8::min.to!{[c8], 5us} () == "-1003", "Conversion error i8::min base 5");
+
+    assert(i32::min.to!{[c8], "x"} () == "-0x80000000", "Conversion error i32::min hex");
+    assert(i32::min.to!{[c8], "b"} () == "-0b10000000000000000000000000000000", "Conversion error i32::min bin");
+    assert(i32::min.to!{[c8], "o"} () == "-0o20000000000", "Conversion error i32::min oct");
+
+    assert(i64::min.to!{[c8], "x"} () == "-0x8000000000000000", "Conversion error i64::min hex");
+    assert((-255).to!{[c8], "x"} (upper-> true) == "-0xFF", "Conversion error hex upper");
+}
+
+__test {
+    assert(i8::max.to![c8] () == "127", "Conversion error i8::max");
+    assert(i16::max.to![c8] () == "32767", "Conversion error i16::max");
+    assert(i32::max.to![c8] () == "2147483647", "Conversion error i32::max");
+    assert(i64::max.to![c8] () == "9223372036854775807", "Conversion error i64::max");
+    assert(i64::max.to!{[c8], "x"} () == "0x7fffffffffffffff", "Conversion error i64::max hex");
+}
+
+/**
+ * The unsigned conversion has to cover the whole range as well, u64::max being
+ * the value that does not fit in any signed type.
+ */
+__test {
+    assert(u64::min.to![c8] () == "0", "Conversion error u64::min");
+    assert(u8::min.to![c8] () == "0", "Conversion error u8::min");
+    assert(usize::min.to![c8] () == "0", "Conversion error usize::min");
+    assert(u64::min.to!{[c8], "x"} () == "0x0", "Conversion error u64::min hex");
+    assert(u64::min.to!{[c8], 7us} () == "0", "Conversion error u64::min base 7");
+
+    assert(u8::max.to![c8] () == "255", "Conversion error u8::max");
+    assert(u16::max.to![c8] () == "65535", "Conversion error u16::max");
+    assert(u32::max.to![c8] () == "4294967295", "Conversion error u32::max");
+    assert(u64::max.to![c8] () == "18446744073709551615", "Conversion error u64::max");
+    assert(usize::max.to![c8] () == "18446744073709551615", "Conversion error usize::max");
+
+    assert(u64::max.to!{[c8], "x"} () == "0xffffffffffffffff", "Conversion error u64::max hex");
+    assert(u64::max.to!{[c8], "o"} () == "0o1777777777777777777777", "Conversion error u64::max oct");
+}
