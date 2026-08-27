@@ -143,3 +143,30 @@ __test {
     assert(u64::max.to!{[c8], "x"} () == "0xffffffffffffffff", "Conversion error u64::max hex");
     assert(u64::max.to!{[c8], "o"} () == "0o1777777777777777777777", "Conversion error u64::max oct");
 }
+
+/**
+ * String-to-integer parsing must reject digits outside the requested base,
+ * empty / sign-only input, and values that overflow the target type (YMI-167).
+ */
+__test {
+    use std::conv::errors;
+
+    let mut threw = 0;
+    { let _ = ("0b12").to!{u32, "b"} (); } catch { CastFailure() => { threw += 1; } }
+    { let _ = ("19").to!{u32, 2us} (); } catch { CastFailure() => { threw += 1; } }
+    { let _ = ("0o99").to!{u32, "o"} (); } catch { CastFailure() => { threw += 1; } }
+    { let _ = ("").to!u32 (); } catch { CastFailure() => { threw += 1; } }
+    { let _ = ("-").to!i32 (); } catch { CastFailure() => { threw += 1; } }
+    { let _ = ("999").to!u8 (); } catch { CastFailure() => { threw += 1; } }
+    { let _ = ("99999999999999999999999").to!u64 (); } catch { CastFailure() => { threw += 1; } }
+    { let _ = ("-12").to!u32 (); } catch { CastFailure() => { threw += 1; } }
+
+    assert(threw == 8, "YMI-167: expected every malformed literal to throw");
+
+    assert(("0b1001").to!{u32, "b"} () == 9u32);
+    assert(("0o777").to!{u32, "o"} () == 511u32);
+    assert(("255").to!u8 () == 255u8);
+    assert(("-128").to!i8 () == -128i8);
+    assert(("18446744073709551615").to!u64 () == u64::max);
+    assert(("-42").to!{i32, 10us} () == -42);
+}

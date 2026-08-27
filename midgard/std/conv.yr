@@ -627,7 +627,6 @@ pub fn if (isChar!{U} && (template!{F}{record R} || template!{F}{entity E})) to 
  * assert(x == 12u64 && y == 87u32);
  * ```
  * @assume: the string is stripped, so the only possible char are[0-9]
- * @KnownBug: does not check the overflow capacity
  */
 pub fn if (isUnsigned!{T} && isChar!{U}) to {T, F of [U], U} (str: F)-> T
     throws CastFailure
@@ -646,7 +645,6 @@ pub fn if (isUnsigned!{T} && isChar!{U}) to {T, F of [U], U} (str: F)-> T
  *
  * assert(x == 255u64 && y == 334u32);
  * ```
- * @KnownBug: does not check the overflow capacity
  */
 pub fn if (isUnsigned!{T} && isChar!{U}) to {T, "x", F of [U], U} (str: F)-> T
     throws CastFailure
@@ -669,7 +667,6 @@ pub fn if (isUnsigned!{T} && isChar!{U}) to {T, "x", F of [U], U} (str: F)-> T
  *
  * assert(x == 5u64 && y == 11u32);
  * ```
- * @KnownBug: does not check the overflow capacity
  */
 pub fn if (isUnsigned!{T} && isChar!{U}) to {T, "b", F of [U], U} (str: F)-> T
     throws CastFailure
@@ -692,7 +689,6 @@ pub fn if (isUnsigned!{T} && isChar!{U}) to {T, "b", F of [U], U} (str: F)-> T
  *
  * assert(x == 4095u64 && y == 668u32);
  * ```
- * @KnownBug: does not check the overflow capacity
  */
 pub fn if (isUnsigned!{T} && isChar!{U}) to {T, "o", F of [U], U} (str: F)-> T
     throws CastFailure
@@ -717,19 +713,25 @@ pub fn if (isUnsigned!{T} && isChar!{U}) to {T, "o", F of [U], U} (str: F)-> T
  * let x = ("1ku3").to!{u64, 31us} ();
  * assert(x == 49944u64);
  * ```
- * @KnownBug: does not check the overflow capacity
  */
 pub fn if (isUnsigned!{T} && isChar!{U} && isIntegral!{N}) to {T, base: N, F of [U], U, N} (str: F)-> T
     throws CastFailure
 {
     cte assert(36us >= base, "Maximum base is 36");
 
-    let mut j = 1us;
-    let mut res = 0us;
-    for i in str.len .. 0us {
+    if (str.len == 0us) {
+        throw copy CastFailure(T::typeinfo, [U]::typeinfo);
+    }
+
+    let b = cast!T(base);
+    let mut res: T = 0;
+    for i in 0us .. str.len {
         {
-            res = res + (j * std::conv::utils::to!usize(str[i - 1us], base));
-            j *= base;
+            let digit = std::conv::utils::to!{T} (str[i], b);
+            if (res > (T::max - digit) / b) {
+                throw copy CastFailure(T::typeinfo, [U]::typeinfo);
+            }
+            res = res * b + digit;
         } catch {
             _: &CastFailure => {
                 throw copy CastFailure(T::typeinfo, [U]::typeinfo);
@@ -737,7 +739,7 @@ pub fn if (isUnsigned!{T} && isChar!{U} && isIntegral!{N}) to {T, base: N, F of 
         }
     }
 
-    cast!T(res)
+    res
 }
 
 /**
@@ -751,7 +753,6 @@ pub fn if (isUnsigned!{T} && isChar!{U} && isIntegral!{N}) to {T, base: N, F of 
  *
  * assert(x == -12i64 && y == 89);
  * ```
- * @KnownBug: does not check the overflow capacity
  */
 pub fn if (isSigned!{T} && isChar!{U}) to {T, F of [U], U} (str: F)-> T
     throws CastFailure
@@ -770,27 +771,46 @@ pub fn if (isSigned!{T} && isChar!{U}) to {T, F of [U], U} (str: F)-> T
  *
  * assert(x == -12i64 && y == -49944);
  * ```
- * @KnownBug: does not check the overflow capacity
  */
 pub fn if (isSigned!{T} && isChar!{U} && isIntegral!{N}) to {T, base: N, F of [U], U, N} (str: F)-> T
     throws CastFailure
 {
     cte assert(36 >= base, "Maximum base is 36");
 
-    let mut j: T = 1;
+    if (str.len == 0us) {
+        throw copy CastFailure(T::typeinfo, [U]::typeinfo);
+    }
+
+    let mut neg = false;
+    let mut start = 0us;
+    if (str[0us] == '-') {
+        neg = true;
+        start = 1us;
+    }
+
+    if (start >= str.len) {
+        throw copy CastFailure(T::typeinfo, [U]::typeinfo);
+    }
+
+    let b = cast!T(base);
     let mut res: T = 0;
     {
-        for i in str.len .. 0us {
-            if (i == 1us && str[i - 1us] == '-') {
-                res = -res;
+        for i in start .. str.len {
+            let digit = std::conv::utils::to!{T} (str[i], b);
+            if (neg) {
+                if (res < (T::min + digit) / b) {
+                    throw copy CastFailure(T::typeinfo, [U]::typeinfo);
+                }
+                res = res * b - digit;
             } else {
-                res += (j * std::conv::utils::to!{T} (str[i - 1us], cast!T(base)));
+                if (res > (T::max - digit) / b) {
+                    throw copy CastFailure(T::typeinfo, [U]::typeinfo);
+                }
+                res = res * b + digit;
             }
-
-            j *= base;
         }
     } catch {
-        _ => throw copy CastFailure(F::typeinfo, T::typeinfo);
+        _ => throw copy CastFailure(T::typeinfo, [U]::typeinfo);
     }
     res
 }
