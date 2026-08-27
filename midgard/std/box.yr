@@ -12,28 +12,23 @@ in box;
 mod implem;
 
 /**
- * A box class is a mutable pointer to a value that is allocated on the heap
- * They can be used to change values of closure, inside a closure
- * The inner value is not mutable
+ * A box class is a mutable pointer to a value that is allocated on the heap.
+ * Boxing a value is how a scalar - which is copied on every assignment and
+ * cannot be aliased - gets a single instance that several handles share.
  * @example:
  * ```
- * import std::box;
+ * use std::box;
  *
- * fn foo()-> (dg ()-> i32) {
- *    let dmut x = Box::new(0);
- *    let closure = move || {
- *        x.get()
- *    };
- *    x:.set(42);
- *    return closure;
+ * fn set(dmut b: &Box!{i32}, v: i32) {
+ *     b.value = v;
  * }
  *
- * fn main()
- *     throws &AssertError
- * {
- *     let enclosedvalue = foo();
- *     assert(enclosedvalue() == 42);
- * }
+ * // a box is a heap allocated cell, whose content is seen through all its handles
+ * let dmut x = copy Box!{i32} (0);
+ * let y = x;
+ *
+ * set(alias x, 42);
+ * assert(y.value == 42);
  * ```
  */
 @final
