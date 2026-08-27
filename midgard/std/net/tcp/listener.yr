@@ -31,11 +31,20 @@ pub class TcpListener {
      *    - backlog: the maximum length to which the queue of pending connections may grow
      * @example:
      * ```
-     * let dmut server = copy TcpListener(SockAddr(Ipv4::UNSPECIFIED, 8080));
-     * loop {
-     *    let dmut client = server:.accept();
-     *    client:.sendRaw("Hello !\n");
-     *    client:.dispose();
+     * use std::net::tcp;
+     * use std::net::addr::_;
+     * use std::conv;
+     * use std::conv::errors;
+     *
+     * fn serve ()
+     *    throws TcpError, CastFailure
+     * {
+     *    let dmut server = copy TcpListener(SockAddr(("0.0.0.0"s8).to!{&IpAddr} (), 8080u16));
+     *    loop {
+     *       let dmut client = server:.accept();
+     *       client:.sendRaw("Hello !\n"s8);
+     *       client:.dispose();
+     *    }
      * }
      * ```
      * */
@@ -96,18 +105,29 @@ pub class TcpListener {
      * @returns: the TcpStream used to communicate with the client
      * @example:
      * ```
-     * pub fn greets_client(dmut client: &TcpStream) {
+     * use std::net::tcp;
+     * use std::net::addr::_;
+     * use std::conv;
+     * use std::conv::errors;
+     *
+     * pub fn greets_client(dmut client: &TcpStream)
+     *    throws TcpError
+     * {
      *    // Communicate with the client
-     *    client:.sendRaw("Hello !!\n");
+     *    client:.sendRaw("Hello !!\n"s8);
      * }
      *
-     * let dmut server = copy TcpListener(SockAddrV4::new(Ipv4::LOCALHOST, 4000u16));
-     * loop {
-     *    let dmut client = server:.accept(); // accept blocks until a client is connected
-     *    println("New client connected: ", client);
-     *    greets_client(alias client);
+     * fn serve ()
+     *    throws TcpError, CastFailure
+     * {
+     *    let dmut server = copy TcpListener(SockAddr(("127.0.0.1"s8).to!{&IpAddr} (), 4000u16));
+     *    loop {
+     *       let dmut client = server:.accept(); // accept blocks until a client is connected
+     *       println("New client connected: ", client);
+     *       greets_client(alias client);
      *
-     *    client:.dispose();
+     *       client:.dispose();
+     *    }
      * }
      * ```
      * */

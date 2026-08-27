@@ -10,7 +10,7 @@
  * @example:
  * Create a file and write a string in it:
  * ```
- * use std::fs::{file, path};
+ * use std::fs::{file, path, errors};
  *
  * // Create a file named "foo.txt", and write something in it
  * {
@@ -26,14 +26,14 @@
  * <br>
  * Open an existing file and read its content:
  * ```
- * use std::fs::{file, path};
+ * use std::fs::{file, path, errors};
  *
  * let content = {
  *     let dmut file = File::open(Path("foo.txt"));
  *     file:.readAll() // read the all the content of the file
  * } catch {
  *     // File does not exist or permission denied
- *     err: &FsError => { "" } // return an empty string
+ *     _: &FsError => { "" } // return an empty string
  * };
  *
  * println(content);
@@ -42,7 +42,7 @@
  * <br>
  * Open an existing file and append content to it:
  * ```
- * use std::fs::{file, path};
+ * use std::fs::{file, path, errors};
  *
  * {
  *   let dmut file = File::open(Path("foo.txt"), append-> true);
@@ -199,7 +199,7 @@ pub entity File {
      *   - FsError: if the file is not opened, or not readable.
      * @example:
      * ```
-     * use std::fs::{file, path};
+     * use std::fs::{file, path, errors};
      *
      * {
      *     // Create a file in read and write mode(read is set by default)
@@ -252,7 +252,7 @@ pub entity File {
      *   - FsError: if the file is not opened, or not readable
      * @example:
      * ```
-     * use std::fs::{file, path};
+     * use std::fs::{file, path, errors};
      *
      * {
      *     let dmut fs = File::create(Path("foo.txt"), write-> true);
@@ -308,7 +308,7 @@ pub entity File {
      *   - FsError: if the file is not opened, or not writable
      * @example:
      * ```
-     * use std::fs::{file, path};
+     * use std::fs::{file, path, errors};
      *
      * {
      *      let dmut file = File::open(Path("foo.txt"), write-> true);
@@ -339,7 +339,7 @@ pub entity File {
      *   - FsError: if the file is not opened, or not readable
      * @example:
      * ```
-     * use std::fs::{file, path};
+     * use std::fs::{file, path, errors};
      *
      * {
      *     let dmut fs = File::create(Path("foo.txt"), write-> true);
@@ -389,14 +389,14 @@ pub entity File {
      *   - FsError: if the file is not opened, are not readable
      * @example:
      * ```
-     * use std::fs::{file, path};
+     * use std::fs::{file, path, errors};
      *
      * {
      *     let dmut fs = File::create(Path("foo.txt"), write-> true);
      *     fs:.write("Hello World !");
      *     fs:.seek(0);
      *
-     *     let res: [u8] = fs:.readBytesUntil([87u8, 111u8, 114u8]);
+     *     let res: [u8] = fs:.readBytesUntil(copy [87u8, 111u8, 114u8]);
      *     assert(res == [72u8, 101u8, 108u8, 108u8, 111u8, 32u8, 87u8, 111u8, 114u8]);
      *
      *     let end = fs:.readAll();
@@ -475,10 +475,11 @@ pub entity File {
      *   - FsError: if the file is not opened, are not writable
      * @example:
      * ```
-     * import std::fs::file, std::fs::path;
+     * use std::fs::{file, path, errors};
      *
-     * with dmut file = File::open(Path("foo.txt"), write-> true) {
-     *      file:.writeBytes([83u8, 111u8, 109u8, 101u8, 32u8, 84u8, 101u8, 120u8, 116u8]);
+     * {
+     *      let dmut file = File::open(Path("foo.txt"), write-> true);
+     *      file:.writeBytes(copy [83u8, 111u8, 109u8, 101u8, 32u8, 84u8, 101u8, 120u8, 116u8]);
      * } catch {
      *      err: &FsError => {
      *          println(err);
@@ -506,10 +507,11 @@ pub entity File {
      *   - FsError: if the file is not opened, are not writable
      * @example:
      * ```
-     * import std::fs::file, std::fs::path;
+     * use std::fs::{file, path, errors};
      *
-     * with dmut file = File::open(Path("foo.txt"), write-> true) {
-     *      file:.writeBytes([83u8, 111u8, 109u8, 101u8, 32u8, 84u8, 101u8, 120u8, 116u8]);
+     * {
+     *      let dmut file = File::open(Path("foo.txt"), write-> true);
+     *      file:.writeBytes(copy [83u8, 111u8, 109u8, 101u8, 32u8, 84u8, 101u8, 120u8, 116u8]);
      * } catch {
      *      err: &FsError => {
      *          println(err);

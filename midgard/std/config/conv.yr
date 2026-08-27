@@ -21,6 +21,7 @@ in conv;
 
 use std::{traits, config::data};
 use std::conv::errors;
+use std::config::errors;
 
 /*!
  * ====================================================================================================
@@ -36,6 +37,8 @@ use std::conv::errors;
  * @warning: does not verify overflow.
  * @example:
  * ```
+ * use std::config::_;
+ *
  * let i = copy Int(12);
  * assert(i.to!i64() == 12i64);
  * assert(i.to!i32() == 12);
@@ -64,6 +67,8 @@ pub fn if isIntegral!{T} to {T, C of &Config} (cfg: C)-> T
  * @info: successfully converts Int and Float config nodes
  * @example:
  * ```
+ * use std::config::_;
+ *
  * let f = copy Float(12.0);
  * assert(f.to!f64() == 12.0);
  * assert(f.to!f32() == 12.0f);
@@ -90,6 +95,8 @@ pub fn if isFloating!{T} to {T, C of &Config} (cfg: C)-> T
  * Transform a configuration into a string
  * @example:
  * ```
+ * use std::config::_;
+ *
  * let i = copy Str("foo");
  * assert(i.to!{[c32]} () == "foo");
  * ```
@@ -112,6 +119,8 @@ pub fn if isChar!{U} to {T of [U], U, C of &Config} (cfg: C)-> T
  * Transform a configuration into a bool
  * @example:
  * ```
+ * use std::config::_;
+ *
  * let i = copy Bool(true);
  * assert(i.to!{bool} ());
  * ```
@@ -138,8 +147,10 @@ pub fn to {B of bool, C of &Config} (cfg: C)-> B
  * Transform a configuration into a slice
  * @example:
  * ```
+ * use std::config::_;
+ *
  * let dmut a = copy Array();
- * for i in 1 .. 4 {
+ * for i in 1i64 .. 4i64 {
  *     a:.push(copy Int(i));
  * }
  *
@@ -171,8 +182,10 @@ pub fn if !isChar!{U} to {T of [U], U, C of &Config} (cfg: C)-> T
  * Transform a configuration into an array
  * @example:
  * ```
+ * use std::config::_;
+ *
  * let dmut a = copy Array();
- * for i in 1 .. 4 {
+ * for i in 1i64 .. 4i64 {
  *     a:.push(copy Int(i));
  * }
  *
@@ -209,6 +222,8 @@ pub fn if !isChar!{U} to {T of [U ; N], U, N: usize, C of &Config} (cfg: C)-> T
  *     - only returns the T::arity first elements and ignore remainings
  * @example:
  * ```
+ * use std::config::_;
+ *
  * let dmut a = copy Array();
  * a:.push(copy Int(1));
  * a:.push(copy Str("test")); // a is a tuple, as it contains arguments of different types
@@ -241,6 +256,9 @@ pub fn if isTuple!{T} to {T, C of &Config} (cfg: C)-> T
             inn: &ConfigError => {
                 throw copy CastFailure(to-> T::typeinfo, from-> cfg.__typeinfo__, subError-> inn?);
             }
+            fail: &CastFailure => {
+                throw fail;
+            }
         }
     }
 
@@ -251,12 +269,14 @@ pub fn if isTuple!{T} to {T, C of &Config} (cfg: C)-> T
  * Transform a configuration into a map
  * @example:
  * ```
+ * use std::config::_;
+ *
  * let dmut d = copy Dict();
  * d["foo"] = copy Int(1);
  * d["bar"] = copy Int(2);
  *
  * let m = d.to!{[[c8] => i32]} ();
- * assert(m["foo"] == 1 && m["bar"] == 2);
+ * assert(m["foo"] == (1)? && m["bar"] == (2)?);
  * ```
  * */
 pub fn to {T of [[c8] => V], V, C of &Config} (cfg: C)-> T
@@ -264,7 +284,7 @@ pub fn to {T of [[c8] => V], V, C of &Config} (cfg: C)-> T
 {
     if let m: &Dict = cfg {
         {
-            let mut res: [[c8] => mut V] = [];
+            let mut res: [[c8] => mut V] = copy [];
             for k, v in m[] {
                 res[k] = config::conv::to!{V} (v);
             }
@@ -288,6 +308,8 @@ pub fn to {T of [[c8] => V], V, C of &Config} (cfg: C)-> T
  * Inner function used to partially transform a configuration into collections
  * @example:
  * ```
+ * use std::config::_;
+ *
  * let dmut dict = copy Dict();
  * dict["foo"] = copy Int(12);
  * dict["bar"] = copy Str("test");
@@ -380,6 +402,8 @@ pub fn to {T of R, class R, C of &Config} (cfg: C)-> T
  * @warning: does not verify overflow.
  * @example:
  * ```
+ * use std::config::_;
+ *
  * if let Int(value-> v) = (12).to!{&Config} () {
  *    assert(v == 12);
  * }
@@ -394,6 +418,8 @@ pub fn if isIntegral!{T} to {C of &Config, T} (a: T)-> dmut C {
  * @warning: value might be truncated.
  * @example:
  * ```
+ * use std::config::_;
+ *
  * if let Float(value-> v) = (3.14f).to!{&Config} () {
  *    assert(v == 3.14d);
  * }
@@ -408,6 +434,8 @@ pub fn if isFloating!{T} to {C of &Config, T} (a: T)-> dmut C {
  * @info: decode utf16 and utf32 into utf8
  * @example:
  * ```
+ * use std::config::_;
+ *
  * if let Str(value-> v) = ("Hello").to!{&Config} () {
  *    assert(v == "Hello");
  * }
@@ -421,6 +449,8 @@ pub fn if isChar!{U} to {C of &Config, T of [U], U} (a: T)-> dmut C {
  * Transform a bool value into a configutation
  * @example:
  * ```
+ * use std::config::_;
+ *
  * if let Bool(value-> v) = (false).to!{&Config} () {
  *    assert(!v);
  * }
@@ -442,13 +472,15 @@ pub fn if template!{T}{X of bool} to {C of &Config, T} (a: T)-> dmut C {
  * Transform a slice into a configuration
  * @example:
  * ```
+ * use std::config::_;
+ *
  * let dmut slc = copy [1, 2, 3];
  * let array = slc.to!{&Config} ();
  * if let x: &Array = array {
  *    assert(x.len == 3);
- *    assert(x[0] of &Int);
- *    assert(x[1] of &Int);
- *    assert(x[2] of &Int);
+ *    assert(x[0] of Int);
+ *    assert(x[1] of Int);
+ *    assert(x[2] of Int);
  * }
  * ```
  * */
@@ -465,13 +497,15 @@ pub fn if !isChar!{U} to {C of &Config, T of [U], U} (a: T)-> dmut C {
  * Transform an array into a configuration
  * @example:
  * ```
+ * use std::config::_;
+ *
  * let dmut slc = [1, 2, 3];
  * let array = slc.to!{&Config} ();
  * if let x: &Array = array {
  *    assert(x.len == 3);
- *    assert(x[0] of &Int);
- *    assert(x[1] of &Int);
- *    assert(x[2] of &Int);
+ *    assert(x[0] of Int);
+ *    assert(x[1] of Int);
+ *    assert(x[2] of Int);
  * }
  * ```
  * */
@@ -488,12 +522,14 @@ pub fn if !isChar!{U} to {C of &Config, T of [U ; N], U, N: usize} (a: T)-> dmut
  * Transform a tuple into a configuration
  * @example:
  * ```
- * let dmut slc = (1, "test");
+ * use std::config::_;
+ *
+ * let slc = (1, "test");
  * let array = slc.to!{&Config} ();
  * if let x: &Array = array {
  *    assert(x.len == 2);
- *    assert(x[0] of &Int);
- *    assert(x[1] of &Str);
+ *    assert(x[0] of Int);
+ *    assert(x[1] of Str);
  * }
  * ```
  * */
@@ -510,8 +546,12 @@ pub fn if isTuple!{T} to {C of &Config, T} (a: T)-> dmut C {
  * Transform a map into a configuration
  * @example:
  * ```
+ * use std::config::_;
+ *
  * let dmut mp = copy ["foo" => 12, "bar" => 89];
  * let dict = mp.to!{&Config} ();
+ *
+ * println(dict);
  * ```
  * */
 pub fn to {C of &Config, T of [[c8] => V], V} (m: T)-> dmut C {
@@ -550,6 +590,8 @@ pub fn to {C of &Config, T of [[c8] => V], V} (m: T)-> dmut C {
  * let a = copy A(89);
  * // transform A into &Config, and then dump it using toml format
  * let cfg = a.to!{&Config} ();
+ *
+ * println(toml::dump(cfg));
  * ```
  * */
 pub fn if (template!{T}{class D} || template!{T}{record R}) to {C of &Config, T of R, R impl config::Serializable} (value: T)-> C {
@@ -560,6 +602,8 @@ pub fn if (template!{T}{class D} || template!{T}{record R}) to {C of &Config, T 
  * Transform an object(record/entity) into a configuration
  * @example:
  * ```
+ * use std::config::_;
+ *
  * use std::{config::_, io};
  *
  * record A {
@@ -575,6 +619,8 @@ pub fn if (template!{T}{class D} || template!{T}{record R}) to {C of &Config, T 
  * let a = A(89);
  * // transform A into &Config, and then dump it using toml format
  * let cfg = a.to!{&Config} ();
+ *
+ * println(toml::dump(cfg));
  * ```
  * */
 pub fn if (template!{T}{entity E} || template!{T}{record R}) to {C of &Config, T of R, R impl config::Serializable} (ref value: T)-> C {
@@ -586,6 +632,8 @@ pub fn if (template!{T}{entity E} || template!{T}{record R}) to {C of &Config, T
  * @info: returns an empty dictionnary
  * @example:
  * ```
+ * use std::config::_;
+ *
  * use std::{config::_, io};
  *
  * record A {
@@ -595,9 +643,12 @@ pub fn if (template!{T}{entity E} || template!{T}{record R}) to {C of &Config, T
  * let a = A();
  * // transform A into &Config, and then dump it using toml format
  * let cfg = a.to!{&Config} ();
+ *
+ * println(toml::dump(cfg));
  * ```
  * */
 pub fn if (template!{T}{entity E} || template!{T}{record R}) to {C of &Config, T} (ref value: T)-> C {
+    value;
     return copy Dict();
 }
 
@@ -606,6 +657,8 @@ pub fn if (template!{T}{entity E} || template!{T}{record R}) to {C of &Config, T
  * @info: returns an empty dictionnary
  * @example:
  * ```
+ * use std::config::_;
+ *
  * use std::{config::_, io};
  *
  * class A {
@@ -615,9 +668,11 @@ pub fn if (template!{T}{entity E} || template!{T}{record R}) to {C of &Config, T
  * let a = copy A();
  * // transform A into &Config, and then dump it using toml format
  * let cfg = a.to!{&Config} ();
+ *
+ * println(toml::dump(cfg));
  * ```
  * */
-pub fn if (template!{T}{class D} || template!{T}{record R}) to {C of &Config} (value: T)-> C {
+pub fn if (template!{T}{class D} || template!{T}{record R}) to {C of &Config, T} (value: T)-> C {
     value;
     return copy Dict();
 }

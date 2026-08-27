@@ -6,15 +6,20 @@
  * @example:
  * ```
  * use std::net::addr::_;
+ * use std::conv;
  *
- * let localhost_v4 = Ipv4Address([127, 0, 0, 1]);
- * let localhost_v6 = Ipv6Address([0, 0, 0, 0, 0, 0, 0, 1]);
+ * let localhost_v4 = copy Ipv4Addr([127u8, 0u8, 0u8, 1u8]);
+ * let localhost_v6 = copy Ipv6Addr([0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 1u16]);
  *
- * let ip_v4 = ("127.0.0.1").to!{&IpAddr} ();
- * assert(ip_v4 == localhost_v4 && localhost_v4 == Ipv4::LOCALHOST);
+ * let ip_v4 = ("127.0.0.1"s8).to!{&IpAddr} ();
+ * assert(ip_v4 == localhost_v4);
  *
- * let ip_port_v6 = ("[::1]:8080").to!{SockAddr} ();
- * assert(ip_port_v6.ip == localhost_v6 && ip_port_v6.ip == Ipv6::LOCALHOST);
+ * let ip_v6 = ("::1"s8).to!{&IpAddr} ();
+ * assert(ip_v6 == localhost_v6);
+ *
+ * // an address can be associated to a port
+ * let ip_port_v6 = SockAddr(ip_v6, 8080u16);
+ * assert(ip_port_v6.ip == localhost_v6);
  * assert(ip_port_v6.port == 8080u16);
  * ```
  */
@@ -32,10 +37,9 @@ use std::syntax::tokenizer;
  * ```
  * use std::net::addr::_;
  *
- * let local_ipv4 = ("127.0.0.1"s8).to!{&IpAddr} ();
- * let local_ipv6 = ("::1"s8).to!{&IpAddr} ();
- *
- * let remote_ipv6 = ("fe80:1::8:2"s8).to!{&IpAddr} ();
+ * println(("127.0.0.1"s8).to!{&IpAddr} ());   // 127.0.0.1
+ * println(("::1"s8).to!{&IpAddr} ());         // ::1
+ * println(("fe80:1::8:2"s8).to!{&IpAddr} ()); // fe80:1::8:2
  * ```
  * */
 pub fn to {I of &IpAddr, T of [c8]} (addr: T)-> &IpAddr
@@ -56,8 +60,8 @@ pub fn to {I of &IpAddr, T of [c8]} (addr: T)-> &IpAddr
  * ```
  * use std::net::addr::_;
  *
- * let local  = ("127.0.0.1"s8).to!{&Ipv4Addr} ();
- * let remote = ("192.168.128.32"s8).to!{&Ipv4Addr} ();
+ * println(("127.0.0.1"s8).to!{&Ipv4Addr} ());      // 127.0.0.1
+ * println(("192.168.128.32"s8).to!{&Ipv4Addr} ()); // 192.168.128.32
  * ```
  * */
 pub fn to {I of &Ipv4Addr, T of [c8]} (addr: T)-> &Ipv4Addr
@@ -95,8 +99,8 @@ pub fn to {I of &Ipv4Addr, T of [c8]} (addr: T)-> &Ipv4Addr
  * ```
  * use std::net::addr::_;
  *
- * let local_ipv6 = ("::1"s8).to!{&Ipv6Addr} ();
- * let remote_ipv6 = ("fe80:1::8:2"s8).to!{&Ipv6Addr} ();
+ * println(("::1"s8).to!{&Ipv6Addr} ());         // ::1
+ * println(("fe80:1::8:2"s8).to!{&Ipv6Addr} ()); // fe80:1::8:2
  * ```
  * */
 pub fn to {I of &Ipv6Addr, T of [c8]} (addr: T)-> &Ipv6Addr

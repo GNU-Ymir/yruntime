@@ -17,19 +17,29 @@ mod ::request;
  * @example:
  * ```
  * use std::concurrency::actor;
+ * use std::config::_;
+ * use std::net::addr::_;
+ * use std::conv;
+ * use std::conv::errors;
  *
- * fn main() {
+ * class MyActor over ActorBase {
+ *    pub self () {}
+ * }
+ *
+ * fn main()
+ *    throws CastFailure, ActorError
+ * {
  *    // Actor system accepting connection from any address on port 8080
- *    let dmut sys = copy ActorSystem(SockAddr("0.0.0.0", 8080));
+ *    let dmut sys = copy ActorSystem(SockAddr(("0.0.0.0"s8).to!{&IpAddr} (), 8080u16));
  *
  *    // Add actors to the system
- *    sys:.add("alice", copy AliceActor());
- *    sys:.add("bob", copy BobActor());
+ *    sys:.add("alice", copy MyActor());
+ *    sys:.add("bob", copy MyActor());
  *
  *    sys:.start(); // start the actor system
  *
  *    // Access to a remote actor managed by a remote actor system
- *    let dmut charlie = sys:.remote("charlie", SockAddr("192.168.1.10", 8081));
+ *    let dmut charlie = sys:.remote("charlie", SockAddr(("192.168.1.10"s8).to!{&IpAddr} (), 8081u16));
  *
  *    // send a message to charlie
  *    charlie:.send(json#{"message" : "Hello"})?;
@@ -52,7 +62,7 @@ pub def ActorSystem: sys::ActorSystem;
  * use std::concurrency::actor;
  * use std::config::_;
  *
- * class BobActor over Actor {
+ * class BobActor over ActorBase {
  *    // @warning: Actor is not yet attached to system in the ctor
  *    pub self () {}
  *
@@ -60,7 +70,7 @@ pub def ActorSystem: sys::ActorSystem;
  *     * Actor is attached to a system and system is ready
  *     */
  *    pub over onStart(mut self) {
- *        let dmut alice = self:.system:.local("alice");
+ *        let dmut alice = self.system:.local("alice");
  *
  *        // send a message to Alice actor
  *        alice:.send(json#{"msg" : "Hello"});
@@ -73,7 +83,7 @@ pub def ActorSystem: sys::ActorSystem;
  * }
  *
  *
- * class AliceActor over Actor {
+ * class AliceActor over ActorBase {
  *    pub self () {}
  *
  *    pub over onMessage(mut self, msg: &Config) {
@@ -105,20 +115,31 @@ pub def ActorBase: base::ActorBase;
  * A request future is an object record used to await for the response of an actor
  * @example:
  * ```
- * // Create an actor system to send and receive actor requests
- * let dmut a = copy ActorSystem(SockAddr(Ipv4::UNSPECIFIED, 0));
- * a:.start();
+ * use std::concurrency::actor;
+ * use std::config::_;
+ * use std::net::addr::_;
+ * use std::time::dur;
+ * use std::conv;
+ * use std::conv::errors;
  *
- * // Create a reference to a remote actor hosted on system at addr 127.0.0.1:8080
- * let dmut alice = a:.remote("alice", SockAddr(Ipv4::LOCALHOST, 8080));
+ * fn main ()
+ *    throws CastFailure, ActorError
+ * {
+ *    // Create an actor system to send and receive actor requests
+ *    let dmut a = copy ActorSystem(SockAddr(("0.0.0.0"s8).to!{&IpAddr} (), 0u16));
+ *    a:.start();
  *
- * // Send a request to the remote actor
- * let dmut d = alice:.request(json#{"key" : "truc", "value" : 90}, timeout-> dur::seconds(2));
+ *    // Create a reference to a remote actor hosted on system at addr 127.0.0.1:8080
+ *    let dmut alice = a:.remote("alice", SockAddr(("127.0.0.1"s8).to!{&IpAddr} (), 8080u16));
  *
- * foo(); // do some other computation asynchronisely
+ *    // Send a request to the remote actor
+ *    let dmut d = alice:.request(json#{"key" : "truc", "value" : 90}, timeout-> dur::seconds(2u64));
  *
- * // Wait for the response(that might timeout)
- * println("Response: ", d:.value()?);
+ *    // do some other computation asynchronously, meanwhile
+ *
+ *    // Wait for the response(that might timeout)
+ *    println("Response: ", d:.value()?);
+ * }
  * ```
  * */
 pub def ActorRqtFuture: request::ActorRqtFuture;

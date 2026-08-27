@@ -20,32 +20,55 @@ use std::{traits, conv};
  * It can be acquired directly by construction, or using a TcpListener when accepting clients.
  * @example:
  * ```
- * pub fn greets_client(dmut client: &TcpStream) {
+ * use std::net::tcp;
+ * use std::net::addr::_;
+ * use std::conv;
+ * use std::conv::errors;
+ *
+ * pub fn greets_client(dmut client: &TcpStream)
+ *    throws TcpError
+ * {
  *    // Communicate with the client
- *    client:.send("Hello !!"s8);
+ *    client:.sendRaw("Hello !!\n"s8);
  * }
  *
- * let dmut server = copy TcpListener(SockAddr("127.0.0.1", 8080));
- * loop {
- *    // Accept creates a TcpStream to a connected client
- *    let dmut client = server:.accept();
- *    println("New client connected: ", client);
- *    greets_client(client);
+ * fn serve ()
+ *    throws TcpError, CastFailure
+ * {
+ *    let dmut server = copy TcpListener(SockAddr(("127.0.0.1"s8).to!{&IpAddr} (), 8080u16));
+ *    loop {
+ *       // Accept creates a TcpStream to a connected client
+ *       let dmut client = server:.accept();
+ *       println("New client connected: ", client);
+ *       greets_client(alias client);
  *
- *    // Closing the connection to the client
- *    client:.dispose();
+ *       // Closing the connection to the client
+ *       client:.dispose();
+ *    }
  * }
  * ```
  *
  * A TcpStream is also used on the client side to connect to a tcp server.
  * @example:
  * ```
- * let dmut client = copy TcpStream(SockAddr("127.0.0.1", 8080));
- * println("Message from server: ", client:.rawReceive!{c8} (8us));
+ * use std::net::tcp;
+ * use std::net::addr::_;
+ * use std::conv;
+ * use std::conv::errors;
  *
- * // client is automatically closed when garbabe collected
- * // but it is recommanded to close it manually to avoid opening too many sockets
- * client:.dispose();
+ * fn connect ()
+ *    throws TcpError, CastFailure
+ * {
+ *    let dmut client = copy TcpStream::connect(SockAddr(("127.0.0.1"s8).to!{&IpAddr} (), 8080u16));
+ *
+ *    let dmut result = copy [' 'c8 ; 8us];
+ *    client:.receiveRaw(alias result);
+ *    println("Message from server: ", result);
+ *
+ *    // client is automatically closed when garbabe collected
+ *    // but it is recommanded to close it manually to avoid opening too many sockets
+ *    client:.dispose();
+ * }
  * ```
  */
 @final
@@ -81,12 +104,19 @@ pub class TcpStream {
      * @example:
      * ```
      * use std::net::tcp;
+     * use std::net::addr::_;
+     * use std::conv;
+     * use std::conv::errors;
      *
-     * let addr = SockAddr(Ipv4::LOCALHOST, 8080);
-     * let dmut client = copy TcpStream(addr);
+     * fn ping ()
+     *    throws TcpError, CastFailure
+     * {
+     *    let addr = SockAddr(("127.0.0.1"s8).to!{&IpAddr} (), 8080u16);
+     *    let dmut client = copy TcpStream::connect(addr);
      *
-     * client:.rawSend("Ping !");
-     * client:.dispose();
+     *    client:.sendRaw("Ping !"s8);
+     *    client:.dispose();
+     * }
      * ```
      *
      * @params:
@@ -227,9 +257,15 @@ pub class TcpStream {
      * @info: Send the slice with metadatas to make it reconstructible on the other end without additional informations.
      * @example:
      * ```
-     * // With serialization
-     * stream:.send(copy [1, 2, 3, 4]);
-     * client:.receive!{[i32]} () == [1, 2, 3, 4];
+     * use std::net::tcp;
+     *
+     * fn exchange (dmut stream: &TcpStream)
+     *    throws TcpError
+     * {
+     *    // With serialization
+     *    stream:.send(copy [1, 2, 3, 4]);
+     *    println(stream:.receive!{[i32]} ()); // [1, 2, 3, 4]
+     * }
      * ```
      * */
     pub fn send {T of [U], U} (mut self, val: T)
@@ -251,11 +287,17 @@ pub class TcpStream {
      * @info: Send only the bytes of the slice without metadatas to make it reconstructible.
      * @example:
      * ```
-     * // Without serialization
-     * stream:.sendRaw(copy [1, 2, 3, 4]);
+     * use std::net::tcp;
      *
-     * let dmut result = copy [0 ; 4];
-     * client:.receiveRaw(alias result); // raw receive of the data in the slice
+     * fn exchange (dmut stream: &TcpStream)
+     *    throws TcpError
+     * {
+     *    // Without serialization
+     *    stream:.sendRaw(copy [1, 2, 3, 4]);
+     *
+     *    let dmut result = copy [0 ; 4us];
+     *    stream:.receiveRaw(alias result); // raw receive of the data in the slice
+     * }
      * ```
      * */
     pub fn if isScalar!{U} sendRaw {T of [U], U} (mut self, val: T)
@@ -319,11 +361,17 @@ pub class TcpStream {
      * @info: Send the slice with metadatas to make it reconstructible on the other end without additional informations.
      * @example:
      * ```
-     * // With serialization
-     * stream:.send(copy [1, 2, 3, 4]);
+     * use std::net::tcp;
      *
-     * // Setting a receive limit of 8, refusing anything bigger to avoid big memory allocation from network requests
-     * client:.receive!{[i32]} (limit-> 8) == [1, 2, 3, 4];
+     * fn exchange (dmut stream: &TcpStream)
+     *    throws TcpError
+     * {
+     *    // With serialization
+     *    stream:.send(copy [1, 2, 3, 4]);
+     *
+     *    // Setting a receive limit of 8, refusing anything bigger to avoid big memory allocation from network requests
+     *    println(stream:.receive!{[i32]} (limit-> 8us)); // [1, 2, 3, 4]
+     * }
      * ```
      * */
     pub fn receive {T of [U], U} (mut self, limit: usize = 1024)-> mut[mut U]
@@ -337,7 +385,7 @@ pub class TcpStream {
         }
 
         let mut result: [mut U] = core::types::array::allocArray!{U} (len);
-        for i in val {
+        for i in 0us .. len {
             result[i] = self:.receive!{U} ();
         }
 
@@ -354,11 +402,17 @@ pub class TcpStream {
      * @info: Receive only the bytes of the slice
      * @example:
      * ```
-     * // Without serialization
-     * stream:.sendRaw(copy [1, 2, 3, 4]);
+     * use std::net::tcp;
      *
-     * let dmut result = copy [0 ; 4];
-     * client:.receiveRaw(alias result); // raw receive of the data in a preallocated slice
+     * fn exchange (dmut stream: &TcpStream)
+     *    throws TcpError
+     * {
+     *    // Without serialization
+     *    stream:.sendRaw(copy [1, 2, 3, 4]);
+     *
+     *    let dmut result = copy [0 ; 4us];
+     *    stream:.receiveRaw(alias result); // raw receive of the data in a preallocated slice
+     * }
      * ```
      * */
     pub fn if isScalar!{U} receiveRaw {T of [U], U} (mut self, dmut result: T)
