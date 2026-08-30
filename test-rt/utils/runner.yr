@@ -155,7 +155,10 @@ pub class UnittestLauncher {
             self.reportDurations(durations);
         }
 
-        if !failed {
+        // only when a report was actually asked for: `reportCoverage` parses and merges every
+        // coverage file on disk, and `CoverageFormat::report` then prints nothing without one of
+        // these two flags -- the whole merge is dead work on a plain run
+        if !failed && (testArgs.hasCoverage || testArgs.hasCallTree) {
             self.reportCoverage(testArgs);
         }
 
