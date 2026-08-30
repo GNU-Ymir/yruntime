@@ -42,6 +42,21 @@ use utils::coverage::{tree, store, load, format, conv};
 def SLOWEST_COUNT = 10us;
 
 /**
+ * @returns: `test` as it is shown to the user -- the registered name without the `__test`
+ *           segment the compiler-generated glue inserts before the index, e.g. `io::10` for a
+ *           test registered as `io::__test::10`
+ *
+ * @info: this is also the form `--filter` matches against(see `TestFilters::passFilter`), so
+ *        every name the runner prints can be pasted straight back into a `-f`
+ * */
+fn displayName(test: [c8])-> [c8] {
+    let testFile = Path(test, sep-> "::").file();
+    let testName = Path(test, sep-> "::").parent().parent().push(testFile);
+
+    return testName.toStr(sep-> "::");
+}
+
+/**
  * How long one test took, as listed by the `--durations` report
  * */
 record TestDuration {
@@ -210,14 +225,13 @@ pub class UnittestLauncher {
     fn runOne(self, test: [c8])-> bool {
         let mut ok = true;
         if let Ok(f) = self._tests[test] {
-            let testFile = Path(test, sep-> "::").file();
-            let testName = Path(test, sep-> "::").parent().parent().push(testFile);
+            let name = displayName(test);
 
             {
-                self.runTest(testName.toStr(sep-> "::"), f);
+                self.runTest(name, f);
             } catch {
                 err: &Exception => {
-                    self.exposeError(test, err);
+                    self.exposeError(name, err);
                     ok = false;
                 }
             }
@@ -247,7 +261,7 @@ pub class UnittestLauncher {
      *
      * @returns: true iff at least one test failed, or at least one worker died holding one
      * */
-    fn runParallel(self, toLaunch: [[c8]], testArgs: TestRunnerArgument, covTree: &CoverageTree, ref dmut already: [[c8] => bool], ref dmut durations: [[c8] => u64])-> bool {
+    fn runParallel(self, toLaunch: [[c8]], testArgs: TestRunnerArgument, covTree: &CoverageTree, ref dmut already: [[c8] => bool], ref dmut durations: [[c8] => u64])-> bool {        
         let jobs = normalizeJobs(testArgs.jobs, toLaunch.len);
         let dmut box = {
             copy TestMailbox(jobs)
@@ -425,7 +439,7 @@ pub class UnittestLauncher {
             if (pid == 0u32) break; // no child left to reap
 
             if let Ok(name) = crashed[pid] {
-                println(" --> worker ", pid, " died on ", name, ": ", TestWorker::signalName(signal));
+                println(" --> worker ", pid, " died on ", displayName(name), ": ", TestWorker::signalName(signal));
             }
         }
     }
@@ -438,7 +452,7 @@ pub class UnittestLauncher {
      * */
     fn exposeCrash(self, name: [c8]) {
         println("====================================");
-        println('[', Colors::RED, "CRASH", Colors::RESET, "] : ", name);
+        println('[', Colors::RED, "CRASH", Colors::RESET, "] : ", displayName(name));
 
         println(" --> the worker running this test died before reporting a result");
     }
@@ -466,7 +480,7 @@ pub class UnittestLauncher {
             println('[', Colors::BLUE, "SLOWEST", Colors::RESET, "] : ", count, '/', slowest.len);
 
             for i in 0us .. count {
-                println("  ", dur::micros(slowest[i].micros), " : ", slowest[i].name);
+                println("  ", dur::micros(slowest[i].micros), " : ", displayName(slowest[i].name));
             }
         }
     }
