@@ -1,0 +1,860 @@
+/*
+ *
+ * <hr>
+ *
+ * @Package: ymirc
+ * @Module: utils::mailbox
+ * @File: utils/mailbox.yr
+ * @Author(s):
+ *   - Emile Cadorel <ecadorel@gmail.com>
+ *
+ * @Created(YYYY-MM-DD): 2026-08-30
+ * @Copyright(C) 2021–2026 GNU-Ymir
+ * @License
+ *   ```text
+ *   This file is part of the Ymir language project.
+ *
+ *   Ymir is free software: you can redistribute it and/or modify it
+ *   under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation, either version 3 of the License, or
+ *   (at your option) any later version.
+ *
+ *   Ymir is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with Ymir.  If not, see <https://www.gnu.org/licenses/>.
+ *   ```
+ */
+
+in mailbox;
+
+use core::exception::io;
+use etc::c::{files, poll, socket};
+use etc::runtime::errno;
+
+// A worker's very first message carries no result: it only says "I am ready for work". The
+// parent answers every message with an assignment, so this removes any priming step from the
+// dispatch loop -- every assignment is sent in reply to something.
+pub def READY = -1i64;
+
+// The assignment that tells a worker no more work is coming, and that it must wind down(persist
+// its coverage and exit). Same value as `READY`, but the two travel on opposite pipes and are
+// never confused: an index < 0 in an outcome means "nothing to report", an index < 0 in an
+// assignment means "stop".
+pub def STOP = -1i64;
+
+// Number of i64 fields a `TestOutcome` occupies on the wire(index, ok, micros). The whole
+// record is 24 bytes, far below PIPE_BUF(4096), so POSIX guarantees each one is written by a
+// single atomic write(2): once `EPOLLIN` fires, a *whole* record is readable, and no framing or
+// parsing layer is needed.
+def OUTCOME_FIELDS = 3us;
+
+/**
+ * The result of one test, as it travels from a worker back to the parent.
+ * */
+pub record TestOutcome {
+
+    // The index of the test in the run's `toLaunch` list, or `READY` when this outcome only
+    // announces that the worker is idle
+    pub let mut index: i64;
+
+    // True iff the test passed
+    pub let mut ok: bool;
+
+    // How long the test took, in microseconds(a report, never a scheduling input)
+    pub let mut micros: u64;
+
+    pub self (index: i64 = READY, ok: bool = true, micros: u64 = 0u64)
+        with index = index
+        , ok = ok
+        , micros = micros
+    {}
+}
+
+/**
+ * What `TestMailbox::nextEvent` observed.
+ * */
+pub enum MailboxEventKind: u8
+| READY = 0u8 // the worker sent an outcome(possibly an empty one, see `READY`)
+| GONE  = 1u8 // the worker's end of the result pipe hung up: it exited, or it crashed
+| NONE  = 2u8; // nothing left to poll
+
+/**
+ * One event of the dispatch loop, tying an observation to the worker that produced it.
+ * */
+pub record MailboxEvent {
+
+    // The index of the worker in the mailbox
+    pub let mut worker: usize;
+
+    // What happened to it
+    pub let mut kind: MailboxEventKind;
+
+    // The outcome it sent, meaningful only when `kind` is `READY`
+    pub let mut outcome: TestOutcome;
+
+    pub self (worker: usize = 0us, kind: MailboxEventKind = MailboxEventKind::NONE, outcome: TestOutcome = TestOutcome())
+        with worker = worker
+        , kind = kind
+        , outcome = outcome
+    {}
+}
+
+/**
+ * The two pipes tying the parent to one worker subprocess: one carrying assignments down, one
+ * carrying outcomes back up.
+ *
+ * There is deliberately *one pair per worker* rather than one shared pipe with many readers:
+ * POSIX guarantees atomicity for concurrent *writes* up to PIPE_BUF, not for concurrent *reads*,
+ * so two children reading one fd could split a record between them. Per-worker pairs sidestep
+ * that, and additionally tell the parent exactly which worker is idle.
+ *
+ * Both pipes are created before the `fork()`, so the child inherits every fd; each side then
+ * closes the ends it does not own(`closeWorkerEnds` in the parent, `closeParentEnds`/`closeAll`
+ * in the child). This is not tidiness: as long as a copy of a write end stays open in *any*
+ * process, the reader never sees EOF and `EPOLLHUP` never arrives.
+ * */
+@final
+pub class TestChannel {
+
+    // Read end of the assignment pipe, owned by the worker
+    let mut _assignR: i32 = -1;
+
+    // Write end of the assignment pipe, owned by the parent
+    let mut _assignW: i32 = -1;
+
+    // Read end of the result pipe, owned by the parent(the fd the parent polls)
+    let mut _resultR: i32 = -1;
+
+    // Write end of the result pipe, owned by the worker
+    let mut _resultW: i32 = -1;
+
+    // The pid of the worker, once forked
+    let mut _pid: u32 = 0u32;
+
+    // Parent side: the test index handed to this worker and not yet answered(`READY` when the
+    // worker is idle). It is what makes a crash attributable -- if the worker dies while this
+    // is set, *that* test is the one that killed it.
+    let mut _holding: i64 = READY;
+
+    /**
+     * Create both pipes of the channel
+     * @throws:
+     *    - IOError: if either `pipe()` call failed
+     * */
+    pub self ()
+        throws IOError
+    {
+        let dmut assign: [i32 ; 2] = [-1, -1];
+        if (files::pipe(assign.ptr) != 0) throw copy IOError();
+
+        self._assignR = assign[0];
+        self._assignW = assign[1];
+
+        let dmut result: [i32 ; 2] = [-1, -1];
+        if (files::pipe(result.ptr) != 0) {
+            closeFd(self._assignR);
+            closeFd(self._assignW);
+            self._assignR = -1;
+            self._assignW = -1;
+
+            throw copy IOError();
+        }
+
+        self._resultR = result[0];
+        self._resultW = result[1];
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =====================================          CLOSING          ====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Parent side: close the two ends this channel's worker owns, keeping the parent's own
+     * @info: must be called once the worker has been forked, or the parent's copy of the result
+     *        write end would keep the pipe alive and hide the worker's exit
+     * */
+    pub fn closeWorkerEnds(mut self) {
+        closeFd(self._assignR);
+        closeFd(self._resultW);
+
+        self._assignR = -1;
+        self._resultW = -1;
+    }
+
+    /**
+     * Worker side: close the two ends the parent owns, keeping this worker's own
+     * */
+    pub fn closeParentEnds(mut self) {
+        closeFd(self._assignW);
+        closeFd(self._resultR);
+
+        self._assignW = -1;
+        self._resultR = -1;
+    }
+
+    /**
+     * Close every end of the channel -- called by a worker on each of its *siblings'* channels,
+     * which it inherited through the fork and must not keep open
+     * */
+    pub fn closeAll(mut self) {
+        closeFd(self._assignR);
+        closeFd(self._assignW);
+        closeFd(self._resultR);
+        closeFd(self._resultW);
+
+        self._assignR = -1;
+        self._assignW = -1;
+        self._resultR = -1;
+        self._resultW = -1;
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =====================================          PARENT           ====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Parent side: hand `index` to the worker(or `STOP` to tell it to wind down)
+     * @throws:
+     *    - IOError: if the worker is gone(the write failed, typically EPIPE)
+     * */
+    pub fn send(mut self, index: i64)
+        throws IOError
+    {
+        let payload = copy [index];
+        if (!writeExact(self._assignW, cast!{*u8} (cast!{*void} (payload.ptr)), i64::size)) {
+            throw copy IOError();
+        }
+    }
+
+    /**
+     * Parent side: read the outcome the worker just wrote
+     * @info: only ever called once epoll reported the result pipe readable, so a whole record is
+     *        there(it was written atomically, see `OUTCOME_FIELDS`)
+     * @throws:
+     *    - IOError: if the worker is gone(clean EOF, or a failed read)
+     * */
+    pub fn receive(mut self)-> TestOutcome
+        throws IOError
+    {
+        let dmut payload = copy [0i64 ; OUTCOME_FIELDS];
+        if (!readExact(self._resultR, cast!{*u8} (cast!{*void} (payload.ptr)), OUTCOME_FIELDS * i64::size)) {
+            throw copy IOError();
+        }
+
+        return TestOutcome(index-> payload[0], ok-> (payload[1] != 0i64), micros-> cast!u64(payload[2]));
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =====================================          WORKER           ====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Worker side: block until the parent hands out the next test
+     * @returns: the index of the test to run, or `STOP`(< 0) when there is no more work
+     * @throws:
+     *    - IOError: if the parent is gone
+     * */
+    pub fn awaitAssignment(mut self)-> i64
+        throws IOError
+    {
+        let dmut payload = copy [0i64];
+        if (!readExact(self._assignR, cast!{*u8} (cast!{*void} (payload.ptr)), i64::size)) {
+            throw copy IOError();
+        }
+
+        return payload[0];
+    }
+
+    /**
+     * Worker side: report an outcome to the parent(and, implicitly, ask for the next test)
+     * @throws:
+     *    - IOError: if the parent is gone
+     * */
+    pub fn report(mut self, outcome: TestOutcome)
+        throws IOError
+    {
+        let payload = copy [outcome.index, if outcome.ok { 1i64 } else { 0i64 }, cast!i64(outcome.micros)];
+        if (!writeExact(self._resultW, cast!{*u8} (cast!{*void} (payload.ptr)), OUTCOME_FIELDS * i64::size)) {
+            throw copy IOError();
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          GETTERS           ====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * @returns: the fd the parent polls for this worker's outcomes
+     * */
+    @field
+    pub fn resultHandle(self)-> i32 {
+        self._resultR
+    }
+
+    /**
+     * @returns: the pid of the worker, 0 until `setPid` is called
+     * */
+    @field
+    pub fn pid(self)-> u32 {
+        self._pid
+    }
+
+    /**
+     * @returns: the index of the test this worker is currently running, `READY`(< 0) if it is idle
+     * */
+    @field
+    pub fn holding(self)-> i64 {
+        self._holding
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          SETTERS           ====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Record the pid of the worker this channel talks to
+     * */
+    pub fn setPid(mut self, pid: u32) {
+        self._pid = pid;
+    }
+
+    /**
+     * Record that `index` was handed to this worker and has not been answered yet
+     * */
+    pub fn hold(mut self, index: i64) {
+        self._holding = index;
+    }
+
+    /**
+     * Record that this worker answered whatever it was holding
+     * */
+    pub fn release(mut self) {
+        self._holding = READY;
+    }
+}
+
+/**
+ * The parent's end of the whole worker pool: every `TestChannel`, plus the epoll descriptor
+ * multiplexing their result pipes.
+ *
+ * The dispatch loop built on top of it hands tests out one at a time, on demand -- a worker asks
+ * for work, runs it, reports the outcome, asks again. There is no cost model and no history
+ * file: the balance is exact by construction, on a cold run as well as the hundredth, and it
+ * self-corrects when a test's cost changes.
+ *
+ * @warning: the invariant of that loop is **poll first, reap last**. The parent must never block
+ *           in `waitpid` while a worker blocks writing to a full pipe. Records are a handful of
+ *           bytes and the parent polls, so it does not arise in practice -- but every `waitpid`
+ *           must stay after the loop has drained.
+ * */
+@final
+pub class TestMailbox {
+
+    // One channel per worker
+    let dmut _channels: [&TestChannel] = [];
+
+    // Whether each worker is still expected to send something(false once its pipe hung up)
+    let dmut _live: [bool] = [];
+
+    // Number of `_live` entries still true
+    let mut _liveCount: usize = 0us;
+
+    // The epoll descriptor multiplexing every channel's result pipe, -1 until `pollParent`
+    let mut _epoll: i32 = -1;
+
+    /**
+     * Create the channels of `jobs` workers. The epoll descriptor is deliberately *not* created
+     * here: it must not exist before the forks, or every worker would inherit it.
+     *
+     * @params:
+     *    - jobs: the number of workers to talk to
+     *
+     * @throws:
+     *    - IOError: if a pipe could not be created, in which case no channel is left open
+     * */
+    pub self (jobs: usize)
+        throws IOError
+    {
+        {
+            for _ in 0us .. jobs {
+                self._channels ~= [copy TestChannel()];
+                self._live ~= [true];
+            }
+        } catch {
+            err: &IOError => {
+                self:.dispose();
+                throw err;
+            }
+        }
+
+        self._liveCount = jobs;
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          GETTERS           ====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * @returns: the number of workers
+     * */
+    @field
+    pub fn count(self)-> usize {
+        self._channels.len
+    }
+
+    /**
+     * @returns: the number of workers still expected to report something
+     * */
+    @field
+    pub fn liveCount(self)-> usize {
+        self._liveCount
+    }
+
+    /**
+     * @returns: the channel of the worker `k`
+     * */
+    pub fn channel(mut self, k: usize)-> dmut &TestChannel {
+        alias self._channels[k]
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =====================================          FORKING          ====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Worker side, called first thing in the forked child `k`: close every fd this worker does
+     * not own -- the parent's ends of its own channel, and *both* ends of every sibling's
+     * channel, which it inherited through the fork
+     *
+     * @params:
+     *    - k: the index of the worker this process became
+     * */
+    pub fn adoptWorker(mut self, k: usize) {
+        for i in 0us .. self._channels.len {
+            let dmut ch = alias self._channels[i];
+            if (i == k) {
+                ch:.closeParentEnds();
+            } else {
+                ch:.closeAll();
+            }
+        }
+    }
+
+    /**
+     * Parent side, called once every worker has been forked: close the workers' ends, then start
+     * polling every result pipe
+     *
+     * @throws:
+     *    - IOError: if the epoll descriptor could not be created
+     * */
+    pub fn adoptParent(mut self)
+        throws IOError
+    {
+        for i in 0us .. self._channels.len {
+            let dmut ch = alias self._channels[i];
+            ch:.closeWorkerEnds();
+        }
+
+        self._epoll = poll::epoll_create1(0);
+        if (self._epoll < 0) throw copy IOError();
+
+        for i in 0us .. self._channels.len {
+            let mut event = poll::epoll_event();
+            event.events = poll::EPOLLIN | poll::EPOLLHUP | poll::EPOLLRDHUP;
+            event.data.fd = self._channels[i].resultHandle;
+
+            poll::epoll_ctl(self._epoll, poll::EPOLL_CTL_ADD, event.data.fd, &event);
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          DISPATCH          ====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Block until one worker says something
+     *
+     * @returns: the outcome a worker reported(`READY`), the fact that one hung up(`GONE`, its
+     *           channel is retired before returning), or `NONE` when there is nothing left to
+     *           wait for
+     * */
+    pub fn nextEvent(mut self)-> MailboxEvent {
+        loop {
+            if (self._liveCount == 0us) return MailboxEvent();
+
+            let mut event = poll::epoll_event();
+            errno(ErrnoValue::NONE);
+
+            let count = poll::epoll_wait(self._epoll, &event, 1, -1);
+            if (count <= 0) {
+                if (errno() == ErrnoValue::EINTR) continue;
+
+                self:.retireAll();
+                return MailboxEvent();
+            }
+
+            let k = self.workerOf(event.data.fd);
+            if (k >= self._channels.len || !self._live[k]) continue; // stale fd, already retired
+
+            if ((event.events & poll::EPOLLIN) != 0u32) {
+                let dmut ch = alias self._channels[k];
+                let outcome = {
+                    (ch:.receive())?
+                };
+
+                if let Ok(o) = outcome {
+                    return MailboxEvent(worker-> k, kind-> MailboxEventKind::READY, outcome-> o);
+                }
+            }
+
+            // EPOLLHUP/EPOLLRDHUP, or a read that failed on a pipe epoll had declared readable:
+            // either way this worker will never speak again
+            self:.retire(k);
+            return MailboxEvent(worker-> k, kind-> MailboxEventKind::GONE);
+        }
+    }
+
+    /**
+     * Hand the test `index` to the worker `k`, recording it as the test that worker is holding
+     * @returns: false iff the worker turned out to be gone, in which case it is retired
+     * */
+    pub fn assign(mut self, k: usize, index: i64)-> bool {
+        let dmut ch = alias self._channels[k];
+        {
+            ch:.send(index);
+            ch:.hold(index);
+
+            return true;
+        } catch {
+            _ => {
+                self:.retire(k);
+                return false;
+            }
+        }
+    }
+
+    /**
+     * Tell the worker `k` that no more work is coming
+     *
+     * Unlike the SIGKILL this replaces, a stopped worker finishes the test it has in hand and
+     * persists its results normally -- which is what makes `--stop-first` stop discarding the
+     * tests its siblings had already passed.
+     *
+     * @returns: false iff the worker turned out to be gone, in which case it is retired
+     * */
+    pub fn stop(mut self, k: usize)-> bool {
+        let dmut ch = alias self._channels[k];
+        {
+            ch:.send(STOP);
+
+            return true;
+        } catch {
+            _ => {
+                self:.retire(k);
+                return false;
+            }
+        }
+    }
+
+    /**
+     * Stop expecting anything from the worker `k`, and close the fds of its channel
+     * */
+    pub fn retire(mut self, k: usize) {
+        if (self._live[k]) {
+            self._live[k] = false;
+            self._liveCount -= 1us;
+
+            let dmut ch = alias self._channels[k];
+            ch:.closeAll();
+        }
+    }
+
+    /**
+     * Retire every worker still live
+     * */
+    fn retireAll(mut self) {
+        for i in 0us .. self._channels.len {
+            self:.retire(i);
+        }
+    }
+
+    /**
+     * @returns: the index of the worker whose result pipe is `fd`, `self.count` if there is none
+     * */
+    fn workerOf(self, fd: i32)-> usize {
+        for i in 0us .. self._channels.len {
+            if (self._channels[i].resultHandle == fd) return i;
+        }
+
+        return self._channels.len;
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =====================================          CLOSING          ====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Close the epoll descriptor and every channel still open
+     * */
+    pub fn dispose(mut self) {
+        for i in 0us .. self._channels.len {
+            let dmut ch = alias self._channels[i];
+            ch:.closeAll();
+        }
+
+        closeFd(self._epoll);
+        self._epoll = -1;
+        self._liveCount = 0us;
+    }
+
+    __dtor(mut self) {
+        self:.dispose();
+    }
+}
+
+/**
+ * The pool of tests still to be handed out, and the order in which workers take them.
+ *
+ * Handing tests out in one global sorted order would be perfectly balanced and measurably
+ * *slower*: a test's cost is not a property of the test alone, it depends on what its process
+ * already ran. Symbolizing an exception's stack trace, for instance, parses the ELF/DWARF tables
+ * once per process, so a suite whose stack-trace tests are scattered across N workers pays that
+ * cost N times instead of once. Handing out a global FIFO scatters *every* family of related
+ * tests that way.
+ *
+ * So each worker gets a contiguous region of the(sorted, hence module-grouped) list as an
+ * **affinity hint**, and works through it in order. Unlike the static split this replaces, the
+ * region is not binding: a worker that exhausts its own region steals from the *tail* of
+ * whichever region has the most left -- the tail, so the victim keeps running its own prefix and
+ * keeps its caches warm. Nothing is decided up front, so a worker is idle only when there is
+ * genuinely nothing left to give it.
+ * */
+@final
+pub class TestQueue {
+
+    // The next index worker `k` will take from its own region
+    let dmut _cursor: [usize] = [];
+
+    // One past the last index of worker `k`'s region, lowered when a test is stolen from it
+    let dmut _end: [usize] = [];
+
+    // Tests whose assignment failed because the worker had just died: they left the queue but
+    // never ran, so they go back out before anything else(see `giveBack`)
+    let dmut _returned: [i64] = [];
+
+    // Number of tests not handed out yet
+    let mut _left: usize = 0us;
+
+    /**
+     * Cut `total` tests into one contiguous region per worker(the first `total % jobs` regions
+     * get one extra test)
+     * */
+    pub self (total: usize, jobs: usize) {
+        let base = total / jobs;
+        let extra = total % jobs;
+
+        let mut start = 0us;
+        for i in 0us .. jobs {
+            let size = base + (if i < extra { 1us } else { 0us });
+
+            self._cursor ~= [start];
+            self._end ~= [start + size];
+            start += size;
+        }
+
+        self._left = total;
+    }
+
+    /**
+     * Take the next test for the worker `k`: its own region first, then the tail of the region
+     * with the most left
+     *
+     * @returns: the index of the test to run, or `STOP`(< 0) if there is nothing left
+     * */
+    pub fn next(mut self, k: usize)-> i64 {
+        if (self._returned.len != 0us) {
+            let index = self._returned[$ - 1us];
+
+            self._returned = alias self._returned[0us .. $ - 1us];
+            self._left -= 1us;
+
+            return index;
+        }
+
+        if (self._cursor[k] < self._end[k]) {
+            let index = self._cursor[k];
+
+            self._cursor[k] = index + 1us;
+            self._left -= 1us;
+
+            return cast!i64(index);
+        }
+
+        let victim = self.largestRegion();
+        if (victim >= self._end.len) return STOP;
+
+        let index = self._end[victim] - 1us;
+
+        self._end[victim] = index;
+        self._left -= 1us;
+
+        return cast!i64(index);
+    }
+
+    /**
+     * Put `index` back in the pool: it was handed to a worker that turned out to be gone, so it
+     * never ran and must go to whoever asks next
+     * */
+    pub fn giveBack(mut self, index: i64) {
+        self._returned ~= [index];
+        self._left += 1us;
+    }
+
+    /**
+     * @returns: true iff every test has been handed out
+     * */
+    @field
+    pub fn isEmpty(self)-> bool {
+        self._left == 0us
+    }
+
+    /**
+     * @returns: the worker whose region has the most tests left, `self._end.len` if every region
+     *           is empty
+     * */
+    fn largestRegion(self)-> usize {
+        let mut best = self._end.len;
+        let mut bestSize = 0us;
+
+        for i in 0us .. self._end.len {
+            let size = self._end[i] - self._cursor[i];
+            if (size > bestSize) {
+                bestSize = size;
+                best = i;
+            }
+        }
+
+        return best;
+    }
+}
+
+/**
+ * @returns: `jobs`(clamped to at least 1), further clamped so it never exceeds `total`
+ * */
+pub fn normalizeJobs(jobs: i64, total: usize)-> usize {
+    let n = if jobs < 1 { 1us } else { cast!usize(jobs) };
+    if n > total {
+        return total;
+    }
+
+    return n;
+}
+
+/**
+ * Close `fd` if it is a real descriptor
+ * */
+fn closeFd(fd: i32) {
+    if (fd >= 0) {
+        files::close(fd);
+    }
+}
+
+/**
+ * Read exactly `len` bytes from `fd` into `buffer`
+ *
+ * This is deliberately not `IPipe::readRaw`: that one throws on any `read() <= 0`, so a clean
+ * EOF(the worker exited), an `EINTR`(a signal arrived, e.g. the GC stopping the world) and a
+ * real error are indistinguishable from the reader's side -- and it latches its error flag, so a
+ * retry is impossible. An `EINTR` read as "the worker is dead" would drop a live worker's whole
+ * remaining chunk.
+ *
+ * @returns: true if the whole `len` bytes were read; false on a clean EOF or a real error
+ * */
+fn readExact(fd: i32, buffer: *u8, len: usize)-> bool {
+    let mut curr = buffer;
+    let mut rest = len;
+
+    while rest > 0us {
+        errno(ErrnoValue::NONE);
+        let got = socket::read(fd, cast!{*void} (curr), rest);
+        if (got > 0) {
+            curr += cast!usize(got);
+            rest -= cast!usize(got);
+        } else if (got == 0) {
+            return false; // clean EOF: the peer closed its end of the pipe
+        } else if (errno() != ErrnoValue::EINTR) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/**
+ * Write exactly `len` bytes of `buffer` to `fd`
+ *
+ * @info: the caller keeps every record under PIPE_BUF, so the kernel writes it atomically and a
+ *        reader never observes half of one; the loop is only there for the interrupted case
+ *
+ * @returns: true if the whole `len` bytes were written; false if the peer is gone(EPIPE) or the
+ *           write failed
+ * */
+fn writeExact(fd: i32, buffer: *u8, len: usize)-> bool {
+    let mut curr = buffer;
+    let mut rest = len;
+
+    while rest > 0us {
+        errno(ErrnoValue::NONE);
+        let sent = socket::write(fd, cast!{*void} (curr), rest);
+        if (sent > 0) {
+            curr += cast!usize(sent);
+            rest -= cast!usize(sent);
+        } else if (sent == 0) {
+            return false;
+        } else if (errno() != ErrnoValue::EINTR) {
+            return false;
+        }
+    }
+
+    return true;
+}

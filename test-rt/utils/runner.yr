@@ -31,11 +31,47 @@
 
 in runner;
 
-use std::{io, config::_, algorithm::searching, fs::_};
+use std::{io, config::_, algorithm::searching, algorithm::sorting, fs::_};
+use std::time::{instant, dur};
 
 use core::exception::_;
-use utils::{colors, filters, args, worker};
+use utils::{colors, filters, args, worker, mailbox};
 use utils::coverage::{tree, store, load, format, conv};
+
+// Number of tests listed by the `--durations` report, slowest first.
+def SLOWEST_COUNT = 10us;
+
+/**
+ * @returns: `test` as it is shown to the user -- the registered name without the `__test`
+ *           segment the compiler-generated glue inserts before the index, e.g. `io::10` for a
+ *           test registered as `io::__test::10`
+ *
+ * @info: this is also the form `--filter` matches against(see `TestFilters::passFilter`), so
+ *        every name the runner prints can be pasted straight back into a `-f`
+ * */
+fn displayName(test: [c8])-> [c8] {
+    let testFile = Path(test, sep-> "::").file();
+    let testName = Path(test, sep-> "::").parent().parent().push(testFile);
+
+    return testName.toStr(sep-> "::");
+}
+
+/**
+ * How long one test took, as listed by the `--durations` report
+ * */
+record TestDuration {
+
+    // The name of the test
+    pub let mut name: [c8];
+
+    // How long it took, in microseconds
+    pub let mut micros: u64;
+
+    pub self (name: [c8] = "", micros: u64 = 0u64)
+        with name = name
+        , micros = micros
+    {}
+}
 
 extern (C) fn _yrt_force_debug()-> void;
 
@@ -113,6 +149,7 @@ pub class UnittestLauncher {
 
         _yrt_force_debug();
         let dmut already: [[c8] => bool] = copy [];
+        let dmut durations: [[c8] => u64] = copy [];
 
         let toLaunch = TestFilters::filterList(copy [name for name, _ in self._tests],
                                                hasFilters-> testArgs.hasFilter,
@@ -121,15 +158,22 @@ pub class UnittestLauncher {
                                                already-> ref already);
 
         let failed = if testArgs.jobs <= 1 || toLaunch.len <= 1us {
-            self.runList(toLaunch, testArgs.hasStopFirst, ref already)
+            self.runList(toLaunch, testArgs.hasStopFirst, ref already, ref durations)
         } else {
-            self.runParallel(toLaunch, testArgs, covTree, ref already)
+            self.runParallel(toLaunch, testArgs, covTree, ref already, ref durations)
         };
 
         TestFilters::dumpSuccessFile(already);
         self.storeCoverage(covTree);
 
-        if !failed {
+        if testArgs.hasDurations {
+            self.reportDurations(durations);
+        }
+
+        // only when a report was actually asked for: `reportCoverage` parses and merges every
+        // coverage file on disk, and `CoverageFormat::report` then prints nothing without one of
+        // these two flags -- the whole merge is dead work on a plain run
+        if !failed && (testArgs.hasCoverage || testArgs.hasCallTree) {
             self.reportCoverage(testArgs);
         }
 
@@ -138,33 +182,28 @@ pub class UnittestLauncher {
 
     /**
      * Run every test of `tests` sequentially, in this process, recording each one's outcome
-     * into `already`
+     * into `already` and how long it took into `durations`
      *
      * @params:
      *    - tests: the names of the tests to run
      *    - hasStopFirst: true iff execution must stop at the first failure
      *    - already: the map to record each test's success/failure into
+     *    - durations: the map to record each test's execution time(in microseconds) into
      *
      * @returns: true iff at least one test of `tests` failed
      * */
-    fn runList(self, tests: [[c8]], hasStopFirst: bool, ref dmut already: [[c8] => bool])-> bool {
+    fn runList(self, tests: [[c8]], hasStopFirst: bool, ref dmut already: [[c8] => bool], ref dmut durations: [[c8] => u64])-> bool {
         let mut failed = false;
         for test in tests {
-            if let Ok(f) = self._tests[test] {
-                let testFile = Path(test, sep-> "::").file();
-                let testName = Path(test, sep-> "::").parent().parent().push(testFile);
+            let start = Instant::now();
+            let ok = self.runOne(test);
 
-                {
-                    self.runTest(testName.toStr(sep-> "::"), f);
-                    already[test] = true;
-                } catch {
-                    err: &Exception => {
-                        self.exposeError(test, err);
-                        already[test] = false;
-                        failed = true;
-                        if (hasStopFirst) break;
-                    }
-                }
+            durations[test] = (Instant::now() - start).allMicros;
+            already[test] = ok;
+
+            if (!ok) {
+                failed = true;
+                if (hasStopFirst) break;
             }
         }
 
@@ -172,141 +211,276 @@ pub class UnittestLauncher {
     }
 
     /**
-     * Split `toLaunch` into `testArgs.jobs` chunks(see `TestChunks::split`), fork one
-     * `TestWorker` subprocess per chunk, wait for all of them, and merge their results into
-     * `already`
+     * Run a single registered test, in this process
+     *
+     * This is the one place a test is actually executed: the sequential path calls it in a loop
+     * (see `runList`), a worker calls it once per assignment(see `runWorkerLoop`).
+     *
+     * @params:
+     *    - test: the name of the test to run
+     *
+     * @returns: true iff the test passed(or is not registered, in which case there is nothing
+     *           to run)
+     * */
+    fn runOne(self, test: [c8])-> bool {
+        let mut ok = true;
+        if let Ok(f) = self._tests[test] {
+            let name = displayName(test);
+
+            {
+                self.runTest(name, f);
+            } catch {
+                err: &Exception => {
+                    self.exposeError(name, err);
+                    ok = false;
+                }
+            }
+        }
+
+        return ok;
+    }
+
+    /**
+     * Fork `testArgs.jobs` `TestWorker` subprocesses and hand `toLaunch` out to them one test at
+     * a time, over a pipe-backed mailbox(see `TestMailbox`)
+     *
+     * Handing tests out on demand rather than splitting the list up front makes the balance
+     * exact by construction: a worker is idle only when there is nothing left to give it. There
+     * is no cost model and no history file, so a cold run is already balanced, and the run
+     * self-corrects when a test's cost changes.
      *
      * @info: worker stdout/stderr is inherited and unpiped, so it freely interleaves across
      *        workers -- this is the accepted, expected behaviour of a parallel test runner
      *
      * @params:
-     *    - toLaunch: the names of the tests to run, split across workers
+     *    - toLaunch: the names of the tests to run, indexed by the assignments sent to workers
      *    - testArgs: the parsed arguments of this run
      *    - covTree: the code coverage tree that will be filled by each worker's own tests
-     *    - already: the map to merge the workers' results into
+     *    - already: the map to record each test's success/failure into
+     *    - durations: the map to record each test's execution time(in microseconds) into
      *
-     * @returns: true iff at least one worker reported a failure
+     * @returns: true iff at least one test failed, or at least one worker died holding one
      * */
-    fn runParallel(self, toLaunch: [[c8]], testArgs: TestRunnerArgument, covTree: &CoverageTree, ref dmut already: [[c8] => bool])-> bool {
-        TestFilters::clearStaleFragments();
-        let chunks = TestChunks::split(toLaunch, testArgs.jobs);
-        let dmut pids: [u32] = [];
+    fn runParallel(self, toLaunch: [[c8]], testArgs: TestRunnerArgument, covTree: &CoverageTree, ref dmut already: [[c8] => bool], ref dmut durations: [[c8] => u64])-> bool {        
+        let jobs = normalizeJobs(testArgs.jobs, toLaunch.len);
+        let dmut box = {
+            copy TestMailbox(jobs)
+        } catch {
+            _ => {
+                eprintln('[', Colors::RED, "ERROR", Colors::RESET, "] : could not create the worker pipes, aborting the run");
+                return true;
+            }
+        };
 
-        for chunk in chunks {
+        TestWorker::ignoreSigPipe();
+
+        for k in 0us .. jobs {
             if let Ok(pid) = TestWorker::fork() {
-                pids ~= [pid];
+                let dmut ch = alias box:.channel(k);
+                ch:.setPid(pid);
             } else {
-                self.runWorkerChunk(chunk, testArgs.hasStopFirst, covTree); // never returns
+                self.runWorkerLoop(alias box, k, toLaunch, covTree); // never returns
             }
         }
 
-        return self.collectWorkers(pids, testArgs.hasStopFirst, ref already);
-    }
-
-    /**
-     * The body of a forked worker: run its chunk, persist its results(its own success fragment
-     * and coverage file), then terminate. Never returns.
-     *
-     * @params:
-     *    - chunk: the names of the tests this worker must run
-     *    - hasStopFirst: true iff execution must stop at the first failure
-     *    - covTree: this(forked) process's own code coverage tree
-     * */
-    fn runWorkerChunk(self, chunk: [[c8]], hasStopFirst: bool, covTree: &CoverageTree) {
-        let dmut mine: [[c8] => bool] = copy [];
-        let failed = self.runList(chunk, hasStopFirst, ref mine);
-
-        TestFilters::dumpSuccessFragment(mine);
-        self.storeCoverage(covTree);
-
-        TestWorker::exit(if failed { 1 } else { 0 });
-    }
-
-    /**
-     * Wait for every worker of `pids` to terminate, then merge their success fragments into
-     * `already`(see `TestFilters::mergeFragments`)
-     *
-     * Workers are reaped in completion order rather than in `pids` order(see
-     * `TestWorker::waitAny`), so that a failure is observed as soon as it happens and not only
-     * once the pid this was blocked on finally exits. When `hasStopFirst` is set, the first
-     * failure cancels every sibling still running(see `cancelWorkers`); the loop then keeps
-     * reaping so that no worker is left a zombie.
-     *
-     * @params:
-     *    - pids: the pid of every forked worker(see `TestWorker::fork`)
-     *    - hasStopFirst: true iff a single worker's failure must cancel all the others
-     *    - already: the map to merge the workers' results into
-     *
-     * @returns: true iff at least one worker exited with a non-zero status
-     * */
-    fn collectWorkers(self, pids: [u32], hasStopFirst: bool, ref dmut already: [[c8] => bool])-> bool {
-        let dmut running: [u32 => bool] = copy [];
-        for pid in pids {
-            running[pid] = true;
-        }
-
-        let mut failed = false, mut cancelled: [u32] = [];
-        for _ in 0us .. pids.len {
-            let (pid, code) = TestWorker::waitAny();
-            if (pid == 0u32) break; // no child left to reap
-
-            running[pid] = false;
-            if (code != 0) {
-                failed = true;
-                if (hasStopFirst && cancelled.len == 0us) {
-                    cancelled = self.cancelWorkers(running);
-                }
+        let dmut crashed: [u32 => [c8]] = copy [];
+        let failed = {
+            box:.adoptParent();
+            self.dispatch(alias box, toLaunch, testArgs.hasStopFirst, ref already, ref durations, ref crashed)
+        } catch {
+            _ => {
+                eprintln('[', Colors::RED, "ERROR", Colors::RESET, "] : could not poll the workers, aborting the run");
+                true
             }
-        }
+        };
 
-        self.discardWorkerFiles(cancelled);
-        TestFilters::mergeFragments(ref already);
+        box:.dispose();
+        self.reapWorkers(jobs, crashed);
 
         return failed;
     }
 
     /**
-     * Kill every worker still flagged as running in `running`(see `TestWorker::kill`) -- called
-     * under `--stop-first` once one worker has already failed, so the others do not keep running
-     * tests whose result the run will discard anyway
+     * Hand `toLaunch` out to the workers, one test at a time, until every one of them is done
+     *
+     * A worker's message is always answered by an assignment(or by the stop sentinel once there
+     * is nothing left to give), and its very first message reports no outcome -- so this loop
+     * needs no priming step.
+     *
+     * @warning: **poll first, reap last**. Nothing here may block on `waitpid`: a worker could
+     *           be blocked writing to a pipe nobody is draining. Reaping happens in
+     *           `reapWorkers`, once this loop has returned.
      *
      * @params:
-     *    - running: whether each forked worker is still running(false once it has been reaped)
+     *    - box: the mailbox multiplexing every worker
+     *    - toLaunch: the names of the tests to run, indexed by the assignments sent to workers
+     *    - hasStopFirst: true iff the first failure must stop handing out work
+     *    - already: the map to record each test's success/failure into
+     *    - durations: the map to record each test's execution time(in microseconds) into
+     *    - crashed: the map to record, per worker pid, the test it died on
      *
-     * @returns: the pid of every worker that was killed
+     * @returns: true iff at least one test failed, or at least one worker died holding one
      * */
-    fn cancelWorkers(self, running: [u32 => bool])-> [u32] {
-        let dmut killed: [u32] = [];
-        for pid, isRunning in running {
-            if (isRunning) {
-                TestWorker::kill(pid);
-                killed ~= [pid];
+    fn dispatch(self, dmut box: &TestMailbox, toLaunch: [[c8]], hasStopFirst: bool,
+                ref dmut already: [[c8] => bool], ref dmut durations: [[c8] => u64],
+                ref dmut crashed: [u32 => [c8]])-> bool
+    {
+        let mut failed = false, mut stopped = false;
+        let dmut queue = copy TestQueue(toLaunch.len, box.count);
+
+        while box.liveCount > 0us {
+            let event = box:.nextEvent();
+            if (event.kind == MailboxEventKind::NONE) break;
+
+            let dmut ch = alias box:.channel(event.worker);
+            if (event.kind == MailboxEventKind::GONE) {
+                // the worker will never speak again; if it was still holding a test, that test
+                // is what killed it -- `already` already has it as false(see
+                // `TestFilters::filterList`), so it simply runs again next time
+                if (ch.holding >= 0i64) {
+                    let name = toLaunch[cast!usize(ch.holding)];
+                    crashed[ch.pid] = copy name;
+                    self.exposeCrash(name);
+
+                    failed = true;
+                    if (hasStopFirst) { stopped = true; }
+                }
+
+                continue;
+            }
+
+            if (event.outcome.index >= 0i64) {
+                let name = toLaunch[cast!usize(event.outcome.index)];
+                already[name] = event.outcome.ok;
+                durations[name] = event.outcome.micros;
+                ch:.release();
+
+                if (!event.outcome.ok) {
+                    failed = true;
+                    if (hasStopFirst) { stopped = true; }
+                }
+            }
+
+            let index = if stopped { STOP } else { queue:.next(event.worker) };
+            if (index < 0i64) {
+                // graceful, unlike the SIGKILL this replaces: the worker finishes the test it
+                // has in hand and persists its results before exiting
+                box:.stop(event.worker);
+            } else if (!box:.assign(event.worker, index)) {
+                queue:.giveBack(index); // that worker had just died; the test still has to run
             }
         }
 
-        return killed;
+        // every worker is gone but the list was not exhausted, and no single test can be blamed
+        // for it -- the run is incomplete, so it must not be reported as a pass(the tests that
+        // never ran are still `false` in `already`, so `--resume` picks them up)
+        if (!stopped && !queue.isEmpty) {
+            eprintln('[', Colors::RED, "ERROR", Colors::RESET, "] : every worker ended before the test list was exhausted");
+            failed = true;
+        }
+
+        return failed;
     }
 
     /**
-     * Delete the success fragment and coverage file of every worker of `pids`
+     * The body of a forked worker: ask the parent for a test, run it, report the outcome, ask
+     * again -- until the parent sends the stop sentinel or goes away. Never returns.
      *
-     * A killed worker(see `cancelWorkers`) did not choose its moment to die: it may have been
-     * halfway through writing either file, and a truncated one would either be merged as bogus
-     * results or make a later `--resume` run fail to parse it. Its chunk did not run to
-     * completion anyway, so the safe reading of both files is "no results at all" -- the tests
-     * it did pass are simply run again next time.
+     * @info: results travel back over the channel, so a worker writes no success file of its
+     *        own; its coverage still goes to its own pid-named file, which is already
+     *        multi-process safe(see `CoverageStore::storePid`)
      *
      * @params:
-     *    - pids: the pid of every worker that was cancelled
+     *    - box: the mailbox; every fd this worker does not own is closed on entry
+     *    - k: the index of the worker this process just became
+     *    - toLaunch: the names of the tests, indexed by the assignments the parent sends
+     *    - covTree: this(forked) process's own code coverage tree
      * */
-    fn discardWorkerFiles(self, pids: [u32]) {
-        for pid in pids {
-            for path in [CoverageStore::pidPathOf(pid), TestFilters::fragmentPathOf(pid)] {
-                {
-                    removeFile(Path(path));
-                } catch {
-                    _ => {} // never written(the usual case): nothing to discard
+    fn runWorkerLoop(self, dmut box: &TestMailbox, k: usize, toLaunch: [[c8]], covTree: &CoverageTree) {
+        box:.adoptWorker(k);
+
+        {
+            let dmut ch = alias box:.channel(k);
+            ch:.report(TestOutcome()); // "ready, nothing to report yet"
+
+            let mut running = true;
+            while running {
+                let index = ch:.awaitAssignment();
+                if (index < 0i64) {
+                    running = false;
+                } else {
+                    let name = toLaunch[cast!usize(index)];
+                    let start = Instant::now();
+                    let ok = self.runOne(name);
+
+                    ch:.report(TestOutcome(index-> index, ok-> ok, micros-> (Instant::now() - start).allMicros));
                 }
+            }
+        } catch {
+            _ => {} // the parent is gone: wind down like any other worker
+        }
+
+        self.storeCoverage(covTree);
+
+        TestWorker::exit(0);
+    }
+
+    /**
+     * Reap every worker, now that the dispatch loop has drained(see `dispatch`), naming the
+     * signal that killed the ones that died holding a test
+     *
+     * @params:
+     *    - jobs: the number of workers that were forked
+     *    - crashed: the test each dead worker was holding, per pid(see `dispatch`)
+     * */
+    fn reapWorkers(self, jobs: usize, crashed: [u32 => [c8]]) {
+        for _ in 0us .. jobs {
+            let (pid, _, signal) = TestWorker::waitAny();
+            if (pid == 0u32) break; // no child left to reap
+
+            if let Ok(name) = crashed[pid] {
+                println(" --> worker ", pid, " died on ", displayName(name), ": ", TestWorker::signalName(signal));
+            }
+        }
+    }
+
+    /**
+     * Print the failure of a test whose worker died before reporting a result
+     *
+     * @params:
+     *     - name: the name of the test the worker was holding when it died
+     * */
+    fn exposeCrash(self, name: [c8]) {
+        println("====================================");
+        println('[', Colors::RED, "CRASH", Colors::RESET, "] : ", displayName(name));
+
+        println(" --> the worker running this test died before reporting a result");
+    }
+
+    /**
+     * Print the slowest tests of the run(see `--durations`)
+     *
+     * @info: this is a report and nothing else -- durations are never fed back into the way work
+     *        is distributed, which the mailbox makes unnecessary
+     *
+     * @params:
+     *    - durations: how long each test took, in microseconds
+     * */
+    fn reportDurations(self, durations: [[c8] => u64]) {
+        let dmut entries: [TestDuration] = [];
+        for name, micros in durations {
+            entries ~= [TestDuration(name-> name, micros-> micros)];
+        }
+
+        if (entries.len != 0us) {
+            let slowest = sorting::sort(alias entries, |a, b| => { a.micros > b.micros });
+            let count = if slowest.len < SLOWEST_COUNT { slowest.len } else { SLOWEST_COUNT };
+
+            println("====================================");
+            println('[', Colors::BLUE, "SLOWEST", Colors::RESET, "] : ", count, '/', slowest.len);
+
+            for i in 0us .. count {
+                println("  ", dur::micros(slowest[i].micros), " : ", displayName(slowest[i].name));
             }
         }
     }

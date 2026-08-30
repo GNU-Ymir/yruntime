@@ -194,7 +194,8 @@ Two separate versions live at the repo root, and mixing them up is the classic b
   `gymidgard-*_<midgardShortVersion>` scheme.
 - Run tests: `./midgard_tests` (add `-f <substr>` to filter, `-sf` to stop on first failure,
   `--resume` to re-run only previously-failed tests, `-cov` for a coverage report, `-ct` for a
-  call-tree report, `-m` to list each file's uncovered lines under the coverage report — see
+  call-tree report, `-m` to list each file's uncovered lines under the coverage report, `-d` to
+  list the slowest tests once the run is over, `-j N` to run in N worker subprocesses — see
   `test-rt/utils/args.yr`).
 - `sudo ./install` copies `midgard/**/*.yr` into `/usr/include/ymir/<midgardShortVersion>` and the
   `gyc` internal include dir (version component from `VERSION`, GCC major from `YMIR_VERSION`).
@@ -247,14 +248,18 @@ and wires `_yrt_unittest_coverage_hit_{branch,enter,exit}` into a global `utils:
 CoverageTree singleton.
 
 - `utils::args` — CLI parsing (`TestRunnerArgument`, built on `std::config::ArgumentParser`).
-- `utils::filters` — include/exclude test-name filtering used by the runner.
+- `utils::filters` — include/exclude test-name filtering used by the runner, plus reading and
+  writing the `.ymir_test_success` file behind `--resume`.
 - `utils::colors` — terminal color helpers for pass/fail/coverage output.
 - `utils::runner` — `UnittestLauncher`: registers tests, runs them (respecting filters,
   stop-first, resume-from-`.ymir_test_success`, and `-j`/`--jobs` parallelism across
   `utils::worker::TestWorker` subprocesses), and drives coverage/call-tree reporting.
-- `utils::worker` — `TestWorker` (fork/waitpid/exit wrapper, no `execvp`, unlike
-  `std::concurrency::process::SubProcess`) and `TestChunks::split` (splits a test list into `-j`
-  contiguous chunks); see "Parallel test execution" below.
+- `utils::worker` — `TestWorker`: fork/waitpid/exit/signal-decoding wrappers, no `execvp`, unlike
+  `std::concurrency::process::SubProcess`; see "Parallel test execution" below.
+- `utils::mailbox` — the IPC layer `-j N` is built on: `TestChannel` (one worker's pair of pipes,
+  and the fixed-width records they carry), `TestMailbox` (every channel plus the epoll descriptor
+  the parent polls) and `TestQueue` (which test a worker is handed next); see "Parallel test
+  execution" below.
 - `utils::coverage::tree` — `CoverageTree`/`CoverageInfo`: in-memory record of branch/enter/exit
   hits per function, keyed by ELF/DWARF frame info from `etc::runtime::elf`/`dwarf`.
 - `utils::coverage::list` — per-function hit-list bookkeeping backing the tree.
@@ -310,10 +315,12 @@ is deleted (`resetCoverageUnlessResuming`) so a plain run always starts from a c
 `--resume`, old files are left in place so this run's coverage adds to them instead of replacing
 them. After running the tests, this process's tree is written to its own
 `.ymir_coverage_<pid>.json` (`storeCoverage` → `CoverageStore::storePid`). If none of the tests
-failed, every `.ymir_coverage_*.json` still on disk (this run's, plus any kept from `--resume`)
-is loaded and merged into one `CoverageReport` (`reportCoverage` →
-`CoverageLoad::listPidFiles`/`loadAll` → `CoverageConv::fromConfigs`/`merge`), which
-`utils::coverage::format` prints on `--coverage`/`--call-tree`. When touching this path, check
+failed *and* `--coverage`/`--call-tree` was passed, every `.ymir_coverage_*.json` still on disk
+(this run's, plus any kept from `--resume`) is loaded and merged into one `CoverageReport`
+(`reportCoverage` → `CoverageLoad::listPidFiles`/`loadAll` → `CoverageConv::fromConfigs`/`merge`),
+which `utils::coverage::format` prints. That flag guard is not cosmetic: the merge goes through
+the slow JSON parser and costs ~35% of a plain run's wall time, and `CoverageFormat::report`
+prints nothing without one of the two flags anyway. When touching this path, check
 that `store`/`load`/`conv` stay in sync with `CoverageTree`'s field set and the JSON shape they
 produce, that `conv`'s merge logic still dedupes by (file, func) rather than double-counting
 hits/call-counts across files, and that generated/compiler-synthesized functions (e.g.
@@ -323,28 +330,72 @@ hits/call-counts across files, and that generated/compiler-synthesized functions
 
 `UnittestLauncher::run` defaults to `-j 1` (sequential, in-process, via `runList`) — every other
 code path described above is unaffected. When `-j N` (`N > 1`) is passed and there's more than
-one test to run, `runParallel` splits the filtered/sorted test list into `N` chunks
-(`TestChunks::split`) and calls `TestWorker::fork()` once per chunk. `fork()` (not `execvp`) is
-deliberate: by the time `run()` executes, every `__test` has already been registered into
-`UnittestLauncher::_tests` (compiler-generated glue calls `_yrt_register_unittest_impl` before
-`_yrt_run_unittests_impl`), so a forked child's copy-on-write memory already has the full test
-registry — no re-exec, no IPC needed to hand it work. Each worker runs its chunk with the same
-`runList` the sequential path uses, then persists its results (`storeCoverage`, unchanged —
-already pid-keyed and multi-process-safe; `TestFilters::dumpSuccessFragment`, which writes to its
-own `.ymir_test_success_<pid>.part` instead of the shared `.ymir_test_success`, since concurrent
-writers would otherwise clobber each other) and terminates via `TestWorker::exit` (this call never
-returns — a worker must never fall through and re-enter the parent's fork loop for the remaining
-chunks). The parent reaps children in *completion* order (`TestWorker::waitAny`, a `waitpid(-1)`
-wrapper) rather than in pid order, so a failure is seen as soon as it happens instead of when the
-pid it happened to be blocked on exits; under `--stop-first` the first non-zero exit code makes
-`cancelWorkers` SIGKILL every sibling still running, and `discardWorkerFiles` then deletes those
-workers' `.ymir_coverage_<pid>.json`/`.ymir_test_success_<pid>.part` — a killed worker can have
-died halfway through writing either, and a truncated one would be merged as bogus results or break
-a later `--resume`. Dropping them costs nothing, since a cancelled chunk's tests simply run again
-next time. The parent then `TestFilters::mergeFragments` folds every surviving fragment into the
-run's `already` map and deletes the fragment files, before the unchanged single
-`TestFilters::dumpSuccessFile`/`reportCoverage` calls at the tail of `run()`. Known, accepted
-simplification: worker stdout/stderr is inherited/unpiped and therefore interleaves across
-workers. `TestWorker::fork` flushes stdout right before forking to avoid a real fork+stdio
-artifact: buffered-but-unflushed output gets printed a second time, independently, by both the
-parent and the child otherwise.
+one test to run, `runParallel` hands the tests out **one at a time, on demand**, over a mailbox
+of pipes: a worker asks for work, runs one test, reports the outcome, asks again. Nothing is
+decided up front, so a worker is idle only when there is genuinely nothing left to give it.
+
+`fork()` (not `execvp`) is deliberate: by the time `run()` executes, every `__test` has already
+been registered into `UnittestLauncher::_tests` (compiler-generated glue calls
+`_yrt_register_unittest_impl` before `_yrt_run_unittests_impl`), so a forked child's
+copy-on-write memory already has the full test registry. That is also why **the payload is an
+index, not a name** — both sides index the same `toLaunch` list.
+
+The wire protocol (`utils::mailbox`) is two pipes per worker, both created *before* the fork:
+parent→worker carries one `i64` assignment (`STOP`, i.e. < 0, means wind down), worker→parent
+carries a fixed 3×`i64` `TestOutcome` (index, ok, micros). Not one shared pipe with many readers:
+POSIX guarantees atomicity for concurrent *writes* up to `PIPE_BUF`, not for concurrent *reads*,
+so two children reading one fd could split a record between them; per-worker pairs also tell the
+parent exactly who is idle. Both records are far below `PIPE_BUF`, so each is written by a single
+atomic `write(2)` — once `EPOLLIN` fires a whole record is there, and there is no framing layer.
+A worker's *first* message reports no outcome (index `READY`, < 0), which is what lets the parent
+answer every message with an assignment and needs no priming step.
+
+Things that will bite you here:
+
+- **Every child must close every fd it does not own** (`TestMailbox::adoptWorker`) — its own
+  channel's parent ends, and *both* ends of every sibling's channel. As long as a copy of a write
+  end stays open in any process, the reader never sees EOF and `EPOLLHUP` never arrives.
+- **Poll first, reap last.** `dispatch` must never block in `waitpid` while a worker blocks
+  writing to a pipe nobody drains; `reapWorkers` runs only once the loop has returned.
+- `IPipe::readRaw` is deliberately *not* used: it throws on any `read() <= 0`, so a clean EOF, an
+  `EINTR` and a real error are indistinguishable, and it latches its error flag so a retry is
+  impossible. `mailbox::readExact`/`writeExact` are errno-aware (`etc::runtime::errno`) and retry
+  `EINTR` instead of reading it as a dead worker.
+- `TestWorker::ignoreSigPipe` sets `SIGPIPE` to `SIG_IGN` before forking: the parent writes an
+  assignment right after a worker reported, so it can hit a pipe whose reader died in between,
+  and the default disposition would take the runner down with it.
+- A worker must terminate via `TestWorker::exit` and never return normally, or it would re-enter
+  the parent's flow. `TestWorker::fork` flushes stdout right before forking, otherwise
+  buffered-but-unflushed output is printed a second time, independently, by both processes.
+- If `pipe()` or `epoll_create1` fails the run is **aborted** with an error, not degraded to some
+  other scheduling scheme — there is only one parallel path.
+
+`TestQueue` decides *which* test a worker gets, and its shape is performance-driven rather than
+obvious. A single global FIFO is perfectly balanced and measurably slower: a test's cost is not a
+property of the test alone, it depends on what its process already ran (symbolizing an exception's
+stack trace parses the ELF/DWARF tables once per process, so scattering the stack-trace tests
+across N workers pays that cost N times). So each worker gets a contiguous region of the sorted —
+hence module-grouped — list as an **affinity hint**, and a worker that empties its own region
+steals from the *tail* of whichever region has the most left, so the victim keeps running its own
+prefix with warm caches. Measured on this suite, dropping the affinity costs ~25% of wall time at
+`-j 8`; keeping it puts the mailbox level with the static split it replaces, with the correctness
+wins below on top.
+
+What the mailbox buys over the static split it replaced:
+
+- **`--stop-first` is graceful.** The parent stops handing out work and sends `STOP`; each worker
+  finishes the test in its hand and persists its results normally. The old path SIGKILLed the
+  survivors and then had to delete their half-written files, so tests that had already passed in
+  another worker were re-run next time.
+- **A crashed worker is attributable.** The parent knows which index each worker is holding
+  (`TestChannel::holding`), so `EPOLLHUP` on its read end names the test that killed it, and
+  `reapWorkers` adds the signal (`TestWorker::decodeSignal`/`signalName`).
+- **No result files to merge.** Outcomes travel over the channel, so there are no
+  `.ymir_test_success_<pid>.part` fragments — `dumpSuccessFile` is called once, by the parent.
+  Coverage is unchanged: each worker still writes its own `.ymir_coverage_<pid>.json`
+  (`CoverageStore::storePid`), already pid-keyed and multi-process safe.
+- The duration in each outcome costs nothing extra and feeds the `-d`/`--durations` report. It is
+  a *report*: it is never fed back into how work is distributed.
+
+Known, accepted simplification: worker stdout/stderr is inherited and unpiped, so it interleaves
+freely across workers.
