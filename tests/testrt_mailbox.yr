@@ -1,0 +1,118 @@
+in testrt_mailbox;
+
+use utils::mailbox;
+
+use core::exception::_;
+
+__test {
+    // normalizeJobs clamps to at least one worker, and never asks for more workers than there
+    // are tests to give them
+    assert(normalizeJobs(0i64, 10us) == 1us, "a");
+    assert(normalizeJobs(-4i64, 10us) == 1us, "b");
+    assert(normalizeJobs(3i64, 10us) == 3us, "c");
+    assert(normalizeJobs(10i64, 10us) == 10us, "d");
+    assert(normalizeJobs(64i64, 10us) == 10us, "e");
+    assert(normalizeJobs(64i64, 0us) == 0us, "f");
+}
+
+__test {
+    // a channel round-trips a whole outcome record over its real pipes: the worker side reports,
+    // the parent side receives the very same fields back
+    let dmut ch = copy TestChannel();
+
+    ch:.report(TestOutcome(index-> 7i64, ok-> false, micros-> 123456u64));
+    let got = ch:.receive();
+
+    assert(got.index == 7i64, "a");
+    assert(!got.ok, "b");
+    assert(got.micros == 123456u64, "c");
+
+    // and an assignment travels the other way, on the other pipe
+    ch:.send(42i64);
+    assert(ch:.awaitAssignment() == 42i64, "d");
+
+    // the two sentinels are what the loops actually test for: an outcome that reports nothing,
+    // and an assignment that says "no more work"
+    ch:.report(TestOutcome());
+    assert(ch:.receive().index < 0i64, "e");
+
+    ch:.send(STOP);
+    assert(ch:.awaitAssignment() < 0i64, "f");
+
+    ch:.closeAll();
+}
+
+__test {
+    // a closed channel is an error, not a silent success: this is how the dispatcher learns a
+    // worker is gone
+    let dmut ch = copy TestChannel();
+    ch:.closeAll();
+
+    let mut sendFailed = false;
+    {
+        ch:.send(1i64);
+    } catch {
+        _ => { sendFailed = true; }
+    }
+
+    let mut reportFailed = false;
+    {
+        ch:.report(TestOutcome());
+    } catch {
+        _ => { reportFailed = true; }
+    }
+
+    assert(sendFailed, "a");
+    assert(reportFailed, "b");
+}
+
+__test {
+    // every worker works through its own contiguous region first: with 9 tests over 3 workers,
+    // worker 0 gets 0,1,2 -- the sorted list is grouped by module, so this keeps a module's
+    // tests(and whatever process-local caches they warm) inside one process
+    let dmut queue = copy TestQueue(9us, 3us);
+
+    assert(queue:.next(0us) == 0i64, "a");
+    assert(queue:.next(0us) == 1i64, "b");
+    assert(queue:.next(1us) == 3i64, "c");
+    assert(queue:.next(2us) == 6i64, "d");
+    assert(!queue.isEmpty, "e");
+}
+
+__test {
+    // the regions are a hint, not a commitment: a worker that empties its own steals from the
+    // *tail* of the biggest one left, so the victim keeps running its own prefix
+    let dmut queue = copy TestQueue(6us, 2us);
+
+    // worker 0 burns through 0,1,2 while worker 1 has not asked for anything yet
+    assert(queue:.next(0us) == 0i64, "a");
+    assert(queue:.next(0us) == 1i64, "b");
+    assert(queue:.next(0us) == 2i64, "c");
+
+    // its region is empty, so it takes the last test of worker 1's region
+    assert(queue:.next(0us) == 5i64, "d");
+    assert(queue:.next(1us) == 3i64, "e");
+    assert(queue:.next(0us) == 4i64, "f");
+
+    // everything has been handed out: no worker can be left idle while work remains
+    assert(queue.isEmpty, "g");
+    assert(queue:.next(0us) < 0i64, "h");
+    assert(queue:.next(1us) < 0i64, "i");
+}
+
+__test {
+    // a test handed to a worker that turned out to be dead comes back to the pool instead of
+    // being silently dropped
+    let dmut queue = copy TestQueue(2us, 2us);
+
+    assert(queue:.next(0us) == 0i64, "a");
+    assert(queue:.next(1us) == 1i64, "b");
+    assert(queue.isEmpty, "c");
+
+    queue:.giveBack(0i64);
+    assert(!queue.isEmpty, "d");
+
+    // and it is handed out ahead of anything else, to whichever worker asks next
+    assert(queue:.next(1us) == 0i64, "e");
+    assert(queue.isEmpty, "f");
+}
