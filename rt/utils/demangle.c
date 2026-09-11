@@ -5,7 +5,7 @@
 
 // _Y4core5array10OutOfArray4selfFxP24x4core5array10OutOfArrayZxP24x4core5array10OutOfArray0
 
-int _demangle_number (char * data, int * current) {
+int _yrt_i_demangle_number (char * data, int * current) {
     int nb = 0;
     while (*data >= '0' && *data <= '9') {
 		*current += 1;
@@ -16,25 +16,25 @@ int _demangle_number (char * data, int * current) {
     return nb;
 }
 					  
-_yrt_slice_t _demangle_symbol (char * data, uint64_t len) {
+_yrt_slice_t _yrt_i_demangle_symbol (char * data, uint64_t len) {
 
     if (len <= 2 || data [0] != '_' || data [1] != 'Y') {
-		return str_create_len (data, len);
+		return _yrt_i_str_create_len (data, len);
 	}
 
-	_yrt_slice_t ret = str_empty ();
+	_yrt_slice_t ret = _yrt_i_str_empty ();
     int current = 2;
     int i = 0;
     while (current < len) {
 
-		int nb = _demangle_number (data + current, &current);
+		int nb = _yrt_i_demangle_number (data + current, &current);
 		if (nb != 0 && nb + current < len) {
 			if (i != 0) {
-				_yrt_slice_t tmp = str_create ("::");
+				_yrt_slice_t tmp = _yrt_i_str_create ("::");
 				_yrt_append_slice (&ret, &tmp, sizeof (uint8_t));
 			}
 
-            _yrt_slice_t tmp = str_copy_len (data + current, nb);
+            _yrt_slice_t tmp = _yrt_i_str_copy_len (data + current, nb);
             _yrt_append_slice (&ret, &tmp, sizeof (uint8_t));
 
             current += nb;
@@ -43,28 +43,28 @@ _yrt_slice_t _demangle_symbol (char * data, uint64_t len) {
     }
 
     if (current < len && (data [current] == 'F' || data [current] == 'M' || data [current] == 'C' || data [current] == 'T')) {
-		_yrt_slice_t tmp = str_create (" (...)");
+		_yrt_slice_t tmp = _yrt_i_str_create (" (...)");
 		_yrt_append_slice (&ret, &tmp, sizeof (uint8_t));
     } 
     
     return ret;    
 }
 
-_yrt_slice_t _demangle_symbol_to_slice (char * data, uint64_t len) {
-    return _demangle_symbol (data, len);
+_yrt_slice_t _yrt_i_demangle_symbol_to_slice (char * data, uint64_t len) {
+    return _yrt_i_demangle_symbol (data, len);
 }
 
-_yrt_slice_t _mangle_path (_yrt_slice_t data) {
-    _yrt_slice_t str = str_empty ();
+_yrt_slice_t _yrt_i_mangle_path (_yrt_slice_t data) {
+    _yrt_slice_t str = _yrt_i_str_empty ();
     int current = 0;
     int start = 0;
     int i = 0;
     while (i < data.len) {
 		if (((uint8_t*) data.data) [i] == ':') {
-			_yrt_slice_t tmp = str_from_int (current);
+			_yrt_slice_t tmp = _yrt_i_str_from_int (current);
 			_yrt_append_slice (&str, &tmp, sizeof (uint8_t));
 
-			tmp = str_create_len (data.data + start, current);
+			tmp = _yrt_i_str_create_len (data.data + start, current);
 			_yrt_append_slice (&str, &tmp, sizeof (uint8_t));
 			start += current + 2; // skip ::
 			current = 0;
@@ -77,10 +77,10 @@ _yrt_slice_t _mangle_path (_yrt_slice_t data) {
     }
 
     if (current != 0) {
-		_yrt_slice_t tmp = str_from_int (current);
+		_yrt_slice_t tmp = _yrt_i_str_from_int (current);
 		_yrt_append_slice (&str, &tmp, sizeof (uint8_t));
 
-		tmp = str_create_len (data.data + start, current);
+		tmp = _yrt_i_str_create_len (data.data + start, current);
 		_yrt_append_slice (&str, &tmp, sizeof (uint8_t));
     }
 

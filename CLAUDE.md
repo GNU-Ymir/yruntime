@@ -217,6 +217,21 @@ stacktraces), `rt/concurrency` (threads, futures), `rt/utils` (demangling, env, 
 math, string helpers), `rt/run.c` (process entry glue). Built once as `libruntime.a` and also
 folded into both `gymidgard-*` static libs.
 
+**Every external symbol `rt/` defines must carry a prefix the runtime owns** — `_yrt_` for the
+public C ABI (what compiled code, `etc::runtime::*` and gymir's bindings call) and `_yrt_i_` for
+helpers shared between `rt/*.c` but called from nowhere else. Nothing else is available: these
+objects are archived into `libgymidgard_*.a`, which is linked into every Ymir program, so a helper
+named `str_create` or `installHandler` either collides with the user's own C or, through archive
+link order, silently answers a call meant for theirs. `static` is not an escape hatch for most of
+them — they are used across translation units — and hidden visibility does nothing in a static
+archive. `.github/scripts/check-symbols.sh` (the `symbols` CI job) runs `nm -g --defined-only` over
+every archive and fails on anything outside `_yrt_*`, `_Y*`, `__*`, `DW.ref.*` and `main`; run it
+after touching `rt/`. MID-62 is what it exists to prevent: YMI-141 dropped the `_yrt_` prefix from
+76 helpers it took to be internal, one of which (`_yrt_exc_init`) gymir's
+`binding/binding/parser.yr` actually calls, and the breakage shipped in a patch release as a bare
+link failure. **A rename inside `_yrt_*` is an ABI change** — it belongs in a minor release with a
+release note, and anything gymir calls has to be changed there in the same breath.
+
 ### `tests/` — the test suite
 
 Mirrors the `std`/`core` layout (`tests/algorithm/`, `tests/fs/`, `tests/concurrency/`, ...).

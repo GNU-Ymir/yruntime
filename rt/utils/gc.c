@@ -52,7 +52,7 @@ static int _read_tls_phdr (struct dl_phdr_info * info, size_t size, void * data)
 
 /**
  * Compute the bounds of the calling thread's static TLS block
- * @info: primed by _gc_add_tls_roots from _yrt_init_runtime, while still single threaded
+ * @info: primed by _yrt_i_gc_add_tls_roots from _yrt_init_runtime, while still single threaded
  * */
 static void _tls_bounds (char ** lo, char ** hi) {
     if (!__TLS_BLOCK_SIZE_READ__) {
@@ -65,14 +65,14 @@ static void _tls_bounds (char ** lo, char ** hi) {
     *lo = tp - __TLS_BLOCK_SIZE__;
 }
 
-void _gc_add_tls_roots () {
+void _yrt_i_gc_add_tls_roots () {
     char * lo, * hi;
     _tls_bounds (&lo, &hi);
 
     if (lo != hi) GC_add_roots (lo, hi);
 }
 
-void _gc_remove_tls_roots () {
+void _yrt_i_gc_remove_tls_roots () {
     char * lo, * hi;
     _tls_bounds (&lo, &hi);
 
@@ -81,7 +81,7 @@ void _gc_remove_tls_roots () {
 
 #else
 
-void _gc_add_tls_roots () {}
-void _gc_remove_tls_roots () {}
+void _yrt_i_gc_add_tls_roots () {}
+void _yrt_i_gc_remove_tls_roots () {}
 
 #endif

@@ -4,6 +4,6 @@
 #include <stdlib.h>
 #include <time.h>
 
-float _sqrt (float x) {
+float _yrt_i_sqrt (float x) {
     return sqrt (x);
 }

@@ -36,63 +36,63 @@ void* _yrt_unsafe_cast (void* x) {
     return x;
 }
 
-_yrt_slice_t _type_typeinfo_name (_yrt_slice_t mangled) {
-    _yrt_slice_t name = str_copy_len ("_Y", 2);
+_yrt_slice_t _yrt_i_type_typeinfo_name (_yrt_slice_t mangled) {
+    _yrt_slice_t name = _yrt_i_str_copy_len ("_Y", 2);
 
-	_yrt_slice_t tmp = str_create_len (mangled.data, mangled.len);
+	_yrt_slice_t tmp = _yrt_i_str_create_len (mangled.data, mangled.len);
 	_yrt_append_slice (&name, &tmp, 1);
 
-	tmp = str_create_len ("TI", 2);
-	_yrt_append_slice (&name, &tmp, 1);
-
-    return name;
-}
-
-
-_yrt_slice_t _type_vtable_name (_yrt_slice_t mangled) {
-    _yrt_slice_t name = str_copy_len ("_Y", 2);
-	_yrt_slice_t tmp = str_create_len (mangled.data, mangled.len);
-
-	_yrt_append_slice (&name, &tmp, 1);
-
-	tmp = str_create_len ("VT", 2);
+	tmp = _yrt_i_str_create_len ("TI", 2);
 	_yrt_append_slice (&name, &tmp, 1);
 
     return name;
 }
 
 
-_yrt_slice_t _type_constructor_no_param_name (_yrt_slice_t mangled) {
-    _yrt_slice_t name = str_copy_len ("_Y", 2);
+_yrt_slice_t _yrt_i_type_vtable_name (_yrt_slice_t mangled) {
+    _yrt_slice_t name = _yrt_i_str_copy_len ("_Y", 2);
+	_yrt_slice_t tmp = _yrt_i_str_create_len (mangled.data, mangled.len);
 
-	_yrt_slice_t tmp = str_create_len (mangled.data, mangled.len);
 	_yrt_append_slice (&name, &tmp, 1);
 
-	tmp = str_create_len ("4selfF", 6);
+	tmp = _yrt_i_str_create_len ("VT", 2);
 	_yrt_append_slice (&name, &tmp, 1);
 
-	tmp = str_create_len ("xP", 2);
-    _yrt_append_slice (&name, &tmp, 1);
+    return name;
+}
 
-	tmp = str_from_int (mangled.len + 1);
-    _yrt_append_slice (&name, &tmp, 1);
 
-	tmp = str_create_len ("x", 1);
-    _yrt_append_slice (&name, &tmp, 1);
+_yrt_slice_t _yrt_i_type_constructor_no_param_name (_yrt_slice_t mangled) {
+    _yrt_slice_t name = _yrt_i_str_copy_len ("_Y", 2);
 
-	tmp = str_create_len (mangled.data, mangled.len);
-    _yrt_append_slice (&name, &tmp, 1);
-
-	tmp = str_create_len ("ZxP", 3);
-    _yrt_append_slice (&name, &tmp, 1);
-
-	tmp = str_from_int (mangled.len + 1);
+	_yrt_slice_t tmp = _yrt_i_str_create_len (mangled.data, mangled.len);
 	_yrt_append_slice (&name, &tmp, 1);
 
-	tmp = str_create_len ("x", 1);
+	tmp = _yrt_i_str_create_len ("4selfF", 6);
+	_yrt_append_slice (&name, &tmp, 1);
+
+	tmp = _yrt_i_str_create_len ("xP", 2);
     _yrt_append_slice (&name, &tmp, 1);
 
-	tmp = str_create_len (mangled.data, mangled.len);
+	tmp = _yrt_i_str_from_int (mangled.len + 1);
+    _yrt_append_slice (&name, &tmp, 1);
+
+	tmp = _yrt_i_str_create_len ("x", 1);
+    _yrt_append_slice (&name, &tmp, 1);
+
+	tmp = _yrt_i_str_create_len (mangled.data, mangled.len);
+    _yrt_append_slice (&name, &tmp, 1);
+
+	tmp = _yrt_i_str_create_len ("ZxP", 3);
+    _yrt_append_slice (&name, &tmp, 1);
+
+	tmp = _yrt_i_str_from_int (mangled.len + 1);
+	_yrt_append_slice (&name, &tmp, 1);
+
+	tmp = _yrt_i_str_create_len ("x", 1);
+    _yrt_append_slice (&name, &tmp, 1);
+
+	tmp = _yrt_i_str_create_len (mangled.data, mangled.len);
     _yrt_append_slice (&name, &tmp, 1);
 
     return name;

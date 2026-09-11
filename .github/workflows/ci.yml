@@ -38,6 +38,20 @@ jobs:
       - name: Compile the examples of the doc comments
         run: docker run --rm "$IMAGE" ./dev/check-examples.sh
 
+  symbols:
+    name: symbols
+    needs: build
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/build-image
+        with:
+          tag: ${{ env.IMAGE }}
+
+      - name: Check the exported symbols of the archives
+        run: docker run --rm "$IMAGE" bash .github/scripts/check-symbols.sh
+
   shard:
     name: ${{ matrix.shard }}
     needs: build
@@ -183,7 +197,7 @@ jobs:
   cleanup:
     name: Cleanup
     if: always()
-    needs: [build, examples, shard, coverage]
+    needs: [build, examples, symbols, shard, coverage]
     runs-on: [self-hosted, linux, x64]
     steps:
       - name: Drop this run's image tag

@@ -192,7 +192,7 @@ long double _yrt_string_to_fsize (_yrt_slice_t arr, uint8_t * succ) {
  * ====================================================================================================
  */
 
-char* _to_utf8 (unsigned int code, char chars[5], int * nb) {
+char* _yrt_i_to_utf8 (unsigned int code, char chars[5], int * nb) {
     if (code <= 0x7F) {
 		chars[0] = (code & 0x7F); chars[1] = '\0';
 		*nb = 1;
@@ -224,7 +224,7 @@ char* _to_utf8 (unsigned int code, char chars[5], int * nb) {
     return chars;
 }
 
-size_t utf8_codepoint_size (char c) {
+size_t _yrt_i_utf8_codepoint_size (char c) {
     if((c & 0b10000000) == 0) {
 		return 1;
     }
@@ -248,8 +248,8 @@ size_t utf8_codepoint_size (char c) {
  * ====================================================================================================
  */
 
-uint32_t _to_utf32 (char* text, size_t * byte_count) {
-    *byte_count = utf8_codepoint_size(text[0]);
+uint32_t _yrt_i_to_utf32 (char* text, size_t * byte_count) {
+    *byte_count = _yrt_i_utf8_codepoint_size(text[0]);
 
     uint a = 0, b = 0, c = 0, d = 0;
     uint a_mask, b_mask, c_mask, d_mask;
