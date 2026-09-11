@@ -22,7 +22,7 @@ void _yrt_exit (int i) {
     exit (i);
 }
 
-void bt_sighandler(int sig
+void _yrt_i_bt_sighandler(int sig
 #ifdef __linux__
                    , struct sigcontext ctx
 #endif
@@ -31,23 +31,23 @@ void bt_sighandler(int sig
     static int first = 0;
     if (first == 0) {
         first = 1;
-        _exc_panic_seg_fault ();
+        _yrt_i_exc_panic_seg_fault ();
     } else {
         _yrt_exc_panic_no_trace ();
     }
 }
 
-void installHandler () {
+void _yrt_i_install_handler () {
 #ifdef __linux__
     struct sigaction sa;
 
-    sa.sa_handler = (void (*)(int))bt_sighandler;
+    sa.sa_handler = (void (*)(int))_yrt_i_bt_sighandler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART;
 
     sigaction(SIGSEGV, &sa, NULL); // On seg fault we throw an exception
 #elif _WIN32
-    signal (SIGSEGV, &bt_sighandler);
+    signal (SIGSEGV, &_yrt_i_bt_sighandler);
 #endif
 
     // Writing on a pipe/socket whose reading end is closed must not kill the
@@ -60,11 +60,11 @@ void _yrt_init_runtime (int isDebug) {
     __YRT_DEBUG__ = isDebug;
 
     GC_INIT ();
-    _gc_add_tls_roots (); // spawned threads get theirs in _thread_create
+    _yrt_i_gc_add_tls_roots (); // spawned threads get theirs in _yrt_i_thread_create
 
-    _atomic_init ();
-    installHandler ();
-    _exc_init ();
+    _yrt_i_atomic_init ();
+    _yrt_i_install_handler ();
+    _yrt_exc_init ();
 }
 
 void _yrt_force_debug (int act) {
@@ -95,11 +95,11 @@ _yrt_slice_t _yrt_get_main_args () {
     return __MAIN_ARGS__;
 }
 
-int _get_test_code () {
+int _yrt_i_get_test_code () {
     return __YRT_TEST_CODE__;
 }
 
-void _set_test_code (int i) {
+void _yrt_i_set_test_code (int i) {
     __YRT_TEST_CODE__ = i;
 }
 

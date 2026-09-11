@@ -6,43 +6,43 @@
 #include <rt/utils/gc.h>
 #include <rt/memory/alloc.h>
 
-_yrt_slice_t str_from_int (int32_t value) {
+_yrt_slice_t _yrt_i_str_from_int (int32_t value) {
     unsigned int len = snprintf (NULL, 0, "%d", value);
     char * alloc = malloc (len + 1);
     snprintf (alloc, len + 1, "%d", value);
     alloc [len] = 0;
 
     _yrt_slice_t result;
-    result = str_copy_len (alloc, len);
+    result = _yrt_i_str_copy_len (alloc, len);
     free (alloc);
 
     return result;
 }
 
-_yrt_slice_t str_from_char (char value) {
+_yrt_slice_t _yrt_i_str_from_char (char value) {
     _yrt_slice_t result;
-    result = str_copy_len (&value, 1);
+    result = _yrt_i_str_copy_len (&value, 1);
     return result;
 }
 
-_yrt_slice_t str_from_ptr (void* value) {
+_yrt_slice_t _yrt_i_str_from_ptr (void* value) {
     unsigned int len = snprintf (NULL, 0, "%p", value);
     char * alloc = malloc (len + 1);
     snprintf (alloc, len + 1, "%p", value);
     alloc [len] = 0;
 
     _yrt_slice_t result;
-    result = str_copy_len (alloc, len);
+    result = _yrt_i_str_copy_len (alloc, len);
     free (alloc);
 
     return result;
 }
 
-_yrt_slice_t str_create (const char * data) {
-    return str_create_len (data, strlen (data));
+_yrt_slice_t _yrt_i_str_create (const char * data) {
+    return _yrt_i_str_create_len (data, strlen (data));
 }
 
-_yrt_slice_t str_create_len (const char * data, uint64_t len) {
+_yrt_slice_t _yrt_i_str_create_len (const char * data, uint64_t len) {
     _yrt_slice_t ret;
     memset (&ret, 0, sizeof (_yrt_slice_t));
 
@@ -52,7 +52,7 @@ _yrt_slice_t str_create_len (const char * data, uint64_t len) {
     return ret;
 }
 
-_yrt_slice_t str_copy_len (const char *data, uint64_t len) {
+_yrt_slice_t _yrt_i_str_copy_len (const char *data, uint64_t len) {
     _yrt_slice_t result;
     _yrt_alloc_slice_no_set (&result, len, 1);
     memcpy (result.data, data, len);
@@ -60,11 +60,11 @@ _yrt_slice_t str_copy_len (const char *data, uint64_t len) {
     return result;
 }
 
-_yrt_slice_t str_copy (const char * data) {
-    return str_copy_len (data, strlen (data));
+_yrt_slice_t _yrt_i_str_copy (const char * data) {
+    return _yrt_i_str_copy_len (data, strlen (data));
 }
 
-_yrt_slice_t str_empty () {
+_yrt_slice_t _yrt_i_str_empty () {
     _yrt_slice_t str;
     memset (&str, 0, sizeof (_yrt_slice_t));
 
