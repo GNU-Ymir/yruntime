@@ -241,16 +241,20 @@ comparison like the compiler frontend's test suite — assertions are the pass/f
 
 ### `test-rt/` — the test runner and coverage system
 
-`test-rt/__lib__.yr` wires the `_yrt_register_unittest_impl` / `_yrt_run_unittests_impl`
-extern hooks (called by compiler-generated `__test` glue) into `utils::runner::UnittestLauncher`,
-and wires `_yrt_unittest_coverage_hit_{branch,enter,exit}` into a global `utils::coverage::tree`
+`test-rt/__lib__.yr` wires the `_yrt_register_unittest_impl` /
+`_yrt_register_parameterized_unittest_impl` / `_yrt_run_unittests_impl` extern hooks (called by
+compiler-generated `__test` glue) into `utils::runner::UnittestLauncher`, and wires
+`_yrt_unittest_coverage_hit_{branch,enter,exit}` into a global `utils::coverage::tree`
 CoverageTree singleton.
 
 - `utils::args` — CLI parsing (`TestRunnerArgument`, built on `std::config::ArgumentParser`).
 - `utils::filters` — include/exclude test-name filtering used by the runner, plus reading and
   writing the `.ymir_test_success` file behind `--resume`.
 - `utils::colors` — terminal color helpers for pass/fail/coverage output.
-- `utils::runner` — `UnittestLauncher`: registers tests, runs them (respecting filters,
+- `utils::runner` — `UnittestLauncher`: registers tests (a parameterized `__test` as its two
+  frames, which `expandParameterizedTests` turns into one `module::test[index]` entry per
+  parameter set — from `run`, since a provider called from the package ctor that registers it
+  would run allocating Ymir against an uninitialised GC), runs them (respecting filters,
   stop-first, resume-from-`.ymir_test_success`, and `-j`/`--jobs` parallelism across
   `utils::worker::TestWorker` subprocesses), and drives coverage/call-tree reporting.
 - `utils::worker` — `TestWorker`: fork/waitpid/exit/signal-decoding wrappers, no `execvp`, unlike
