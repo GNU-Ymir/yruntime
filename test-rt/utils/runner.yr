@@ -73,17 +73,27 @@ record TestDuration {
     {}
 }
 
+/**
+ * @returns: `name` without the trailing '\u{0}' the C registration shim appends to it
+ * */
+fn stripNul(name: [c8])-> [c8] {
+    if name.len > 0 && name[$-1] == '\u{0}' {
+        name[0 .. $-1]
+    } else {
+        name
+    }
+}
+
 extern (C) fn _yrt_force_debug()-> void;
 
 @{final}
 pub class UnittestLauncher {
 
-    // The list of test registered in the launcher This function pointers are
-    // cheated by the compiler as they don't respect the non throwing
-    // convention, as they throw when they fail. It is the standard accepted
-    // way, as it is only for internal usage.
-    //
-    let dmut _tests: [[c8] => fn ()-> void] = copy [];
+    // The list of test registered in the launcher These delegates are cheated
+    // by the compiler as they don't respect the non throwing convention, as
+    // they throw when they fail. It is the standard accepted way, as it is only
+    // for internal usage. A delegate, so a parameterized case carries its slice.
+    let dmut _tests: [[c8] => dg ()-> void] = copy [];
 
     /*!
      * ====================================================================================================
@@ -111,13 +121,7 @@ pub class UnittestLauncher {
      *
      * */
     pub fn register(mut self, name: [c8], func: fn ()-> void) {
-        let realName = if name.len > 0 && name[$-1] == '\u{0}' {
-            name[0 .. $-1]
-        } else {
-            name
-        };
-
-        self._tests[realName] = func;
+        self._tests[stripNul(name)] = copy || => { func(); };
     }
 
     /*!
@@ -536,7 +540,7 @@ pub class UnittestLauncher {
      * @throws:
      *    - the exception thrown by the test if it fails
      * */
-    fn runTest(self, name: [c8], func: fn ()-> void)
+    fn runTest(self, name: [c8], func: dg ()-> void)
         throws Exception
     {
         println('[', Colors::BLUE, "RUN", Colors::RESET, "] : ", name);
