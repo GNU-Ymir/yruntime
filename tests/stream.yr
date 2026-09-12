@@ -1,7 +1,10 @@
 in stream;
 
-use std::io;
+use core::exception;
+
 use std::stream;
+use std::fs::errors;
+use std::algorithm::searching;
 
 class A {
     let x: i32 = 0;
@@ -147,4 +150,120 @@ __test {
 
     pool:.join();
     assert(res[0]);
+}
+
+__test { // the concrete writers: a single char, a pointer, and clearing the stream
+    let dmut s = copy StringStream();
+    s:.write('a'c8):.write('b'c8);
+    assert(s[] == "ab", "a");
+
+    s:.clear();
+    assert(s[] == "", "b");
+
+    s:.write("kept");
+    assert(s[] == "kept", "c");
+
+    // a raw pointer is written as an address, so only its shape is asserted
+    let dmut p = copy StringStream();
+    p:.write(cast!{*void} (null));
+    assert(p[].len != 0us, "e");
+}
+
+__test { // a stream writes itself into another stream
+    let dmut inner = copy StringStream();
+    inner:.write("inner");
+
+    let dmut outer = copy StringStream();
+    outer:.write("[", inner, "]");
+    assert(outer[] == "[inner]", outer[]);
+}
+
+__test { // nesting many entabings grows the buffer, unwinding them shrinks it back
+    let dmut s = copy StringStream();
+    for i in 0 .. 40 {
+        s:.entabing(txt-> "-");
+        assert(i >= 0, "a");
+    }
+
+    // an entabing applies from the next line on, so 40 of them prefix the second line
+    s:.writeln("first");
+    s:.write("second");
+    assert(s[] == "first\n" ~ copy ['-' ; 40] ~ "second", s[]);
+
+    for _ in 0 .. 40 {
+        s:.detabing();
+    }
+
+    // detabing past the last one is a no-op, not an underflow
+    s:.detabing();
+
+    let dmut t = copy StringStream();
+    t:.write("flat");
+    assert(t[] == "flat", "c");
+}
+
+__test { // writeln in its three forms
+    let dmut s = copy StringStream();
+    s:.writeln();
+    assert(s[] == "\n", "a");
+
+    let dmut one = copy StringStream();
+    one:.writeln("x");
+    assert(one[] == "x\n", "b");
+
+    let dmut many = copy StringStream();
+    many:.writeln("x", 1, 'y'c8);
+    assert(many[] == "x1y\n", many[]);
+}
+
+__test { // tuples, options and maps have writers of their own
+    let dmut s = copy StringStream();
+    s:.write((1, 2));
+    assert(s[] == "(1,2)", s[]);
+
+    // a one element tuple keeps its trailing comma, so it stays distinguishable
+    let dmut single = copy StringStream();
+    single:.write((1,));
+    assert(single[] == "(1,)", single[]);
+
+    let dmut opt = copy StringStream();
+    opt:.write((12)?);
+    assert(opt[] == "Ok(12)", opt[]);
+
+    let dmut empty = copy StringStream();
+    let none_: (i32)? = none;
+    empty:.write(none_);
+    assert(empty[] == "Err()", empty[]);
+
+    let dmut map = copy StringStream();
+    map:.write(copy ["a" => 1]);
+    assert(map[] == "[a => 1]", map[]);
+}
+
+__test { // the aggregate writers, on the instantiations the library itself carries
+    // an option of an exception: this is the form std::conv and std::format render sub-errors with
+    let dmut s = copy StringStream();
+    let err: (&Exception)? = (copy FsError(FsErrorCode::NOT_FOUND, "nope"))?;
+    s:.write(err);
+    assert(s[].startsWith("Ok("), s[]);
+
+    let dmut empty = copy StringStream();
+    let nothing: (&Exception)? = none;
+    empty:.write(nothing);
+    assert(empty[] == "Err()", empty[]);
+
+    // a string to string map, the form a config dumper writes
+    let dmut map = copy StringStream();
+    map:.write(copy ["a" => "b"]);
+    assert(map[] == "[a => b]", map[]);
+
+    // a record that declares the default Streamable gets the typeid plus its fields
+    let dmut rec = copy StringStream();
+    rec:.write(i32::typeinfo);
+    assert(rec[].startsWith("core::types::info::TypeInfo("), rec[]);
+
+    // a record with no Streamable at all -- a raw C binding -- has its fields expanded in place
+    let dmut raw = copy StringStream();
+    raw:.write(etc::c::time::tm_t());
+    assert(raw[].startsWith("etc::c::time::tm_t("), raw[]);
 }

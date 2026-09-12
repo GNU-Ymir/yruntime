@@ -1,0 +1,366 @@
+in args;
+
+use std::io;
+use std::config::_;
+use std::config::args::errors;
+use std::conv::errors;
+use std::format;
+use std::algorithm::searching;
+use helpers;
+
+/**
+ * A sub command parser taking a single '--foo' int option
+ * */
+fn subFoo(args: [[c8]])-> (&Config)? {
+    return ((copy ArgumentParser()):.option!{i64} ("foo")).parse(args)?;
+}
+
+/**
+ * A sub command parser taking nothing at all
+ * */
+fn subNothing(args: [[c8]])-> (&Config)? {
+    return (copy ArgumentParser()).parse(args)?;
+}
+
+/**
+ * @returns: a parser covering every kind of argument, reused by most of the tests below
+ * */
+fn fullParser()-> &ArgumentParser {
+    (copy ArgumentParser())
+        :.option!{i64} ("count", short-> "c", comments-> "how many")
+        :.option!{f64} ("ratio", comments-> "a float")
+        :.option!{[c8]} ("name", short-> "n", comments-> "a string")
+        :.flag("verbose", short-> "v", comments-> "be loud")
+        :.help("help", short-> "h", comments-> "print this help")
+}
+
+__test { // an option is readable through its long and its short name
+    {
+        let cfg = fullParser().parse(copy ["./a.out", "--count", "12", "--ratio", "1.5", "-n", "foo"]);
+        assert(cfg["count"].to!{i64} () == 12, "a");
+        assert(cfg["ratio"].to!{f64} () == 1.5, "b");
+        assert(cfg["name"].to!{[c8]} () == "foo", "c");
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test { // a flag is true when set, and inserted as false when it is not
+    {
+        assert(fullParser().parse(copy ["./a.out", "-v"])["verbose"].to!{bool} (), "a");
+        assert(!fullParser().parse(copy ["./a.out"])["verbose"].to!{bool} (), "b");
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test { // a single-hyphen long name is accepted too
+    {
+        assert(fullParser().parse(copy ["./a.out", "-count", "3"])["count"].to!{i64} () == 3, "a");
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test { // positional arguments are filled in declaration order
+    {
+        let parser = (copy ArgumentParser())
+            :.position!{i64} ("first", comments-> "an int")
+            :.position!{[c8]} ("second", comments-> "a string");
+
+        let cfg = parser.parse(copy ["./a.out", "42", "foo"]);
+        assert(cfg["first"].to!{i64} () == 42, "a");
+        assert(cfg["second"].to!{[c8]} () == "foo", "b");
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test { // a missing positional argument names itself
+    let parser = (copy ArgumentParser())
+        :.position!{i64} ("first")
+        :.position!{i64} ("second");
+
+    { parser.parse(copy ["./a.out", "1"]); assert(false, "should have thrown"); }
+    catch {
+        m: &MissingArgument => { assert(m.key == "second", "a"); }
+        err => { println(err); assert(false, "wrong error"); }
+    }
+}
+
+__test { // 'list-> true' collects every occurrence of an option into an array
+    {
+        let parser = (copy ArgumentParser())
+            :.option!{[c8]} ("inc", short-> "I", comments-> "include dir", list-> true);
+
+        let cfg = parser.parse(copy ["./a.out", "-I", "a", "--inc", "b", "-I", "c"]);
+        assert(cfg["inc"].to!{[[c8]]} () == ["a", "b", "c"], "a");
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test { // an array option eats every value it can, and stops at the next option
+    {
+        let parser = (copy ArgumentParser())
+            :.option!{[i64]} ("nums", comments-> "some ints")
+            :.flag("verbose", short-> "v");
+
+        let cfg = parser.parse(copy ["./a.out", "--nums", "1", "2", "3", "-v"]);
+        assert(cfg["nums"].to!{[i64]} () == [1i64, 2i64, 3i64], "a");
+        assert(cfg["verbose"].to!{bool} (), "b");
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test { // a list positional argument takes the rest of the line
+    {
+        let parser = (copy ArgumentParser())
+            :.position!{[i64]} ("list", comments-> "list of int");
+
+        assert(parser.parse(copy ["./a.out", "1", "2", "3"])["list"].to!{[i64]} () == [1i64, 2i64, 3i64], "a");
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test { // setting a non-list option twice is an error
+    let parser = fullParser();
+
+    { parser.parse(copy ["./a.out", "--count", "1", "--count", "2"]); assert(false, "should have thrown"); }
+    catch {
+        d: &DuplicateArgument => { assert(d.key == "count", "a"); }
+        err => { println(err); assert(false, "wrong error"); }
+    }
+}
+
+__test { // an option the parser does not know names itself
+    let parser = fullParser();
+
+    { parser.parse(copy ["./a.out", "--nope"]); assert(false, "should have thrown"); }
+    catch {
+        u: &UnknownArgument => { assert(u.key == "nope", "a"); }
+        err => { println(err); assert(false, "wrong error"); }
+    }
+}
+
+__test { // so does a bare word when every positional is already filled
+    let parser = fullParser();
+
+    { parser.parse(copy ["./a.out", "stray"]); assert(false, "should have thrown"); }
+    catch {
+        u: &UnknownArgument => { assert(u.key == "stray", "a"); }
+        err => { println(err); assert(false, "wrong error"); }
+    }
+}
+
+__test { // a mandatory option that never appears is reported as missing
+    let parser = (copy ArgumentParser()):.option!{i64} ("count", mandatory-> true);
+
+    { parser.parse(copy ["./a.out"]); assert(false, "should have thrown"); }
+    catch {
+        m: &MissingArgument => { assert(m.key == "count", "a"); }
+        err => { println(err); assert(false, "wrong error"); }
+    }
+}
+
+__test { // an int value that does not convert, and one that is not there at all
+    let parser = fullParser();
+
+    { parser.parse(copy ["./a.out", "--count", "abc"]); assert(false, "should have thrown"); }
+    catch {
+        m: &MalformedArgument => { assert(m.key == "count", "a"); }
+        err => { println(err); assert(false, "wrong error a"); }
+    }
+
+    { parser.parse(copy ["./a.out", "--count"]); assert(false, "should have thrown"); }
+    catch {
+        m: &MalformedArgument => { assert(m.key == "count", "b"); }
+        err => { println(err); assert(false, "wrong error b"); }
+    }
+
+    { parser.parse(copy ["./a.out", "--ratio", "abc"]); assert(false, "should have thrown"); }
+    catch {
+        m: &MalformedArgument => { assert(m.key == "ratio", "c"); }
+        err => { println(err); assert(false, "wrong error c"); }
+    }
+}
+
+__test { // '--name --verbose' does not read '--verbose' as the value of name
+    let parser = fullParser();
+
+    { parser.parse(copy ["./a.out", "--name", "--verbose"]); assert(false, "should have thrown"); }
+    catch {
+        m: &MalformedArgument => { assert(m.key == "name", "a"); }
+        err => { println(err); assert(false, "wrong error a"); }
+    }
+
+    { parser.parse(copy ["./a.out", "--name"]); assert(false, "should have thrown"); }
+    catch {
+        m: &MalformedArgument => { assert(m.key == "name", "b"); }
+        err => { println(err); assert(false, "wrong error b"); }
+    }
+}
+
+__test { // an array option with nothing convertible behind it
+    let parser = (copy ArgumentParser()):.option!{[i64]} ("nums");
+
+    { parser.parse(copy ["./a.out", "--nums", "abc"]); assert(false, "should have thrown"); }
+    catch {
+        m: &MalformedArgument => { assert(m.key == "nums", "a"); }
+        err => { println(err); assert(false, "wrong error a"); }
+    }
+
+    { parser.parse(copy ["./a.out", "--nums"]); assert(false, "should have thrown"); }
+    catch {
+        m: &MalformedArgument => { assert(m.key == "nums", "b"); }
+        err => { println(err); assert(false, "wrong error b"); }
+    }
+}
+
+__test { // a help flag interrupts the parsing, whatever else is on the line
+    let parser = fullParser();
+
+    { parser.parse(copy ["./a.out", "--count", "1", "-h"]); assert(false, "should have thrown"); }
+    catch {
+        HelpRequestError() => {}
+        err => { println(err); assert(false, "wrong error"); }
+    }
+}
+
+__test { // a sub command is handed the rest of the line, hyphenated or not
+    {
+        let parser = (copy ArgumentParser())
+            :.sub("sub", &subFoo, short-> "s", comments-> "sub command", hyphenated-> false);
+
+        assert(parser.parse(copy ["./a.out", "sub", "--foo", "78"])["sub"]["foo"].to!{i64} () == 78, "a");
+        assert(parser.parse(copy ["./a.out", "--sub", "--foo", "78"])["sub"]["foo"].to!{i64} () == 78, "b");
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test { // a sub command that fails becomes a malformed argument carrying its error
+    let parser = (copy ArgumentParser())
+        :.sub("sub", &subFoo);
+
+    { parser.parse(copy ["./a.out", "--sub", "--nope"]); assert(false, "should have thrown"); }
+    catch {
+        m: &MalformedArgument => {
+            assert(m.key == "sub", "a");
+            assert(contains(parser.explain(m), "error parsing argument 'sub'"), "b");
+        }
+        err => { println(err); assert(false, "wrong error"); }
+    }
+}
+
+__test { // a mandatory sub command that never appears is reported as missing
+    let parser = (copy ArgumentParser())
+        :.sub("sub", &subFoo, mandatory-> true);
+
+    { parser.parse(copy ["./a.out"]); assert(false, "should have thrown"); }
+    catch {
+        m: &MissingArgument => { assert(m.key == "sub", "a"); }
+        err => { println(err); assert(false, "wrong error"); }
+    }
+}
+
+__test { // the usage line names every argument, with its type and whether it is optional
+    let parser = (copy ArgumentParser())
+        :.option!{i64} ("count", short-> "c", comments-> "how many")
+        :.option!{[i64]} ("nums", comments-> "some ints")
+        :.option!{[c8]} ("name", mandatory-> true, comments-> "a string")
+        :.position!{f64} ("ratio", comments-> "a float")
+        :.flag("verbose", short-> "v", comments-> "be loud")
+        :.sub("run", &subNothing, comments-> "run it")
+        :.help("help", short-> "h");
+
+    assert(parser.getUsage() == "usage [-v,--verbose] [-h,--help] [-c,--count int] [--nums [int...]] --name str float(ratio) [--run(...)]",
+           parser.getUsage());
+
+    assert(parser.getUsage(usage-> "prog").startsWith("prog "), "b");
+}
+
+__test { // the help groups the arguments and aligns their comments
+    let parser = (copy ArgumentParser())
+        :.option!{i64} ("count", short-> "c", comments-> "how many")
+        :.option!{[c8]} ("name", mandatory-> true, comments-> "a string")
+        :.position!{f64} ("ratio", comments-> "a float")
+        :.flag("verbose", short-> "v", comments-> "be loud")
+        :.help("help", short-> "h", comments-> "print this help");
+
+    let help = parser.getHelp(usage-> "prog");
+    assert(help.startsWith("prog "), "a");
+    assert(contains(help, "positional arguments: "), "b");
+    assert(contains(help, "mandatory arguments: "), "c");
+    assert(contains(help, "optional arguments: "), "d");
+    assert(contains(help, "-c,"), "e");
+    assert(contains(help, "be loud"), "f");
+}
+
+__test { // explain() turns each error kind into a message the caller can print
+    let parser = fullParser();
+
+    assert(parser.explain(copy HelpRequestError()) == parser.getHelp(), "a");
+
+    let unknown = parser.explain(copy UnknownArgument("nope"), usage-> "prog");
+    assert(unknown.startsWith("prog "), "b");
+    assert(contains(unknown, "unknown argument 'nope'"), "c");
+
+    assert(contains(parser.explain(copy MissingArgument("count"), usage-> "prog"), "missing argument 'count'"), "d");
+    assert(contains(parser.explain(copy MalformedArgument("count", none), usage-> "prog"), "error parsing argument 'count'"), "e");
+}
+
+__test { // a malformed argument unwinds the chain of errors that produced it
+    let parser = fullParser();
+
+    let nested = parser.explain(copy MalformedArgument("outer", (copy MalformedArgument("inner", (copy MissingArgument("deep"))?))?));
+    assert(contains(nested, "error parsing argument 'outer'"), "a");
+    assert(contains(nested, "error parsing argument 'inner'"), "b");
+    assert(contains(nested, "missing argument 'deep'"), "c");
+
+    assert(contains(parser.explain(copy MalformedArgument("outer", (copy UnknownArgument("deep"))?)), "unknown argument 'deep'"), "d");
+    assert(contains(parser.explain(copy MalformedArgument("outer", (copy CastFailure((&Int)::__typeinfo__, [c8]::typeinfo))?)),
+                    "incompatible types: "), "e");
+    assert(contains(parser.explain(copy MalformedArgument("outer", (copy InvalidCommandLine())?)), "error parsing argument 'outer'"), "f");
+}
+
+__test { // the errors carry their key into their own text
+    assert(contains(format("{}", copy MissingArgument("count")), "MissingArgument (count)"), "a");
+    assert(contains(format("{}", copy DuplicateArgument("count")), "DuplicateArgument (count)"), "b");
+    assert(contains(format("{}", copy UnknownArgument("count")), "UnknownArgument (count)"), "c");
+    assert(contains(format("{}", copy MalformedArgument("count", none)), "MalformedArgument (count)"), "d");
+    assert(contains(format("{}", copy MalformedArgument("count", (copy MissingArgument("deep"))?)), "MissingArgument (deep)"), "e");
+}
+
+__test { // MID-64: an unsigned option is an int option, it used to be parsed as a float
+    {
+        let parser = (copy ArgumentParser())
+            :.option!{u64} ("count")
+            :.option!{[u32]} ("nums")
+            :.position!{u64} ("pos");
+
+        let cfg = parser.parse(copy ["./a.out", "7", "--count", "12", "--nums", "1", "2"]);
+        assert(cfg["count"].to!{u64} () == 12u64, "a");
+        assert(cfg["nums"].to!{[u32]} () == [1u32, 2u32], "b");
+        assert(cfg["pos"].to!{u64} () == 7u64, "c");
+
+        assert(parser.getUsage() == "usage [--count int] [--nums [int...]] int(pos)", parser.getUsage());
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test { // a floating option is still a float option
+    {
+        let parser = (copy ArgumentParser()):.option!{f64} ("ratio"):.option!{[f64]} ("ratios");
+
+        let cfg = parser.parse(copy ["./a.out", "--ratio", "1.5", "--ratios", "2.5", "3.5"]);
+        assert(cfg["ratio"].to!{f64} () == 1.5, "a");
+        assert(cfg["ratios"].to!{[f64]} () == [2.5, 3.5], "b");
+        assert(parser.getUsage() == "usage [--ratio float] [--ratios [float...]]", parser.getUsage());
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}

@@ -138,3 +138,87 @@ __test {
 
     assert(nbErrors == 6);
 }
+
+/**
+ * The lenient/strict split: `format` leaves what it cannot format as-is, `formatStrict` throws.
+ * */
+
+__test { // a '{' that closes nothing is written verbatim, and throws in strict mode
+    assert(format("a {", 1) == "a {", "a");
+    assert(format("a {b", 1) == "a {b", "b");
+    assert(format("{", 1) == "{", "c");
+
+    { formatStrict("a {", 1); assert(false, "should have thrown"); }
+    catch {
+        e: &FormatError => { assert(e.index == 2us, "d"); }
+        err => { println(err); assert(false, "wrong error"); }
+    }
+}
+
+__test { // a formatter designating an argument that is not there
+    assert(format("{3}", 12) == "{3}", "a");
+    assert(format("a {1} b", 12) == "a {1} b", "b");
+
+    { formatStrict("{3}", 12); assert(false, "should have thrown"); }
+    catch {
+        FormatError() => {}
+        err => { println(err); assert(false, "wrong error"); }
+    }
+}
+
+__test { // more formatters than arguments, in both modes
+    assert(format("{} {}", 1) == "1 {}", "a");
+
+    { formatStrict("{} {}", 1); assert(false, "should have thrown"); }
+    catch {
+        FormatError() => {}
+        err => { println(err); assert(false, "wrong error"); }
+    }
+}
+
+__test { // a malformed specification falls back to the value written plainly
+    assert(format("{:zz}", 12) == "12", format("{:zz}", 12));
+    assert(format("{:*}", 12) == "12", format("{:*}", 12));
+
+    { formatStrict("{:zz}", 12); assert(false, "should have thrown"); }
+    catch {
+        FormatError() => {}
+        err => { println(err); assert(false, "wrong error"); }
+    }
+}
+
+__test { // a type that does not apply to the value falls back to the default representation
+    assert(format("{:x}", "foo") == "foo", format("{:x}", "foo"));
+    assert(format("{:e}", "foo") == "foo", format("{:e}", "foo"));
+
+    { formatStrict("{:x}", "foo"); assert(false, "should have thrown"); }
+    catch {
+        FormatError() => {}
+        err => { println(err); assert(false, "wrong error"); }
+    }
+}
+
+__test { // more arguments than formatters is not an error, the extra ones are dropped
+    {
+        assert(format("{}", 1, 2, 3) == "1", "a");
+        assert(formatStrict("{}", 1, 2, 3) == "1", "b");
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test { // '{{' is the only brace escape -- a '}' on its own is literal text
+    {
+        assert(format("{{}", 1) == "{}", format("{{}", 1));
+        assert(format("{{{}}", 1) == "{1}", format("{{{}}", 1));
+        assert(format("{{}}", 1) == "{}}", format("{{}}", 1));
+        assert(formatStrict("{{{}}", 1) == "{1}", "d");
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test { // an explicit index does not advance the implicit counter
+    assert(format("{1} {} {}", "a", "b") == "b a b", format("{1} {} {}", "a", "b"));
+    assert(format("{0} {0} {}", "a") == "a a a", format("{0} {0} {}", "a"));
+}

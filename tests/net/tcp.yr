@@ -1,0 +1,57 @@
+in tcp;
+
+use std::net::_;
+use std::net::tcp::_;
+use std::io;
+
+use etc::c::files;
+use etc::c::socket;
+
+/**
+ * @returns: true if the O_NONBLOCK flag is set on `fd`
+ * */
+fn isNonBlocking(fd: i32)-> bool {
+    let flags = files::fcntl(fd, files::FileFlags::F_GETFL, 0u32);
+
+    (flags & SocketFlag::O_NONBLOCK) != 0u32
+}
+
+/**
+ * Bind a listener on the loopback, on the first free port of a small range
+ * @info: `TcpListener` reports the address it was built with, never the one the kernel picked,
+ *        so a port cannot be left to the kernel and has to be searched for instead
+ * */
+fn listenOnLoopback()-> dmut &TcpListener
+    throws TcpError
+{
+    let mut last: (&TcpError)? = none;
+    for i in 0u16 .. 16u16 {
+        {
+            return copy TcpListener(SockAddr(copy Ipv4Addr([127u8, 0u8, 0u8, 1u8]), 34567u16 + i));
+        } catch {
+            err: &TcpError => { last = err?; }
+        }
+    }
+
+    if let Ok(err) = last { throw err; }
+
+    throw copy TcpError(TcpErrorCode::BIND, "no free loopback port in the probed range");
+}
+
+__test { // MID-64: connect() switched the socket to O_NONBLOCK for its select() and never restored it
+    {
+        let dmut server = listenOnLoopback();
+
+        let dmut client = TcpStream::connect(server.addr);
+        assert(!isNonBlocking(client.getHandle()), "connect left the socket non blocking");
+
+        let dmut accepted = server:.accept();
+        client:.send("ping");
+        assert(accepted:.receive!{[c8]} () == "ping", "round trip");
+
+        client:.dispose();
+        accepted:.dispose();
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}

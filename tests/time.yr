@@ -2,6 +2,7 @@ in time;
 
 use std::time::_;
 use std::conv;
+use std::format;
 
 __test {
     let z = (1).seconds().to![c8] ();
@@ -54,4 +55,154 @@ __test {
     assert(d.yearDay == 358);
     assert(d.weekDay != d.yearDay);
     assert(d.to![c8] () == "25/12/26 12:00:00");
+}
+
+__test { // every component accessor, on a duration built from components
+    let d = Duration(w-> 1u64, d-> 2u64, h-> 3u64, m-> 4u64, s-> 5u64, ms-> 6u64, us-> 7u64);
+
+    assert(d.weeks == 1u64, "a");
+    assert(d.days == 2u64, "b");
+    assert(d.hours == 3u64, "c");
+    assert(d.minutes == 4u64, "d");
+    assert(d.seconds == 5u64, "e");
+    assert(d.millis == 6u64, "f");
+    assert(d.micros == 7u64, "g");
+
+    assert(!d.isNegative(), "h");
+    assert(d.getUSec() == 6_007u64, "i");
+}
+
+__test { // the 'allX' accessors flatten the duration down to a single unit
+    let d = Duration(d-> 1u64, h-> 2u64, m-> 3u64, s-> 4u64, ms-> 5u64, us-> 6u64);
+
+    assert(d.allDays == 1u64, "a");
+    assert(d.allHours == 26u64, "b");
+    assert(d.allMinutes == (26u64 * 60u64) + 3u64, "c");
+    assert(d.allSeconds == d.getSec(), "d");
+    assert(d.allMillis == (d.getSec() * 1_000u64) + 5u64, "e");
+    assert(d.allMicros == (d.getSec() * 1_000_000u64) + 5_006u64, "f");
+}
+
+__test { // the builders of std::time::dur agree with the component constructor
+    assert(weeks(2u64) == Duration(w-> 2u64), "a");
+    assert(days(3u64) == Duration(d-> 3u64), "b");
+    assert(hours(4u64) == Duration(h-> 4u64), "c");
+    assert(minutes(5u64) == Duration(m-> 5u64), "d");
+    assert(seconds(6u64) == Duration(s-> 6u64), "e");
+    assert(millis(7u64) == Duration(ms-> 7u64), "f");
+    assert(micros(8u64) == Duration(us-> 8u64), "g");
+}
+
+__test { // adding durations carries the microseconds over into a second
+    assert(seconds(1u64) + seconds(2u64) == seconds(3u64), "a");
+    assert(millis(600u64) + millis(600u64) == Duration(s-> 1u64, ms-> 200u64), "b");
+
+    // adding a negative duration is a subtraction, whichever side it is on
+    assert(seconds(2u64) + (-seconds(1u64)) == seconds(1u64), "c");
+    assert((-seconds(1u64)) + seconds(2u64) == seconds(1u64), "d");
+}
+
+__test { // subtracting durations borrows a second, and goes negative when it has to
+    let x = seconds(2u64) - millis(300u64);
+    assert(x.seconds == 1u64 && x.millis == 700u64, "a");
+    assert(!x.isNegative(), "b");
+
+    let y = millis(300u64) - seconds(2u64);
+    assert(y.seconds == 1u64 && y.millis == 700u64, "c");
+    assert(y.isNegative(), "d");
+
+    // same second, smaller microseconds: the result is the negated difference
+    let z = Duration(s-> 1u64, us-> 1u64) - Duration(s-> 1u64, us-> 2u64);
+    assert(z.isNegative() && z.micros == 1u64, "e");
+
+    // whole seconds apart, no microseconds to borrow
+    assert(seconds(3u64) - seconds(1u64) == seconds(2u64), "f");
+
+    // subtracting a negative duration adds it
+    assert(seconds(1u64) - (-seconds(2u64)) == seconds(3u64), "g");
+
+    // a negative left operand keeps the sign
+    let w = (-seconds(1u64)) - seconds(2u64);
+    assert(w.isNegative() && w.seconds == 3u64, "h");
+}
+
+__test { // dividing a duration, and negating it
+    assert(format("{}", seconds(1u64) / 60u64) == "16ms666µs", format("{}", seconds(1u64) / 60u64));
+    assert(seconds(10u64) / 2u64 == seconds(5u64), "b");
+
+    let n = -seconds(2u64);
+    assert(n.isNegative(), "c");
+    assert(!(-n).isNegative(), "d");
+    assert((-n) == seconds(2u64), "e");
+    assert((-seconds(2u64)) / 2u64 == -seconds(1u64), "f");
+}
+
+__test { // comparing durations, including across the sign
+    assert(seconds(2u64) > seconds(1u64), "a");
+    assert(seconds(1u64) < seconds(2u64), "b");
+    assert(seconds(1u64) == seconds(1u64), "c");
+    assert(millis(2u64) > millis(1u64), "d");
+    assert(millis(1u64) < millis(2u64), "e");
+
+    // a negative duration is below a positive one, and the order flips between two negatives
+    assert((-seconds(1u64)) < seconds(1u64), "f");
+    assert(seconds(1u64) > (-seconds(1u64)), "g");
+    assert((-seconds(1u64)) > (-seconds(2u64)), "h");
+    assert((-seconds(0u64)) == seconds(0u64), "i");
+}
+
+__test { // a duration writes only the components it has, and "0s" when it has none
+    assert(format("{}", Duration(w-> 1u64, d-> 2u64, h-> 3u64, ms-> 89u64)) == "1w2d3h89ms", "a");
+    assert(format("{}", seconds(0u64)) == "0s", "b");
+    assert(format("{}", -seconds(2u64)) == "-2s", "c");
+    assert(format("{}", Duration(m-> 1u64, s-> 1u64)) == "1m1s", "d");
+    assert(format("{}", micros(1u64)) == "1µs", "e");
+
+    // YMI-168 style overflow: 6d23h59m59s999ms999µs plus one microsecond is exactly a week
+    assert(format("{}", Duration(d-> 6u64, h-> 23u64, m-> 59u64, s-> 59u64, ms-> 999u64, us-> 999u64) + micros(1u64)) == "1w", "f");
+}
+
+__test { // an instant is a point on the clock, comparable and readable without calling now()
+    let a = Instant(100u64, 500u64);
+    assert(a.sec == 100u64 && a.usec == 500u64, "a");
+
+    assert(a == Instant(100u64, 500u64), "b");
+    assert(a > Instant(100u64, 499u64), "c");
+    assert(a < Instant(100u64, 501u64), "d");
+    assert(a > Instant(99u64, 999u64), "e");
+    assert(a < Instant(101u64, 0u64), "f");
+
+    assert(Instant::zero() == Instant(0u64, 0u64), "g");
+}
+
+__test { // the duration between two instants, in both directions
+    assert(Instant(10u64, 0u64) - Instant(4u64, 0u64) == seconds(6u64), "a");
+
+    let back = Instant(4u64, 0u64) - Instant(10u64, 0u64);
+    assert(back.isNegative() && back.seconds == 6u64, "b");
+
+    // borrowing a second from the seconds counter
+    let borrow = Instant(10u64, 100u64) - Instant(9u64, 500u64);
+    assert(borrow.getSec() == 0u64 && borrow.allMicros == 999_600u64, "c");
+
+    // same second, smaller microseconds
+    let same = Instant(10u64, 100u64) - Instant(10u64, 500u64);
+    assert(same.isNegative() && same.micros == 400u64, "d");
+
+    // exactly equal instants
+    assert(Instant(10u64, 100u64) - Instant(10u64, 100u64) == seconds(0u64), "e");
+}
+
+__test { // shifting an instant by a duration, forwards and backwards
+    assert(Instant(10u64, 0u64) + seconds(5u64) == Instant(15u64, 0u64), "a");
+    assert(Instant(10u64, 0u64) - seconds(5u64) == Instant(5u64, 0u64), "b");
+
+    // adding a negative duration goes forwards too: the sign is dropped
+    assert(Instant(10u64, 0u64) + (-seconds(5u64)) == Instant(15u64, 0u64), "c");
+
+    // the microseconds carry over into a second
+    let carried = Instant(10u64, 900_000u64) + micros(200_000u64);
+    assert(carried.sec == 11u64, "d");
+
+    assert(format("{}", Instant(2u64, 0u64)) == "2s", format("{}", Instant(2u64, 0u64)));
 }

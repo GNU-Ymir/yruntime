@@ -31,8 +31,8 @@
 
 in tree;
 
+use core;
 use utils::coverage::list;
-use core::types::array;
 
 /**
  * The kind of a coverage location, the third member of every entry of a `CoverageInfo`.
@@ -184,4 +184,109 @@ pub class CoverageTree {
         self._callTree
     }
 
+    /**
+     * Fold the content of `other` into this tree, summing the hit count of every location and
+     * every call-tree edge the two have in common
+     * */
+    pub fn merge(mut self, other: &CoverageTree) {
+        for framePtr, hits in other.frames() {
+            if let Ok(dmut mine) = alias self._frames[framePtr] {
+                for i, h in hits {
+                    if i < mine.len { mine[i] += h; }
+                }
+            } else {
+                self._frames[framePtr] = copy hits;
+            }
+        }
+
+        for func, info in other.funcInfos() {
+            self._funcInfos[func] = info;
+        }
+
+        for caller, callees in other.callTree() {
+            let dmut mine = if let Ok(dmut m) = alias self._callTree[caller] {
+                alias m
+            } else {
+                let dmut m: [*void => usize] = copy [];
+                self._callTree[caller] = alias m;
+                alias m
+            };
+
+            for callee, nb in callees {
+                if let Ok(prev) = mine[callee] {
+                    mine[callee] = prev + nb;
+                } else {
+                    mine[callee] = nb;
+                }
+            }
+        }
+    }
+
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ==================================          THREAD TREES          ==================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+// Every tree ever handed out by `threadTree`. A tree cannot be shared between threads -- the
+// enter/exit stack it maintains is the call stack of one thread -- so each thread fills its own,
+// and they are all kept here to be folded together by `mergedTree` once the tests are over.
+// Without that, everything running on a spawned thread(a `TaskPool` worker, an actor loop) would
+// be reported as never executed.
+@final
+class TreeRegistry {
+
+    let dmut _trees: [&CoverageTree] = [];
+
+    pub self () {}
+
+    pub fn register(mut self)-> dmut &CoverageTree {
+        let dmut res = copy CoverageTree();
+        self._trees ~= [alias res];
+
+        alias res
+    }
+
+    pub fn trees(self)-> [&CoverageTree] {
+        self._trees
+    }
+}
+
+lazy dmut __ALL_TREES__: &TreeRegistry = copy TreeRegistry();
+
+@thread
+lazy dmut __THREAD_TREE__: &CoverageTree = registerTree();
+
+/**
+ * @returns: a fresh tree, recorded in `__ALL_TREES__`
+ * */
+fn registerTree()-> dmut &CoverageTree {
+    atomic {
+        return __ALL_TREES__:.register();
+    }
+}
+
+/**
+ * @returns: the coverage tree of the calling thread
+ * */
+pub fn threadTree()-> dmut &CoverageTree {
+    alias __THREAD_TREE__
+}
+
+/**
+ * @returns: the coverage of every thread of this process, folded into a single tree
+ * */
+pub fn mergedTree()-> &CoverageTree {
+    let dmut res = copy CoverageTree();
+    atomic {
+        for t in __ALL_TREES__.trees() {
+            res:.merge(t);
+        }
+    }
+
+    res
 }

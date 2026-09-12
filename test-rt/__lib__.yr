@@ -32,9 +32,8 @@
 
 mod .utils;
 
+
 use utils::_;
-use std::io;
-use etc::runtime::threads;
 
 /*!
  * ====================================================================================================
@@ -45,20 +44,16 @@ use etc::runtime::threads;
  */
 
 
-@thread
-lazy dmut __COVERAGE__: &CoverageTree = copy CoverageTree();
-lazy dmut __MAIN_TID__: [usize] = copy [0];
-
 extern (C) fn _yrt_unittest_coverage_hit_branch(func: *void, ref frameInfo: CoverageInfo, id: u32) {
-    __COVERAGE__:.hitBranch(func, frameInfo, id);
+    coverage::tree::threadTree():.hitBranch(func, frameInfo, id);
 }
 
 extern (C) fn _yrt_unittest_coverage_hit_enter(func: *void, ref frameInfo: CoverageInfo) {
-    __COVERAGE__:.hitEnter(func, frameInfo);
+    coverage::tree::threadTree():.hitEnter(func, frameInfo);
 }
 
 extern (C) fn _yrt_unittest_coverage_hit_exit(func: *void, ref frameInfo: CoverageInfo) {
-    __COVERAGE__:.hitExit(func, frameInfo);
+    coverage::tree::threadTree():.hitExit(func, frameInfo);
 }
 
 
@@ -88,9 +83,7 @@ extern (C) fn _yrt_register_parameterized_unittest_impl(name: [c8], provider: fn
 
 
 extern (C) fn _yrt_run_unittests_impl(args: [[c8]])-> i32 {
-    __MAIN_TID__[0] = _yrt_thread_self_id();
-
-    if __LAUNCHER__:.run(args, __COVERAGE__) {
+    if __LAUNCHER__:.run(args) {
         return 0;
     }
 

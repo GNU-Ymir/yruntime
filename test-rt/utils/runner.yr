@@ -31,12 +31,16 @@
 
 in runner;
 
-use std::{io, conv, config::_, algorithm::searching, algorithm::sorting, fs::_};
-use std::time::{instant, dur};
+use core::exception::assertion;
 
-use core::exception::_;
-use utils::{colors, filters, args, worker, mailbox};
-use utils::coverage::{tree, store, load, format, conv};
+use utils::{args, colors, filters, mailbox, worker};
+use utils::coverage::{conv, format, load, store, tree};
+
+use std::io;
+use std::algorithm::sorting;
+use std::config::data;
+use std::fs::path;
+use std::time::{dur, instant};
 
 // Number of tests listed by the `--durations` report, slowest first.
 def SLOWEST_COUNT = 10us;
@@ -197,12 +201,11 @@ pub class UnittestLauncher {
 
      * @params:
      *    - args: the list of parameters passed to the program
-     *    - covTree: the code coverage tree that is being filled when branch of code are hit
      *
      * @returns:
      *     true iff all test successfully passed
      * */
-    pub fn run(mut self, args: [[c8]], covTree: &CoverageTree)-> bool {
+    pub fn run(mut self, args: [[c8]])-> bool {
         let testArgs = {
             self.parseArguments(args)
         } catch {
@@ -226,11 +229,11 @@ pub class UnittestLauncher {
         let failed = if testArgs.jobs <= 1 || toLaunch.len <= 1us {
             self.runList(toLaunch, testArgs.hasStopFirst, ref already, ref durations)
         } else {
-            self.runParallel(toLaunch, testArgs, covTree, ref already, ref durations)
+            self.runParallel(toLaunch, testArgs, ref already, ref durations)
         };
 
         TestFilters::dumpSuccessFile(already);
-        self.storeCoverage(covTree);
+        self.storeCoverage();
 
         if testArgs.hasDurations {
             self.reportDurations(durations);
@@ -321,13 +324,12 @@ pub class UnittestLauncher {
      * @params:
      *    - toLaunch: the names of the tests to run, indexed by the assignments sent to workers
      *    - testArgs: the parsed arguments of this run
-     *    - covTree: the code coverage tree that will be filled by each worker's own tests
      *    - already: the map to record each test's success/failure into
      *    - durations: the map to record each test's execution time(in microseconds) into
      *
      * @returns: true iff at least one test failed, or at least one worker died holding one
      * */
-    fn runParallel(self, toLaunch: [[c8]], testArgs: TestRunnerArgument, covTree: &CoverageTree, ref dmut already: [[c8] => bool], ref dmut durations: [[c8] => u64])-> bool {        
+    fn runParallel(self, toLaunch: [[c8]], testArgs: TestRunnerArgument, ref dmut already: [[c8] => bool], ref dmut durations: [[c8] => u64])-> bool {        
         let jobs = normalizeJobs(testArgs.jobs, toLaunch.len);
         let dmut box = {
             copy TestMailbox(jobs)
@@ -345,7 +347,7 @@ pub class UnittestLauncher {
                 let dmut ch = alias box:.channel(k);
                 ch:.setPid(pid);
             } else {
-                self.runWorkerLoop(alias box, k, toLaunch, covTree); // never returns
+                self.runWorkerLoop(alias box, k, toLaunch); // never returns
             }
         }
 
@@ -460,9 +462,8 @@ pub class UnittestLauncher {
      *    - box: the mailbox; every fd this worker does not own is closed on entry
      *    - k: the index of the worker this process just became
      *    - toLaunch: the names of the tests, indexed by the assignments the parent sends
-     *    - covTree: this(forked) process's own code coverage tree
      * */
-    fn runWorkerLoop(self, dmut box: &TestMailbox, k: usize, toLaunch: [[c8]], covTree: &CoverageTree) {
+    fn runWorkerLoop(self, dmut box: &TestMailbox, k: usize, toLaunch: [[c8]]) {
         box:.adoptWorker(k);
 
         {
@@ -486,7 +487,7 @@ pub class UnittestLauncher {
             _ => {} // the parent is gone: wind down like any other worker
         }
 
-        self.storeCoverage(covTree);
+        self.storeCoverage();
 
         TestWorker::exit(0);
     }
@@ -568,12 +569,13 @@ pub class UnittestLauncher {
      * Export this process's coverage tree to its own coverage file(see `CoverageStore::storePid`),
      * so it can be merged with the coverage of other runs when the report is printed
      *
-     * @params:
-     *    - covTree: the code coverage tree that was filled while running the tests
+     * @info: the coverage of every thread of this process is folded together here(see
+     *        `tree::mergedTree`), so what a `TaskPool` worker or an actor loop executed is not
+     *        lost with the thread that ran it
      * */
-    fn storeCoverage(self, covTree: &CoverageTree) {
+    fn storeCoverage(self) {
         {
-            CoverageStore::storePid(covTree);
+            CoverageStore::storePid(tree::mergedTree());
         } catch {
             err => { println("err ", err); }
         }

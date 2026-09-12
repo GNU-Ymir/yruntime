@@ -4,6 +4,8 @@ in actor;
 use std::concurrency::actor;
 use std::config::_;
 use std::io;
+use std::time::_;
+use helpers;
 
 class BobActor over ActorBase {
     // @warning: Actor is not yet attached to system in the ctor
@@ -48,4 +50,62 @@ __test {
     sys:.start(); // start the actor system
     sys:.join(); // Wait for all the actors to die
 
+}
+
+/**
+ * Answers every request with the value it was given back under an "echo" key
+ * */
+class EchoActor over ActorBase {
+    pub self () {}
+
+    pub over onRequest(mut self, msg: &Config)-> &Config {
+        let dmut d = copy Dict();
+        if let Ok(Int(value-> v)) = msg["q"]? {
+            d["echo"] = copy Int(v);
+        } else {
+            d["echo"] = copy Int(-1);
+        }
+
+        return d;
+    }
+}
+
+__test { // a request/response round trip against a local actor
+    let dmut sys = copy ActorSystem();
+    sys:.add("echo", copy EchoActor());
+    sys:.start();
+
+    // the request is issued from here rather than from inside an actor: value() blocks until the
+    // response arrives, and a worker thread is what produces it
+    let dmut rf = sys:.local("echo");
+    let dmut fut = rf:.request(json#{"q" : 42});
+
+    assert(fut.uid != 0u64, "a");
+    assert(fut.timeout > Instant::zero(), "b");
+
+    assert(fut:.value()["echo"].to!{i64} () == 42, "c");
+
+    // the response is kept, so asking again answers immediately instead of waiting twice
+    assert(fut:.value()["echo"].to!{i64} () == 42, "d");
+
+    sys:.kill();
+    sys:.join();
+}
+
+__test { // a request nobody answers expires, and says which request it was
+    let dmut sys = copy ActorSystem();
+    sys:.add("echo", copy EchoActor());
+    sys:.start();
+
+    let dmut rf = sys:.local("nobody");
+    let dmut fut = rf:.request(json#{"q" : 1}, timeout-> dur::millis(200u64));
+
+    { fut:.value(); assert(false, "should have timed out"); }
+    catch {
+        e: &ActorError => { assert(contains(e.msg, "Request timeout"), "a"); }
+        err => { println(err); assert(false, "wrong error"); }
+    }
+
+    sys:.kill();
+    sys:.join();
 }

@@ -170,6 +170,15 @@ Build system is `gyllir` (`gyllir.toml` at the repo root), driven by targets tha
 Ymir compiler, looked up as `gyc` on `PATH` (`compiler = "gyc"` in `gyllir.toml`). CMake
 (`CMakeLists.txt`) has been removed — do not reintroduce a `.build/`/`cmake ..`/`make` flow.
 
+The tree is kept compiling under both the released `gyc` and the in-development one. To switch, edit
+`compiler` in `gyllir.toml` to an absolute path (`compiler = "/home/emile/ymir/gcc/gcc-install/bin/gyc"`)
+and **`gyllir clean` first**: `.target/` is keyed by target and build kind only, never by compiler,
+so switching without a clean relinks objects the other compiler produced. gyllir has no env-var or
+`--compiler` override — the toml key is the only knob. The in-development compiler adds a check the
+released one lacks, `Warning[E3038] : no symbol is resolved through the use of ...`; keep it at zero.
+Note that it only credits a `use` when a symbol is reached through the *shortened* path, so
+`use std::env;` pairs with `setVar(...)`, not with `std::env::setVar(...)`.
+
 Two separate versions live at the repo root, and mixing them up is the classic bug here:
 
 - `VERSION` — midgard's own release (also the git tag each release is cut under), and the version
@@ -259,8 +268,11 @@ comparison like the compiler frontend's test suite — assertions are the pass/f
 `test-rt/__lib__.yr` wires the `_yrt_register_unittest_impl` /
 `_yrt_register_parameterized_unittest_impl` / `_yrt_run_unittests_impl` extern hooks (called by
 compiler-generated `__test` glue) into `utils::runner::UnittestLauncher`, and wires
-`_yrt_unittest_coverage_hit_{branch,enter,exit}` into a global `utils::coverage::tree`
-CoverageTree singleton.
+`_yrt_unittest_coverage_hit_{branch,enter,exit}` into the calling thread's
+`utils::coverage::tree` CoverageTree (`tree::threadTree`). The tree is per-thread because the
+enter/exit stack it maintains is one thread's call stack; every tree handed out is registered in a
+process-global list, and `tree::mergedTree` folds them together at store time, so what ran on a
+`TaskPool` worker or an actor loop is not lost with the thread that ran it.
 
 - `utils::args` — CLI parsing (`TestRunnerArgument`, built on `std::config::ArgumentParser`).
 - `utils::filters` — include/exclude test-name filtering used by the runner, plus reading and
@@ -327,12 +339,26 @@ it rather than dropping the diagnostic.
 ### Coverage/call-tree feature, if you're extending it
 
 The pipeline is: `gyc`-instrumented test binary hits the three `_yrt_unittest_coverage_hit_*`
-externs during execution → `CoverageTree` in `test-rt/__lib__.yr` accumulates hits. At the start
+externs during execution → the calling thread's `CoverageTree` accumulates hits. At the start
 of `UnittestLauncher::run`, unless `--resume` was passed, every existing `.ymir_coverage_*.json`
 is deleted (`resetCoverageUnlessResuming`) so a plain run always starts from a clean slate; with
 `--resume`, old files are left in place so this run's coverage adds to them instead of replacing
-them. After running the tests, this process's tree is written to its own
-`.ymir_coverage_<pid>.json` (`storeCoverage` → `CoverageStore::storePid`). If none of the tests
+them. After running the tests, every thread's tree is folded into one (`tree::mergedTree`) and
+written to this process's own `.ymir_coverage_<pid>.json` (`storeCoverage` →
+`CoverageStore::storePid`).
+
+The denominator is not a source scan: `CoverageConv::rootReport` walks the linked binary's ELF
+symbol table for `__COI__` records — one per function the compiler instrumented — and seeds each
+at zero hits, which is what makes a never-called function show up at 0%. That makes the link order
+load-bearing. The compiler emits a function's `__COI__` record *and* its hit calls in the module
+that declares it, but a library template re-instantiated while compiling `tests/` is emitted a
+second time, hookless, in `midgard_tests.a`; both copies are weak, the linker keeps the first group
+it sees, and the hookless one shadowing the instrumented one reports 0% forever however many tests
+exercise it. gyllir therefore passes the dependency archives `--whole-archive` ahead of the target's
+own object when `-funittest` is in play (`Gyllir/src/gyllir/repo/builder.yr`, `createLinkOptions` →
+`isInstrumented`). To check a build, compare the `__COI__` symbols against the bodies that actually
+call `_yrt_unittest_coverage_hit_enter` — anything in the first set and not the second is
+uncoverable, and the count should be zero. If none of the tests
 failed *and* `--coverage`/`--call-tree` was passed, every `.ymir_coverage_*.json` still on disk
 (this run's, plus any kept from `--resume`) is loaded and merged into one `CoverageReport`
 (`reportCoverage` → `CoverageLoad::listPidFiles`/`loadAll` → `CoverageConv::fromConfigs`/`merge`),
