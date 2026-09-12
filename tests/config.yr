@@ -349,3 +349,28 @@ __test {
         _ => assert(false);
     }
 }
+
+__test { // MID-64: the 'emptyDict' rule of the json macro was never reachable, so '{}' did not parse
+  {
+    let dmut nested = json#{"a": {}, "b": {"c": 1}};
+
+    if let Ok(a: &Dict) = nested["a"]? {
+        assert(a.len == 0us, "a");
+    } else { assert(false, "b"); }
+
+    assert(nested["b"]["c"].to!{i64} () == 1, "c");
+
+    // and inside an array too
+    let dmut inArray = json#{"a": [{}, {"c": 1}]};
+    if let Ok(fst: &Dict) = inArray["a"][0u32]? {
+        assert(fst.len == 0us, "d");
+    } else { assert(false, "e"); }
+
+    assert(inArray["a"][1u32]["c"].to!{i64} () == 1, "f");
+
+    // an empty object survives a dump/parse round trip
+    assert(json::dump(json::parse(json::dump(nested))) == json::dump(nested), "g");
+  } catch {
+    err => { println(err); assert(false, "threw"); }
+  }
+}
