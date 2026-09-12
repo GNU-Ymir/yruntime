@@ -1,0 +1,76 @@
+in errors;
+
+use core::exception;
+
+use std::format;
+use std::fs::errors;
+use std::config::errors;
+use std::conv::errors;
+use std::format::errors;
+use std::syntax::errors;
+use std::net::tcp;
+use std::net::http;
+use std::concurrency::actor;
+use helpers;
+
+// Every error below is built by hand rather than provoked: what is under test is the text each
+// one renders itself as, not the code path that raises it. Under DEBUG_LIB a constructed
+// exception carries a stack trace, so the assertions look for the message inside the rendering
+// instead of comparing the whole of it.
+
+__test { // std::fs
+    assert(contains(format("{}", copy FsError(FsErrorCode::NOT_FOUND, "no such file")), "no such file"), "a");
+    assert(contains(format("{}", copy FsError(FsErrorCode::NOT_FOUND, "no such file")), "NOT_FOUND"), "b");
+    assert(contains(format("{}", copy FsError(FsErrorCode::PERMISSION_DENIED, "nope")), "PERMISSION_DENIED"), "c");
+    assert(contains(format("{}", copy FsError(FsErrorCode::FILE_CLOSED, "")), "FsError"), "d");
+}
+
+__test { // std::config
+    assert(contains(format("{}", copy ConfigError()), "ConfigError"), "a");
+    assert(contains(format("{}", copy ConfigOutError(3us, 7u32)), "3 <= 7"), "b");
+    assert(contains(format("{}", copy ConfigKeyError("missing")), "(missing)"), "c");
+}
+
+__test { // std::conv, with and without a sub error
+    let plain = format("{}", copy CastFailure(i32::typeinfo, [c8]::typeinfo));
+    assert(contains(plain, "CastFailure"), "a");
+    assert(contains(plain, " => "), "b");
+
+    let sub: (&Exception)? = (copy ConfigKeyError("inner"))?;
+    let nested = format("{}", copy CastFailure(i32::typeinfo, [c8]::typeinfo, subError-> sub));
+    assert(contains(nested, "ConfigKeyError"), "c");
+    assert(contains(nested, "(inner)"), "d");
+}
+
+__test { // std::format, with and without a message and a sub error
+    assert(contains(format("{}", copy FormatError(2us, "bad width")), "Invalid formatter 2"), "a");
+    assert(contains(format("{}", copy FormatError(2us, "bad width")), "bad width"), "b");
+    assert(contains(format("{}", copy FormatError(0us, "")), "Invalid formatter 0"), "c");
+
+    let sub: (&Exception)? = (copy FormatError(0us, "inner"))?;
+    let nested = format("{}", copy FormatError(1us, "outer", subError-> sub));
+    assert(contains(nested, "outer"), "d");
+    assert(contains(nested, "inner"), "e");
+}
+
+__test { // std::syntax
+    let err = format("{}", copy SyntaxError("unexpected token", 12us, 34us));
+    assert(contains(err, "SyntaxError (12,34)"), "a");
+    assert(contains(err, "unexpected token"), "b");
+}
+
+__test { // std::net::tcp -- reachable without ever opening a socket
+    assert(contains(format("{}", copy TcpError(TcpErrorCode::CONNECT, "refused")), "CONNECT"), "a");
+    assert(contains(format("{}", copy TcpError(TcpErrorCode::CONNECT, "refused")), "refused"), "b");
+    assert(contains(format("{}", copy TcpError(TcpErrorCode::SOCKET_CLOSED, "")), "SOCKET_CLOSED"), "c");
+}
+
+__test { // std::net::http
+    assert(contains(format("{}", copy HttpError(404u32, msg-> "not found")), "404"), "a");
+    assert(contains(format("{}", copy HttpError(404u32, msg-> "not found")), "not found"), "b");
+    assert(contains(format("{}", copy HttpError(500u32)), "500"), "c");
+}
+
+__test { // std::concurrency::actor
+    assert(contains(format("{}", copy ActorError("no such actor")), "no such actor"), "a");
+}
