@@ -605,6 +605,10 @@ pub class TcpStream {
                 throw copy errors::TcpError(errors::TcpErrorCode::SOCKET_CREATION, "failed to connect: (errno = " ~ errStr ~ ")");
             }
         }
+
+        // the socket was only made non blocking to wait on select above, and the stream handed to
+        // the caller is expected to block like any other
+        self:.setBlocking();
     }
 
     prv fn setNonBlocking(mut self) {
@@ -612,7 +616,7 @@ pub class TcpStream {
         fcntl(self._sockFd, FileFlags::F_SETFL, old | SocketFlag::O_NONBLOCK);
     }
 
-    prv fn setBlockling(mut self) {
+    prv fn setBlocking(mut self) {
         let old = fcntl(self._sockFd, FileFlags::F_GETFL, 0);
         fcntl(self._sockFd, FileFlags::F_SETFL, old & !SocketFlag::O_NONBLOCK);
     }
