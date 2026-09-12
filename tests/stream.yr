@@ -1,6 +1,10 @@
 in stream;
 
+use core::exception;
+
 use std::stream;
+use std::fs::errors;
+use std::algorithm::searching;
 
 class A {
     let x: i32 = 0;
@@ -234,4 +238,32 @@ __test { // tuples, options and maps have writers of their own
     let dmut map = copy StringStream();
     map:.write(copy ["a" => 1]);
     assert(map[] == "[a => 1]", map[]);
+}
+
+__test { // the aggregate writers, on the instantiations the library itself carries
+    // an option of an exception: this is the form std::conv and std::format render sub-errors with
+    let dmut s = copy StringStream();
+    let err: (&Exception)? = (copy FsError(FsErrorCode::NOT_FOUND, "nope"))?;
+    s:.write(err);
+    assert(s[].startsWith("Ok("), s[]);
+
+    let dmut empty = copy StringStream();
+    let nothing: (&Exception)? = none;
+    empty:.write(nothing);
+    assert(empty[] == "Err()", empty[]);
+
+    // a string to string map, the form a config dumper writes
+    let dmut map = copy StringStream();
+    map:.write(copy ["a" => "b"]);
+    assert(map[] == "[a => b]", map[]);
+
+    // a record that declares the default Streamable gets the typeid plus its fields
+    let dmut rec = copy StringStream();
+    rec:.write(i32::typeinfo);
+    assert(rec[].startsWith("core::types::info::TypeInfo("), rec[]);
+
+    // a record with no Streamable at all -- a raw C binding -- has its fields expanded in place
+    let dmut raw = copy StringStream();
+    raw:.write(etc::c::time::tm_t());
+    assert(raw[].startsWith("etc::c::time::tm_t("), raw[]);
 }
