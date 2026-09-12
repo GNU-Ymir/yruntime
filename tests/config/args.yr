@@ -333,3 +333,34 @@ __test { // the errors carry their key into their own text
     assert(contains(format("{}", copy MalformedArgument("count", none)), "MalformedArgument (count)"), "d");
     assert(contains(format("{}", copy MalformedArgument("count", (copy MissingArgument("deep"))?)), "MissingArgument (deep)"), "e");
 }
+
+__test { // MID-64: an unsigned option is an int option, it used to be parsed as a float
+    {
+        let parser = (copy ArgumentParser())
+            :.option!{u64} ("count")
+            :.option!{[u32]} ("nums")
+            :.position!{u64} ("pos");
+
+        let cfg = parser.parse(copy ["./a.out", "7", "--count", "12", "--nums", "1", "2"]);
+        assert(cfg["count"].to!{u64} () == 12u64, "a");
+        assert(cfg["nums"].to!{[u32]} () == [1u32, 2u32], "b");
+        assert(cfg["pos"].to!{u64} () == 7u64, "c");
+
+        assert(parser.getUsage() == "usage [--count int] [--nums [int...]] int(pos)", parser.getUsage());
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test { // a floating option is still a float option
+    {
+        let parser = (copy ArgumentParser()):.option!{f64} ("ratio"):.option!{[f64]} ("ratios");
+
+        let cfg = parser.parse(copy ["./a.out", "--ratio", "1.5", "--ratios", "2.5", "3.5"]);
+        assert(cfg["ratio"].to!{f64} () == 1.5, "a");
+        assert(cfg["ratios"].to!{[f64]} () == [2.5, 3.5], "b");
+        assert(parser.getUsage() == "usage [--ratio float] [--ratios [float...]]", parser.getUsage());
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
