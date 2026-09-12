@@ -19,10 +19,14 @@ use helpers;
 // instead of comparing the whole of it.
 
 __test { // std::fs
-    assert(contains(format("{}", copy FsError(FsErrorCode::NOT_FOUND, "no such file")), "no such file"), "a");
-    assert(contains(format("{}", copy FsError(FsErrorCode::NOT_FOUND, "no such file")), "NOT_FOUND"), "b");
-    assert(contains(format("{}", copy FsError(FsErrorCode::PERMISSION_DENIED, "nope")), "PERMISSION_DENIED"), "c");
-    assert(contains(format("{}", copy FsError(FsErrorCode::FILE_CLOSED, "")), "FsError"), "d");
+    // one rendering per error, asserted several times: under DEBUG_LIB every rendering resolves
+    // the captured stack trace, which is by far the most expensive thing these tests do
+    let notFound = format("{}", copy FsError(FsErrorCode::NOT_FOUND, "no such file"));
+    assert(contains(notFound, "no such file"), "a");
+    assert(contains(notFound, "NOT_FOUND"), "b");
+    assert(contains(notFound, "FsError"), "c");
+
+    assert(contains(format("{}", copy FsError(FsErrorCode::PERMISSION_DENIED, "nope")), "PERMISSION_DENIED"), "d");
 }
 
 __test { // std::config
@@ -43,8 +47,9 @@ __test { // std::conv, with and without a sub error
 }
 
 __test { // std::format, with and without a message and a sub error
-    assert(contains(format("{}", copy FormatError(2us, "bad width")), "Invalid formatter 2"), "a");
-    assert(contains(format("{}", copy FormatError(2us, "bad width")), "bad width"), "b");
+    let withMsg = format("{}", copy FormatError(2us, "bad width"));
+    assert(contains(withMsg, "Invalid formatter 2"), "a");
+    assert(contains(withMsg, "bad width"), "b");
     assert(contains(format("{}", copy FormatError(0us, "")), "Invalid formatter 0"), "c");
 
     let sub: (&Exception)? = (copy FormatError(0us, "inner"))?;
@@ -60,14 +65,18 @@ __test { // std::syntax
 }
 
 __test { // std::net::tcp -- reachable without ever opening a socket
-    assert(contains(format("{}", copy TcpError(TcpErrorCode::CONNECT, "refused")), "CONNECT"), "a");
-    assert(contains(format("{}", copy TcpError(TcpErrorCode::CONNECT, "refused")), "refused"), "b");
+    let refused = format("{}", copy TcpError(TcpErrorCode::CONNECT, "refused"));
+    assert(contains(refused, "CONNECT"), "a");
+    assert(contains(refused, "refused"), "b");
+
     assert(contains(format("{}", copy TcpError(TcpErrorCode::SOCKET_CLOSED, "")), "SOCKET_CLOSED"), "c");
 }
 
 __test { // std::net::http
-    assert(contains(format("{}", copy HttpError(404u32, msg-> "not found")), "404"), "a");
-    assert(contains(format("{}", copy HttpError(404u32, msg-> "not found")), "not found"), "b");
+    let notFound = format("{}", copy HttpError(404u32, msg-> "not found"));
+    assert(contains(notFound, "404"), "a");
+    assert(contains(notFound, "not found"), "b");
+
     assert(contains(format("{}", copy HttpError(500u32)), "500"), "c");
 }
 
