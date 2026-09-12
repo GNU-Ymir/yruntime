@@ -1,6 +1,8 @@
 in conv;
 
 use std::conv;
+use std::conv::utf;
+use helpers;
 
 __test {
     let x = to![c32] (12);
@@ -204,4 +206,69 @@ __test {
     let str = to!{[c8]} (3.5, prec-> 1u32) ~ "!";
 
     assert(str == "3.5!", "YMI-186: expected the append to land after the digits");
+}
+
+/**
+ * std::conv::utf -- the concrete encoders/decoders behind the 'to' conversions above
+ * */
+
+__test { // the length of a utf8 code point is read off its lead byte
+    assert(utf::getUtf8CodePointSize(opaque('a')) == 1u32, "a");
+    assert(utf::getUtf8CodePointSize(opaque(cast!c8(0xc3u8))) == 2u32, "b");
+    assert(utf::getUtf8CodePointSize(opaque(cast!c8(0xe2u8))) == 3u32, "c");
+    assert(utf::getUtf8CodePointSize(opaque(cast!c8(0xf0u8))) == 4u32, "d");
+
+    // a continuation byte is not a lead byte, and is reported as the widest form
+    assert(utf::getUtf8CodePointSize(opaque(cast!c8(0x80u8))) == 4u32, "e");
+}
+
+__test { // a utf32 code point is written as one to four utf8 bytes
+    let dmut ret = ['\u{0}' ; 4];
+
+    assert(utf::toUtf8(opaque('a'c32), ref ret) == 1u32, "a");
+    assert(ret[0] == 'a', "b");
+
+    assert(utf::toUtf8(opaque('é'c32), ref ret) == 2u32, "c");
+    assert(utf::toUtf8(opaque('コ'c32), ref ret) == 3u32, "d");
+    assert(utf::toUtf8(opaque('😉'c32), ref ret) == 4u32, "e");
+
+    // beyond the last legal code point, the replacement character is written instead
+    assert(utf::toUtf8(opaque(cast!c32(0x110000u32)), ref ret) == 3u32, "f");
+}
+
+__test { // a lone utf16 surrogate is not a code point of its own
+    let dmut ret = ['\u{0}' ; 4];
+
+    assert(utf::toUtf8(opaque('a'c16), ref ret) == 1u32, "a");
+    assert(utf::toUtf8(opaque('コ'c16), ref ret) == 3u32, "b");
+
+    // 0xD83D is the high half of a surrogate pair: alone it decodes to nothing
+    assert(utf::toUtf8(opaque(cast!c16(0xD83Du16)), ref ret) == 0u32, "c");
+}
+
+__test { // a utf16 surrogate pair decodes together, consuming both halves
+    let dmut ret = ['\u{0}' ; 4];
+
+    // a non-surrogate lead consumes one char only, whatever follows it
+    let (read, written) = utf::toUtf8((opaque('a'c16), opaque('b'c16)), ref ret);
+    assert(read == 1u32 && written == 1u32, "a");
+
+    // U+1F609 is encoded as D83D DE09 in utf16, and as four bytes in utf8
+    let (read2, written2) = utf::toUtf8((opaque(cast!c16(0xD83Du16)), opaque(cast!c16(0xDE09u16))), ref ret);
+    assert(read2 == 2u32 && written2 == 4u32, "b");
+    assert(ret[0 .. 4] == "😉", "c");
+}
+
+__test { // decoding a utf32/utf16 string down to utf8, and encoding it back
+    assert(utf::decode("héllo 😉"s32) == "héllo 😉", "a");
+    assert(utf::decode("héllo"s16) == "héllo", "b");
+    assert(utf::decode(""s32) == "", "c");
+    assert(utf::decode(""s16) == "", "d");
+
+    assert(utf::encode!{c32} ("héllo 😉") == "héllo 😉"s32, "e");
+    assert(utf::encode!{c16} ("héllo") == "héllo"s16, "f");
+
+    // a code point outside the BMP needs a surrogate pair in utf16, and survives the round trip
+    assert(utf::decode(utf::encode!{c16} ("😉")) == "😉", "g");
+    assert(utf::decode(utf::encode!{c32} ("😉")) == "😉", "h");
 }
