@@ -31,6 +31,21 @@ The branch currently checked out is generally named `MID-<issue_number>-<short-d
 (e.g. `MID-60-plane-ci`) — the `MID-<issue_number>` part is the Plane work item key, so it
 can be used to look up the item this branch's work is tracked against.
 
+## Policy
+
+Consice comment:
+- only describe what the functions do, not what the current work is adding
+- don't write comment inside a code unless it's absolutely necessary for understanding
+- a comment of more than 3 lines is generally too verbose
+
+Commit policy:
+- split work in logical commits
+- rewrite history when a new commit it modifying something that was introduced by another commit of the same branch
+- There's no need for tests to pass, and code to compile between commits as long as the last commit of the branch compiles and test succeed
+- don't add co-authors
+- commit message are just one line long
+
+
 ## What this is
 
 Midgard is the standard library for GNU-Ymir (`gyc`), written in Ymir (`.yr`) with a small C
@@ -241,16 +256,20 @@ comparison like the compiler frontend's test suite — assertions are the pass/f
 
 ### `test-rt/` — the test runner and coverage system
 
-`test-rt/__lib__.yr` wires the `_yrt_register_unittest_impl` / `_yrt_run_unittests_impl`
-extern hooks (called by compiler-generated `__test` glue) into `utils::runner::UnittestLauncher`,
-and wires `_yrt_unittest_coverage_hit_{branch,enter,exit}` into a global `utils::coverage::tree`
+`test-rt/__lib__.yr` wires the `_yrt_register_unittest_impl` /
+`_yrt_register_parameterized_unittest_impl` / `_yrt_run_unittests_impl` extern hooks (called by
+compiler-generated `__test` glue) into `utils::runner::UnittestLauncher`, and wires
+`_yrt_unittest_coverage_hit_{branch,enter,exit}` into a global `utils::coverage::tree`
 CoverageTree singleton.
 
 - `utils::args` — CLI parsing (`TestRunnerArgument`, built on `std::config::ArgumentParser`).
 - `utils::filters` — include/exclude test-name filtering used by the runner, plus reading and
   writing the `.ymir_test_success` file behind `--resume`.
 - `utils::colors` — terminal color helpers for pass/fail/coverage output.
-- `utils::runner` — `UnittestLauncher`: registers tests, runs them (respecting filters,
+- `utils::runner` — `UnittestLauncher`: registers tests (a parameterized `__test` as its two
+  frames, which `expandParameterizedTests` turns into one `module::test[index]` entry per
+  parameter set — from `run`, since a provider called from the package ctor that registers it
+  would run allocating Ymir against an uninitialised GC), runs them (respecting filters,
   stop-first, resume-from-`.ymir_test_success`, and `-j`/`--jobs` parallelism across
   `utils::worker::TestWorker` subprocesses), and drives coverage/call-tree reporting.
 - `utils::worker` — `TestWorker`: fork/waitpid/exit/signal-decoding wrappers, no `execvp`, unlike

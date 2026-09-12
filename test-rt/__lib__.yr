@@ -76,11 +76,21 @@ extern (C) fn _yrt_register_unittest_impl(name: [c8], func: fn ()-> void) {
     __LAUNCHER__:.register(name, func);
 }
 
+/**
+ * Register a parameterized `__test`: `provider` produces its parameter sets, `func` is called
+ * once per element with that slice and the index of the element.
+ *
+ * @info: the element type is unknown here, hence `[u8]` -- every slice has the same layout
+ * */
+extern (C) fn _yrt_register_parameterized_unittest_impl(name: [c8], provider: fn ()-> [u8], func: fn ([u8], usize)-> void) {
+    __LAUNCHER__:.registerParameterized(name, provider, func);
+}
+
 
 extern (C) fn _yrt_run_unittests_impl(args: [[c8]])-> i32 {
     __MAIN_TID__[0] = _yrt_thread_self_id();
 
-    if __LAUNCHER__.run(args, __COVERAGE__) {
+    if __LAUNCHER__:.run(args, __COVERAGE__) {
         return 0;
     }
 
