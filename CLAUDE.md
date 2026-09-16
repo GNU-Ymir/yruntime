@@ -321,11 +321,14 @@ spawn processes or write files.
 
 Because an example is a fragment rather than a whole program, the extractor wraps it: top level
 declarations found in the block (`use`, `fn`, `class`, `record`, ...) are hoisted out and the rest
-goes into a `__test` body, which - unlike `fn main` - needs no `throws` annotation. Two `use` lines
-are injected on top: `std::io`, and the module the documented symbol lives in (walking up to the
-closest publicly declared parent, since a submodule declared `mod ::stream;` is not importable on
-its own). Everything else an example needs it must import itself, the way a reader copying it
-would have to.
+goes into a `__test` body, which - unlike `fn main` - needs no `throws` annotation. The module the
+documented symbol lives in is injected on top (walking up to the closest publicly declared parent,
+since a submodule declared `mod ::stream;` is not importable on its own), plus `use std::io;` when
+the block calls print/println - neither when the block imports it already. Because gyc credits a
+`use` only for a symbol reached through the shortened path, an example made only of operator or
+UFCS calls gets the injected module reported unused (E3038); `check-examples.sh` then drops that
+line - it is marked `// injected` - and compiles the example again before calling it broken.
+Everything else an example needs it must import itself, the way a reader copying it would have to.
 
 A bare ```` ``` ```` fence (or ```` ```ymir ````/```` ```yr ````) is compiled; any other info
 string is the opt-out marker for a block that is not meant to compile - a grammar in
