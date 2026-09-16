@@ -9,12 +9,15 @@
 #
 # Blocks are wrapped so that a bare sequence of statements is a valid program: top level
 # declarations found in the block are hoisted out, the rest goes into a `__test` body (which,
-# unlike `fn main`, needs no `throws` annotation). `use std::io;` and the documented module
-# itself are injected, since doc examples elide the imports the reader is expected to have.
+# unlike `fn main`, needs no `throws` annotation). The documented module itself is injected, and
+# `use std::io;` too when the block calls print/println and does not import it already, since doc
+# examples elide the imports the reader is expected to have. Neither is injected twice: gyc
+# reports an unused `use` as a fatal diagnostic.
 #
 # Required variables: OUTDIR (where the .yr files are written), IMPORT (the module path a reader
-# would `use` to reach the documented symbols, injected into every block), PREFIX (a filename
-# stem identifying the source file).
+# would `use` to reach the documented symbols, injected into every block), INJECTED (the comment
+# marking that injected line, so the caller can drop it again), PREFIX (a filename stem
+# identifying the source file).
 
 function reset_block() {
     nlines = 0
@@ -29,6 +32,18 @@ function is_decl_start(l) {
     return l ~ /^(pub |prv |use |mod |in |fn |class |record |enum |trait |def |static |extern|import |aka |macro |union |lazy |template |__test|@)/
 }
 
+function uses_io(l) {
+    return l ~ /(^|[^A-Za-z0-9_.])e?print(ln)?[ \t]*\(/
+}
+
+function imports(l, m) {
+    return l ~ ("^[ \t]*use[ \t]+" m "[ \t]*;")
+}
+
+function imports_io(l) {
+    return l ~ /^[ \t]*use[ \t].*(^|[^A-Za-z0-9_])io([^A-Za-z0-9_]|$)/
+}
+
 function count_braces(l,   i, c, n) {
     n = 0
     for (i = 1; i <= length(l); i++) {
@@ -39,7 +54,7 @@ function count_braces(l,   i, c, n) {
     return n
 }
 
-function emit_block(src, startline,   i, out, l, depth, indecl, opened, ndecl, nbody, dl, bl) {
+function emit_block(src, startline,   i, out, l, depth, indecl, opened, ndecl, nbody, dl, bl, needsio, hasio, hasimport) {
     out = sprintf("%s/%s_%d.yr", OUTDIR, PREFIX, startline)
 
     ndecl = 0; nbody = 0; indecl = 0; depth = 0; opened = 0
@@ -58,9 +73,16 @@ function emit_block(src, startline,   i, out, l, depth, indecl, opened, ndecl, n
         }
     }
 
+    needsio = 0; hasio = (IMPORT == "std::io"); hasimport = 0
+    for (i = 0; i < nlines; i++) {
+        if (uses_io(lines[i])) needsio = 1
+        if (imports_io(lines[i])) hasio = 1
+        if (IMPORT != "" && imports(lines[i], IMPORT)) hasimport = 1
+    }
+
     printf("// extracted from %s:%d by dev/check-examples.sh - do not edit\n", src, startline) > out
-    print "use std::io;" > out
-    if (IMPORT != "" && IMPORT != "std::io") printf("use %s;\n", IMPORT) > out
+    if (needsio && !hasio) print "use std::io;" > out
+    if (IMPORT != "" && !hasimport) printf("use %s; %s\n", IMPORT, INJECTED) > out
     for (i = 0; i < ndecl; i++) print dl[i] > out
     print "" > out
     print "__test {" > out

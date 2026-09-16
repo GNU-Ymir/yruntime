@@ -69,6 +69,8 @@ import_path () {
     echo "$rel" | sed 's|/|::|g'
 }
 
+INJECTED="// injected"
+
 rm -rf "$OUTDIR"
 mkdir -p "$OUTDIR"
 MANIFEST="$OUTDIR/manifest.tsv"
@@ -81,6 +83,7 @@ for file in $(find "$SRCDIR" -name '*.yr' | sort); do
     esac
     awk -v OUTDIR="$OUTDIR" \
         -v IMPORT="$(import_path "$file")" \
+        -v INJECTED="$INJECTED" \
         -v PREFIX="$(echo "${file#"$SRCDIR"/}" | sed 's|[/.]|_|g')" \
         -f "$SCRIPT_DIR/extract-examples.awk" "$file" >> "$MANIFEST"
 done
@@ -92,8 +95,19 @@ echo "check-examples: $CHECKED example(s) to compile, $SKIPPED skipped, -j $JOBS
 
 # gyc treats an unused symbol as a fatal diagnostic (it reports it as a warning, then stops), so
 # an example that leaves a value unused does not compile for a reader either - no leniency here,
-# a failing exit status is a failing example.
-COMPILE="$GYC -fsyntax-only -funittest -nostdinc -nomidgardlib -I'$SRCDIR' \"\$1\" > \"\$1.log\" 2>&1 || echo \"\$1\" >> '$OUTDIR/failed.txt'"
+# a failing exit status is a failing example. The exception is the module import the extractor
+# injects: an example made only of operator or UFCS calls resolves them without it, and gyc
+# credits a `use` only for a symbol reached through the shortened path - so on an unused symbol
+# (E3038) the injected line is dropped and the example compiled again before calling it broken.
+COMPILE="
+compile () { $GYC -fsyntax-only -funittest -nostdinc -nomidgardlib -I'$SRCDIR' \"\$1\" > \"\$1.log\" 2>&1; }
+compile \"\$1\" && exit 0
+if grep -q 'E3038' \"\$1.log\"; then
+    grep -v '$INJECTED' \"\$1\" > \"\$1.part\" && mv \"\$1.part\" \"\$1\"
+    compile \"\$1\" && exit 0
+fi
+echo \"\$1\" >> '$OUTDIR/failed.txt'
+"
 
 grep '	checked$' "$MANIFEST" | cut -f1 | \
     xargs -r -P "$JOBS" -I@ sh -c "$COMPILE" sh @ \
@@ -111,7 +125,7 @@ if [ -f "$OUTDIR/failed.txt" ]; then
         if [ "$VERBOSE" -eq 1 ]; then
             sed 's/\x1b\[[0-9;]*m//g' "$gen.log"
         else
-            sed 's/\x1b\[[0-9;]*m//g' "$gen.log" | grep -E 'Error : |Warning : ' | head -3
+            sed 's/\x1b\[[0-9;]*m//g' "$gen.log" | grep -E '^(Error|Warning)' | head -3
         fi
     done < "$OUTDIR/failed.txt"
 fi
