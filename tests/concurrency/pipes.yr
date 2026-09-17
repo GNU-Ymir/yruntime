@@ -16,7 +16,7 @@ fn isNonBlocking(fd: i32)-> bool {
     (flags & SocketFlag::O_NONBLOCK) != 0u32
 }
 
-__test { // MID-64: setBlocking used '|' where it needed '&', so it set every other flag instead
+__test readingEndBlocking { // MID-64: setBlocking used '|' where it needed '&', so it set every other flag instead
     {
         let dmut p = copy IOPipe::new();
         let fd = p.ipipe.getHandle();
@@ -41,7 +41,7 @@ __test { // MID-64: setBlocking used '|' where it needed '&', so it set every ot
     }
 }
 
-__test { // the same on the writing end
+__test writingEndBlocking { // the same on the writing end
     {
         let dmut p = copy IOPipe::new();
         let fd = p.opipe.getHandle();
@@ -58,7 +58,7 @@ __test { // the same on the writing end
     }
 }
 
-__test { // a closed pipe ignores both, rather than calling fcntl on a dead descriptor
+__test closedPipeBlocking { // a closed pipe ignores both, rather than calling fcntl on a dead descriptor
     let dmut p = copy IPipe();
     assert(!p.isOpen(), "a");
 

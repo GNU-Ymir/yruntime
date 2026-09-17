@@ -1,20 +1,20 @@
 use std::syntax::tokenizer;
 
-__test {
+__test tokenizeArray {
     let mut tzer = Tokenizer!{c8} (tokens-> ["(", ")", "=>", ",", " ", "="]);
     let str = "(x, y) => x = y";
     let lst = tzer.tokenize(str);
     assert(lst == ["(", "x", ",", " ", "y", ")", " ", "=>", " ", "x", " ", "=", " ", "y"]);
 }
 
-__test {
+__test tokenizeSlice {
     let mut tzer = Tokenizer!{c8} (tokens-> copy ["(", ")", "=>", ",", " ", "="]);
     let str = "(x, y) => x = y";
     let lst = tzer.tokenize(str);
     assert(lst == ["(", "x", ",", " ", "y", ")", " ", "=>", " ", "x", " ", "=", " ", "y"]);
 }
 
-__test {
+__test insertLongestMatch {
     let mut tzer = Tokenizer!{c8} ();
     tzer:.insert("+");
     tzer:.insert("+=");
@@ -25,7 +25,7 @@ __test {
 }
 
 
-__test {
+__test nextLength {
     let mut tzer = Tokenizer!{c8} (tokens-> ["+", " "]);
     let mut str = "fst + scd";
     let mut len = tzer.next(str)._0;
@@ -52,7 +52,7 @@ __test {
     assert(len == 0u64);
 }
 
-__test {
+__test skipAndCommentFlags {
     let mut tzer = Tokenizer!{c8} (tokens-> ["+=", "+"]);
     tzer:.insert(" ", isSkip-> true);
     tzer:.insert("#", isComment-> "\n");
@@ -77,7 +77,7 @@ __test {
 use std::syntax::regex;
 use std::syntax::errors;
 
-__test {
+__test regexMatches {
     let r = copy Regex("@[a-zA-Z0-9_]+");
 
     let lst = r.apply("@alice, @bob");
@@ -90,7 +90,7 @@ __test {
     assert(lst2[0]._0 == 0us && lst2[0]._1 == "@charlie");
 }
 
-__test {
+__test regexDigits {
     let r = copy Regex("[0-9]+");
     let lst = r.apply("a12b345");
 
@@ -99,7 +99,7 @@ __test {
     assert(lst[1]._0 == 4us && lst[1]._1 == "345");
 }
 
-__test {
+__test regexEmptyMatch {
     // a pattern matching the empty string used to loop forever, one empty match
     // is reported per position, and the scan then steps over one char
     let r = copy Regex("[0-9]*");
@@ -111,7 +111,7 @@ __test {
     }
 }
 
-__test {
+__test regexStarEmptyMatches {
     let r = copy Regex("a*");
     let lst = r.apply("baaac");
 
@@ -122,7 +122,7 @@ __test {
     assert(lst[3]._0 == 5us && lst[3]._1 == "");
 }
 
-__test {
+__test regexEmptyText {
     let r = copy Regex("x?");
     let lst = r.apply("");
 
@@ -130,7 +130,7 @@ __test {
     assert(lst[0]._0 == 0us && lst[0]._1 == "");
 }
 
-__test {
+__test regexEmptyMatchUtf8 {
     // stepping over an empty match must skip a whole utf8 code point, never land
     // in the middle of one ('é' is encoded on two c8)
     let r = copy Regex("x?");
@@ -142,7 +142,7 @@ __test {
     assert(lst[2]._0 == 3us);
 }
 
-__test {
+__test regexCaretAnchorsText {
     // '^' anchors the beginning of the text, not the offset the scan resumes from
     let r = copy Regex("^a");
     let lst = r.apply("aaa");
@@ -151,7 +151,7 @@ __test {
     assert(lst[0]._0 == 0us && lst[0]._1 == "a");
 }
 
-__test {
+__test regexCaretOnly {
     let r = copy Regex("^");
     let lst = r.apply("ab");
 
@@ -159,7 +159,7 @@ __test {
     assert(lst[0]._0 == 0us && lst[0]._1 == "");
 }
 
-__test {
+__test regexUnclosedClass {
     let mut failed = false;
     {
         let _ = copy Regex("[unclosed");
