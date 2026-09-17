@@ -203,7 +203,8 @@ Two separate versions live at the repo root, and mixing them up is the classic b
 - Run tests: `./midgard_tests` (add `-f <substr>` to filter, `-sf` to stop on first failure,
   `--resume` to re-run only previously-failed tests, `-cov` for a coverage report, `-ct` for a
   call-tree report, `-m` to list each file's uncovered lines under the coverage report, `-d` to
-  list the slowest tests once the run is over, `-j N` to run in N worker subprocesses — see
+  list the slowest tests once the run is over, `-l` to list the tests `-f`/`--resume`
+  select without running them, `-j N` to run in N worker subprocesses — see
   `test-rt/utils/args.yr`).
 - `sudo ./install` copies `midgard/**/*.yr` into `/usr/include/ymir/<midgardShortVersion>` and the
   `gyc` internal include dir (version component from `VERSION`, GCC major from `YMIR_VERSION`).
