@@ -32,9 +32,11 @@
 
 in args;
 
-use core::exception::assertion;
+use etc::c::process;
 
 use std::config::_;
+use std::config::args::errors;
+use std::io;
 
 pub record TestRunnerArgument {
 
@@ -71,10 +73,9 @@ pub record TestRunnerArgument {
     /**
      * @params:
      *    - args: the list of argument passed to the command line
+     * @info: exits the process after printing the help(status 0) or a parsing error(status 1)
      */
-    pub self(args: [[c8]])
-        throws AssertError
-    {
+    pub self(args: [[c8]]) {
         let parser = (copy ArgumentParser())
             :.option!{[c8]} ("filter", short-> "f", comments-> "unittest filter")
             :.flag("stop-first", short-> "sf", comments-> "stop after first test failure")
@@ -129,9 +130,14 @@ pub record TestRunnerArgument {
             }
 
         } catch {
+            HelpRequestError() => {
+                println(parser.getHelp());
+                flush();
+                process::_yrt_exit(0);
+            }
             err => {
-                std::io::eprintln(parser.explain(err));
-                assert(false);
+                eprintln(parser.explain(err));
+                process::_yrt_exit(1);
             }
         }
     }
