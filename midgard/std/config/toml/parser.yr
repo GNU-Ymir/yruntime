@@ -74,18 +74,7 @@ pub record TomlParser {
                     self._lex:.rewind(expand cursor); // rewind the read
                 }
 
-                let (name, lName, cName) = self._lex:.next();
-                let names = self._nameTzer.tokenizeWithoutSkips(name);
-                if (names.len == 0) {
-                    throw copy SyntaxError("Unexpected '" ~ name ~ "'", lName, cName);
-                }
-
-                let mut currC = cName;
-                for n in names {
-                    self.assertIsIdentifier(n, lName, currC);
-                    currC += n.len + 1; // dot
-                }
-
+                let names = self:.parseKeyPath();
                 self:.assertRead(["]"]);
                 if (isTableArray) {
                     self:.assertRead(["]"]);
@@ -97,9 +86,9 @@ pub record TomlParser {
 
             // Global var
             else {
-                self.assertIsIdentifier(tok, l, c);
+                let key = self:.parseKey(tok, l, c);
                 self:.assertRead(["="]);
-                result[tok] = self:.parseValue();
+                result[key] = self:.parseValue();
             }
         }
 
@@ -126,8 +115,8 @@ pub record TomlParser {
             "[" => return self:.parseArray();
             "false" => return copy Bool(false);
             "true" => return copy Bool(true);
-            "'" => return self:.parseString(begin, l, c);
-            "\"" => return self:.parseString(begin, l, c);
+            "'" => return copy Str(self:.parseString(begin, l, c));
+            "\"" => return copy Str(self:.parseString(begin, l, c));
             _ => return self:.parseIntOrFloat(begin, l, c);
         }
     }
@@ -153,10 +142,10 @@ pub record TomlParser {
                 break;
             }
 
-            self.assertIsIdentifier(name, l, c);
+            let key = self:.parseKey(name, l, c);
             self:.assertRead(["="]);
 
-            result[name] = self:.parseValue();
+            result[key] = self:.parseValue();
 
             if (!isGlobal) {
                 let (n, _, _) = self:.assertRead([",", "}"]);
@@ -219,7 +208,7 @@ pub record TomlParser {
      *    - l: the line
      *    - c: the col
      * */
-    prv fn parseString(mut self, beg: [c8], l: usize, c: usize)-> &Config
+    prv fn parseString(mut self, beg: [c8], l: usize, c: usize)-> [c8]
         throws SyntaxError
     {
         self._lex:.setSkipTokens(false);
@@ -258,7 +247,74 @@ pub record TomlParser {
         self._lex:.setSkipTokens(true);
         self._lex:.setSkipComments(true);
 
-        copy Str(result[])
+        result[]
+    }
+
+    /**
+     * Parse a key, bare or quoted
+     * @params:
+     *    - tok: the first token of the key, already read
+     *    - l: the line
+     *    - c: the col
+     * */
+    prv fn parseKey(mut self, tok: [c8], l: usize, c: usize)-> [c8]
+        throws SyntaxError
+    {
+        if tok == TomlTokens::DQUOTE || tok == TomlTokens::QUOTE {
+            return self:.parseString(tok, l, c);
+        }
+
+        self.assertIsIdentifier(tok, l, c);
+        tok
+    }
+
+    /**
+     * Parse the dot separated path of a '[name]' header, each part being a bare or quoted key
+     * @returns: the parts of the path
+     * */
+    prv fn parseKeyPath(mut self)-> [[c8]]
+        throws SyntaxError
+    {
+        let mut names: [[c8]] = [];
+        let mut expectsKey = true;
+        loop {
+            let cursor = self._lex.getCursor();
+            let (tok, l, c) = self._lex:.next();
+            if tok == TomlTokens::RCRO || tok.len == 0 {
+                self._lex:.rewind(expand cursor);
+                if expectsKey {
+                    throw copy SyntaxError("Unexpected '" ~ tok ~ "'", l, c);
+                }
+
+                break;
+            }
+
+            if tok == TomlTokens::DQUOTE || tok == TomlTokens::QUOTE {
+                if !expectsKey {
+                    throw copy SyntaxError("Unexpected '" ~ tok ~ "'", l, c);
+                }
+
+                names ~= [self:.parseString(tok, l, c)];
+                expectsKey = false;
+            } else {
+                let mut col = c;
+                for n in self._nameTzer.tokenize(tok) {
+                    if n == "." && !expectsKey {
+                        expectsKey = true;
+                    } else if n != "." && expectsKey {
+                        self.assertIsIdentifier(n, l, col);
+                        names ~= [n];
+                        expectsKey = false;
+                    } else {
+                        throw copy SyntaxError("Unexpected '" ~ n ~ "'", l, col);
+                    }
+
+                    col += n.len;
+                }
+            }
+        }
+
+        names
     }
 
     /*!
