@@ -364,3 +364,190 @@ __test { // a floating option is still a float option
         err => { println(err); assert(false, "threw"); }
     }
 }
+
+__test attachedValue { // an option value can be attached with '=' to its long or short name, or glued to its short name
+    {
+        let parser = fullParser();
+        assert(parser.parse(copy ["./a.out", "--count=12"])["count"].to!{i64} () == 12, "a");
+        assert(parser.parse(copy ["./a.out", "-c=12"])["count"].to!{i64} () == 12, "b");
+        assert(parser.parse(copy ["./a.out", "-c12"])["count"].to!{i64} () == 12, "c");
+        assert(parser.parse(copy ["./a.out", "--ratio=1.5"])["ratio"].to!{f64} () == 1.5, "d");
+        assert(parser.parse(copy ["./a.out", "-nfoo"])["name"].to!{[c8]} () == "foo", "e");
+        assert(parser.parse(copy ["./a.out", "--name=a=b"])["name"].to!{[c8]} () == "a=b", "f");
+        assert(parser.parse(copy ["./a.out", "--name=--verbose"])["name"].to!{[c8]} () == "--verbose", "g");
+        assert(parser.parse(copy ["./a.out", "-n-v"])["name"].to!{[c8]} () == "-v", "h");
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test attachedValuePrecedence { // an exact name wins over a glued value, and the longest glued short name wins
+    {
+        let parser = (copy ArgumentParser())
+            :.option!{[c8]} ("sort", short-> "s")
+            :.option!{[c8]} ("sfx", short-> "sx")
+            :.flag("stop-first", short-> "sf");
+
+        let a = parser.parse(copy ["./a.out", "-sf"]);
+        assert(a["stop-first"].to!{bool} (), "a");
+        assert("sort" !in a, "b");
+
+        let b = parser.parse(copy ["./a.out", "-sxy", "-sz"]);
+        assert(b["sfx"].to!{[c8]} () == "y", "c");
+        assert(b["sort"].to!{[c8]} () == "z", "d");
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test attachedValueErrors { // an attached value goes through the same checks as a separate one
+    let parser = fullParser();
+
+    {
+        parser.parse(copy ["./a.out", "--count=abc"]);
+        assert(false, "should have thrown");
+    } catch {
+        m: &MalformedArgument => { assert(m.key == "count", "a"); }
+        err => { println(err); assert(false, "wrong error a"); }
+    }
+
+    {
+        parser.parse(copy ["./a.out", "--count="]);
+        assert(false, "should have thrown");
+    } catch {
+        m: &MalformedArgument => { assert(m.key == "count", "b"); }
+        err => { println(err); assert(false, "wrong error b"); }
+    }
+
+    {
+        parser.parse(copy ["./a.out", "-c1", "--count=2"]);
+        assert(false, "should have thrown");
+    } catch {
+        d: &DuplicateArgument => { assert(d.key == "count", "c"); }
+        err => { println(err); assert(false, "wrong error c"); }
+    }
+
+    {
+        parser.parse(copy ["./a.out", "--verbose=1"]);
+        assert(false, "should have thrown");
+    } catch {
+        u: &UnknownArgument => { assert(u.key == "verbose=1", "d"); }
+        err => { println(err); assert(false, "wrong error d"); }
+    }
+
+    {
+        parser.parse(copy ["./a.out", "--count12"]);
+        assert(false, "should have thrown");
+    } catch {
+        u: &UnknownArgument => { assert(u.key == "count12", "e"); }
+        err => { println(err); assert(false, "wrong error e"); }
+    }
+}
+
+__test attachedValueList { // an attached value is the first element of an array option, and of a list option
+    {
+        let parser = (copy ArgumentParser())
+            :.option!{[i64]} ("nums", short-> "N")
+            :.option!{[c8]} ("inc", short-> "I", list-> true);
+
+        let cfg = parser.parse(copy ["./a.out", "--nums=1", "2", "-I/usr", "--inc=/opt"]);
+        assert(cfg["nums"].to!{[i64]} () == [1i64, 2i64], "a");
+        assert(cfg["inc"].to!{[[c8]]} () == ["/usr", "/opt"], "b");
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test negativeNumberValue { // a negative number is a value, for an option as well as a positional argument
+    {
+        let parser = (copy ArgumentParser())
+            :.option!{i64} ("count", short-> "c")
+            :.option!{[c8]} ("name")
+            :.option!{[f64]} ("ratios")
+            :.position!{i64} ("first")
+            :.position!{f64} ("second");
+
+        let cfg = parser.parse(copy ["./a.out", "-5", "--count", "-3", "--name", "-7", "-.5", "--ratios", "-1.5", "-2e3"]);
+        assert(cfg["first"].to!{i64} () == -5, "a");
+        assert(cfg["count"].to!{i64} () == -3, "b");
+        assert(cfg["name"].to!{[c8]} () == "-7", "c");
+        assert(cfg["second"].to!{f64} () == -0.5, "d");
+        assert(cfg["ratios"].to!{[f64]} () == [-1.5, -2000.0], "e");
+        assert(parser.parse(copy ["./a.out", "-c-3", "1", "2"])["count"].to!{i64} () == -3, "f");
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test negativeNumberName { // an argument named like a negative number is still an argument
+    {
+        let parser = (copy ArgumentParser())
+            :.flag("one", short-> "1")
+            :.position!{i64} ("value");
+
+        let cfg = parser.parse(copy ["./a.out", "-1", "-2"]);
+        assert(cfg["one"].to!{bool} (), "a");
+        assert(cfg["value"].to!{i64} () == -2, "b");
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test negativeNumberUnknown { // a negative number with no positional argument left is still unknown
+    let parser = fullParser();
+
+    {
+        parser.parse(copy ["./a.out", "-5"]);
+        assert(false, "should have thrown");
+    } catch {
+        u: &UnknownArgument => { assert(u.key == "-5", "a"); }
+        err => { println(err); assert(false, "wrong error"); }
+    }
+}
+
+__test terminatorPositional { // '--' ends the options, what follows is positional whatever it looks like
+    {
+        let parser = (copy ArgumentParser())
+            :.flag("verbose", short-> "v")
+            :.sub("sub", &subNothing, hyphenated-> false)
+            :.position!{[c8]} ("first")
+            :.position!{[[c8]]} ("rest");
+
+        let cfg = parser.parse(copy ["./a.out", "-v", "--", "-v", "--", "sub", "--name=x"]);
+        assert(cfg["verbose"].to!{bool} (), "a");
+        assert(cfg["first"].to!{[c8]} () == "-v", "b");
+        assert(cfg["rest"].to!{[[c8]]} () == ["--", "sub", "--name=x"], "c");
+        assert("sub" !in cfg, "d");
+
+        assert(!parser.parse(copy ["./a.out", "--", "-v", "x"])["verbose"].to!{bool} (), "e");
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test terminatorStopsArray { // '--' stops an array option, and does not fill a missing positional argument
+    let parser = (copy ArgumentParser())
+        :.option!{[[c8]]} ("names")
+        :.option!{[i64]} ("nums")
+        :.position!{[c8]} ("file");
+
+    {
+        let cfg = parser.parse(copy ["./a.out", "--names", "a", "b", "--", "--nums"]);
+        assert(cfg["names"].to!{[[c8]]} () == ["a", "b"], "a");
+        assert(cfg["file"].to!{[c8]} () == "--nums", "b");
+        assert("nums" !in cfg, "c");
+
+        let cfg2 = parser.parse(copy ["./a.out", "--nums", "1", "--", "x"]);
+        assert(cfg2["nums"].to!{[i64]} () == [1i64], "d");
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+
+    {
+        parser.parse(copy ["./a.out", "--"]);
+        assert(false, "should have thrown");
+    } catch {
+        m: &MissingArgument => { assert(m.key == "file", "e"); }
+        err => { println(err); assert(false, "wrong error"); }
+    }
+}
