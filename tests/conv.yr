@@ -1,7 +1,9 @@
 in conv;
 
+use core::exception::assertion;
 use std::conv;
-use std::conv::utf;
+use std::conv::{errors, utf};
+use std::traits;
 use helpers;
 
 __test {
@@ -272,4 +274,222 @@ __test { // decoding a utf32/utf16 string down to utf8, and encoding it back
     // a code point outside the BMP needs a surrogate pair in utf16, and survives the round trip
     assert(utf::decode(utf::encode!{c16} ("😉")) == "😉", "g");
     assert(utf::decode(utf::encode!{c32} ("😉")) == "😉", "h");
+}
+
+/**
+ * Integer conversions, over every integer type: a matrix of boundary values rendered in every
+ * base and parsed back, and of malformed literals that have to be rejected
+ * */
+
+/**
+ * @returns: the boundary values of `T`: its bounds, the values around zero, and the values around
+ *           every power of two it can hold
+ * */
+fn boundaries {T} ()-> [T] {
+    let one = cast!T(1);
+    let dmut res: [T] = copy [T::min, T::min + one, cast!T(0), one, T::max - one, T::max];
+
+    let signed = isSigned!{T};
+    cte if (isSigned!{T}) {
+        res ~= [-one];
+    }
+
+    let bits = T::size * 8us - (if (signed) { 1us } else { 0us });
+    for k in 1us .. bits {
+        let p = one << cast!T(k);
+        res ~= [p - one, p];
+        if (k + 1us < bits) {
+            res ~= [p + one];
+        }
+
+        cte if (isSigned!{T}) {
+            res ~= [-p + one, -p, -p - one];
+        }
+    }
+
+    alias res
+}
+
+/**
+ * @returns: `lit` with its magnitude incremented by one in base `base`, its sign and prefix untouched
+ * */
+fn increment(lit: [c8], base: usize)-> dmut [c8] {
+    let dmut res = copy lit;
+    let top = if (base <= 10us) { cast!c8(cast!u8('0') + cast!u8(base - 1us)) } else { cast!c8(cast!u8('a') + cast!u8(base - 11us)) };
+
+    let mut i = res.len;
+    while i > 0us {
+        let c = res[i - 1us];
+        let isDigit = (c >= '0' && c <= '9' && cast!usize(cast!u8(c) - cast!u8('0')) < base)
+            || (c >= 'a' && c <= 'z' && cast!usize(cast!u8(c) - cast!u8('a')) + 10us < base);
+
+        if (!isDigit) { break; }
+        if (c != top) {
+            res[i - 1us] = if (c == '9') { 'a' } else { cast!c8(cast!u8(c) + 1u8) };
+            return alias res;
+        }
+
+        res[i - 1us] = '0';
+        i -= 1us;
+    }
+
+    res[0us .. i] ~ "1" ~ res[i .. $]
+}
+
+/**
+ * Render `v` in every base and form, and assert each rendering parses back to `v`
+ * */
+fn roundTrip {T} (v: T)
+    throws CastFailure, AssertError
+{
+    let dec = v.to![c8] ();
+    assert(dec.to!{T} () == v, "base 10: " ~ dec);
+    assert(v.to![c32] ().to!{T} () == v, "base 10, c32: " ~ dec);
+    assert(v.to![c16] ().to!{T} () == v, "base 10, c16: " ~ dec);
+
+    assert(v.to!{[c8], 2us} ().to!{T, 2us} () == v, "base 2: " ~ dec);
+    assert(v.to!{[c8], 8us} ().to!{T, 8us} () == v, "base 8: " ~ dec);
+    assert(v.to!{[c8], 10us} ().to!{T, 10us} () == v, "base 10: " ~ dec);
+    assert(v.to!{[c8], 16us} ().to!{T, 16us} () == v, "base 16: " ~ dec);
+    assert(v.to!{[c8], 16us} (upper-> true).to!{T, 16us} () == v, "base 16, upper: " ~ dec);
+    assert(v.to!{[c8], 36us} ().to!{T, 36us} () == v, "base 36: " ~ dec);
+    assert(v.to!{[c8], 36us} (upper-> true).to!{T, 36us} () == v, "base 36, upper: " ~ dec);
+
+    assert(v.to!{[c8], "b"} ().to!{T, "b"} () == v, "binary: " ~ dec);
+    assert(v.to!{[c8], "o"} ().to!{T, "o"} () == v, "octal: " ~ dec);
+    assert(v.to!{[c8], "x"} ().to!{T, "x"} () == v, "hexadecimal: " ~ dec);
+    assert(v.to!{[c8], "x"} (upper-> true).to!{T, "x"} () == v, "hexadecimal, upper: " ~ dec);
+    assert(v.to!{[c32], "x"} ().to!{T, "x"} () == v, "hexadecimal, c32: " ~ dec);
+}
+
+fn rejects {T} (lit: [c8])-> bool {
+    { let _ = lit.to!{T} (); } catch { _: &CastFailure => { return true; } }
+    false
+}
+
+fn rejects {T, base: N, N} (lit: [c8])-> bool {
+    { let _ = lit.to!{T, base} (); } catch { _: &CastFailure => { return true; } }
+    false
+}
+
+fn rejectsBin {T} (lit: [c8])-> bool {
+    { let _ = lit.to!{T, "b"} (); } catch { _: &CastFailure => { return true; } }
+    false
+}
+
+fn rejectsOct {T} (lit: [c8])-> bool {
+    { let _ = lit.to!{T, "o"} (); } catch { _: &CastFailure => { return true; } }
+    false
+}
+
+fn rejectsHex {T} (lit: [c8])-> bool {
+    { let _ = lit.to!{T, "x"} (); } catch { _: &CastFailure => { return true; } }
+    false
+}
+
+/**
+ * Assert every malformed literal, and every literal just out of the range of `T`, is rejected
+ * */
+fn rejection {T} ()
+    throws AssertError
+{
+    for lit in ["", "-", "+", "+1", "--1", " 12", "12 ", "1_2", "1.0", "0x10", "12a"] {
+        assert(rejects!{T} (lit), "base 10: '" ~ lit ~ "'");
+    }
+
+    assert(rejects!{T, 2us} ("2") && rejects!{T, 2us} ("") && rejects!{T, 2us} ("-"), "base 2");
+    assert(rejects!{T, 8us} ("8") && rejects!{T, 8us} ("78"), "base 8");
+    assert(rejects!{T, 10us} ("a"), "base 10");
+    assert(rejects!{T, 16us} ("g") && rejects!{T, 16us} ("G") && rejects!{T, 16us} ("0x1"), "base 16");
+    assert(rejects!{T, 36us} ("_") && rejects!{T, 36us} ("-") && rejects!{T, 36us} ("é"), "base 36");
+
+    for lit in ["", "0", "0b", "b1", "0B1", "0b2", "0b 1", "00b1", "0b-1"] {
+        assert(rejectsBin!{T} (lit), "binary: '" ~ lit ~ "'");
+    }
+
+    for lit in ["", "0", "0o", "o7", "0O7", "0o8", "0o-7"] {
+        assert(rejectsOct!{T} (lit), "octal: '" ~ lit ~ "'");
+    }
+
+    for lit in ["", "ff", "0", "0x", "x10", "0X10", "0xg", "0x-1", "-0x", "0x1 "] {
+        assert(rejectsHex!{T} (lit), "hexadecimal: '" ~ lit ~ "'");
+    }
+
+    let max = T::max;
+    assert(rejects!{T} (increment(max.to![c8] (), 10us)), "one past max, base 10");
+    assert(rejects!{T, 2us} (increment(max.to!{[c8], 2us} (), 2us)), "one past max, base 2");
+    assert(rejects!{T, 8us} (increment(max.to!{[c8], 8us} (), 8us)), "one past max, base 8");
+    assert(rejects!{T, 16us} (increment(max.to!{[c8], 16us} (), 16us)), "one past max, base 16");
+    assert(rejects!{T, 36us} (increment(max.to!{[c8], 36us} (), 36us)), "one past max, base 36");
+    assert(rejectsBin!{T} (increment(max.to!{[c8], "b"} (), 2us)), "one past max, binary");
+    assert(rejectsOct!{T} (increment(max.to!{[c8], "o"} (), 8us)), "one past max, octal");
+    assert(rejectsHex!{T} (increment(max.to!{[c8], "x"} (), 16us)), "one past max, hexadecimal");
+
+    let min = T::min;
+    cte if (isSigned!{T}) {
+        assert(rejects!{T} (increment(min.to![c8] (), 10us)), "one past min, base 10");
+        assert(rejects!{T, 2us} (increment(min.to!{[c8], 2us} (), 2us)), "one past min, base 2");
+        assert(rejects!{T, 36us} (increment(min.to!{[c8], 36us} (), 36us)), "one past min, base 36");
+        assert(rejectsBin!{T} (increment(min.to!{[c8], "b"} (), 2us)), "one past min, binary");
+        assert(rejectsOct!{T} (increment(min.to!{[c8], "o"} (), 8us)), "one past min, octal");
+        assert(rejectsHex!{T} (increment(min.to!{[c8], "x"} (), 16us)), "one past min, hexadecimal");
+    } else {
+        min;
+        assert(rejects!{T} ("-1") && rejects!{T} ("-0"), "negative unsigned");
+        assert(rejectsHex!{T} ("-0x1") && rejectsBin!{T} ("-0b1") && rejectsOct!{T} ("-0o1"), "negative unsigned, prefixed");
+    }
+}
+
+fn matrix {T} ()
+    throws CastFailure, AssertError
+{
+    for v in boundaries!{T} () {
+        roundTrip!{T} (v);
+    }
+
+    rejection!{T} ();
+}
+
+__test { // the literal incremented by the test helper, so a broken helper does not hide a broken rejection
+    assert(increment("127", 10us) == "128", "a");
+    assert(increment("-128", 10us) == "-129", "b");
+    assert(increment("0xff", 16us) == "0x100", "c");
+    assert(increment("0b111", 2us) == "0b1000", "d");
+    assert(increment("-0o177", 8us) == "-0o200", "e");
+    assert(increment("3w5e11264sgsf", 36us) == "3w5e11264sgsg", "f");
+    assert(increment("19", 36us) == "1a", "g");
+    assert(increment("zz", 36us) == "100", "h");
+}
+
+__test { matrix!{i8} (); }
+__test { matrix!{i16} (); }
+__test { matrix!{i32} (); }
+__test { matrix!{i64} (); }
+__test { matrix!{isize} (); }
+__test { matrix!{u8} (); }
+__test { matrix!{u16} (); }
+__test { matrix!{u32} (); }
+__test { matrix!{u64} (); }
+__test { matrix!{usize} (); }
+
+__test { // hexadecimal digits are read in either case, and written in the case asked for
+    assert(("0xff").to!{u32, "x"} () == 255u32, "a");
+    assert(("0xFF").to!{u32, "x"} () == 255u32, "b");
+    assert(("0xfF").to!{u32, "x"} () == 255u32, "c");
+    assert(("-0xAbC").to!{i32, "x"} () == -2748, "d");
+    assert(("Z").to!{u8, 36us} () == 35u8 && ("z").to!{u8, 36us} () == 35u8, "e");
+
+    assert((255u8).to!{[c8], "x"} () == "0xff", "f");
+    assert((255u8).to!{[c8], "x"} (upper-> true) == "0xFF", "g");
+    assert((-2748).to!{[c8], "x"} (upper-> true) == "-0xABC", "h");
+    assert((35u32).to!{[c8], 36us} () == "z" && (35u32).to!{[c8], 36us} (upper-> true) == "Z", "i");
+    assert((u64::max).to!{[c32], 16us} (upper-> true) == "FFFFFFFFFFFFFFFF"s32, "j");
+}
+
+__test { // the prefixed forms of a signed int carry the sign in front of the prefix
+    assert(("-0x80").to!{i8, "x"} () == i8::min, "a");
+    assert(("0x7f").to!{i8, "x"} () == i8::max, "b");
+    assert(("-0b101"s32).to!{i32, "b"} () == -5, "c");
+    assert(("-0o17"s16).to!{i64, "o"} () == -15i64, "d");
+    assert(("-0").to!i32 () == 0 && ("-0x0").to!{i32, "x"} () == 0, "e");
 }
