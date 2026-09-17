@@ -103,10 +103,11 @@ against the installed `gyc`, not just inferred from docs.
   ```
 - **`copy` allocates a genuinely independent value**, breaking aliasing: `let dmut b = copy a;`
   gives `b` its own storage, so mutating `b` afterwards does not affect `a` (and vice versa).
-  For arrays/slices this works natively. **For classes, `copy` only works if the class
-  implements `core::types::Copiable` (`fn deepCopy(self)-> dmut(typeof self);`)** — attempting
-  `copy someClassInstance` on a class that doesn't implement it fails with "no copy exists for
-  type ...". `copy` is also how objects are constructed in the first place, e.g.
+  For arrays/slices this works natively. **Copying an existing class instance is spelled `dcopy`,
+  not `copy`, and requires the class to implement `core::types::Copiable`
+  (`fn deepCopy(self)-> dmut(typeof self);`)** — `dcopy` calls that method, and `copy
+  someClassInstance` fails with "no copy exists for type ..." whether or not the trait is
+  implemented. `copy` is still how objects are constructed in the first place, e.g.
   `copy TaskPool(nbThreads-> 12u64)`, `copy [1, 2, 3]`.
 - **`alias`/`dmut` do not make any exclusivity guarantee** — because that isn't their job. A
   plain (non-`dmut`) parameter or binding is not a frozen snapshot; it's still a live view of
@@ -200,12 +201,17 @@ Two separate versions live at the repo root, and mixing them up is the classic b
   (`libgymidgard_debug.a`, `libgymidgard_release.a`, `libgymidgard_tests.a`, `libgymidgard_debug_unit.a`,
   `midgard_tests`) are copied to the repo root — unversioned names, unlike the old CMake
   `gymidgard-*_<midgardShortVersion>` scheme.
-- Run tests: `./midgard_tests` (add `-f <substr>` to filter, `-sf` to stop on first failure,
+- Run tests: `./midgard_tests` (add `-f <pattern>` to filter, `-sf` to stop on first failure,
   `--resume` to re-run only previously-failed tests, `-cov` for a coverage report, `-ct` for a
   call-tree report, `-m` to list each file's uncovered lines under the coverage report, `-d` to
   list the slowest tests once the run is over, `-l` to list the tests `-f`/`--resume`
   select without running them, `-j N` to run in N worker subprocesses — see
-  `test-rt/utils/args.yr`).
+  `test-rt/utils/args.yr`). `-f` is **not** a substring match: the pattern is a `::`-separated
+  path of glob segments (`*` the only wildcard, matched within one segment), and it must have
+  exactly as many segments as the test name. So `-f rand` selects nothing, `-f "rand::*"` runs
+  that module, and a test one level deeper needs the matching depth — `-f "algorithm::*"` selects
+  nothing while `-f "algorithm::*::*"` or `-f "algorithm::sorting::*"` works. `-l` lists what a
+  pattern selects without running it (`test-rt/utils/filters.yr`).
 - `sudo ./install` copies `midgard/**/*.yr` into `/usr/include/ymir/<midgardShortVersion>` and the
   `gyc` internal include dir (version component from `VERSION`, GCC major from `YMIR_VERSION`).
   There is currently no equivalent step for installing the built static libs system-wide (the old
