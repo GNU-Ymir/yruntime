@@ -32,6 +32,12 @@ void _yrt_alloc_slice (_yrt_slice_t * result, uint8_t * addr, uint64_t len, uint
 void _yrt_alloc_slice_no_set (_yrt_slice_t * result, uint64_t len, uint64_t size);
 
 /**
+ * Allocate a new block without setting the data
+ * @info: allocation made with the gc
+ */
+uint8_t* _yrt_alloc_block (uint64_t size);
+
+/**
  * Concatenate two slices
  *  */
 void _yrt_concat_slices (_yrt_slice_t * result, _yrt_slice_t * left, _yrt_slice_t * right, uint64_t size);
