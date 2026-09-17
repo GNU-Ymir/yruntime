@@ -581,3 +581,30 @@ __test terminatorStopsArray { // '--' stops an array option, and does not fill a
         err => { println(err); assert(false, "wrong error"); }
     }
 }
+
+__test defaultHelp { // the default help answers to -h and --help, and is listed in the help it prints
+    let parser = (copy ArgumentParser())
+        :.option!{i64} ("count", short-> "c", comments-> "how many")
+        :.defaultHelp();
+
+    for args in [copy ["./a.out", "-h"], copy ["./a.out", "--count", "1", "--help"]] {
+        {
+            parser.parse(args);
+            assert(false, "should have thrown");
+        } catch {
+            HelpRequestError() => {}
+            err => { println(err); assert(false, "wrong error"); }
+        }
+    }
+
+    let help = parser.explain(copy HelpRequestError(), usage-> "prog");
+    assert(help == parser.getHelp(usage-> "prog"), "a");
+    assert(contains(help, "[-h,--help]"), "b");
+    assert(contains(help, "print this help and exit"), "c");
+}
+
+__test defaultHelpComments { // the comment of the default help can be replaced
+    let parser = (copy ArgumentParser()):.defaultHelp(comments-> "show the options");
+    assert(contains(parser.getHelp(), "show the options"), "a");
+    assert(!contains(parser.getHelp(), "print this help and exit"), "b");
+}
