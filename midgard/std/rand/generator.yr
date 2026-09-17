@@ -1,0 +1,260 @@
+/**
+ * This module implements `Random`, a fast, seedable, non-cryptographic pseudo random number
+ * generator. The algorithm is xoshiro256**, whose state is expanded from a 64 bits seed by
+ * splitmix64, so a given seed produces the same sequence on every platform.
+ * <br>
+ * A `Random` is not meant to be shared between threads: give each thread its own, either seeded
+ * independently or obtained through `split`.
+ * @warning: the sequence is predictable from a few of its outputs, never use it to generate a
+ * secret (a token, a key, a password), use `std::rand::secure` instead.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in generator;
+
+use std::traits;
+use etc::c::random;
+
+/**
+ * A xoshiro256** pseudo random number generator.
+ * @example:
+ * ```
+ * let dmut a = copy Random(seed-> 42u64);
+ * let dmut b = copy Random(seed-> 42u64);
+ *
+ * // two generators with the same seed produce the same sequence
+ * assert(a:.uniform(0, 100) == b:.uniform(0, 100));
+ * ```
+ */
+@final
+pub class Random {
+
+    let mut _s0: u64 = 0u64;
+    let mut _s1: u64 = 0u64;
+    let mut _s2: u64 = 0u64;
+    let mut _s3: u64 = 0u64;
+
+    /**
+     * Create a generator seeded from the entropy of the system, so that two generators created
+     * this way do not produce the same sequence.
+     */
+    pub self () {
+        self:.reseed(entropySeed());
+    }
+
+    /**
+     * Create a generator producing the reproducible sequence identified by `seed`.
+     */
+    pub self (seed: u64) {
+        self:.reseed(seed);
+    }
+
+    /**
+     * Reset the generator to the start of the sequence identified by `seed`.
+     * @example:
+     * ```
+     * let dmut r = copy Random(seed-> 1u64);
+     * let a = r:.bits();
+     *
+     * r:.reseed(1u64);
+     * assert(r:.bits() == a);
+     * ```
+     */
+    pub fn reseed(mut self, seed: u64) {
+        let mut x = seed;
+        self._s0 = splitmix(ref x);
+        self._s1 = splitmix(ref x);
+        self._s2 = splitmix(ref x);
+        self._s3 = splitmix(ref x);
+    }
+
+    /**
+     * @returns: a random 64 bits word, uniformly distributed over the whole domain of u64.
+     * @example:
+     * ```
+     * let dmut r = copy Random(seed-> 7u64);
+     * println(r:.bits());
+     * ```
+     */
+    pub fn bits(mut self)-> u64 {
+        let res = rotl(self._s1 * 5u64, 7u64) * 9u64;
+        let t = self._s1 << 17u64;
+
+        self._s2 = self._s2 ^ self._s0;
+        self._s3 = self._s3 ^ self._s1;
+        self._s1 = self._s1 ^ self._s2;
+        self._s0 = self._s0 ^ self._s3;
+        self._s2 = self._s2 ^ t;
+        self._s3 = rotl(self._s3, 45u64);
+
+        res
+    }
+
+    /**
+     * @params:
+     *    - low: the lower bound of the interval (included)
+     *    - high: the upper bound of the interval (included)
+     * @returns: a random number uniformly selected in `[low, high]`, or `low` if `high <= low`
+     * @info: the selection is free of modulo bias, values are drawn again until they land in a
+     * range that is an exact multiple of the width of the interval.
+     * @example:
+     * ```
+     * let dmut r = copy Random(seed-> 3u64);
+     * let i = r:.uniform(1, 10);
+     *
+     * assert(i >= 1 && i <= 10);
+     * ```
+     */
+    pub fn if isIntegral!{T} uniform {T} (mut self, low: T, high: T)-> T {
+        if high <= low { return low; }
+
+        // computed in u64 so that the width of an interval spanning the whole domain of T is
+        // still representable (e.g. uniform (i32::min, i32::max))
+        let span = cast!{u64} (high) - cast!{u64} (low) + 1u64;
+        if span == 0u64 { // the interval covers the whole domain of a 64 bits T
+            return low + cast!{T} (self:.bits());
+        }
+
+        let rem = (u64::max % span + 1u64) % span; // == 2 ^ 64 % span
+        let mut r = self:.bits();
+        while r < rem { // [0, rem[ would make the low values slightly more likely
+            r = self:.bits();
+        }
+
+        low + cast!{T} (r % span)
+    }
+
+    /**
+     * @params:
+     *    - low: the lower bound of the interval
+     *    - high: the upper bound of the interval
+     * @returns: a random number uniformly selected between `low` and `high`
+     * @example:
+     * ```
+     * let dmut r = copy Random(seed-> 3u64);
+     * let f = r:.uniform(1.0, 10.0);
+     *
+     * assert(f >= 1.0 && f <= 10.0);
+     * ```
+     */
+    pub fn if isFloating!{T} uniform {T} (mut self, low: T, high: T)-> T {
+        let x = self:.rand!{T}();
+
+        low + x * (high - low)
+    }
+
+    /**
+     * @returns: a random number uniformly selected in `[0, 1[`
+     * @info: the result is a multiple of 2^-53 (2^-24 for f32), every such value being equally
+     * likely.
+     * @example:
+     * ```
+     * let dmut r = copy Random(seed-> 3u64);
+     * let f = r:.rand!f32();
+     *
+     * assert(f >= 0.0f && f < 1.0f);
+     * ```
+     */
+    pub fn if isFloating!{T} rand {T} (mut self)-> T {
+        cte if T::size == f32::size {
+            cast!{T} (self:.bits() >> 40u64) * (1.0f / 16777216.0f)
+        } else {
+            cast!{T} (cast!{f64} (self:.bits() >> 11u64) * (1.0 / 9007199254740992.0))
+        }
+    }
+
+    /**
+     * Split off an independent generator: the returned one continues the current sequence, and
+     * `self` jumps 2^128 draws ahead of it, so the two never overlap in practice.
+     * <br>
+     * This is how to derive reproducible streams for several threads from a single seed.
+     * @example:
+     * ```
+     * let dmut main = copy Random(seed-> 42u64);
+     * let dmut worker = main:.split();
+     *
+     * assert(worker:.bits() != main:.bits());
+     * ```
+     */
+    pub fn split(mut self)-> dmut &Random {
+        let dmut res = dcopy self;
+        self:.jump();
+
+        alias res
+    }
+
+    fn jump(mut self) {
+        let mut s0 = 0u64, mut s1 = 0u64, mut s2 = 0u64, mut s3 = 0u64;
+        for j in [0x180ec6d33cfd0abau64, 0xd5a61266f0c9392cu64, 0xa9582618e03fc9aau64, 0x39abdc4529b1661cu64] {
+            for b in 0u64 .. 64u64 {
+                if (j & (1u64 << b)) != 0u64 {
+                    s0 = s0 ^ self._s0;
+                    s1 = s1 ^ self._s1;
+                    s2 = s2 ^ self._s2;
+                    s3 = s3 ^ self._s3;
+                }
+                self:.bits();
+            }
+        }
+
+        self._s0 = s0;
+        self._s1 = s1;
+        self._s2 = s2;
+        self._s3 = s3;
+    }
+
+    impl core::types::Copiable {
+
+        /**
+         * @returns: a generator at the same point of the same sequence, advancing independently
+         * @example:
+         * ```
+         * let dmut a = copy Random(seed-> 42u64);
+         * let dmut b = dcopy a;
+         *
+         * assert(a:.bits() == b:.bits());
+         * ```
+         */
+        pub over deepCopy(self)-> dmut &Random {
+            let dmut res = copy Random(seed-> 0u64);
+            res._s0 = self._s0;
+            res._s1 = self._s1;
+            res._s2 = self._s2;
+            res._s3 = self._s3;
+
+            alias res
+        }
+    }
+}
+
+/**
+ * @returns: a seed read from the entropy pool of the kernel, or derived from the clock and the
+ * thread if that pool is unavailable
+ */
+fn entropySeed()-> u64 {
+    let mut seed = 0u64;
+    if getrandom(alias cast!{dmut *void} (&seed), 8us, GetRandomFlags::NONE) == 8is {
+        return seed;
+    }
+
+    let mut x = cast!{u64} (etc::c::time::time(null)) ^ cast!{u64} (etc::runtime::threads::_yrt_thread_self_id());
+    splitmix(ref x)
+}
+
+/**
+ * Advance the splitmix64 state `x`.
+ * @returns: the next output of the sequence
+ */
+fn splitmix(ref mut x: u64)-> u64 {
+    x = x + 0x9e3779b97f4a7c15u64;
+    let mut z = x;
+    z = (z ^ (z >> 30u64)) * 0xbf58476d1ce4e5b9u64;
+    z = (z ^ (z >> 27u64)) * 0x94d049bb133111ebu64;
+
+    z ^ (z >> 31u64)
+}
+
+fn rotl(x: u64, k: u64)-> u64 {
+    (x << k) | (x >> (64u64 - k))
+}

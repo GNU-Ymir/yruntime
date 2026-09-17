@@ -231,7 +231,7 @@ Three top-level modules declared in `midgard/__lib__.yr`:
   `math`, `types`, `reflect`. `core::exception::Exception` is the root of the exception
   hierarchy; in `DEBUG_LIB` builds it captures a stack trace at construction.
 - `etc` (`midgard/etc.yr`): externals — `etc::c` (raw C bindings) and `etc::runtime::*`
-  (`dwarf`, `elf`, `env`, `errno`, `exception`, `files`, `gc`, `memory`, `rand`, `threads` — thin
+  (`dwarf`, `elf`, `env`, `errno`, `exception`, `files`, `gc`, `memory`, `threads` — thin
   Ymir wrappers around `rt/`).
 
 ### `rt/` — the C runtime
