@@ -242,8 +242,9 @@ __test { // a lone utf16 surrogate is not a code point of its own
     assert(utf::toUtf8(opaque('a'c16), ref ret) == 1u32, "a");
     assert(utf::toUtf8(opaque('コ'c16), ref ret) == 3u32, "b");
 
-    // 0xD83D is the high half of a surrogate pair: alone it decodes to nothing
-    assert(utf::toUtf8(opaque(cast!c16(0xD83Du16)), ref ret) == 0u32, "c");
+    // 0xD83D is the high half of a surrogate pair: alone it decodes to the replacement character
+    assert(utf::toUtf8(opaque(cast!c16(0xD83Du16)), ref ret) == 3u32, "c");
+    assert(ret[0 .. 3] == "\u{0xFFFD}", "d");
 }
 
 __test { // a utf16 surrogate pair decodes together, consuming both halves
