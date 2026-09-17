@@ -608,3 +608,115 @@ __test defaultHelpComments { // the comment of the default help can be replaced
     assert(contains(parser.getHelp(), "show the options"), "a");
     assert(!contains(parser.getHelp(), "print this help and exit"), "b");
 }
+
+__test optionDefault { // MID-69: an option with a default value is inserted in the configuration when it is absent
+    {
+        let parser = (copy ArgumentParser())
+            :.option!{i64} ("jobs", default-> 1, short-> "j", comments-> "how many")
+            :.option!{[c8]} ("out", default-> "a.out", short-> "o")
+            :.option!{f64} ("ratio", default-> 1.5);
+
+        let cfg = parser.parse(copy ["./a.out"]);
+        assert(cfg["jobs"].to!{i64} () == 1, "a");
+        assert(cfg["out"].to!{[c8]} () == "a.out", "b");
+        assert(cfg["ratio"].to!{f64} () == 1.5, "c");
+
+        let given = parser.parse(copy ["./a.out", "-j", "4", "-o", "foo", "--ratio", "2.5"]);
+        assert(given["jobs"].to!{i64} () == 4, "d");
+        assert(given["out"].to!{[c8]} () == "foo", "e");
+        assert(given["ratio"].to!{f64} () == 2.5, "f");
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test optionDefaultNotAnOccurrence { // MID-69: a default is not an occurrence, setting the option once is not a duplicate
+    let parser = (copy ArgumentParser())
+        :.option!{i64} ("jobs", default-> 1)
+        :.option!{[c8]} ("inc", default-> "/usr", list-> true);
+
+    {
+        let cfg = parser.parse(copy ["./a.out", "--jobs", "4", "--inc", "a", "--inc", "b"]);
+        assert(cfg["jobs"].to!{i64} () == 4, "a");
+        assert(cfg["inc"].to!{[[c8]]} () == ["a", "b"], "b");
+        assert(parser.parse(copy ["./a.out"])["inc"].to!{[[c8]]} () == ["/usr"], "c");
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+
+    {
+        parser.parse(copy ["./a.out", "--jobs", "1", "--jobs", "2"]);
+        assert(false, "should have thrown");
+    } catch {
+        d: &DuplicateArgument => { assert(d.key == "jobs", "d"); }
+        err => { println(err); assert(false, "wrong error"); }
+    }
+}
+
+__test arrayOptionDefault { // MID-69: an array option takes an array as default value
+    {
+        let parser = (copy ArgumentParser())
+            :.option!{[i64]} ("nums", default-> copy [1i64, 2i64])
+            :.option!{[[c8]]} ("names", default-> copy ["a", "b"])
+            :.option!{[i64]} ("many", default-> copy [3i64], list-> true);
+
+        let cfg = parser.parse(copy ["./a.out"]);
+        assert(cfg["nums"].to!{[i64]} () == [1i64, 2i64], "a");
+        assert(cfg["names"].to!{[[c8]]} () == ["a", "b"], "b");
+        let many = cfg["many"].to!{[[i64]]} ();
+        assert(many.len == 1us && many[0] == [3i64], "c");
+
+        assert(parser.parse(copy ["./a.out", "--nums", "7"])["nums"].to!{[i64]} () == [7i64], "d");
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test positionalDefault { // MID-69: a position argument with a default value is optional
+    {
+        let parser = (copy ArgumentParser())
+            :.position!{i64} ("first")
+            :.position!{[c8]} ("second", default-> "foo")
+            :.position!{[i64]} ("rest", default-> copy [1i64]);
+
+        let cfg = parser.parse(copy ["./a.out", "1"]);
+        assert(cfg["first"].to!{i64} () == 1, "a");
+        assert(cfg["second"].to!{[c8]} () == "foo", "b");
+        assert(cfg["rest"].to!{[i64]} () == [1i64], "c");
+
+        let cfg2 = parser.parse(copy ["./a.out", "1", "bar", "2", "3"]);
+        assert(cfg2["second"].to!{[c8]} () == "bar", "d");
+        assert(cfg2["rest"].to!{[i64]} () == [2i64, 3i64], "e");
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test positionalDefaultFollowedByMandatory { // MID-69: a position argument with no default is missing whatever precedes it
+    let parser = (copy ArgumentParser())
+        :.position!{[c8]} ("first", default-> "foo")
+        :.position!{[c8]} ("second");
+
+    {
+        parser.parse(copy ["./a.out", "x"]);
+        assert(false, "should have thrown");
+    } catch {
+        m: &MissingArgument => { assert(m.key == "second", "a"); }
+        err => { println(err); assert(false, "wrong error"); }
+    }
+}
+
+__test defaultInUsageAndHelp { // MID-69: the usage and the help print the default value of an argument
+    let parser = (copy ArgumentParser())
+        :.option!{i64} ("jobs", default-> 1, short-> "j", comments-> "how many")
+        :.option!{[i64]} ("nums", default-> copy [1i64, 2i64])
+        :.option!{[c8]} ("name")
+        :.position!{f64} ("ratio", default-> 1.5);
+
+    assert(parser.getUsage() == "usage [-j,--jobs int=1] [--nums [int...]=[1,2]] [--name str] [float(ratio)=1.500000]",
+           parser.getUsage());
+
+    let help = parser.getHelp();
+    assert(contains(help, "how many (default: 1)"), "b");
+    assert(contains(help, "(default: [1,2])"), "c");
+}
