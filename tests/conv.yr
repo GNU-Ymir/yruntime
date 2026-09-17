@@ -493,3 +493,95 @@ __test { // the prefixed forms of a signed int carry the sign in front of the pr
     assert(("-0o17"s16).to!{i64, "o"} () == -15i64, "d");
     assert(("-0").to!i32 () == 0 && ("-0x0").to!{i32, "x"} () == 0, "e");
 }
+
+/**
+ * Utf round trips, over code points of every encoded width
+ * */
+
+/**
+ * @returns: the code points at both ends of every utf8 width, and of every utf16 width
+ * */
+fn codePoints ()-> [c32] {
+    let dmut res: [c32] = [];
+    for cp in [0x1u32, 0x41u32, 0x7Fu32, 0x80u32, 0xE9u32, 0x7FFu32, 0x800u32, 0x30B3u32, 0xD7FFu32, 0xE000u32, 0xFFFDu32, 0xFFFFu32, 0x10000u32, 0x1F609u32, 0x10FFFFu32] {
+        res ~= [cast!c32(cp)];
+    }
+
+    alias res
+}
+
+__test { // every code point survives every conversion, with the expected width in each encoding
+    let widths8 = [1us, 1us, 1us, 2us, 2us, 2us, 3us, 3us, 3us, 3us, 3us, 3us, 4us, 4us, 4us];
+    let widths16 = [1us, 1us, 1us, 1us, 1us, 1us, 1us, 1us, 1us, 1us, 1us, 1us, 2us, 2us, 2us];
+
+    let points = codePoints();
+    for i, cp in points {
+        let s32 = copy [cp];
+        let s8 = s32.to![c8] ();
+        let s16 = s32.to![c16] ();
+        let msg = "U+" ~ cast!u32(cp).to!{[c8], 16us} ();
+
+        assert(s8.len == widths8[i], "utf8 width of " ~ msg);
+        assert(s16.len == widths16[i], "utf16 width of " ~ msg);
+
+        assert(s8.to![c32] () == s32, "c8 -> c32 of " ~ msg);
+        assert(s8.to![c16] () == s16, "c8 -> c16 of " ~ msg);
+        assert(s16.to![c8] () == s8, "c16 -> c8 of " ~ msg);
+        assert(s16.to![c32] () == s32, "c16 -> c32 of " ~ msg);
+    }
+
+    let all32 = copy points;
+    let all8 = all32.to![c8] ();
+    assert(all8.len == 39us, "a");
+    assert(all8.to![c16] ().to![c32] () == all32, "b");
+    assert(all32.to![c16] ().to![c8] () == all8, "c");
+}
+
+/**
+ * @returns: a string made of the code units `units`, built at runtime
+ * */
+fn units {C} (u: [u32])-> [C] {
+    let dmut res: [C] = [];
+    for x in u {
+        cte if (C::size == 1us) {
+            res ~= [cast!C(cast!u8(x))];
+        } else cte if (C::size == 2us) {
+            res ~= [cast!C(cast!u16(x))];
+        } else {
+            res ~= [cast!C(x)];
+        }
+    }
+
+    alias res
+}
+
+__test { // an unpaired utf16 surrogate decodes to U+FFFD, and never swallows the char after it
+    let rep = "\u{0xFFFD}";
+
+    assert(units!c16 (copy [0xD83Du32]).to![c8] () == rep, "a");
+    assert(units!c16 (copy [0xDE09u32]).to![c8] () == rep, "b");
+    assert(units!c16 (copy [0xD83Du32, 0x61u32]).to![c8] () == rep ~ "a", "c");
+    assert(units!c16 (copy [0xDE09u32, 0x61u32]).to![c8] () == rep ~ "a", "d");
+    assert(units!c16 (copy [0x61u32, 0xD83Du32]).to![c8] () == "a" ~ rep, "e");
+    assert(units!c16 (copy [0xDE09u32, 0xD83Du32]).to![c8] () == rep ~ rep, "f");
+    assert(units!c16 (copy [0xD83Du32, 0xD83Du32, 0xDE09u32]).to![c8] () == rep ~ "😉", "g");
+
+    assert(units!c16 (copy [0xD83Du32, 0x61u32]).to![c32] () == units!c32 (copy [0xFFFDu32, 0x61u32]), "h");
+    assert(units!c32 (copy [0xD800u32, 0x61u32]).to![c8] () == rep ~ "a", "i");
+}
+
+__test { // an invalid or truncated utf8 sequence decodes to U+FFFD, one per byte that cannot start a code point
+    let rep = units!c32 (copy [0xFFFDu32]);
+    let a = units!c32 (copy [0x61u32]);
+
+    assert(units!c8 (copy [0xC3u32]).to![c32] () == rep, "a");
+    assert(units!c8 (copy [0xE2u32, 0x82u32]).to![c32] () == rep ~ rep, "b");
+    assert(units!c8 (copy [0xF0u32, 0x9Fu32, 0x98u32]).to![c32] () == rep ~ rep ~ rep, "c");
+    assert(units!c8 (copy [0xC3u32, 0x61u32]).to![c32] () == rep ~ a, "d");
+    assert(units!c8 (copy [0x80u32, 0x61u32]).to![c32] () == rep ~ a, "e");
+    assert(units!c8 (copy [0xFFu32, 0x61u32]).to![c32] () == rep ~ a, "f");
+    assert(units!c8 (copy [0x61u32, 0xE2u32]).to![c32] () == a ~ rep, "g");
+
+    assert(units!c8 (copy [0xC3u32]).to![c16] () == units!c16 (copy [0xFFFDu32]), "h");
+    assert(units!c8 (copy [0xF0u32, 0x9Fu32, 0x61u32]).to![c16] () == units!c16 (copy [0xFFFDu32, 0xFFFDu32, 0x61u32]), "i");
+}
