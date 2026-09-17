@@ -1,10 +1,13 @@
 in rand;
 
 use std::{conv, rand};
-use etc;
+use std::algorithm::sorting;
+use std::rand::errors;
+use std::math;
+use std::rand::{generator, secure};
 
 __test uniformCoversInterval {
-    runtime::rand::setSeed (42u32);
+    seed (42u64);
 
     let dmut seen = copy [false ; 10u64];
     for _ in 0 .. 10_000 {
@@ -19,7 +22,7 @@ __test uniformCoversInterval {
 }
 
 __test uniformNotStepped {
-    runtime::rand::setSeed (7u32);
+    seed (7u64);
 
     // every value of the interval must be reachable, not only the multiples of its width
     let mut nbOdd = 0;
@@ -33,7 +36,7 @@ __test uniformNotStepped {
 }
 
 __test degenerateIntervals {
-    runtime::rand::setSeed (1u32);
+    seed (1u64);
 
     // degenerated intervals
     assert (uniform (5, 5) == 5);
@@ -50,7 +53,7 @@ __test degenerateIntervals {
 }
 
 __test fullDomain {
-    runtime::rand::setSeed (3u32);
+    seed (3u64);
 
     // unsigned, and intervals spanning the whole domain of T
     let mut allSame = true;
@@ -67,7 +70,7 @@ __test fullDomain {
 }
 
 __test floats {
-    runtime::rand::setSeed (11u32);
+    seed (11u64);
 
     for _ in 0 .. 1_000 {
         let f = uniform (1.0, 10.0);
@@ -77,6 +80,317 @@ __test floats {
         assert (g >= -2.5f && g <= 2.5f);
 
         let h = rand!f64 ();
-        assert (h >= 0.0 && h <= 1.0);
+        assert (h >= 0.0 && h < 1.0);
+
+        let i = rand!f32 ();
+        assert (i >= 0.0f && i < 1.0f);
     }
+}
+
+__test xoshiroReferenceSequence {
+    // reference values of xoshiro256** seeded through splitmix64
+    let dmut r = copy Random (seed-> 0u64);
+    assert (r:.bits () == 11091344671253066420u64);
+    assert (r:.bits () == 13793997310169335082u64);
+    assert (r:.bits () == 1900383378846508768u64);
+
+    r:.reseed (42u64);
+    assert (r:.bits () == 1546998764402558742u64);
+    assert (r:.bits () == 6990951692964543102u64);
+    assert (r:.bits () == 12544586762248559009u64);
+}
+
+__test seedIsReproducible {
+    seed (1234u64);
+    let a = [randBits (), randBits (), randBits ()];
+
+    seed (1234u64);
+    assert ([randBits (), randBits (), randBits ()] == a);
+
+    seed (1235u64);
+    assert ([randBits (), randBits (), randBits ()] != a);
+}
+
+fn seededDigest ()-> u64 {
+    seed (99u64);
+    let mut acc = 0u64;
+    for _ in 0 .. 100_000 {
+        acc = acc * 31u64 + randBits ();
+    }
+
+    acc
+}
+
+__test threadsOwnTheirGenerator {
+    // interleaved draws on other threads never disturb the sequence of this one
+    let dmut a = spawn seededDigest ();
+    let dmut b = spawn seededDigest ();
+    let expected = seededDigest ();
+
+    assert (a.value == expected);
+    assert (b.value == expected);
+
+    let dmut c = spawn randBits ();
+    let dmut d = spawn randBits ();
+    assert (c.value != d.value);
+}
+
+__test deepCopyForks {
+    let dmut a = copy Random (seed-> 5u64);
+    a:.bits ();
+
+    let dmut b = dcopy a;
+    for _ in 0 .. 100 {
+        assert (a:.bits () == b:.bits ());
+    }
+
+    b:.bits ();
+    assert (a:.bits () != b:.bits ());
+}
+
+__test splitDoesNotOverlap {
+    let dmut a = copy Random (seed-> 9u64);
+    let dmut ref_ = copy Random (seed-> 9u64);
+    let dmut b = a:.split ();
+
+    let dmut jumped = dcopy a;
+    assert (jumped:.bits () == 6433469579811067086u64);
+    assert (jumped:.bits () == 7028240683198899737u64);
+
+    // the split generator continues the original sequence, the source jumped away from it
+    let dmut fromA: [u64] = [];
+    for _ in 0 .. 1000 {
+        let x = ref_:.bits ();
+        assert (b:.bits () == x);
+        fromA ~= [a:.bits ()];
+    }
+
+    let dmut c = copy Random (seed-> 9u64);
+    for _ in 0 .. 1000 {
+        let x = c:.bits ();
+        for y in fromA { assert (x != y); }
+    }
+}
+
+__test entropySeededGeneratorsDiffer {
+    let dmut a = copy Random ();
+    let dmut b = copy Random ();
+
+    assert ([a:.bits (), a:.bits ()] != [b:.bits (), b:.bits ()]);
+}
+
+__test shufflePermutes {
+    seed (17u64);
+
+    let dmut a = copy [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    let dmut firstAt = copy [0 ; 10u64];
+    for _ in 0 .. 10_000 {
+        (alias a).shuffle ();
+        assert ((copy a).sort () == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        firstAt [a [0]] += 1;
+    }
+
+    // every element lands first about 1000 times out of 10_000
+    for n in firstAt {
+        assert (n > 850 && n < 1150, "biased shuffle: " ~ n.to![c8] ());
+    }
+
+    let dmut empty: [i32] = [];
+    assert ((alias empty).shuffle () == []);
+
+    let mut words: [mut [c8]] = copy ["a", "b"];
+    (alias words).shuffle ();
+    assert (words == ["a", "b"] || words == ["b", "a"]);
+}
+
+__test choiceCoversSlice {
+    seed (23u64);
+
+    let dmut seen = copy [false ; 4u64];
+    for _ in 0 .. 1_000 {
+        seen [choice (copy [0, 1, 2, 3])] = true;
+    }
+    assert (seen == [true, true, true, true]);
+
+    let empty: [i32] = [];
+    let raised = {
+        choice (empty);
+        false
+    } catch {
+        _: &RandomError => true
+    };
+    assert (raised);
+}
+
+__test sampleWithoutReplacement {
+    seed (29u64);
+
+    let dmut counts = copy [0 ; 6u64];
+    for _ in 0 .. 6_000 {
+        let s = sample (copy [0, 1, 2, 3, 4, 5], 2us);
+        assert (s.len == 2us && s [0] != s [1]);
+        for x in s { counts [x] += 1; }
+    }
+
+    // each element is in about 2 samples out of 6
+    for n in counts {
+        assert (n > 1800 && n < 2200, "biased sample: " ~ n.to![c8] ());
+    }
+
+    assert ((copy sample (copy [3, 1, 2], 3us)).sort () == [1, 2, 3]);
+    assert (sample (copy [3, 1, 2], 0us) == []);
+
+    let raised = {
+        sample (copy [1, 2], 3us);
+        false
+    } catch {
+        _: &RandomError => true
+    };
+    assert (raised);
+}
+
+fn meanAndVariance (xs: [f64])-> (f64, f64) {
+    let mut sum = 0.0;
+    for x in xs { sum += x; }
+    let mean = sum / cast!f64 (cast!u64 (xs.len));
+
+    let mut sq = 0.0;
+    for x in xs { sq += (x - mean) * (x - mean); }
+
+    (mean, sq / cast!f64 (cast!u64 (xs.len)))
+}
+
+fn near (value: f64, expected: f64, tolerance: f64)-> bool {
+    value > expected - tolerance && value < expected + tolerance
+}
+
+__test bernoulliFrequency {
+    seed (31u64);
+
+    let mut nb = 0;
+    for _ in 0 .. 100_000 {
+        if bernoulli (0.3) { nb += 1; }
+    }
+    assert (nb > 29_000 && nb < 31_000, "biased bernoulli: " ~ nb.to![c8] ());
+
+    for _ in 0 .. 100 {
+        assert (!bernoulli (0.0) && !bernoulli (-1.0));
+        assert (bernoulli (1.0) && bernoulli (2.0));
+    }
+}
+
+__test normalMoments {
+    seed (37u64);
+
+    let dmut xs: [f64] = [];
+    for _ in 0 .. 100_000 { xs ~= [normal (5.0, 2.0)]; }
+
+    let (mean, variance) = meanAndVariance (xs);
+    assert (near (mean, 5.0, 0.05), "normal mean: " ~ mean.to![c8] ());
+    assert (near (variance, 4.0, 0.1), "normal variance: " ~ variance.to![c8] ());
+
+    let mut within = 0;
+    for x in xs {
+        if x > 3.0 && x < 7.0 { within += 1; }
+    }
+    // 68.27% of the draws are within one standard deviation
+    assert (within > 67_500 && within < 69_000, "normal shape: " ~ within.to![c8] ());
+
+    let f = normal (0.0f, 1.0f);
+    assert (f > -100.0f && f < 100.0f);
+}
+
+__test exponentialMoments {
+    seed (41u64);
+
+    let dmut xs: [f64] = [];
+    for _ in 0 .. 100_000 {
+        let x = exponential (4.0);
+        assert (x >= 0.0);
+        xs ~= [x];
+    }
+
+    let (mean, variance) = meanAndVariance (xs);
+    assert (near (mean, 0.25, 0.005), "exponential mean: " ~ mean.to![c8] ());
+    assert (near (variance, 0.0625, 0.003), "exponential variance: " ~ variance.to![c8] ());
+}
+
+__test poissonMoments {
+    seed (43u64);
+
+    // below and above the switch from Knuth's method to PTRS
+    for lambda in [0.5, 4.0, 10.0, 50.0, 1000.0] {
+        let dmut xs: [f64] = [];
+        for _ in 0 .. 100_000 {
+            xs ~= [cast!f64 (poisson (lambda))];
+        }
+
+        let (mean, variance) = meanAndVariance (xs);
+        assert (near (mean, lambda, 0.02 * sqrt (lambda)), "poisson mean: " ~ mean.to![c8] () ~ " for " ~ lambda.to![c8] ());
+        assert (near (variance, lambda, 0.05 * lambda), "poisson variance: " ~ variance.to![c8] () ~ " for " ~ lambda.to![c8] ());
+    }
+
+    assert (poisson (0.0) == 0u64);
+    assert (poisson (-3.0) == 0u64);
+
+    // P(X = 0) for lambda = 2 is e^-2
+    let mut zeros = 0;
+    for _ in 0 .. 100_000 {
+        if poisson (2.0) == 0u64 { zeros += 1; }
+    }
+    assert (zeros > 13_100 && zeros < 13_950, "poisson P(0): " ~ zeros.to![c8] ());
+
+    // P(X = 50) for lambda = 50 is about 0.0563, drawn by PTRS
+    let mut modes = 0;
+    for _ in 0 .. 100_000 {
+        if poisson (50.0) == 50u64 { modes += 1; }
+    }
+    assert (modes > 5_400 && modes < 5_850, "poisson P(50): " ~ modes.to![c8] ());
+}
+
+__test bytesAreUniform {
+    seed (47u64);
+
+    let dmut counts = copy [0 ; 256u64];
+    for _ in 0 .. 1_000 {
+        let buf = randBytes (256us);
+        assert (buf.len == 256us);
+        for b in buf { counts [b] += 1; }
+    }
+
+    for n in counts {
+        assert (n > 850 && n < 1150, "biased byte: " ~ n.to![c8] ());
+    }
+
+    assert (randBytes (0us) == []);
+
+    // the bytes are the little endian words of the generator
+    let dmut r = copy Random (seed-> 0u64);
+    let dmut odd = copy [0u8 ; 11u64];
+    r:.fillBytes (alias odd);
+    assert (odd [0] == 0xb4u8 && odd [7] == 0x99u8 && odd [8] == 0x2au8);
+}
+
+__test secureDraws {
+    let a = secureBytes (64us);
+    let b = secureBytes (64us);
+    assert (a.len == 64us && a != b);
+    assert (secureBytes (0us) == []);
+
+    let dmut big = copy [0u8 ; 100_000u64];
+    fillSecureBytes (alias big);
+    let mut zeros = 0;
+    for x in big { if x == 0u8 { zeros += 1; } }
+    assert (zeros < 1_000, "not filled: " ~ zeros.to![c8] ());
+
+    assert (secureBits () != secureBits ());
+
+    let dmut seen = copy [false ; 6u64];
+    for _ in 0 .. 1_000 {
+        let v = secureUniform (1, 6);
+        assert (v >= 1 && v <= 6);
+        seen [v - 1] = true;
+    }
+    assert (seen == [true, true, true, true, true, true]);
+    assert (secureUniform (4u8, 4u8) == 4u8);
 }
