@@ -66,8 +66,8 @@ pub class ArgumentParser {
      *
      * let args = parser.parse(copy ["./a.out", "-j4", "--", "-weird-file", "--jobs=2"]);
      *
-     * assert(args["jobs"].to!{i64} () == 4);
-     * assert(args["files"].to!{[[c8]]} () == ["-weird-file", "--jobs=2"]);
+     * assert(args["jobs"].to!{i64} () ?? 0 == 4);
+     * assert(args["files"].to!{[[c8]]} () ?? [] == ["-weird-file", "--jobs=2"]);
      * ```
      * */
     pub fn parse(self, args: [[c8]])-> &Dict
@@ -307,10 +307,10 @@ pub class ArgumentParser {
      *
      * let args = parser.parse(copy ["./a.out", "1", "2", "foo", "87.12"]);
      *
-     * assert(args["A"].to!{i64} () == 1);
-     * assert(args["B"].to!{i64} () == 2);
-     * assert(args["C"].to!{[c8]} () == "foo");
-     * assert(args["D"].to!{f64} () == 87.12);
+     * assert(args["A"].to!{i64} () ?? 0 == 1);
+     * assert(args["B"].to!{i64} () ?? 0 == 2);
+     * assert(args["C"].to!{[c8]} () ?? "" == "foo");
+     * assert(args["D"].to!{f64} () ?? 0.0 == 87.12);
      * ```
      * */
     pub fn if (isIntegral!{T} || isFloating!{T}) position {T} (mut self, name: [c8], comments: [c8] = "")-> dmut &ArgumentParser {
@@ -339,8 +339,8 @@ pub class ArgumentParser {
      *              :.position!{i64} ("A", comments-> "first int")
      *              :.position!{i64} ("B", default-> 2, comments-> "second int");
      *
-     * assert(parser.parse(copy ["./a.out", "1"])["B"].to!{i64} () == 2);
-     * assert(parser.parse(copy ["./a.out", "1", "9"])["B"].to!{i64} () == 9);
+     * assert(parser.parse(copy ["./a.out", "1"])["B"].to!{i64} () ?? 0 == 2);
+     * assert(parser.parse(copy ["./a.out", "1", "9"])["B"].to!{i64} () ?? 0 == 9);
      * ```
      * */
     pub fn if (isIntegral!{T} || isFloating!{T}) position {T} (mut self, name: [c8], @default: T, comments: [c8] = "")-> dmut &ArgumentParser {
@@ -371,10 +371,10 @@ pub class ArgumentParser {
      *
      * let args = parser.parse(copy ["./a.out", "1", "2", "foo", "87.12"]);
      *
-     * assert(args["A"].to!{i64} () == 1);
-     * assert(args["B"].to!{i64} () == 2);
-     * assert(args["C"].to!{[c8]} () == "foo");
-     * assert(args["D"].to!{f64} () == 87.12);
+     * assert(args["A"].to!{i64} () ?? 0 == 1);
+     * assert(args["B"].to!{i64} () ?? 0 == 2);
+     * assert(args["C"].to!{[c8]} () ?? "" == "foo");
+     * assert(args["D"].to!{f64} () ?? 0.0 == 87.12);
      * ```
      * */
     pub fn position {T of [U], U of c8} (mut self, name: [c8], comments: [c8] = "")-> dmut &ArgumentParser {
@@ -397,7 +397,7 @@ pub class ArgumentParser {
      * let parser = ArgumentParser()
      *              :.position!{[c8]} ("file", default-> "a.out", comments-> "a string");
      *
-     * assert(parser.parse(copy ["./a.out"])["file"].to!{[c8]} () == "a.out");
+     * assert(parser.parse(copy ["./a.out"])["file"].to!{[c8]} () ?? "" == "a.out");
      * ```
      * */
     pub fn position {T of [U], U of c8} (mut self, name: [c8], @default: T, comments: [c8] = "")-> dmut &ArgumentParser {
@@ -421,7 +421,7 @@ pub class ArgumentParser {
      * let args = parser.parse(copy ["./a.out", "1", "2", "3"])
      *                  .to!{[[c8] => [i64]]} (); // transform the configuration into a map
      *
-     * assert(args["list"] == (copy [1i64, 2i64, 3i64])?);
+     * assert(args["list"] ?? [] == [1i64, 2i64, 3i64]);
      * ```
      * */
     pub fn  if (isIntegral!{U} || isFloating!{U} || template!{U}{X of [c8]}) position {T of [U], U} (mut self, name: [c8], comments: [c8] = "")-> dmut &ArgumentParser {
@@ -453,7 +453,7 @@ pub class ArgumentParser {
      * let parser = ArgumentParser()
      *              :.position!{[i64]} ("list", default-> copy [1i64], comments-> "list of int");
      *
-     * assert(parser.parse(copy ["./a.out"])["list"].to!{[i64]} () == [1i64]);
+     * assert(parser.parse(copy ["./a.out"])["list"].to!{[i64]} () ?? [] == [1i64]);
      * ```
      * */
     pub fn  if (isIntegral!{U} || isFloating!{U} || template!{U}{X of [c8]}) position {T of [U], U} (mut self, name: [c8], @default: T, comments: [c8] = "")-> dmut &ArgumentParser {
@@ -538,10 +538,10 @@ pub class ArgumentParser {
      *
      * let args = parser.parse(copy ["./a.out", "--fst", "1", "-s", "2", "--thd", "foo", "--fth", "87.12"]);
      *
-     * assert(args["fst"].to!{i64} () == 1);
-     * assert(args["scd"].to!{i64} () == 2);
-     * assert(args["thd"].to!{[c8]} () == "foo");
-     * assert(args["fth"].to!{f64} () == 87.12);
+     * assert(args["fst"].to!{i64} () ?? 0 == 1);
+     * assert(args["scd"].to!{i64} () ?? 0 == 2);
+     * assert(args["thd"].to!{[c8]} () ?? "" == "foo");
+     * assert(args["fth"].to!{f64} () ?? 0.0 == 87.12);
      * ```
      * */
     pub fn if (isIntegral!{T} || isFloating!{T}) option {T} (mut self, name: [c8], short: [c8] = "", comments: [c8] = "", mandatory: bool = false, list: bool = false)-> dmut &ArgumentParser {
@@ -571,8 +571,8 @@ pub class ArgumentParser {
      * let parser = ArgumentParser()
      *              :.option!{i64} ("jobs", default-> 1, short-> "j", comments-> "number of jobs");
      *
-     * assert(parser.parse(copy ["./a.out"])["jobs"].to!{i64} () == 1);
-     * assert(parser.parse(copy ["./a.out", "-j", "4"])["jobs"].to!{i64} () == 4);
+     * assert(parser.parse(copy ["./a.out"])["jobs"].to!{i64} () ?? 0 == 1);
+     * assert(parser.parse(copy ["./a.out", "-j", "4"])["jobs"].to!{i64} () ?? 0 == 4);
      * ```
      * */
     pub fn if (isIntegral!{T} || isFloating!{T}) option {T} (mut self, name: [c8], @default: T, short: [c8] = "", comments: [c8] = "", list: bool = false)-> dmut &ArgumentParser {
@@ -604,10 +604,10 @@ pub class ArgumentParser {
      *
      * let args = parser.parse(copy ["./a.out", "--fst", "1", "-s", "2", "--thd", "foo", "--fth", "87.12"]);
      *
-     * assert(args["fst"].to!{i64} () == 1);
-     * assert(args["scd"].to!{i64} () == 2);
-     * assert(args["thd"].to!{[c8]} () == "foo");
-     * assert(args["fth"].to!{f64} () == 87.12);
+     * assert(args["fst"].to!{i64} () ?? 0 == 1);
+     * assert(args["scd"].to!{i64} () ?? 0 == 2);
+     * assert(args["thd"].to!{[c8]} () ?? "" == "foo");
+     * assert(args["fth"].to!{f64} () ?? 0.0 == 87.12);
      * ```
      * */
     pub fn option {T of [U], U of c8} (mut self, name: [c8], short: [c8] = "", comments: [c8] = "", mandatory: bool = false, list: bool = false)-> dmut &ArgumentParser {
@@ -633,8 +633,8 @@ pub class ArgumentParser {
      * let parser = ArgumentParser()
      *              :.option!{[c8]} ("output", default-> "a.out", short-> "o", comments-> "a string");
      *
-     * assert(parser.parse(copy ["./a.out"])["output"].to!{[c8]} () == "a.out");
-     * assert(parser.parse(copy ["./a.out", "-o", "foo"])["output"].to!{[c8]} () == "foo");
+     * assert(parser.parse(copy ["./a.out"])["output"].to!{[c8]} () ?? "" == "a.out");
+     * assert(parser.parse(copy ["./a.out", "-o", "foo"])["output"].to!{[c8]} () ?? "" == "foo");
      * ```
      * */
     pub fn option {T of [U], U of c8} (mut self, name: [c8], @default: T, short: [c8] = "", comments: [c8] = "", list: bool = false)-> dmut &ArgumentParser {
@@ -661,7 +661,7 @@ pub class ArgumentParser {
      * let args = parser.parse(copy ["./a.out", "-l", "1", "2", "3"])
      *                  .to!{[[c8] => [i64]]} (); // transform the configuration into a map
      *
-     * assert(args["list"] == (copy [1i64, 2i64, 3i64])?);
+     * assert(args["list"] ?? [] == [1i64, 2i64, 3i64]);
      * ```
      * */
     pub fn if (isIntegral!{U} || isFloating!{U} || template!{U}{X of [c8]}) option {T of [U], U} (mut self, name: [c8], short: [c8] = "", comments: [c8] = "", mandatory: bool = false, list: bool = false)-> dmut &ArgumentParser {
@@ -695,8 +695,8 @@ pub class ArgumentParser {
      * let parser = ArgumentParser()
      *              :.option!{[i64]} ("list", default-> copy [1i64, 2i64], short-> "l", comments-> "list of int");
      *
-     * assert(parser.parse(copy ["./a.out"])["list"].to!{[i64]} () == [1i64, 2i64]);
-     * assert(parser.parse(copy ["./a.out", "-l", "3"])["list"].to!{[i64]} () == [3i64]);
+     * assert(parser.parse(copy ["./a.out"])["list"].to!{[i64]} () ?? [] == [1i64, 2i64]);
+     * assert(parser.parse(copy ["./a.out", "-l", "3"])["list"].to!{[i64]} () ?? [] == [3i64]);
      * ```
      * */
     pub fn if (isIntegral!{U} || isFloating!{U} || template!{U}{X of [c8]}) option {T of [U], U} (mut self, name: [c8], @default: T, short: [c8] = "", comments: [c8] = "", list: bool = false)-> dmut &ArgumentParser {
@@ -737,11 +737,11 @@ pub class ArgumentParser {
      *
      * let args1 = parser.parse(copy ["./a.out", "-f"]);
      * // flag inserted in the result dictionnary and set to true
-     * assert(args1["foo"].to!{bool} () == true);
+     * assert(args1["foo"].to!{bool} () ?? false == true);
      *
      * let args2 = parser.parse(copy ["./a.out"]);
      * // still present in the dictionnary but set to false
-     * assert(args2["foo"].to!{bool} () == false);
+     * assert(args2["foo"].to!{bool} () ?? true == false);
      * ```
      * */
     pub fn flag(mut self, name: [c8], short: [c8] = "", comments: [c8] = "")-> dmut &ArgumentParser {
