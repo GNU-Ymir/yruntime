@@ -347,3 +347,26 @@ __test poissonMoments {
     }
     assert (modes > 5_400 && modes < 5_850, "poisson P(50): " ~ modes.to![c8] ());
 }
+
+__test bytesAreUniform {
+    seed (47u64);
+
+    let dmut counts = copy [0 ; 256u64];
+    for _ in 0 .. 1_000 {
+        let buf = randBytes (256us);
+        assert (buf.len == 256us);
+        for b in buf { counts [b] += 1; }
+    }
+
+    for n in counts {
+        assert (n > 850 && n < 1150, "biased byte: " ~ n.to![c8] ());
+    }
+
+    assert (randBytes (0us) == []);
+
+    // the bytes are the little endian words of the generator
+    let dmut r = copy Random (seed-> 0u64);
+    let dmut odd = copy [0u8 ; 11u64];
+    r:.fillBytes (alias odd);
+    assert (odd [0] == 0xb4u8 && odd [7] == 0x99u8 && odd [8] == 0x2au8);
+}

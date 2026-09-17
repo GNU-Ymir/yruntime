@@ -167,6 +167,53 @@ pub class Random {
     }
 
     /**
+     * Fill `buf` with random bytes.
+     * @params:
+     *    - buf: the buffer to fill
+     * @returns: `buf`
+     * @example:
+     * ```
+     * let dmut r = copy Random(seed-> 3u64);
+     * let dmut buf = copy [0u8 ; 16u64];
+     *
+     * r:.fillBytes(alias buf);
+     * println(buf);
+     * ```
+     */
+    pub fn fillBytes(mut self, mut buf: [mut u8])-> mut [mut u8] {
+        let mut word = 0u64;
+        for i in 0us .. buf.len {
+            if i % 8us == 0us {
+                word = self:.bits();
+            }
+
+            buf[i] = cast!{u8} (word);
+            word = word >> 8u64;
+        }
+
+        alias buf
+    }
+
+    /**
+     * @params:
+     *    - n: the number of bytes to generate
+     * @returns: a new buffer of `n` random bytes
+     * @example:
+     * ```
+     * let dmut r = copy Random(seed-> 3u64);
+     * let buf = r:.bytes(16us);
+     *
+     * assert(buf.len == 16us);
+     * ```
+     */
+    pub fn bytes(mut self, n: usize)-> dmut [u8] {
+        let dmut res = copy [0u8 ; n];
+        self:.fillBytes(alias res);
+
+        alias res
+    }
+
+    /**
      * @params:
      *    - p: the probability of returning `true`
      * @returns: `true` with probability `p`, `false` otherwise
