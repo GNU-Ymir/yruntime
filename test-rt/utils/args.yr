@@ -62,6 +62,9 @@ pub record TestRunnerArgument {
     // True iff the slowest tests of the run are listed once it is over
     pub let mut hasDurations: bool = false;
 
+    // True iff the tests are listed instead of run
+    pub let mut hasList: bool = false;
+
     // The number of worker subprocesses to run tests in parallel(1 = sequential, in-process)
     pub let mut jobs: i64 = 1;
 
@@ -80,6 +83,7 @@ pub record TestRunnerArgument {
             :.flag("missing", short-> "m", comments-> "list the uncovered lines of each file (implies --coverage)")
             :.flag("resume", comments-> "re-run only failed tests")
             :.flag("durations", short-> "d", comments-> "list the slowest tests once the run is over")
+            :.flag("list", short-> "l", comments-> "list the tests(after filtering) without running them")
             :.option!{i64} ("jobs", short-> "j", comments-> "number of worker subprocesses to run tests in parallel (default: 1, sequential)")
             :.help("help", short-> "h", comments-> "print this help and exit");
 
@@ -114,6 +118,10 @@ pub record TestRunnerArgument {
 
             if let Ok(Bool(value-> b)) = ret["durations"]? {
                 self.hasDurations = b;
+            }
+
+            if let Ok(Bool(value-> b)) = ret["list"]? {
+                self.hasList = b;
             }
 
             if let Ok(Int(value-> v)) = ret["jobs"]? {
