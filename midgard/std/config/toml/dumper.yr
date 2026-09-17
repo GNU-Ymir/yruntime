@@ -77,8 +77,9 @@ pub record TomlDumper {
     }
 
     /**
-     * Write `s` to `stream`, wrapped in double quotes, with `"`, `\` and control characters
-     * escaped so the result is valid toml(and round-trips through `TomlParser`)
+     * Write `s` to `stream`, wrapped in double quotes, with `"`, `\` and control characters escaped
+     * (as `\uXXXX` when they have no shorter form), so the result is valid toml and round-trips
+     * through `TomlParser`
      * @params:
      *    - s: the string to write
      *    - stream: the stream to fill
@@ -92,7 +93,17 @@ pub record TomlDumper {
                 '\n' => { stream:.write("\\n"); }
                 '\r' => { stream:.write("\\r"); }
                 '\t' => { stream:.write("\\t"); }
-                _ => { stream:.write(c); }
+                '\b' => { stream:.write("\\b"); }
+                '\f' => { stream:.write("\\f"); }
+                _ => {
+                    let u = cast!u8(c);
+                    if u < 0x20u8 || u == 0x7Fu8 {
+                        let hex = "0123456789ABCDEF";
+                        stream:.write("\\u00", hex[u >> 4u8], hex[u & 0xFu8]);
+                    } else {
+                        stream:.write(c);
+                    }
+                }
             }
         }
         stream:.write("\"");
