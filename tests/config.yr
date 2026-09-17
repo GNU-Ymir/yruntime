@@ -374,3 +374,41 @@ __test { // MID-64: the 'emptyDict' rule of the json macro was never reachable, 
     err => { println(err); assert(false, "threw"); }
   }
 }
+
+__test { // MID-56: a null literal parses to a None node, and is dumped back as null
+  {
+    let parsed = json::parse("{\"a\": null, \"b\": [1, null]}");
+
+    if let Ok(a) = parsed["a"]? {
+        assert(a of None, "a");
+    } else { assert(false, "b"); }
+
+    if let Ok(b: &Array) = parsed["b"]? {
+        assert(b[1u32] of None, "c");
+    } else { assert(false, "d"); }
+
+    assert(json::dump(parsed) == "{\n   \"a\" : null,\n   \"b\" : [1, null]\n}", "e");
+    assert(json::dump(json::parse(json::dump(parsed))) == json::dump(parsed), "f");
+  } catch {
+    err => { println(err); assert(false, "threw"); }
+  }
+}
+
+__test { // MID-56: the json macro accepts null as a value
+  {
+    let dmut d = json#{"a": null, "b": [1, null], "c": {"d": null}, "e": "null"};
+
+    if let Ok(a) = d["a"]? {
+        assert(a of None, "a");
+    } else { assert(false, "b"); }
+
+    if let Ok(b: &Array) = d["b"]? {
+        assert(b[1u32] of None, "c");
+    } else { assert(false, "d"); }
+
+    assert(d["c"]["d"] of None, "e");
+    assert(d["e"].to!{[c8]} () == "null", "f");
+  } catch {
+    err => { println(err); assert(false, "threw"); }
+  }
+}

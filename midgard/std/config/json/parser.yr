@@ -12,7 +12,7 @@ use std::syntax::errors;
 /**
  * A json parser that consumes an utf8 string and generate a configuration
  * @info: hand-rolled recursive-descent scanner over `_content` directly - JSON's grammar is
- * small enough (7 structural chars, strings, numbers, `true`/`false`) that routing it through
+ * small enough (7 structural chars, strings, numbers, `true`/`false`/`null`) that routing it through
  * the generic `std::syntax::lexer`/`tokenizer` machinery cost more than it saved(see YMI-35):
  * every token, including every digit of every number, paid for a token-trie lookup that a
  * direct byte scan skips entirely.
@@ -159,6 +159,8 @@ pub record JsonParser {
             return copy Bool(true);
         } else if self:.matchLiteral("false") {
             return copy Bool(false);
+        } else if self:.matchLiteral("null") {
+            return copy None();
         }
 
         return self:.parseNumber();
