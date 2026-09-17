@@ -308,12 +308,209 @@ fn stdTrigo {T} ()
     }
 }
 
+fn stdExpLog {T} ()
+    throws AssertError
+{
+    near (std::math::exp (opaque (cast!{T} (0.0))), cast!{T} (1.0), "exp 0");
+    near (std::math::exp (opaque (cast!{T} (1.0))), cast!{T} (std::math::E), "exp 1");
+    near (std::math::exp2 (opaque (cast!{T} (10.0))), cast!{T} (1024.0), "exp2 10");
+    near (std::math::exp2 (opaque (cast!{T} (-1.0))), cast!{T} (0.5), "exp2 -1");
+    near (std::math::expm1 (opaque (cast!{T} (0.0))), cast!{T} (0.0), "expm1 0");
+    near (std::math::expm1 (opaque (cast!{T} (1.0))), cast!{T} (std::math::E - 1.0l), "expm1 1");
+
+    near (std::math::log (opaque (cast!{T} (1.0))), cast!{T} (0.0), "log 1");
+    near (std::math::log (opaque (cast!{T} (std::math::E))), cast!{T} (1.0), "log e");
+    near (std::math::log (opaque (cast!{T} (2.0))), cast!{T} (std::math::LN2), "log 2");
+    near (std::math::log (opaque (cast!{T} (10.0))), cast!{T} (std::math::LN10), "log 10");
+    near (std::math::log2 (opaque (cast!{T} (1024.0))), cast!{T} (10.0), "log2 1024");
+    near (std::math::log2 (opaque (cast!{T} (std::math::E))), cast!{T} (std::math::LOG2E), "log2 e");
+    near (std::math::log10 (opaque (cast!{T} (1000.0))), cast!{T} (3.0), "log10 1000");
+    near (std::math::log10 (opaque (cast!{T} (std::math::E))), cast!{T} (std::math::LOG10E), "log10 e");
+    near (std::math::log1p (opaque (cast!{T} (0.0))), cast!{T} (0.0), "log1p 0");
+    near (std::math::log1p (opaque (cast!{T} (std::math::E - 1.0l))), cast!{T} (1.0), "log1p e-1");
+
+    assert (core::math::isInf (std::math::log (opaque (cast!{T} (0.0)))), "log 0");
+    assert (core::math::isNaN (std::math::log (opaque (cast!{T} (-1.0)))), "log -1");
+
+    // expm1 and log1p keep the precision exp and log lose next to zero
+    let tiny = opaque (T::epsilon * cast!{T} (16.0));
+    near (std::math::expm1 (tiny), tiny, "expm1 tiny");
+    near (std::math::log1p (tiny), tiny, "log1p tiny");
+
+    for i in 0 .. 8 {
+        let a = opaque (cast!{T} (cast!f64 (i)) / cast!{T} (2.0) - cast!{T} (2.0));
+        near (std::math::log (std::math::exp (a)), a, "log (exp a)");
+        near (std::math::log2 (std::math::exp2 (a)), a, "log2 (exp2 a)");
+        near (std::math::log1p (std::math::expm1 (a)), a, "log1p (expm1 a)");
+    }
+}
+
+fn stdPow {T} ()
+    throws AssertError
+{
+    near (std::math::pow (opaque (cast!{T} (2.0)), opaque (cast!{T} (10.0))), cast!{T} (1024.0), "pow 2^10");
+    near (std::math::pow (opaque (cast!{T} (2.0)), opaque (cast!{T} (-2.0))), cast!{T} (0.25), "pow 2^-2");
+    near (std::math::pow (opaque (cast!{T} (4.0)), opaque (cast!{T} (0.5))), cast!{T} (2.0), "pow 4^0.5");
+    near (std::math::pow (opaque (cast!{T} (-2.0)), opaque (cast!{T} (3.0))), cast!{T} (-8.0), "pow -2^3");
+    near (std::math::pow (opaque (cast!{T} (0.0)), opaque (cast!{T} (0.0))), cast!{T} (1.0), "pow 0^0");
+    near (std::math::pow (opaque (cast!{T} (std::math::E)), opaque (cast!{T} (2.0))),
+          std::math::exp (cast!{T} (2.0)), "pow e^2");
+    assert (core::math::isNaN (std::math::pow (opaque (cast!{T} (-2.0)), opaque (cast!{T} (0.5)))), "pow -2^0.5");
+
+    near (std::math::cbrt (opaque (cast!{T} (27.0))), cast!{T} (3.0), "cbrt 27");
+    near (std::math::cbrt (opaque (cast!{T} (-8.0))), cast!{T} (-2.0), "cbrt -8");
+    near (std::math::cbrt (opaque (cast!{T} (0.0))), cast!{T} (0.0), "cbrt 0");
+
+    near (std::math::hypot (opaque (cast!{T} (3.0)), opaque (cast!{T} (4.0))), cast!{T} (5.0), "hypot 3 4");
+    near (std::math::hypot (opaque (cast!{T} (-5.0)), opaque (cast!{T} (12.0))), cast!{T} (13.0), "hypot -5 12");
+    near (std::math::hypot (opaque (T::max / cast!{T} (2.0)), opaque (T::max / cast!{T} (2.0))),
+          T::max / cast!{T} (2.0) * cast!{T} (std::math::SQRT2), "hypot no overflow");
+}
+
+fn stdRounding {T} ()
+    throws AssertError
+{
+    near (std::math::floor (opaque (cast!{T} (1.5))), cast!{T} (1.0), "floor pos");
+    near (std::math::floor (opaque (cast!{T} (-1.5))), cast!{T} (-2.0), "floor neg");
+    near (std::math::floor (opaque (cast!{T} (3.0))), cast!{T} (3.0), "floor exact");
+
+    near (std::math::ceil (opaque (cast!{T} (1.5))), cast!{T} (2.0), "ceil pos");
+    near (std::math::ceil (opaque (cast!{T} (-1.5))), cast!{T} (-1.0), "ceil neg");
+    near (std::math::ceil (opaque (cast!{T} (3.0))), cast!{T} (3.0), "ceil exact");
+
+    near (std::math::round (opaque (cast!{T} (1.4))), cast!{T} (1.0), "round 1.4");
+    near (std::math::round (opaque (cast!{T} (2.5))), cast!{T} (3.0), "round 2.5");
+    near (std::math::round (opaque (cast!{T} (-2.5))), cast!{T} (-3.0), "round -2.5");
+
+    // 10 ^^ nb is not representable, which used to turn the result into a NaN
+    near (std::math::round (opaque (cast!{T} (1.5)), 400u32), cast!{T} (1.5), "round far digits");
+    near (std::math::round (opaque (cast!{T} (1.5)), 6000u32), cast!{T} (1.5), "round farther digits");
+    near (std::math::round (opaque (cast!{T} (1.5)), u32::max), cast!{T} (1.5), "round max digits");
+    near (std::math::round (opaque (T::max), 2u32), T::max, "round max");
+}
+
+fn stdHyperbolic {T} ()
+    throws AssertError
+{
+    let e = cast!{T} (std::math::E);
+
+    near (std::math::sinh (opaque (cast!{T} (0.0))), cast!{T} (0.0), "sinh 0");
+    near (std::math::sinh (opaque (cast!{T} (1.0))), (e - cast!{T} (1.0) / e) / cast!{T} (2.0), "sinh 1");
+    near (std::math::cosh (opaque (cast!{T} (0.0))), cast!{T} (1.0), "cosh 0");
+    near (std::math::cosh (opaque (cast!{T} (1.0))), (e + cast!{T} (1.0) / e) / cast!{T} (2.0), "cosh 1");
+    near (std::math::tanh (opaque (cast!{T} (0.0))), cast!{T} (0.0), "tanh 0");
+    near (std::math::tanh (opaque (cast!{T} (100.0))), cast!{T} (1.0), "tanh saturates");
+
+    near (std::math::asinh (opaque (cast!{T} (0.0))), cast!{T} (0.0), "asinh 0");
+    near (std::math::acosh (opaque (cast!{T} (1.0))), cast!{T} (0.0), "acosh 1");
+    near (std::math::atanh (opaque (cast!{T} (0.0))), cast!{T} (0.0), "atanh 0");
+    assert (core::math::isNaN (std::math::acosh (opaque (cast!{T} (0.5)))), "acosh 0.5");
+    assert (core::math::isNaN (std::math::atanh (opaque (cast!{T} (2.0)))), "atanh 2");
+    assert (core::math::isInf (std::math::atanh (opaque (cast!{T} (1.0)))), "atanh 1");
+
+    for i in 0 .. 8 {
+        let a = opaque (cast!{T} (cast!f64 (i)) / cast!{T} (8.0));
+        let s = std::math::sinh (a);
+        let c = std::math::cosh (a);
+        near (c * c - s * s, cast!{T} (1.0), "cosh^2 - sinh^2", tol-> 16u64);
+        near (std::math::tanh (a), s / c, "tanh = sinh / cosh");
+        near (std::math::asinh (s), a, "asinh (sinh a)");
+        near (std::math::acosh (std::math::cosh (a + cast!{T} (1.0))), a + cast!{T} (1.0), "acosh (cosh a)", tol-> 16u64);
+        near (std::math::atanh (std::math::tanh (a)), a, "atanh (tanh a)");
+    }
+}
+
+fn stdHelpers {T} ()
+    throws AssertError
+{
+    let zero = opaque (cast!{T} (0.0));
+    let one = opaque (cast!{T} (1.0));
+    let nan = zero / zero;
+    let inf = one / zero;
+    let pi = cast!{T} (std::math::PI);
+
+    near (std::math::copysign (opaque (cast!{T} (2.0)), opaque (cast!{T} (-1.0))), cast!{T} (-2.0), "copysign neg");
+    near (std::math::copysign (opaque (cast!{T} (-2.0)), opaque (cast!{T} (1.0))), cast!{T} (2.0), "copysign pos");
+    near (std::math::copysign (opaque (cast!{T} (2.0)), -zero), cast!{T} (-2.0), "copysign -0");
+    near (std::math::copysign (one, std::math::copysign (zero, opaque (cast!{T} (-1.0)))), -one, "copysign to zero");
+
+    near (std::math::degrees (pi), cast!{T} (180.0), "degrees pi");
+    near (std::math::degrees (opaque (cast!{T} (0.0))), cast!{T} (0.0), "degrees 0");
+    near (std::math::radians (opaque (cast!{T} (90.0))), pi / cast!{T} (2.0), "radians 90");
+    near (std::math::radians (opaque (cast!{T} (-360.0))), -cast!{T} (std::math::TAU), "radians -360");
+    for i in 0 .. 8 {
+        let a = opaque (cast!{T} (cast!f64 (i)) * cast!{T} (45.0));
+        near (std::math::degrees (std::math::radians (a)), a, "degrees (radians a)", tol-> 128u64);
+    }
+
+    assert (std::math::isFinite (one), "1 is finite");
+    assert (std::math::isFinite (T::max), "max is finite");
+    assert (std::math::isFinite (-T::max), "-max is finite");
+    assert (!std::math::isFinite (inf), "inf is not finite");
+    assert (!std::math::isFinite (-inf), "-inf is not finite");
+    assert (!std::math::isFinite (nan), "nan is not finite");
+
+    near (std::math::signum (opaque (cast!{T} (12.5))), cast!{T} (1.0), "signum pos");
+    near (std::math::signum (opaque (cast!{T} (-12.5))), cast!{T} (-1.0), "signum neg");
+    near (std::math::signum (inf), cast!{T} (1.0), "signum inf");
+    near (std::math::signum (zero), cast!{T} (0.0), "signum 0");
+    near (std::math::copysign (one, std::math::signum (-zero)), -one, "signum keeps -0");
+    assert (core::math::isNaN (std::math::signum (nan)), "signum nan");
+}
+
+fn stdForwarded {T} ()
+    throws AssertError
+{
+    let zero = opaque (cast!{T} (0.0));
+    let one = opaque (cast!{T} (1.0));
+
+    near (std::math::sqrt (opaque (cast!{T} (16.0))), cast!{T} (4.0), "sqrt 16");
+    near (std::math::trunc (opaque (cast!{T} (-12.9))), cast!{T} (-12.0), "trunc neg");
+    near (std::math::abs (opaque (cast!{T} (-10.5))), cast!{T} (10.5), "abs neg");
+    assert (std::math::isNaN (zero / zero), "isNaN");
+    assert (!std::math::isNaN (one), "!isNaN");
+    assert (std::math::isInf (-one / zero), "isInf");
+    assert (!std::math::isInf (one), "!isInf");
+    assert (std::math::fcmp (opaque (cast!{T} (0.1)) + opaque (cast!{T} (0.2)), opaque (cast!{T} (0.3))), "fcmp");
+    assert (!std::math::fcmp (one, opaque (cast!{T} (2.0))), "!fcmp");
+}
+
 __test round {
     stdRound!f32 (); stdRound!f64 (); stdRound!f80 (); stdRound!fsize ();
 }
 
 __test trigonometry {
     stdTrigo!f32 (); stdTrigo!f64 (); stdTrigo!f80 (); stdTrigo!fsize ();
+}
+
+__test expLog {
+    stdExpLog!f32 (); stdExpLog!f64 (); stdExpLog!f80 (); stdExpLog!fsize ();
+}
+
+__test powRoots {
+    stdPow!f32 (); stdPow!f64 (); stdPow!f80 (); stdPow!fsize ();
+}
+
+__test rounding {
+    stdRounding!f32 (); stdRounding!f64 (); stdRounding!f80 (); stdRounding!fsize ();
+}
+
+__test hyperbolic {
+    stdHyperbolic!f32 (); stdHyperbolic!f64 (); stdHyperbolic!f80 (); stdHyperbolic!fsize ();
+}
+
+__test helpers {
+    stdHelpers!f32 (); stdHelpers!f64 (); stdHelpers!f80 (); stdHelpers!fsize ();
+
+    assert (std::math::signum (opaque (-7)) == -1, "signum i32 neg");
+    assert (std::math::signum (opaque (7i64)) == 1i64, "signum i64 pos");
+    assert (std::math::signum (opaque (0i8)) == 0i8, "signum i8 zero");
+}
+
+__test forwarded {
+    stdForwarded!f32 (); stdForwarded!f64 (); stdForwarded!f80 (); stdForwarded!fsize ();
+
+    assert (std::math::abs (opaque (-10)) == 10, "abs i32");
 }
 
 __test constants {
@@ -323,6 +520,11 @@ __test constants {
     near (std::math::PI_4, std::math::PI / 4.0l, "pi_4");
     near (std::math::M_1_PI, 1.0l / std::math::PI, "m_1_pi");
     near (std::math::M_2_PI, 2.0l / std::math::PI, "m_2_pi");
+
+    near (std::math::LOG2E, 1.0l / std::math::LN2, "log2e");
+    near (std::math::LOG10E, 1.0l / std::math::LN10, "log10e");
+    near (std::math::SQRT2 * std::math::SQRT2, 2.0l, "sqrt2");
+    near (std::math::SQRT1_2, 1.0l / std::math::SQRT2, "sqrt1_2");
 }
 
 __test ipowNegativeExponent {
