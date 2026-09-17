@@ -2,7 +2,7 @@ in testrt_mailbox;
 
 use utils::mailbox;
 
-__test {
+__test normalizeJobs {
     // normalizeJobs clamps to at least one worker, and never asks for more workers than there
     // are tests to give them
     assert(normalizeJobs(0i64, 10us) == 1us, "a");
@@ -13,7 +13,7 @@ __test {
     assert(normalizeJobs(64i64, 0us) == 0us, "f");
 }
 
-__test {
+__test channelRoundTrip {
     // a channel round-trips a whole outcome record over its real pipes: the worker side reports,
     // the parent side receives the very same fields back
     let dmut ch = copy TestChannel();
@@ -40,7 +40,7 @@ __test {
     ch:.closeAll();
 }
 
-__test {
+__test closedChannelThrows {
     // a closed channel is an error, not a silent success: this is how the dispatcher learns a
     // worker is gone
     let dmut ch = copy TestChannel();
@@ -64,7 +64,7 @@ __test {
     assert(reportFailed, "b");
 }
 
-__test {
+__test queueRegions {
     // every worker works through its own contiguous region first: with 9 tests over 3 workers,
     // worker 0 gets 0,1,2 -- the sorted list is grouped by module, so this keeps a module's
     // tests(and whatever process-local caches they warm) inside one process
@@ -77,7 +77,7 @@ __test {
     assert(!queue.isEmpty, "e");
 }
 
-__test {
+__test queueStealsFromTail {
     // the regions are a hint, not a commitment: a worker that empties its own steals from the
     // *tail* of the biggest one left, so the victim keeps running its own prefix
     let dmut queue = copy TestQueue(6us, 2us);
@@ -98,7 +98,7 @@ __test {
     assert(queue:.next(1us) < 0i64, "i");
 }
 
-__test {
+__test queueGiveBack {
     // a test handed to a worker that turned out to be dead comes back to the pool instead of
     // being silently dropped
     let dmut queue = copy TestQueue(2us, 2us);

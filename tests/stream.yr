@@ -41,7 +41,7 @@ record D {
     {}
 }
 
-__test {
+__test entabing {
     let dmut str = copy StringStream();
     str:.write("Array {\n");
     str:.entabing(); // write "\t" at the beginning of new line from now on
@@ -54,7 +54,7 @@ __test {
     assert(str[] == "Array {\n\t0\n\t1\n\t2\n\t3\n\t4\n\t5\n\t6\n\t7\n\t8\n\t9\n}", str[]);
 }
 
-__test {
+__test streamable {
     let dmut str = copy StringStream();
     let z = copy A(78);
 
@@ -69,7 +69,7 @@ __test {
     assert(str[] == "stream::B(23)", "'" ~ str[] ~ "'");
 }
 
-__test {
+__test defaultPublicFields {
     let c = copy C(12, 56);
     let d = D(34, 73);
 
@@ -90,7 +90,7 @@ class E {
     impl Streamable;
 }
 
-__test {
+__test cyclicStreamable {
     let dmut e = copy E();
     e:.store(e);
 
@@ -108,7 +108,7 @@ class F {
     }
 }
 
-__test {
+__test cyclicDefault {
     let dmut f = copy F();
     f:.store(f);
 
@@ -127,7 +127,7 @@ class G {
 /**
  * The recursion guard used to break cycles is thread local, so concurrent streamings never race on it (YMI-161)
  * */
-__test {
+__test threadLocalRecursionGuard {
     let dmut pool = copy std::concurrency::task::TaskPool(nbThreads-> 8u64);
     let dmut res = copy [true];
 
@@ -152,7 +152,7 @@ __test {
     assert(res[0]);
 }
 
-__test { // the concrete writers: a single char, a pointer, and clearing the stream
+__test concreteWriters { // the concrete writers: a single char, a pointer, and clearing the stream
     let dmut s = copy StringStream();
     s:.write('a'c8):.write('b'c8);
     assert(s[] == "ab", "a");
@@ -169,7 +169,7 @@ __test { // the concrete writers: a single char, a pointer, and clearing the str
     assert(p[].len != 0us, "e");
 }
 
-__test { // a stream writes itself into another stream
+__test nestedStream { // a stream writes itself into another stream
     let dmut inner = copy StringStream();
     inner:.write("inner");
 
@@ -178,7 +178,7 @@ __test { // a stream writes itself into another stream
     assert(outer[] == "[inner]", outer[]);
 }
 
-__test { // nesting many entabings grows the buffer, unwinding them shrinks it back
+__test deepEntabing { // nesting many entabings grows the buffer, unwinding them shrinks it back
     let dmut s = copy StringStream();
     for i in 0 .. 40 {
         s:.entabing(txt-> "-");
@@ -202,7 +202,7 @@ __test { // nesting many entabings grows the buffer, unwinding them shrinks it b
     assert(t[] == "flat", "c");
 }
 
-__test { // writeln in its three forms
+__test writeln { // writeln in its three forms
     let dmut s = copy StringStream();
     s:.writeln();
     assert(s[] == "\n", "a");
@@ -216,7 +216,7 @@ __test { // writeln in its three forms
     assert(many[] == "x1y\n", many[]);
 }
 
-__test { // tuples, options and maps have writers of their own
+__test tupleOptionMap { // tuples, options and maps have writers of their own
     let dmut s = copy StringStream();
     s:.write((1, 2));
     assert(s[] == "(1,2)", s[]);
@@ -240,7 +240,7 @@ __test { // tuples, options and maps have writers of their own
     assert(map[] == "[a => 1]", map[]);
 }
 
-__test { // the aggregate writers, on the instantiations the library itself carries
+__test libraryInstantiations { // the aggregate writers, on the instantiations the library itself carries
     // an option of an exception: this is the form std::conv and std::format render sub-errors with
     let dmut s = copy StringStream();
     let err: (&Exception)? = (copy FsError(FsErrorCode::NOT_FOUND, "nope"))?;

@@ -5,7 +5,7 @@ mod tcp;
 use std::net::addr::_;
 use std::format;
 
-__test {
+__test parseIpv4 {
     let a = ("127.0.0.1"s8).to!{&Ipv4Addr} ();
     assert(a == copy Ipv4Addr([127u8, 0u8, 0u8, 1u8]), "1");
 
@@ -13,27 +13,27 @@ __test {
     assert(b == copy Ipv4Addr([192u8, 168u8, 128u8, 32u8]), "2");
 }
 
-__test {
+__test parseIpv4OutOfRange {
     { ("256.0.0.1"s8).to!{&Ipv4Addr} (); assert(false, "should have thrown"); }
     catch { _ => {} }
 }
 
-__test { // plain hextets, no compression
+__test parseIpv6Plain { // plain hextets, no compression
     let a = ("2001:db8:1:2:3:4:5:6"s8).to!{&Ipv6Addr} ();
     assert(a == copy Ipv6Addr([0x2001u16, 0xdb8u16, 1u16, 2u16, 3u16, 4u16, 5u16, 6u16]), "1");
 }
 
-__test { // "::" compression at the start
+__test parseIpv6LeadingCompression { // "::" compression at the start
     let a = ("::1"s8).to!{&Ipv6Addr} ();
     assert(a == copy Ipv6Addr([0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 1u16]), "1");
 }
 
-__test { // "::" compression in the middle
+__test parseIpv6MiddleCompression { // "::" compression in the middle
     let a = ("fe80:1::8:2"s8).to!{&Ipv6Addr} ();
     assert(a == copy Ipv6Addr([0xfe80u16, 1u16, 0u16, 0u16, 0u16, 0u16, 8u16, 2u16]), "1");
 }
 
-__test { // ipv4-mapped ipv6 address, YMI-166
+__test parseIpv4MappedIpv6 { // ipv4-mapped ipv6 address, YMI-166
     let a = ("::ffff:127.0.0.1"s8).to!{&Ipv6Addr} ();
     assert(a == copy Ipv6Addr([0u16, 0u16, 0u16, 0u16, 0u16, 0xffffu16, 0x7f00u16, 1u16]), "1");
 
@@ -43,17 +43,17 @@ __test { // ipv4-mapped ipv6 address, YMI-166
     assert(a != b, "3");
 }
 
-__test { // ipv4 tail without any "::" compression
+__test parseIpv6Ipv4Tail { // ipv4 tail without any "::" compression
     let a = ("2001:db8:1:2:3:4:1.2.3.4"s8).to!{&Ipv6Addr} ();
     assert(a == copy Ipv6Addr([0x2001u16, 0xdb8u16, 1u16, 2u16, 3u16, 4u16, 0x0102u16, 0x0304u16]), "1");
 }
 
-__test { // an ipv4 tail is only legal as the last component
+__test parseIpv6MisplacedIpv4Tail { // an ipv4 tail is only legal as the last component
     { ("::1.2.3.4:ffff"s8).to!{&Ipv6Addr} (); assert(false, "should have thrown"); }
     catch { _ => {} }
 }
 
-__test {
+__test parseIpAddr {
     let a = ("::1"s8).to!{&IpAddr} ();
     assert(a == copy Ipv6Addr([0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 1u16]), "1");
 
@@ -61,7 +61,7 @@ __test {
     assert(b == copy Ipv4Addr([127u8, 0u8, 0u8, 1u8]), "2");
 }
 
-__test { // the loopback, unspecified and private predicates of an ipv4 address
+__test ipv4Predicates { // the loopback, unspecified and private predicates of an ipv4 address
     let loopback = copy Ipv4Addr([127u8, 0u8, 0u8, 1u8]);
     assert(loopback.isLoopback(), "a");
     assert(!loopback.isUnspecified(), "b");
@@ -76,7 +76,7 @@ __test { // the loopback, unspecified and private predicates of an ipv4 address
     assert(!(copy Ipv4Addr([8u8, 8u8, 8u8, 8u8])).isLoopback(), "h");
 }
 
-__test { // MID-64: the 172.16.0.0/12 block is the second octet 16 through 31, not '> 16'
+__test ipv4IsPrivate { // MID-64: the 172.16.0.0/12 block is the second octet 16 through 31, not '> 16'
     assert((copy Ipv4Addr([10u8, 1u8, 2u8, 3u8])).isPrivate(), "a");
     assert((copy Ipv4Addr([192u8, 168u8, 1u8, 1u8])).isPrivate(), "b");
     assert((copy Ipv4Addr([172u8, 16u8, 0u8, 1u8])).isPrivate(), "c");
@@ -89,7 +89,7 @@ __test { // MID-64: the 172.16.0.0/12 block is the second octet 16 through 31, n
     assert(!(copy Ipv4Addr([192u8, 169u8, 1u8, 1u8])).isPrivate(), "i");
 }
 
-__test { // an ipv4 address renders itself dotted, packs itself into a u32, and hashes on that
+__test ipv4FormatPackHash { // an ipv4 address renders itself dotted, packs itself into a u32, and hashes on that
     let a = copy Ipv4Addr([127u8, 0u8, 0u8, 1u8]);
     assert(format("{}", a) == "127.0.0.1", format("{}", a));
     assert(a[] == [127u8, 0u8, 0u8, 1u8], "b");
@@ -102,7 +102,7 @@ __test { // an ipv4 address renders itself dotted, packs itself into a u32, and 
     assert(a != copy Ipv6Addr([0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 1u16]), "g");
 }
 
-__test { // the loopback and unspecified predicates of an ipv6 address
+__test ipv6Predicates { // the loopback and unspecified predicates of an ipv6 address
     assert((copy Ipv6Addr([0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 1u16])).isLoopback(), "a");
     assert(!(copy Ipv6Addr([0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 2u16])).isLoopback(), "b");
     assert(!(copy Ipv6Addr([1u16, 0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 1u16])).isLoopback(), "c");
@@ -112,7 +112,7 @@ __test { // the loopback and unspecified predicates of an ipv6 address
     assert(!(copy Ipv6Addr([1u16, 0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 0u16])).isUnspecified(), "f");
 }
 
-__test { // rendering an ipv6 address compresses its longest run of zeroes, once
+__test ipv6Format { // rendering an ipv6 address compresses its longest run of zeroes, once
     assert(format("{}", copy Ipv6Addr([0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 1u16])) == "::1", "a");
     assert(format("{}", copy Ipv6Addr([0u16 ; 8])) == "::", "b");
     assert(format("{}", copy Ipv6Addr([0x2001u16, 0xdb8u16, 0u16, 0u16, 0u16, 0u16, 0u16, 1u16])) == "2001:db8::1", "c");
@@ -127,7 +127,7 @@ __test { // rendering an ipv6 address compresses its longest run of zeroes, once
     assert(format("{}", copy Ipv6Addr([1u16, 2u16, 0u16, 0u16, 0u16, 0u16, 0u16, 0u16])) == "1:2::", "h");
 }
 
-__test { // an ipv6 address packs itself big-endian, and hashes on its content
+__test ipv6PackHash { // an ipv6 address packs itself big-endian, and hashes on its content
     let a = copy Ipv6Addr([0x2001u16, 0xdb8u16, 0u16, 0u16, 0u16, 0u16, 0u16, 1u16]);
     assert(a[] == [0x2001u16, 0xdb8u16, 0u16, 0u16, 0u16, 0u16, 0u16, 1u16], "a");
 
@@ -140,7 +140,7 @@ __test { // an ipv6 address packs itself big-endian, and hashes on its content
     assert(a.toHash() != (copy Ipv6Addr([0u16 ; 8])).toHash(), "f");
 }
 
-__test { // a socket address pairs an ip with a port, and compares on both
+__test sockAddr { // a socket address pairs an ip with a port, and compares on both
     let a = SockAddr(copy Ipv4Addr([127u8, 0u8, 0u8, 1u8]), 8080u16);
     assert(a.ip == copy Ipv4Addr([127u8, 0u8, 0u8, 1u8]), "a");
     assert(a.port == 8080u16, "b");

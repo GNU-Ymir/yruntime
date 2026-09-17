@@ -23,7 +23,7 @@ class A {
     {}
 }
 
-__test {
+__test printDict {
 
     let dmut a = copy Dict();
     a["foo"] = copy Int(12);
@@ -31,7 +31,7 @@ __test {
     println(a);
 }
 
-__test {
+__test arrayToClasses {
     let dmut z = copy Array();
     let dmut m = copy Dict();
 
@@ -42,7 +42,7 @@ __test {
     assert(result.len == 1 && result[0].x == 89);
 }
 
-__test {
+__test jsonEscapeRoundTrip {
     // Strings containing '"', '\', or control chars must be escaped on dump, and correctly
     // recovered on parse, e.g. function names like `opBinary!{"^^"s8}` do produce quotes.
     let dmut d = copy Dict();
@@ -61,7 +61,7 @@ __test {
     } else assert(false);
 }
 
-__test {
+__test tomlEscapeRoundTrip {
     // Same as above, for the toml dumper/parser.
     let dmut d = copy Dict();
     d["func"] = copy Str("opBinary!{\"^^\"s8}::opBinary");
@@ -135,7 +135,7 @@ __test tomlStandardUnicodeEscapes {
     }
 }
 
-__test {
+__test tomlQuotedKeys {
     // toml keys that are not valid bare keys are dumped quoted, and round trip
     let dmut inl = copy Dict();
     inl["a b"] = copy Int(1);
@@ -183,7 +183,7 @@ __test {
     assert(toml::dump(parsed) == dumped);
 }
 
-__test {
+__test tomlHeaderPath {
     // a header path mixes bare and quoted parts, single quoted ones included
     let parsed = toml::parse("[a.'b.c'.\"d e\"]\nk = 1\n");
     {
@@ -204,7 +204,7 @@ __test {
     }
 }
 
-__test {
+__test jsonMacroMutable {
     // json returns deeply mutable values
     let dmut d = json#{"foo": true};
     d["bar"] = copy Bool(false);
@@ -235,7 +235,7 @@ fn countSub(s: [c8], sub: [c8])-> usize {
     res
 }
 
-__test {
+__test tomlArrayOfTables {
     // toml array of tables: '[[x]]' declares a new element of the array stored at 'x'
     let parsed = toml::parse("[[x]]\na = 1\n[[x]]\na = 2\n");
 
@@ -250,7 +250,7 @@ __test {
     }
 }
 
-__test {
+__test tomlDumpArrayOfTables {
     // an array of dicts is dumped as repeated '[[x]]' headers, not as an inline array
     let dmut arr = copy Array();
     let dmut e0 = copy Dict();
@@ -284,7 +284,7 @@ __test {
     }
 }
 
-__test {
+__test tomlDottedArrayOfTables {
     // dotted path arrays of tables, under a global table that also holds plain values
     let content = "[deps]\nstrict = true\n\n[[deps.pkg]]\nname = \"a\"\n\n[[deps.pkg]]\nname = \"b\"\n";
     let parsed = toml::parse(content);
@@ -317,7 +317,7 @@ __test {
     }
 }
 
-__test {
+__test tomlSubTableOfArray {
     // a sub table of an array of tables applies to the last element read, and round trips
     let content = "[[srv]]\nport = 80\n\n[srv.tls]\nenabled = false\n\n[[srv]]\nport = 443\n\n[srv.tls]\nenabled = true\n";
     let parsed = toml::parse(content);
@@ -338,7 +338,7 @@ __test {
     }
 }
 
-__test {
+__test tomlInlineArrays {
     // an empty array, or an array that is not made only of dicts, stays an inline array
     let dmut mixed = copy Array();
     mixed:.push(copy Int(1));
@@ -360,7 +360,7 @@ __test {
     }
 }
 
-__test {
+__test sortedKeys {
     // keys are dumped sorted, whatever the insertion order, for both toml and json
     let dmut d = copy Dict();
     d["version"] = copy Int(1);
@@ -375,7 +375,7 @@ __test {
     assert(json::dump(d) == json::dump(json::parse(json::dump(d))));
 }
 
-__test {
+__test stableKeyOrder {
     // adding a key never reorders the keys already dumped, whatever the hash map does under it
     let names = ["a"s8, "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"];
     let dmut d = copy Dict();
@@ -391,7 +391,7 @@ __test {
     }
 }
 
-__test {
+__test tomlInlineDict {
     // an inline dict separates its entries, and thus round trips(the keys being sorted)
     let dmut inl = copy Dict();
     inl["b"] = copy Int(2);
@@ -419,7 +419,7 @@ __test {
     }
 }
 
-__test {
+__test arrayToTuple {
     // a config array converts to a tuple of the types of its elements
     let dmut a = copy Array();
     a:.push(copy Int(1));
@@ -428,7 +428,7 @@ __test {
     assert(a.to!{(i32, [c8])} () == (1, "test"));
 }
 
-__test {
+__test dictToMap {
     // a config dict converts to a map, either of a scalar type
     let dmut d = copy Dict();
     d["foo"] = copy Int(1);
@@ -449,7 +449,7 @@ __test {
     } else assert(false);
 }
 
-__test {
+__test getOr {
     // getOr returns the converted value of the key, or the default when it is absent
     let dmut d = copy Dict();
     d["foo"] = copy Str("foo");
@@ -462,7 +462,7 @@ __test {
     assert(d.getOr("foo", 56) == 56);
 }
 
-__test {
+__test dollarIndex {
     // '$' inside an index of a config array is the length of the array
     let dmut a = copy Array();
     a:.push(copy Int(1));
@@ -475,7 +475,7 @@ __test {
     }
 }
 
-__test { // MID-64: the 'emptyDict' rule of the json macro was never reachable, so '{}' did not parse
+__test jsonEmptyDict { // MID-64: the 'emptyDict' rule of the json macro was never reachable, so '{}' did not parse
   {
     let dmut nested = json#{"a": {}, "b": {"c": 1}};
 
@@ -500,7 +500,7 @@ __test { // MID-64: the 'emptyDict' rule of the json macro was never reachable, 
   }
 }
 
-__test { // MID-56: a null literal parses to a None node, and is dumped back as null
+__test jsonNull { // MID-56: a null literal parses to a None node, and is dumped back as null
   {
     let parsed = json::parse("{\"a\": null, \"b\": [1, null]}");
 
@@ -519,7 +519,7 @@ __test { // MID-56: a null literal parses to a None node, and is dumped back as 
   }
 }
 
-__test { // MID-56: the json macro accepts null as a value
+__test jsonMacroNull { // MID-56: the json macro accepts null as a value
   {
     let dmut d = json#{"a": null, "b": [1, null], "c": {"d": null}, "e": "null"};
 

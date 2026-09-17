@@ -7,9 +7,9 @@
 #
 # Each <filter> is a ./midgard_tests `-f` filter: a "::"-separated path of glob segments matching
 # the *test name* with its "__test" segment dropped, and it must have exactly as many segments as
-# that name ("config::*" matches config::__test::0, "algorithm::*::*" matches
-# algorithm::sorting::__test::0, "algorithm::searching::*::*" matches
-# algorithm::searching::find::__test::0). Only one filter can be passed per run, hence the loop.
+# that name ("config::*" matches config::__test::jsonNull, "algorithm::*::*" matches
+# algorithm::sorting::__test::ascending, "algorithm::searching::*::*" matches
+# algorithm::searching::find::__test::valueSlice). Only one filter can be passed per run, hence the loop.
 #
 # Every ./midgard_tests run leaves two things behind in the working directory: `.ymir_test_success`,
 # the "name;true|false" map `--resume` reads, and one `.ymir_coverage_<pid>.json` per process,
