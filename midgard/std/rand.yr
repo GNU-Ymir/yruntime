@@ -13,9 +13,10 @@
 
 in rand;
 
+pub mod errors;
 pub mod generator;
 
-use std::rand::generator;
+use std::rand::{errors, generator};
 use std::traits;
 
 @thread
@@ -113,4 +114,66 @@ pub fn if isFloating!{T} uniform {T} (low: T, high: T)-> T {
  */
 pub fn if isFloating!{T} rand {T} ()-> T {
     __THREAD_RANDOM__:.rand!{T}()
+}
+
+/**
+ * Shuffle the slice `a` in place, every permutation being equally likely (Fisher-Yates).
+ * @params:
+ *    - a: the slice to shuffle
+ * @returns: `a`, shuffled
+ * @example:
+ * ```
+ * use std::algorithm::sorting;
+ *
+ * let dmut a = copy [1, 2, 3, 4, 5];
+ * let b = (alias a).shuffle();
+ *
+ * assert(a == b);
+ * assert((copy b).sort() == [1, 2, 3, 4, 5]);
+ * ```
+ */
+pub fn shuffle {U} (mut a: [mut U])-> mut [mut U] {
+    __THREAD_RANDOM__:.shuffle(alias a)
+}
+
+/**
+ * @params:
+ *    - a: the slice to pick from
+ * @returns: an element of `a`, each position being equally likely
+ * @throws:
+ *    - &RandomError: if `a` is empty
+ * @example:
+ * ```
+ * let c = choice(copy ["rock", "paper", "scissors"]);
+ *
+ * assert(c == "rock" || c == "paper" || c == "scissors");
+ * ```
+ */
+pub fn choice {U} (a: [U])-> U
+    throws RandomError
+{
+    __THREAD_RANDOM__:.choice(a)
+}
+
+/**
+ * Pick `k` elements of `a` without replacement: each position of `a` is picked at most once, and
+ * every subset of `k` positions is equally likely.
+ * @params:
+ *    - a: the slice to pick from
+ *    - k: the number of elements to pick
+ * @returns: the picked elements, in random order
+ * @throws:
+ *    - &RandomError: if `k` is greater than the length of `a`
+ * @example:
+ * ```
+ * let s = sample(copy [1, 2, 3, 4, 5], 3us);
+ *
+ * assert(s.len == 3us);
+ * assert(s[0] != s[1] && s[1] != s[2] && s[0] != s[2]);
+ * ```
+ */
+pub fn sample {U} (a: [U], k: usize)-> [U]
+    throws RandomError
+{
+    __THREAD_RANDOM__:.sample(a, k)
 }

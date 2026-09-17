@@ -1,6 +1,8 @@
 in rand;
 
 use std::{conv, rand};
+use std::algorithm::sorting;
+use std::rand::errors;
 use std::rand::generator;
 
 __test uniformCoversInterval {
@@ -174,4 +176,74 @@ __test entropySeededGeneratorsDiffer {
     let dmut b = copy Random ();
 
     assert ([a:.bits (), a:.bits ()] != [b:.bits (), b:.bits ()]);
+}
+
+__test shufflePermutes {
+    seed (17u64);
+
+    let dmut a = copy [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    let dmut firstAt = copy [0 ; 10u64];
+    for _ in 0 .. 10_000 {
+        (alias a).shuffle ();
+        assert ((copy a).sort () == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        firstAt [a [0]] += 1;
+    }
+
+    // every element lands first about 1000 times out of 10_000
+    for n in firstAt {
+        assert (n > 850 && n < 1150, "biased shuffle: " ~ n.to![c8] ());
+    }
+
+    let dmut empty: [i32] = [];
+    assert ((alias empty).shuffle () == []);
+
+    let mut words: [mut [c8]] = copy ["a", "b"];
+    (alias words).shuffle ();
+    assert (words == ["a", "b"] || words == ["b", "a"]);
+}
+
+__test choiceCoversSlice {
+    seed (23u64);
+
+    let dmut seen = copy [false ; 4u64];
+    for _ in 0 .. 1_000 {
+        seen [choice (copy [0, 1, 2, 3])] = true;
+    }
+    assert (seen == [true, true, true, true]);
+
+    let empty: [i32] = [];
+    let raised = {
+        choice (empty);
+        false
+    } catch {
+        _: &RandomError => true
+    };
+    assert (raised);
+}
+
+__test sampleWithoutReplacement {
+    seed (29u64);
+
+    let dmut counts = copy [0 ; 6u64];
+    for _ in 0 .. 6_000 {
+        let s = sample (copy [0, 1, 2, 3, 4, 5], 2us);
+        assert (s.len == 2us && s [0] != s [1]);
+        for x in s { counts [x] += 1; }
+    }
+
+    // each element is in about 2 samples out of 6
+    for n in counts {
+        assert (n > 1800 && n < 2200, "biased sample: " ~ n.to![c8] ());
+    }
+
+    assert ((copy sample (copy [3, 1, 2], 3us)).sort () == [1, 2, 3]);
+    assert (sample (copy [3, 1, 2], 0us) == []);
+
+    let raised = {
+        sample (copy [1, 2], 3us);
+        false
+    } catch {
+        _: &RandomError => true
+    };
+    assert (raised);
 }
