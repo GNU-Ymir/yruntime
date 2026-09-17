@@ -6,7 +6,7 @@
 
 in dumper;
 
-use std::stream;
+use std::{char, stream};
 use std::config::data;
 
 
@@ -99,6 +99,34 @@ pub record TomlDumper {
     }
 
     /**
+     * @returns: `k` as written in a toml key, bare if it can be, quoted and escaped otherwise
+     * */
+    prv fn key(self, k: [c8])-> [c8] {
+        if self.isBareKey(k) return k;
+
+        let dmut res = copy StringStream();
+        self.dumpString(k, alias res);
+        res[]
+    }
+
+    /**
+     * @returns: true iif `k` is made of letters, digits, '_' and '-', with at least one letter(as
+     *   `TomlParser` requires)
+     * */
+    prv fn isBareKey(self, k: [c8])-> bool {
+        let mut oneAlpha = false;
+        for c in k {
+            if isAlpha(c) {
+                oneAlpha = true;
+            } else if !isDigit(c) && c != '_' && c != '-' {
+                return false;
+            }
+        }
+
+        oneAlpha
+    }
+
+    /**
      * Dump a super dict(root of a toml file)
      * @params:
      *    - d: the dict to dump
@@ -113,7 +141,7 @@ pub record TomlDumper {
         for k in d.sortedKeys() { // sorted, so that dumping twice produces the same text
             if let Ok(v) = content[k] {
                 if let a: &Array = v && self.isTableArray(a) {
-                    self.dumpTableArray(a, baseName ~ k, alias inner);
+                    self.dumpTableArray(a, baseName ~ self.key(k), alias inner);
                 }
 
                 else if let iD: &Dict = v {
@@ -126,15 +154,15 @@ pub record TomlDumper {
                     }
 
                     if (others) {
-                        inner:.write("\n[", baseName, k, "]\n");
-                        self.dumpGlobalDict(iD, baseName-> baseName ~ k ~ ".", alias inner, 0);
+                        inner:.write("\n[", baseName, self.key(k), "]\n");
+                        self.dumpGlobalDict(iD, baseName-> baseName ~ self.key(k) ~ ".", alias inner, 0);
                     } else {
-                        self.dumpSuperDict(iD, baseName ~ k ~ ".", alias inner);
+                        self.dumpSuperDict(iD, baseName ~ self.key(k) ~ ".", alias inner);
                     }
                 }
 
                 else {
-                    superStream:.write(k, " = ");
+                    superStream:.write(self.key(k), " = ");
                     self.dump(v, alias superStream, false, 0);
                     superStream:.write("\n");
                 }
@@ -196,7 +224,7 @@ pub record TomlDumper {
         for k in d.sortedKeys() { // sorted, so that dumping twice produces the same text
             if let Ok(v) = content[k] {
                 if let a: &Array = v && self.isTableArray(a) {
-                    self.dumpTableArray(a, baseName ~ k, alias post);
+                    self.dumpTableArray(a, baseName ~ self.key(k), alias post);
                 }
 
                 else {
@@ -204,8 +232,9 @@ pub record TomlDumper {
                         stream:.write(" ");
                     }
 
-                    stream:.write(k, " = ");
-                    self.dump(v, alias stream, false, indent + cast!i32(k.len) + 3);
+                    let name = self.key(k);
+                    stream:.write(name, " = ");
+                    self.dump(v, alias stream, false, indent + cast!i32(name.len) + 3);
                     stream:.write("\n");
                     z += 1;
                 }
@@ -230,8 +259,9 @@ pub record TomlDumper {
             if let Ok(v) = content[k] {
                 if z != 0 { stream:.write(", "); }
 
-                stream:.write(k, " = ");
-                self.dump(v, alias stream, false, indent + cast!i32(k.len) + 3);
+                let name = self.key(k);
+                stream:.write(name, " = ");
+                self.dump(v, alias stream, false, indent + cast!i32(name.len) + 3);
                 z += 1;
             }
         }
