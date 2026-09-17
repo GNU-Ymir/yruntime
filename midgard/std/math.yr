@@ -141,6 +141,19 @@ mod internal {
     pub extern (C) fn log2l(x: fsize)-> fsize;
     pub extern (C) fn log10l(x: fsize)-> fsize;
     pub extern (C) fn log1pl(x: fsize)-> fsize;
+
+    pub extern (C) fn powf(x: f32, y: f32)-> f32;
+    pub extern (C) fn cbrtf(x: f32)-> f32;
+    pub extern (C) fn hypotf(x: f32, y: f32)-> f32;
+    pub extern (C) fn pow(x: f64, y: f64)-> f64;
+    pub extern (C) fn cbrt(x: f64)-> f64;
+    pub extern (C) fn hypot(x: f64, y: f64)-> f64;
+    pub extern (C) fn powl(x: f80, y: f80)-> f80;
+    pub extern (C) fn cbrtl(x: f80)-> f80;
+    pub extern (C) fn hypotl(x: f80, y: f80)-> f80;
+    pub extern (C) fn powl(x: fsize, y: fsize)-> fsize;
+    pub extern (C) fn cbrtl(x: fsize)-> fsize;
+    pub extern (C) fn hypotl(x: fsize, y: fsize)-> fsize;
 }
 
 /**
@@ -324,4 +337,48 @@ pub fn if isFloating!{T} log1p {T} (x: T)-> T {
     else cte if template!{T}{U of f64} { internal::log1p(x) }
     else cte if template!{T}{U of f80} { internal::log1pl(x) }
     else { internal::log1pl(x) }
+}
+
+/**
+ * @returns: `x` raised to the power `y`.
+ * @info: this calls the C library, where `^^` on two floating point values is an iterative
+ *  approximation bounded by `core::math::ffpow`'s precision.
+ * @example:
+ * ```
+ * assert(pow(2.0, 10.0) == 1024.0);
+ * ```
+ */
+pub fn if isFloating!{T} pow {T} (x: T, y: T)-> T {
+    cte if template!{T}{U of f32} { internal::powf(x, y) }
+    else cte if template!{T}{U of f64} { internal::pow(x, y) }
+    else cte if template!{T}{U of f80} { internal::powl(x, y) }
+    else { internal::powl(x, y) }
+}
+
+/**
+ * @returns: the cube root of `x`, negative values included.
+ * @example:
+ * ```
+ * assert(cbrt(-27.0) == -3.0);
+ * ```
+ */
+pub fn if isFloating!{T} cbrt {T} (x: T)-> T {
+    cte if template!{T}{U of f32} { internal::cbrtf(x) }
+    else cte if template!{T}{U of f64} { internal::cbrt(x) }
+    else cte if template!{T}{U of f80} { internal::cbrtl(x) }
+    else { internal::cbrtl(x) }
+}
+
+/**
+ * @returns: `sqrt(x * x + y * y)`, without overflowing or underflowing in between.
+ * @example:
+ * ```
+ * assert(hypot(3.0, 4.0) == 5.0);
+ * ```
+ */
+pub fn if isFloating!{T} hypot {T} (x: T, y: T)-> T {
+    cte if template!{T}{U of f32} { internal::hypotf(x, y) }
+    else cte if template!{T}{U of f64} { internal::hypot(x, y) }
+    else cte if template!{T}{U of f80} { internal::hypotl(x, y) }
+    else { internal::hypotl(x, y) }
 }

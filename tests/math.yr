@@ -345,6 +345,28 @@ fn stdExpLog {T} ()
     }
 }
 
+fn stdPow {T} ()
+    throws AssertError
+{
+    near (std::math::pow (opaque (cast!{T} (2.0)), opaque (cast!{T} (10.0))), cast!{T} (1024.0), "pow 2^10");
+    near (std::math::pow (opaque (cast!{T} (2.0)), opaque (cast!{T} (-2.0))), cast!{T} (0.25), "pow 2^-2");
+    near (std::math::pow (opaque (cast!{T} (4.0)), opaque (cast!{T} (0.5))), cast!{T} (2.0), "pow 4^0.5");
+    near (std::math::pow (opaque (cast!{T} (-2.0)), opaque (cast!{T} (3.0))), cast!{T} (-8.0), "pow -2^3");
+    near (std::math::pow (opaque (cast!{T} (0.0)), opaque (cast!{T} (0.0))), cast!{T} (1.0), "pow 0^0");
+    near (std::math::pow (opaque (cast!{T} (std::math::E)), opaque (cast!{T} (2.0))),
+          std::math::exp (cast!{T} (2.0)), "pow e^2");
+    assert (core::math::isNaN (std::math::pow (opaque (cast!{T} (-2.0)), opaque (cast!{T} (0.5)))), "pow -2^0.5");
+
+    near (std::math::cbrt (opaque (cast!{T} (27.0))), cast!{T} (3.0), "cbrt 27");
+    near (std::math::cbrt (opaque (cast!{T} (-8.0))), cast!{T} (-2.0), "cbrt -8");
+    near (std::math::cbrt (opaque (cast!{T} (0.0))), cast!{T} (0.0), "cbrt 0");
+
+    near (std::math::hypot (opaque (cast!{T} (3.0)), opaque (cast!{T} (4.0))), cast!{T} (5.0), "hypot 3 4");
+    near (std::math::hypot (opaque (cast!{T} (-5.0)), opaque (cast!{T} (12.0))), cast!{T} (13.0), "hypot -5 12");
+    near (std::math::hypot (opaque (T::max / cast!{T} (2.0)), opaque (T::max / cast!{T} (2.0))),
+          T::max / cast!{T} (2.0) * cast!{T} (std::math::SQRT2), "hypot no overflow");
+}
+
 __test round {
     stdRound!f32 (); stdRound!f64 (); stdRound!f80 (); stdRound!fsize ();
 }
@@ -355,6 +377,10 @@ __test trigonometry {
 
 __test expLog {
     stdExpLog!f32 (); stdExpLog!f64 (); stdExpLog!f80 (); stdExpLog!fsize ();
+}
+
+__test powRoots {
+    stdPow!f32 (); stdPow!f64 (); stdPow!f80 (); stdPow!fsize ();
 }
 
 __test constants {
