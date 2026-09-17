@@ -308,12 +308,53 @@ fn stdTrigo {T} ()
     }
 }
 
+fn stdExpLog {T} ()
+    throws AssertError
+{
+    near (std::math::exp (opaque (cast!{T} (0.0))), cast!{T} (1.0), "exp 0");
+    near (std::math::exp (opaque (cast!{T} (1.0))), cast!{T} (std::math::E), "exp 1");
+    near (std::math::exp2 (opaque (cast!{T} (10.0))), cast!{T} (1024.0), "exp2 10");
+    near (std::math::exp2 (opaque (cast!{T} (-1.0))), cast!{T} (0.5), "exp2 -1");
+    near (std::math::expm1 (opaque (cast!{T} (0.0))), cast!{T} (0.0), "expm1 0");
+    near (std::math::expm1 (opaque (cast!{T} (1.0))), cast!{T} (std::math::E - 1.0l), "expm1 1");
+
+    near (std::math::log (opaque (cast!{T} (1.0))), cast!{T} (0.0), "log 1");
+    near (std::math::log (opaque (cast!{T} (std::math::E))), cast!{T} (1.0), "log e");
+    near (std::math::log (opaque (cast!{T} (2.0))), cast!{T} (std::math::LN2), "log 2");
+    near (std::math::log (opaque (cast!{T} (10.0))), cast!{T} (std::math::LN10), "log 10");
+    near (std::math::log2 (opaque (cast!{T} (1024.0))), cast!{T} (10.0), "log2 1024");
+    near (std::math::log2 (opaque (cast!{T} (std::math::E))), cast!{T} (std::math::LOG2E), "log2 e");
+    near (std::math::log10 (opaque (cast!{T} (1000.0))), cast!{T} (3.0), "log10 1000");
+    near (std::math::log10 (opaque (cast!{T} (std::math::E))), cast!{T} (std::math::LOG10E), "log10 e");
+    near (std::math::log1p (opaque (cast!{T} (0.0))), cast!{T} (0.0), "log1p 0");
+    near (std::math::log1p (opaque (cast!{T} (std::math::E - 1.0l))), cast!{T} (1.0), "log1p e-1");
+
+    assert (core::math::isInf (std::math::log (opaque (cast!{T} (0.0)))), "log 0");
+    assert (core::math::isNaN (std::math::log (opaque (cast!{T} (-1.0)))), "log -1");
+
+    // expm1 and log1p keep the precision exp and log lose next to zero
+    let tiny = opaque (T::epsilon * cast!{T} (16.0));
+    near (std::math::expm1 (tiny), tiny, "expm1 tiny");
+    near (std::math::log1p (tiny), tiny, "log1p tiny");
+
+    for i in 0 .. 8 {
+        let a = opaque (cast!{T} (cast!f64 (i)) / cast!{T} (2.0) - cast!{T} (2.0));
+        near (std::math::log (std::math::exp (a)), a, "log (exp a)");
+        near (std::math::log2 (std::math::exp2 (a)), a, "log2 (exp2 a)");
+        near (std::math::log1p (std::math::expm1 (a)), a, "log1p (expm1 a)");
+    }
+}
+
 __test round {
     stdRound!f32 (); stdRound!f64 (); stdRound!f80 (); stdRound!fsize ();
 }
 
 __test trigonometry {
     stdTrigo!f32 (); stdTrigo!f64 (); stdTrigo!f80 (); stdTrigo!fsize ();
+}
+
+__test expLog {
+    stdExpLog!f32 (); stdExpLog!f64 (); stdExpLog!f80 (); stdExpLog!fsize ();
 }
 
 __test constants {
