@@ -65,12 +65,20 @@ pub fn if (isIntegral!{U} && isChar!{C}) to {C, U} (a: U, base: U, upper: bool)-
 pub fn if (isIntegral!{T} && isChar!{C}) to {T, C} (a: C, base: T)-> T
     throws std::conv::errors::CastFailure
 {
-    let ret = if (a >= '0' && a <= '9') {
-        cast!T(cast!u8(a) - cast!u8('0'))
-    } else if (a >= 'a' && a <= 'z') {
-        cast!T(cast!u8(a) - cast!u8('a')) + 10
-    } else if (a >= 'A' && a <= 'Z') {
-        cast!T(cast!u8(a) - cast!u8('A')) + 10
+    let code = cte if (C::size == 1us) {
+        cast!u32(cast!u8(a))
+    } else cte if (C::size == 2us) {
+        cast!u32(cast!u16(a))
+    } else {
+        cast!u32(a)
+    };
+
+    let ret = if (code >= cast!u32(cast!u8('0')) && code <= cast!u32(cast!u8('9'))) {
+        cast!T(code - cast!u32(cast!u8('0')))
+    } else if (code >= cast!u32(cast!u8('a')) && code <= cast!u32(cast!u8('z'))) {
+        cast!T(code - cast!u32(cast!u8('a'))) + 10
+    } else if (code >= cast!u32(cast!u8('A')) && code <= cast!u32(cast!u8('Z'))) {
+        cast!T(code - cast!u32(cast!u8('A'))) + 10
     } else {
         throw copy CastFailure(c8::typeinfo, usize::typeinfo);
     };

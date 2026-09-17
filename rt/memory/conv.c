@@ -4,7 +4,11 @@
 #include <rt/utils/gc.h>
 #include <rt/memory/alloc.h>
 
+#include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 /*!
  * ====================================================================================================
@@ -156,32 +160,52 @@ _yrt_slice_t  _yrt_fsize_to_string_exp (long double f, uint32_t prec) {
  */
 
 
-float _yrt_string_to_f32 (_yrt_slice_t arr, uint8_t * succ) {
-    char* endf;
-    float res = strtof (arr.data, &endf);
-    *succ = (errno != ERANGE) && endf == (arr.data + arr.len);
+/**
+ * Copy the literal of a slice into a null terminated string, that is `local` if it fits in it.
+ * Returns NULL for a literal strto* would accept but a Ymir float literal cannot be: an empty one,
+ * or one starting with a whitespace.
+ */
+static char * _yrt_float_literal (_yrt_slice_t arr, char * local, size_t size) {
+    if (arr.len == 0 || isspace ((unsigned char) ((char*) arr.data) [0])) return NULL;
+
+    char * str = arr.len < size ? local : malloc (arr.len + 1);
+    if (str == NULL) return NULL;
+
+    memcpy (str, arr.data, arr.len);
+    str [arr.len] = '\0';
+    return str;
+}
+
+#define _YRT_STRING_TO_FLOAT(T, strtoT)                             \
+    char local [64];                                                \
+    char * str = _yrt_float_literal (arr, local, sizeof (local));   \
+    if (str == NULL) {                                              \
+        *succ = 0;                                                  \
+        return 0;                                                   \
+    }                                                               \
+                                                                    \
+    char * end;                                                     \
+    errno = 0;                                                      \
+    T res = strtoT (str, &end);                                     \
+    *succ = (errno != ERANGE) && end == (str + arr.len);            \
+                                                                    \
+    if (str != local) free (str);                                   \
     return res;
+
+float _yrt_string_to_f32 (_yrt_slice_t arr, uint8_t * succ) {
+    _YRT_STRING_TO_FLOAT (float, strtof)
 }
 
 double _yrt_string_to_f64 (_yrt_slice_t arr, uint8_t * succ) {
-    char* endf;
-    double res = strtod (arr.data, &endf);
-    *succ = (errno != ERANGE) && endf == (arr.data + arr.len);
-    return res;
+    _YRT_STRING_TO_FLOAT (double, strtod)
 }
 
 long double _yrt_string_to_f80 (_yrt_slice_t arr, uint8_t * succ) {
-    char* endf;
-    double res = strtold (arr.data, &endf);
-    *succ = (errno != ERANGE) && endf == (arr.data + arr.len);
-    return res;
+    _YRT_STRING_TO_FLOAT (long double, strtold)
 }
 
 long double _yrt_string_to_fsize (_yrt_slice_t arr, uint8_t * succ) {
-    char* endf;
-    double res = strtold (arr.data, &endf);
-    *succ = (errno != ERANGE) && endf == (arr.data + arr.len);
-    return res;
+    _YRT_STRING_TO_FLOAT (long double, strtold)
 }
 
 /*!
