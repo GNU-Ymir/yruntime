@@ -585,3 +585,62 @@ __test { // an invalid or truncated utf8 sequence decodes to U+FFFD, one per byt
     assert(units!c8 (copy [0xC3u32]).to![c16] () == units!c16 (copy [0xFFFDu32]), "h");
     assert(units!c8 (copy [0xF0u32, 0x9Fu32, 0x61u32]).to![c16] () == units!c16 (copy [0xFFFDu32, 0xFFFDu32, 0x61u32]), "i");
 }
+
+/**
+ * Float conversions
+ * */
+
+fn rejectsFloat {F} (lit: [c8])-> bool {
+    { let _ = lit.to!{F} (); } catch { _: &CastFailure => { return true; } }
+    false
+}
+
+__test { // special values are parsed, and a failed parse does not leak into the next one
+    assert(("inf").to!f64 () == f64::inf, "a");
+    assert(("-inf").to!f64 () == -f64::inf, "b");
+    assert(("nan").to!f64 ().to![c8] () == "nan", "c");
+    assert(("inf"s32).to!f32 () == f32::inf, "d");
+
+    assert(rejectsFloat!f64 ("1e400"), "e");
+    assert(("1.5").to!f64 () == 1.5, "f");
+    assert(rejectsFloat!f32 ("1e40"), "g");
+    assert(("1e40").to!f64 ().to!{[c8], "e"} (prec-> 0u32) == "1e+40", "h");
+}
+
+__test { // malformed literals are rejected
+    for lit in ["", "1.2.3", " 1.5", "1.5 ", "1,5", "-", ".", "e3", "1e", "abc", "1.5f"] {
+        assert(rejectsFloat!f64 (lit), "f64: '" ~ lit ~ "'");
+        assert(rejectsFloat!f32 (lit), "f32: '" ~ lit ~ "'");
+        assert(rejectsFloat!f80 (lit), "f80: '" ~ lit ~ "'");
+    }
+}
+
+__test { // a literal is read up to the end of its slice, not up to the next null char
+    let s = copy "12.5e3";
+
+    assert(s[0us .. 2us].to!f64 () == 12.0, "a");
+    assert(s[0us .. 4us].to!f32 () == 12.5f, "b");
+    assert(s[0us .. $].to!f64 () == 12500.0, "c");
+
+    let long = copy ['1' ; 80us] ~ ".5";
+    assert(long.to!f64 ().to!{[c8], "e"} (prec-> 3u32) == "1.111e+79", "d");
+}
+
+__test { // f80 is parsed with its own precision, not through a f64
+    assert(("0.1").to!f80 ().to![c8] (prec-> 20u32) == "0.10000000000000000000", "a");
+    assert(("0.1").to!f64 ().to![c8] (prec-> 20u32) == "0.10000000000000000555", "b");
+}
+
+__test { // rendering at the precision bounds
+    assert((2.0).to![c8] (prec-> 0u32) == "2", "a");
+    assert((0.4).to![c8] (prec-> 0u32) == "0", "b");
+    assert((-3.0).to![c8] (prec-> 0u32) == "-3", "c");
+    assert((0.5).to!{[c8], "e"} (prec-> 0u32) == "5e-01", "d");
+
+    let wide = (0.5).to![c8] (prec-> 60u32);
+    assert(wide.len == 62us && wide == "0." ~ "5" ~ copy ['0' ; 59us], "e");
+    assert((0.1).to![c32] (prec-> 30u32).len == 32us, "f");
+
+    assert(f64::inf.to![c8] () == "inf" && (-f64::inf).to![c8] () == "-inf", "g");
+    assert(f64::nan.to![c8] ().len == 3us, "h");
+}
