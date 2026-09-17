@@ -6,7 +6,7 @@ use std::conv::{errors, utf};
 use std::traits;
 use helpers;
 
-__test {
+__test unsignedToString {
     let x = to![c32] (12);
     let y = to!{[c8]} (879);
 
@@ -24,7 +24,7 @@ __test {
 }
 
 
-__test {
+__test signedToString {
     let x = to![c32] (-12);
     let y = (-879).to![c8] ();
 
@@ -41,7 +41,7 @@ __test {
     assert(c == "-343340", "Conversion error c");
 }
 
-__test {
+__test isizeToString {
     let x = to![c32] (-12is);
     let y = (-879is).to![c8] ();
 
@@ -59,7 +59,7 @@ __test {
 }
 
 
-__test {
+__test utf32ToUtf8 {
     let x = "hello"s32.to!{[c8]} ();
     assert(x == "hello"s8, "1");
 
@@ -67,7 +67,7 @@ __test {
     assert(encoded.len == 59 && encoded == "Hello world, Καλημέρα κόσμε, コンニチハ"s8, "2");
 }
 
-__test {
+__test utf8ToUtf32 {
     let x = "hello"s8.to!{[c32]} ();
     assert(x == "hello"s32, "1");
 
@@ -75,7 +75,7 @@ __test {
     assert(encoded.len == 34 && encoded == "Hello world, Καλημέρα κόσμε, コンニチハ"s32, "2");
 }
 
-__test {
+__test bytesAndEmoji {
     let val = (copy [0xf0u8, 0x9fu8, 0x98u8, 0x89u8]).to![c8] ();
     assert(val == "😉", "3");
 
@@ -95,7 +95,7 @@ __test {
  * The minimum value of a signed int cannot be negated, the conversion has to
  * compute the magnitude on the unsigned side (cf. YMI-164).
  */
-__test {
+__test signedMinToString {
     assert(i8::min.to![c8] () == "-128", "Conversion error i8::min");
     assert(i16::min.to![c8] () == "-32768", "Conversion error i16::min");
     assert(i32::min.to![c8] () == "-2147483648", "Conversion error i32::min");
@@ -105,7 +105,7 @@ __test {
     assert(i32::min.to![c32] () == "-2147483648"s32, "Conversion error i32::min to c32");
 }
 
-__test {
+__test signedMinToStringInBases {
     assert(i8::min.to!{[c8], "x"} () == "-0x80", "Conversion error i8::min hex");
     assert(i8::min.to!{[c8], "b"} () == "-0b10000000", "Conversion error i8::min bin");
     assert(i8::min.to!{[c8], "o"} () == "-0o200", "Conversion error i8::min oct");
@@ -119,7 +119,7 @@ __test {
     assert((-255).to!{[c8], "x"} (upper-> true) == "-0xFF", "Conversion error hex upper");
 }
 
-__test {
+__test signedMaxToString {
     assert(i8::max.to![c8] () == "127", "Conversion error i8::max");
     assert(i16::max.to![c8] () == "32767", "Conversion error i16::max");
     assert(i32::max.to![c8] () == "2147483647", "Conversion error i32::max");
@@ -131,7 +131,7 @@ __test {
  * The unsigned conversion has to cover the whole range as well, u64::max being
  * the value that does not fit in any signed type.
  */
-__test {
+__test unsignedBoundsToString {
     assert(u64::min.to![c8] () == "0", "Conversion error u64::min");
     assert(u8::min.to![c8] () == "0", "Conversion error u8::min");
     assert(usize::min.to![c8] () == "0", "Conversion error usize::min");
@@ -152,7 +152,7 @@ __test {
  * String-to-integer parsing must reject digits outside the requested base,
  * empty / sign-only input, and values that overflow the target type (YMI-167).
  */
-__test {
+__test malformedIntLiterals {
     use std::conv::errors;
 
     let mut threw = 0;
@@ -179,7 +179,7 @@ __test {
  * A float is converted to exactly the digits it is worth, with no trailing null char left inside
  * the slice
  * */
-__test {
+__test floatToString {
     assert(to!{[c8]} (3.5) == "3.500000", "YMI-186: expected the default precision, and nothing after it");
     assert(to!{[c8]} (314.0, prec-> 3u32) == "314.000");
     assert(to!{[c8]} (12.8, prec-> 1u32) == "12.8");
@@ -193,7 +193,7 @@ __test {
 /**
  * Same, in scientific notation
  * */
-__test {
+__test floatToStringExp {
     assert(to!{[c8], "e"} (314.0, prec-> 3u32) == "3.140e+02", "YMI-186: expected no trailing null char");
     assert(to!{[c8], "e"} (81792.983, prec-> 1u32) == "8.2e+04");
     assert(to!{[c32], "e"} (12.9834982f, prec-> 4u32) == "1.2983e+01"s32);
@@ -204,7 +204,7 @@ __test {
 /**
  * The slice keeps growing in place once the null char has been dropped from its length
  * */
-__test {
+__test floatToStringAppend {
     let str = to!{[c8]} (3.5, prec-> 1u32) ~ "!";
 
     assert(str == "3.5!", "YMI-186: expected the append to land after the digits");
@@ -214,7 +214,7 @@ __test {
  * std::conv::utf -- the concrete encoders/decoders behind the 'to' conversions above
  * */
 
-__test { // the length of a utf8 code point is read off its lead byte
+__test utf8CodePointSize { // the length of a utf8 code point is read off its lead byte
     assert(utf::getUtf8CodePointSize(opaque('a')) == 1u32, "a");
     assert(utf::getUtf8CodePointSize(opaque(cast!c8(0xc3u8))) == 2u32, "b");
     assert(utf::getUtf8CodePointSize(opaque(cast!c8(0xe2u8))) == 3u32, "c");
@@ -224,7 +224,7 @@ __test { // the length of a utf8 code point is read off its lead byte
     assert(utf::getUtf8CodePointSize(opaque(cast!c8(0x80u8))) == 4u32, "e");
 }
 
-__test { // a utf32 code point is written as one to four utf8 bytes
+__test utf32ToUtf8Bytes { // a utf32 code point is written as one to four utf8 bytes
     let dmut ret = ['\u{0}' ; 4];
 
     assert(utf::toUtf8(opaque('a'c32), ref ret) == 1u32, "a");
@@ -238,7 +238,7 @@ __test { // a utf32 code point is written as one to four utf8 bytes
     assert(utf::toUtf8(opaque(cast!c32(0x110000u32)), ref ret) == 3u32, "f");
 }
 
-__test { // a lone utf16 surrogate is not a code point of its own
+__test loneUtf16Surrogate { // a lone utf16 surrogate is not a code point of its own
     let dmut ret = ['\u{0}' ; 4];
 
     assert(utf::toUtf8(opaque('a'c16), ref ret) == 1u32, "a");
@@ -249,7 +249,7 @@ __test { // a lone utf16 surrogate is not a code point of its own
     assert(ret[0 .. 3] == "\u{0xFFFD}", "d");
 }
 
-__test { // a utf16 surrogate pair decodes together, consuming both halves
+__test utf16SurrogatePair { // a utf16 surrogate pair decodes together, consuming both halves
     let dmut ret = ['\u{0}' ; 4];
 
     // a non-surrogate lead consumes one char only, whatever follows it
@@ -262,7 +262,7 @@ __test { // a utf16 surrogate pair decodes together, consuming both halves
     assert(ret[0 .. 4] == "😉", "c");
 }
 
-__test { // decoding a utf32/utf16 string down to utf8, and encoding it back
+__test utfDecodeEncode { // decoding a utf32/utf16 string down to utf8, and encoding it back
     assert(utf::decode("héllo 😉"s32) == "héllo 😉", "a");
     assert(utf::decode("héllo"s16) == "héllo", "b");
     assert(utf::decode(""s32) == "", "c");
@@ -450,7 +450,7 @@ fn matrix {T} ()
     rejection!{T} ();
 }
 
-__test { // the literal incremented by the test helper, so a broken helper does not hide a broken rejection
+__test incrementHelper { // the literal incremented by the test helper, so a broken helper does not hide a broken rejection
     assert(increment("127", 10us) == "128", "a");
     assert(increment("-128", 10us) == "-129", "b");
     assert(increment("0xff", 16us) == "0x100", "c");
@@ -461,18 +461,18 @@ __test { // the literal incremented by the test helper, so a broken helper does 
     assert(increment("zz", 36us) == "100", "h");
 }
 
-__test { matrix!{i8} (); }
-__test { matrix!{i16} (); }
-__test { matrix!{i32} (); }
-__test { matrix!{i64} (); }
-__test { matrix!{isize} (); }
-__test { matrix!{u8} (); }
-__test { matrix!{u16} (); }
-__test { matrix!{u32} (); }
-__test { matrix!{u64} (); }
-__test { matrix!{usize} (); }
+__test matrixI8 { matrix!{i8} (); }
+__test matrixI16 { matrix!{i16} (); }
+__test matrixI32 { matrix!{i32} (); }
+__test matrixI64 { matrix!{i64} (); }
+__test matrixIsize { matrix!{isize} (); }
+__test matrixU8 { matrix!{u8} (); }
+__test matrixU16 { matrix!{u16} (); }
+__test matrixU32 { matrix!{u32} (); }
+__test matrixU64 { matrix!{u64} (); }
+__test matrixUsize { matrix!{usize} (); }
 
-__test { // hexadecimal digits are read in either case, and written in the case asked for
+__test hexCase { // hexadecimal digits are read in either case, and written in the case asked for
     assert(("0xff").to!{u32, "x"} () == 255u32, "a");
     assert(("0xFF").to!{u32, "x"} () == 255u32, "b");
     assert(("0xfF").to!{u32, "x"} () == 255u32, "c");
@@ -486,7 +486,7 @@ __test { // hexadecimal digits are read in either case, and written in the case 
     assert((u64::max).to!{[c32], 16us} (upper-> true) == "FFFFFFFFFFFFFFFF"s32, "j");
 }
 
-__test { // the prefixed forms of a signed int carry the sign in front of the prefix
+__test signedPrefixedForms { // the prefixed forms of a signed int carry the sign in front of the prefix
     assert(("-0x80").to!{i8, "x"} () == i8::min, "a");
     assert(("0x7f").to!{i8, "x"} () == i8::max, "b");
     assert(("-0b101"s32).to!{i32, "b"} () == -5, "c");
@@ -510,7 +510,7 @@ fn codePoints ()-> [c32] {
     alias res
 }
 
-__test { // every code point survives every conversion, with the expected width in each encoding
+__test utfRoundTrips { // every code point survives every conversion, with the expected width in each encoding
     let widths8 = [1us, 1us, 1us, 2us, 2us, 2us, 3us, 3us, 3us, 3us, 3us, 3us, 4us, 4us, 4us];
     let widths16 = [1us, 1us, 1us, 1us, 1us, 1us, 1us, 1us, 1us, 1us, 1us, 1us, 2us, 2us, 2us];
 
@@ -555,7 +555,7 @@ fn units {C} (u: [u32])-> [C] {
     alias res
 }
 
-__test { // an unpaired utf16 surrogate decodes to U+FFFD, and never swallows the char after it
+__test unpairedUtf16Surrogates { // an unpaired utf16 surrogate decodes to U+FFFD, and never swallows the char after it
     let rep = "\u{0xFFFD}";
 
     assert(units!c16 (copy [0xD83Du32]).to![c8] () == rep, "a");
@@ -570,7 +570,7 @@ __test { // an unpaired utf16 surrogate decodes to U+FFFD, and never swallows th
     assert(units!c32 (copy [0xD800u32, 0x61u32]).to![c8] () == rep ~ "a", "i");
 }
 
-__test { // an invalid or truncated utf8 sequence decodes to U+FFFD, one per byte that cannot start a code point
+__test invalidUtf8Sequences { // an invalid or truncated utf8 sequence decodes to U+FFFD, one per byte that cannot start a code point
     let rep = units!c32 (copy [0xFFFDu32]);
     let a = units!c32 (copy [0x61u32]);
 
@@ -595,7 +595,7 @@ fn rejectsFloat {F} (lit: [c8])-> bool {
     false
 }
 
-__test { // special values are parsed, and a failed parse does not leak into the next one
+__test floatSpecialValues { // special values are parsed, and a failed parse does not leak into the next one
     assert(("inf").to!f64 () == f64::inf, "a");
     assert(("-inf").to!f64 () == -f64::inf, "b");
     assert(("nan").to!f64 ().to![c8] () == "nan", "c");
@@ -607,7 +607,7 @@ __test { // special values are parsed, and a failed parse does not leak into the
     assert(("1e40").to!f64 ().to!{[c8], "e"} (prec-> 0u32) == "1e+40", "h");
 }
 
-__test { // malformed literals are rejected
+__test malformedFloatLiterals { // malformed literals are rejected
     for lit in ["", "1.2.3", " 1.5", "1.5 ", "1,5", "-", ".", "e3", "1e", "abc", "1.5f"] {
         assert(rejectsFloat!f64 (lit), "f64: '" ~ lit ~ "'");
         assert(rejectsFloat!f32 (lit), "f32: '" ~ lit ~ "'");
@@ -615,7 +615,7 @@ __test { // malformed literals are rejected
     }
 }
 
-__test { // a literal is read up to the end of its slice, not up to the next null char
+__test floatLiteralSlices { // a literal is read up to the end of its slice, not up to the next null char
     let s = copy "12.5e3";
 
     assert(s[0us .. 2us].to!f64 () == 12.0, "a");
@@ -626,12 +626,12 @@ __test { // a literal is read up to the end of its slice, not up to the next nul
     assert(long.to!f64 ().to!{[c8], "e"} (prec-> 3u32) == "1.111e+79", "d");
 }
 
-__test { // f80 is parsed with its own precision, not through a f64
+__test f80Precision { // f80 is parsed with its own precision, not through a f64
     assert(("0.1").to!f80 ().to![c8] (prec-> 20u32) == "0.10000000000000000000", "a");
     assert(("0.1").to!f64 ().to![c8] (prec-> 20u32) == "0.10000000000000000555", "b");
 }
 
-__test { // rendering at the precision bounds
+__test floatPrecisionBounds { // rendering at the precision bounds
     assert((2.0).to![c8] (prec-> 0u32) == "2", "a");
     assert((0.4).to![c8] (prec-> 0u32) == "0", "b");
     assert((-3.0).to![c8] (prec-> 0u32) == "-3", "c");
