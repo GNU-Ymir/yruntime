@@ -782,25 +782,99 @@ pub fn if (isSigned!{T} && isChar!{U} && isIntegral!{N}) to {T, base: N, F of [U
 {
     cte assert(36 >= base, "Maximum base is 36");
 
-    if (str.len == 0us) {
+    if (str.len > 0us && str[0us] == '-') {
+        fromDigits!{T, base, F} (str[1us .. $], neg-> true)
+    } else {
+        fromDigits!{T, base, F} (str, neg-> false)
+    }
+}
+
+/**
+ * Transform an hexadecimal string into a signed integer, the sign being written before the prefix.
+ * @throws:
+ *    - &CastFailure: if the string does not contain a valid literal
+ * @example:
+ * ```
+ * let x = ("-0xff").to!{i64, "x"} ();
+ * let y = ("0x14E").to!{i32, "x"} ();
+ *
+ * assert(x == -255i64 && y == 334);
+ * ```
+ */
+pub fn if (isSigned!{T} && isChar!{U}) to {T, "x", F of [U], U} (str: F)-> T
+    throws CastFailure
+{
+    fromPrefixed!{T, 16us, F} (str, 'x')
+}
+
+/**
+ * Transform a binary string into a signed integer, the sign being written before the prefix.
+ * @throws:
+ *    - &CastFailure: if the string does not contain a valid literal
+ * @example:
+ * ```
+ * let x = ("-0b1001").to!{i64, "b"} ();
+ * let y = ("0b1011").to!{i32, "b"} ();
+ *
+ * assert(x == -9i64 && y == 11);
+ * ```
+ */
+pub fn if (isSigned!{T} && isChar!{U}) to {T, "b", F of [U], U} (str: F)-> T
+    throws CastFailure
+{
+    fromPrefixed!{T, 2us, F} (str, 'b')
+}
+
+/**
+ * Transform an octal string into a signed integer, the sign being written before the prefix.
+ * @throws:
+ *    - &CastFailure: if the string does not contain a valid literal
+ * @example:
+ * ```
+ * let x = ("-0o7777").to!{i64, "o"} ();
+ * let y = ("0o1234").to!{i32, "o"} ();
+ *
+ * assert(x == -4095i64 && y == 668);
+ * ```
+ */
+pub fn if (isSigned!{T} && isChar!{U}) to {T, "o", F of [U], U} (str: F)-> T
+    throws CastFailure
+{
+    fromPrefixed!{T, 8us, F} (str, 'o')
+}
+
+/**
+ * Parse a signed literal of the form `[-]0<prefix><digits>`.
+ * @throws:
+ *    - &CastFailure: if the prefix is missing, or the digits are not a valid literal
+ */
+fn if (isSigned!{T} && isChar!{U} && isIntegral!{N}) fromPrefixed {T, base: N, F of [U], U, N} (str: F, prefix: c8)-> T
+    throws CastFailure
+{
+    let start = if (str.len > 0us && str[0us] == '-') { 1us } else { 0us };
+    if (str.len < start + 2us || str[start] != '0' || str[start + 1us] != cast!U(prefix)) {
         throw copy CastFailure(T::typeinfo, [U]::typeinfo);
     }
 
-    let mut neg = false;
-    let mut start = 0us;
-    if (str[0us] == '-') {
-        neg = true;
-        start = 1us;
-    }
+    fromDigits!{T, base, F} (str[start + 2us .. $], neg-> start == 1us)
+}
 
-    if (start >= str.len) {
+/**
+ * Parse an unsigned sequence of digits in base `base` into a signed integer, negated if `neg`.
+ * @throws:
+ *    - &CastFailure: if `str` is empty, contains a digit outside the base, or overflows `T`
+ */
+fn if (isSigned!{T} && isChar!{U} && isIntegral!{N}) fromDigits {T, base: N, F of [U], U, N} (str: F, neg: bool)-> T
+    throws CastFailure
+{
+    if (str.len == 0us) {
         throw copy CastFailure(T::typeinfo, [U]::typeinfo);
     }
 
     let b = cast!T(base);
     let mut res: T = 0;
     {
-        for i in start .. str.len {
+        for i in 0us .. str.len {
             let digit = std::conv::utils::to!{T} (str[i], b);
             if (neg) {
                 if (res < (T::min + digit) / b) {
