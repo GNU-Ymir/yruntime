@@ -4,7 +4,7 @@ use std::{conv, rand};
 use std::algorithm::sorting;
 use std::rand::errors;
 use std::math;
-use std::rand::generator;
+use std::rand::{generator, secure};
 
 __test uniformCoversInterval {
     seed (42u64);
@@ -369,4 +369,28 @@ __test bytesAreUniform {
     let dmut odd = copy [0u8 ; 11u64];
     r:.fillBytes (alias odd);
     assert (odd [0] == 0xb4u8 && odd [7] == 0x99u8 && odd [8] == 0x2au8);
+}
+
+__test secureDraws {
+    let a = secureBytes (64us);
+    let b = secureBytes (64us);
+    assert (a.len == 64us && a != b);
+    assert (secureBytes (0us) == []);
+
+    let dmut big = copy [0u8 ; 100_000u64];
+    fillSecureBytes (alias big);
+    let mut zeros = 0;
+    for x in big { if x == 0u8 { zeros += 1; } }
+    assert (zeros < 1_000, "not filled: " ~ zeros.to![c8] ());
+
+    assert (secureBits () != secureBits ());
+
+    let dmut seen = copy [false ; 6u64];
+    for _ in 0 .. 1_000 {
+        let v = secureUniform (1, 6);
+        assert (v >= 1 && v <= 6);
+        seen [v - 1] = true;
+    }
+    assert (seen == [true, true, true, true, true, true]);
+    assert (secureUniform (4u8, 4u8) == 4u8);
 }

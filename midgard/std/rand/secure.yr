@@ -1,0 +1,133 @@
+/**
+ * This module draws cryptographically secure random numbers from the kernel (`getrandom(2)`),
+ * for everything that must stay unpredictable: tokens, keys, salts, nonces.
+ * <br>
+ * Every draw is a system call, which makes it much slower than `std::rand`, and there is no way
+ * to seed it, so it cannot reproduce a sequence. Use `std::rand` for everything else.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in secure;
+
+use std::traits;
+use std::rand::errors;
+use etc::c::random;
+use etc::runtime::errno;
+
+/**
+ * Fill `buf` with cryptographically secure random bytes.
+ * @params:
+ *    - buf: the buffer to fill
+ * @returns: `buf`
+ * @throws:
+ *    - &RandomError: if the kernel cannot provide random bytes
+ * @example:
+ * ```
+ * let dmut key = copy [0u8 ; 32u64];
+ * fillSecureBytes(alias key);
+ *
+ * println(key);
+ * ```
+ */
+pub fn fillSecureBytes(mut buf: [mut u8])-> mut [mut u8]
+    throws RandomError
+{
+    let mut done = 0us;
+    while done < buf.len {
+        let n = getrandom(alias cast!{dmut *void} (buf[done .. $].ptr), buf.len - done, GetRandomFlags::NONE);
+        if n >= 0is {
+            done += cast!usize (n);
+        } else {
+            let err = errno();
+            if err != ErrnoValue::EINTR {
+                throw copy RandomError("getrandom failed: " ~ strerrno(err));
+            }
+        }
+    }
+
+    alias buf
+}
+
+/**
+ * @params:
+ *    - n: the number of bytes to generate
+ * @returns: a new buffer of `n` cryptographically secure random bytes
+ * @throws:
+ *    - &RandomError: if the kernel cannot provide random bytes
+ * @example:
+ * ```
+ * let salt = secureBytes(16us);
+ * assert(salt.len == 16us);
+ * ```
+ */
+pub fn secureBytes(n: usize)-> dmut [u8]
+    throws RandomError
+{
+    let dmut res = copy [0u8 ; n];
+    fillSecureBytes(alias res);
+
+    alias res
+}
+
+/**
+ * @returns: a cryptographically secure random 64 bits word
+ * @throws:
+ *    - &RandomError: if the kernel cannot provide random bytes
+ * @example:
+ * ```
+ * let nonce = secureBits();
+ * println(nonce);
+ * ```
+ */
+pub fn secureBits()-> u64
+    throws RandomError
+{
+    let buf = secureBytes(8us);
+    let mut res = 0u64;
+    for b in buf {
+        res = (res << 8u64) | cast!{u64} (b);
+    }
+
+    res
+}
+
+/**
+ * @params:
+ *    - low: the lower bound of the interval (included)
+ *    - high: the upper bound of the interval (included)
+ * @returns: a cryptographically secure random number uniformly selected in `[low, high]`, or
+ * `low` if `high <= low`
+ * @throws:
+ *    - &RandomError: if the kernel cannot provide random bytes
+ * @info: the selection is free of modulo bias.
+ * @example:
+ * ```
+ * // a 20 characters alphanumeric token
+ * let alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+ * let mut token = ""s8;
+ * for _ in 0 .. 20 {
+ *     token = token ~ [alphabet[secureUniform(0us, alphabet.len - 1us)]];
+ * }
+ *
+ * assert(token.len == 20us);
+ * ```
+ */
+pub fn if isIntegral!{T} secureUniform {T} (low: T, high: T)-> T
+    throws RandomError
+{
+    if high <= low { return low; }
+
+    let span = cast!{u64} (high) - cast!{u64} (low) + 1u64;
+    if span == 0u64 {
+        return low + cast!{T} (secureBits());
+    }
+
+    let rem = (u64::max % span + 1u64) % span;
+    let mut r = secureBits();
+    while r < rem {
+        r = secureBits();
+    }
+
+    low + cast!{T} (r % span)
+}

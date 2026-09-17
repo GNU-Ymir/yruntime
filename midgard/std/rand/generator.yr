@@ -15,8 +15,7 @@ in generator;
 
 use std::traits;
 use std::math;
-use std::rand::errors;
-use etc::c::random;
+use std::rand::{errors, secure};
 
 /**
  * A xoshiro256** pseudo random number generator.
@@ -505,13 +504,14 @@ extern (C) fn lgamma_r(x: f64, dmut sign: *i32)-> f64;
  * thread if that pool is unavailable
  */
 fn entropySeed()-> u64 {
-    let mut seed = 0u64;
-    if getrandom(alias cast!{dmut *void} (&seed), 8us, GetRandomFlags::NONE) == 8is {
-        return seed;
+    {
+        secureBits()
+    } catch {
+        _: &RandomError => {
+            let mut x = cast!{u64} (etc::c::time::time(null)) ^ cast!{u64} (etc::runtime::threads::_yrt_thread_self_id());
+            splitmix(ref x)
+        }
     }
-
-    let mut x = cast!{u64} (etc::c::time::time(null)) ^ cast!{u64} (etc::runtime::threads::_yrt_thread_self_id());
-    splitmix(ref x)
 }
 
 /**
