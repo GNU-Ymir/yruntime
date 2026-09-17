@@ -154,18 +154,48 @@ mod internal {
     pub extern (C) fn powl(x: fsize, y: fsize)-> fsize;
     pub extern (C) fn cbrtl(x: fsize)-> fsize;
     pub extern (C) fn hypotl(x: fsize, y: fsize)-> fsize;
+
+    pub extern (C) fn floorf(x: f32)-> f32;
+    pub extern (C) fn ceilf(x: f32)-> f32;
+    pub extern (C) fn floor(x: f64)-> f64;
+    pub extern (C) fn ceil(x: f64)-> f64;
+    pub extern (C) fn floorl(x: f80)-> f80;
+    pub extern (C) fn ceill(x: f80)-> f80;
+    pub extern (C) fn floorl(x: fsize)-> fsize;
+    pub extern (C) fn ceill(x: fsize)-> fsize;
+}
+
+/**
+ * @returns: the integral value nearest to `x`, halfway cases rounded away from zero.
+ * @example:
+ * ```
+ * assert(round(2.5) == 3.0);
+ * assert(round(-2.5) == -3.0);
+ * ```
+ */
+pub fn if isFloating!{T} round {T} (x: T)-> T {
+    cte if template!{T}{U of f32} { internal::roundf(x) }
+    else cte if template!{T}{U of f64} { internal::round(x) }
+    else cte if template!{T}{U of f80} { internal::roundl(x) }
+    else { internal::roundl(x) }
 }
 
 /**
  * @returns: `x` rounded to `nb` numbers after the decimal point.
+ * @info: `x` is returned unchanged when `nb` is beyond what `T` can represent.
+ * @example:
+ * ```
+ * assert(round(1.236, 2u32) == 1.24);
+ * ```
  */
 pub fn if isFloating!{T} round {T} (x: T, nb: u32)-> T {
-    let p: __pragma!unproxied(T) = cast!{__pragma!unproxied(T)} (10.0) ^^ cast!i32(nb);
+    if (nb > 5000u32) return x;
 
-    cte if template!{T}{U of f32} { internal::roundf(x * p) / p }
-    else cte if template!{T}{U of f64} { internal::round(x * p) / p }
-    else cte if template!{T}{U of f80} { internal::roundl(x * p) / p }
-    else { internal::roundl(x * p) / p }
+    let p: __pragma!unproxied(T) = cast!{__pragma!unproxied(T)} (10.0) ^^ cast!i32(nb);
+    let scaled = x * p;
+    if (core::math::isInf (scaled)) return x;
+
+    round!{T} (scaled) / p
 }
 
 /**
@@ -381,4 +411,32 @@ pub fn if isFloating!{T} hypot {T} (x: T, y: T)-> T {
     else cte if template!{T}{U of f64} { internal::hypot(x, y) }
     else cte if template!{T}{U of f80} { internal::hypotl(x, y) }
     else { internal::hypotl(x, y) }
+}
+
+/**
+ * @returns: the largest integral value not greater than `x`.
+ * @example:
+ * ```
+ * assert(floor(-1.5) == -2.0);
+ * ```
+ */
+pub fn if isFloating!{T} floor {T} (x: T)-> T {
+    cte if template!{T}{U of f32} { internal::floorf(x) }
+    else cte if template!{T}{U of f64} { internal::floor(x) }
+    else cte if template!{T}{U of f80} { internal::floorl(x) }
+    else { internal::floorl(x) }
+}
+
+/**
+ * @returns: the smallest integral value not less than `x`.
+ * @example:
+ * ```
+ * assert(ceil(-1.5) == -1.0);
+ * ```
+ */
+pub fn if isFloating!{T} ceil {T} (x: T)-> T {
+    cte if template!{T}{U of f32} { internal::ceilf(x) }
+    else cte if template!{T}{U of f64} { internal::ceil(x) }
+    else cte if template!{T}{U of f80} { internal::ceill(x) }
+    else { internal::ceill(x) }
 }

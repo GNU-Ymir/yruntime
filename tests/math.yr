@@ -367,6 +367,28 @@ fn stdPow {T} ()
           T::max / cast!{T} (2.0) * cast!{T} (std::math::SQRT2), "hypot no overflow");
 }
 
+fn stdRounding {T} ()
+    throws AssertError
+{
+    near (std::math::floor (opaque (cast!{T} (1.5))), cast!{T} (1.0), "floor pos");
+    near (std::math::floor (opaque (cast!{T} (-1.5))), cast!{T} (-2.0), "floor neg");
+    near (std::math::floor (opaque (cast!{T} (3.0))), cast!{T} (3.0), "floor exact");
+
+    near (std::math::ceil (opaque (cast!{T} (1.5))), cast!{T} (2.0), "ceil pos");
+    near (std::math::ceil (opaque (cast!{T} (-1.5))), cast!{T} (-1.0), "ceil neg");
+    near (std::math::ceil (opaque (cast!{T} (3.0))), cast!{T} (3.0), "ceil exact");
+
+    near (std::math::round (opaque (cast!{T} (1.4))), cast!{T} (1.0), "round 1.4");
+    near (std::math::round (opaque (cast!{T} (2.5))), cast!{T} (3.0), "round 2.5");
+    near (std::math::round (opaque (cast!{T} (-2.5))), cast!{T} (-3.0), "round -2.5");
+
+    // 10 ^^ nb is not representable, which used to turn the result into a NaN
+    near (std::math::round (opaque (cast!{T} (1.5)), 400u32), cast!{T} (1.5), "round far digits");
+    near (std::math::round (opaque (cast!{T} (1.5)), 6000u32), cast!{T} (1.5), "round farther digits");
+    near (std::math::round (opaque (cast!{T} (1.5)), u32::max), cast!{T} (1.5), "round max digits");
+    near (std::math::round (opaque (T::max), 2u32), T::max, "round max");
+}
+
 __test round {
     stdRound!f32 (); stdRound!f64 (); stdRound!f80 (); stdRound!fsize ();
 }
@@ -381,6 +403,10 @@ __test expLog {
 
 __test powRoots {
     stdPow!f32 (); stdPow!f64 (); stdPow!f80 (); stdPow!fsize ();
+}
+
+__test rounding {
+    stdRounding!f32 (); stdRounding!f64 (); stdRounding!f80 (); stdRounding!fsize ();
 }
 
 __test constants {
