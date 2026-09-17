@@ -458,6 +458,23 @@ fn stdHelpers {T} ()
     assert (core::math::isNaN (std::math::signum (nan)), "signum nan");
 }
 
+fn stdForwarded {T} ()
+    throws AssertError
+{
+    let zero = opaque (cast!{T} (0.0));
+    let one = opaque (cast!{T} (1.0));
+
+    near (std::math::sqrt (opaque (cast!{T} (16.0))), cast!{T} (4.0), "sqrt 16");
+    near (std::math::trunc (opaque (cast!{T} (-12.9))), cast!{T} (-12.0), "trunc neg");
+    near (std::math::abs (opaque (cast!{T} (-10.5))), cast!{T} (10.5), "abs neg");
+    assert (std::math::isNaN (zero / zero), "isNaN");
+    assert (!std::math::isNaN (one), "!isNaN");
+    assert (std::math::isInf (-one / zero), "isInf");
+    assert (!std::math::isInf (one), "!isInf");
+    assert (std::math::fcmp (opaque (cast!{T} (0.1)) + opaque (cast!{T} (0.2)), opaque (cast!{T} (0.3))), "fcmp");
+    assert (!std::math::fcmp (one, opaque (cast!{T} (2.0))), "!fcmp");
+}
+
 __test round {
     stdRound!f32 (); stdRound!f64 (); stdRound!f80 (); stdRound!fsize ();
 }
@@ -488,6 +505,12 @@ __test helpers {
     assert (std::math::signum (opaque (-7)) == -1, "signum i32 neg");
     assert (std::math::signum (opaque (7i64)) == 1i64, "signum i64 pos");
     assert (std::math::signum (opaque (0i8)) == 0i8, "signum i8 zero");
+}
+
+__test forwarded {
+    stdForwarded!f32 (); stdForwarded!f64 (); stdForwarded!f80 (); stdForwarded!fsize ();
+
+    assert (std::math::abs (opaque (-10)) == 10, "abs i32");
 }
 
 __test constants {
