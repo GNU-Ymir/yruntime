@@ -389,6 +389,37 @@ fn stdRounding {T} ()
     near (std::math::round (opaque (T::max), 2u32), T::max, "round max");
 }
 
+fn stdHyperbolic {T} ()
+    throws AssertError
+{
+    let e = cast!{T} (std::math::E);
+
+    near (std::math::sinh (opaque (cast!{T} (0.0))), cast!{T} (0.0), "sinh 0");
+    near (std::math::sinh (opaque (cast!{T} (1.0))), (e - cast!{T} (1.0) / e) / cast!{T} (2.0), "sinh 1");
+    near (std::math::cosh (opaque (cast!{T} (0.0))), cast!{T} (1.0), "cosh 0");
+    near (std::math::cosh (opaque (cast!{T} (1.0))), (e + cast!{T} (1.0) / e) / cast!{T} (2.0), "cosh 1");
+    near (std::math::tanh (opaque (cast!{T} (0.0))), cast!{T} (0.0), "tanh 0");
+    near (std::math::tanh (opaque (cast!{T} (100.0))), cast!{T} (1.0), "tanh saturates");
+
+    near (std::math::asinh (opaque (cast!{T} (0.0))), cast!{T} (0.0), "asinh 0");
+    near (std::math::acosh (opaque (cast!{T} (1.0))), cast!{T} (0.0), "acosh 1");
+    near (std::math::atanh (opaque (cast!{T} (0.0))), cast!{T} (0.0), "atanh 0");
+    assert (core::math::isNaN (std::math::acosh (opaque (cast!{T} (0.5)))), "acosh 0.5");
+    assert (core::math::isNaN (std::math::atanh (opaque (cast!{T} (2.0)))), "atanh 2");
+    assert (core::math::isInf (std::math::atanh (opaque (cast!{T} (1.0)))), "atanh 1");
+
+    for i in 0 .. 8 {
+        let a = opaque (cast!{T} (cast!f64 (i)) / cast!{T} (8.0));
+        let s = std::math::sinh (a);
+        let c = std::math::cosh (a);
+        near (c * c - s * s, cast!{T} (1.0), "cosh^2 - sinh^2", tol-> 16u64);
+        near (std::math::tanh (a), s / c, "tanh = sinh / cosh");
+        near (std::math::asinh (s), a, "asinh (sinh a)");
+        near (std::math::acosh (std::math::cosh (a + cast!{T} (1.0))), a + cast!{T} (1.0), "acosh (cosh a)", tol-> 16u64);
+        near (std::math::atanh (std::math::tanh (a)), a, "atanh (tanh a)");
+    }
+}
+
 __test round {
     stdRound!f32 (); stdRound!f64 (); stdRound!f80 (); stdRound!fsize ();
 }
@@ -407,6 +438,10 @@ __test powRoots {
 
 __test rounding {
     stdRounding!f32 (); stdRounding!f64 (); stdRounding!f80 (); stdRounding!fsize ();
+}
+
+__test hyperbolic {
+    stdHyperbolic!f32 (); stdHyperbolic!f64 (); stdHyperbolic!f80 (); stdHyperbolic!fsize ();
 }
 
 __test constants {
