@@ -6,6 +6,7 @@ use std::{io, config::_};
 use std::config::json;
 use std::config::toml;
 use std::conv::errors;
+use std::syntax::errors;
 
 class A {
     pub let x: u32;
@@ -78,6 +79,75 @@ __test {
     } else assert(false);
 }
 
+
+__test {
+    // toml keys that are not valid bare keys are dumped quoted, and round trip
+    let dmut inl = copy Dict();
+    inl["a b"] = copy Int(1);
+
+    let dmut arr = copy Array();
+    arr:.push(copy Int(0));
+    arr:.push(inl);
+
+    let dmut tbl = copy Dict();
+    tbl["x:y"] = copy Int(2);
+
+    let dmut elem = copy Dict();
+    elem["q\"k"] = copy Int(3);
+    let dmut tables = copy Array();
+    tables:.push(elem);
+
+    let dmut d = copy Dict();
+    d["a.b"] = copy Int(4);
+    d["42"] = copy Int(5);
+    d[""] = copy Int(6);
+    d["bare_key-1"] = copy Int(7);
+    d["mixed"] = arr;
+    d["my table"] = tbl;
+    d["pkg.list"] = tables;
+
+    let dumped = toml::dump(d);
+    assert(dumped == "\"\" = 6\n\"42\" = 5\n\"a.b\" = 4\nbare_key-1 = 7\nmixed = [0, {\"a b\" = 1}]\n\n[\"my table\"]\n\"x:y\" = 2\n\n[[\"pkg.list\"]]\n\"q\\\"k\" = 3\n");
+
+    let parsed = toml::parse(dumped);
+    {
+        assert(parsed["a.b"] == 4);
+        assert(parsed["42"] == 5);
+        assert(parsed[""] == 6);
+        assert(parsed["bare_key-1"] == 7);
+        assert(parsed["mixed"][1u32]["a b"] == 1);
+        assert(parsed["my table"]["x:y"] == 2);
+        if let a: &Array = parsed["pkg.list"] {
+            assert(a.len == 1us);
+            assert(a[0u32]["q\"k"] == 3);
+        } else assert(false);
+    } catch {
+        _ => assert(false);
+    }
+
+    assert(toml::dump(parsed) == dumped);
+}
+
+__test {
+    // a header path mixes bare and quoted parts, single quoted ones included
+    let parsed = toml::parse("[a.'b.c'.\"d e\"]\nk = 1\n");
+    {
+        assert(parsed["a"]["b.c"]["d e"]["k"] == 1);
+    } catch {
+        _ => assert(false);
+    }
+
+    for bad in ["[]\nk = 1\n"s8, "[a.]\nk = 1\n", "[.a]\nk = 1\n", "[a..b]\nk = 1\n", "[a \"b\"]\nk = 1\n"] {
+        let failed = {
+            let _ = toml::parse(bad);
+            false
+        } catch {
+            _: &SyntaxError => true
+        };
+
+        assert(failed);
+    }
+}
 
 __test {
     // json returns deeply mutable values
