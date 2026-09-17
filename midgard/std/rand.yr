@@ -117,6 +117,66 @@ pub fn if isFloating!{T} rand {T} ()-> T {
 }
 
 /**
+ * @params:
+ *    - p: the probability of returning `true`
+ * @returns: `true` with probability `p`, `false` otherwise
+ * @example:
+ * ```
+ * if bernoulli(0.25) {
+ *     println("heads, one time out of four");
+ * }
+ * ```
+ */
+pub fn bernoulli(p: f64)-> bool {
+    __THREAD_RANDOM__:.bernoulli(p)
+}
+
+/**
+ * @params:
+ *    - mean: the mean of the distribution
+ *    - stddev: its standard deviation
+ * @returns: a random number following the normal (gaussian) distribution `N(mean, stddev^2)`
+ * @example:
+ * ```
+ * let height = normal(170.0, 10.0);
+ * println(height);
+ * ```
+ */
+pub fn if isFloating!{T} normal {T} (mean: T, stddev: T)-> T {
+    __THREAD_RANDOM__:.normal(mean, stddev)
+}
+
+/**
+ * @params:
+ *    - lambda: the rate of the distribution, which must be positive
+ * @returns: a non negative random number following the exponential distribution of rate
+ * `lambda`, whose mean is `1 / lambda`
+ * @example:
+ * ```
+ * let wait = exponential(0.5); // 2 seconds between two events on average
+ * assert(wait >= 0.0);
+ * ```
+ */
+pub fn if isFloating!{T} exponential {T} (lambda: T)-> T {
+    __THREAD_RANDOM__:.exponential(lambda)
+}
+
+/**
+ * @params:
+ *    - lambda: the mean number of events in the interval
+ * @returns: a random number of events following the Poisson distribution of mean `lambda`, or 0
+ * if `lambda` is not positive
+ * @example:
+ * ```
+ * let requests = poisson(12.5);
+ * println(requests);
+ * ```
+ */
+pub fn poisson(lambda: f64)-> u64 {
+    __THREAD_RANDOM__:.poisson(lambda)
+}
+
+/**
  * Shuffle the slice `a` in place, every permutation being equally likely (Fisher-Yates).
  * @params:
  *    - a: the slice to shuffle

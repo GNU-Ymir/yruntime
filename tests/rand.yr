@@ -3,6 +3,7 @@ in rand;
 use std::{conv, rand};
 use std::algorithm::sorting;
 use std::rand::errors;
+use std::math;
 use std::rand::generator;
 
 __test uniformCoversInterval {
@@ -246,4 +247,103 @@ __test sampleWithoutReplacement {
         _: &RandomError => true
     };
     assert (raised);
+}
+
+fn meanAndVariance (xs: [f64])-> (f64, f64) {
+    let mut sum = 0.0;
+    for x in xs { sum += x; }
+    let mean = sum / cast!f64 (cast!u64 (xs.len));
+
+    let mut sq = 0.0;
+    for x in xs { sq += (x - mean) * (x - mean); }
+
+    (mean, sq / cast!f64 (cast!u64 (xs.len)))
+}
+
+fn near (value: f64, expected: f64, tolerance: f64)-> bool {
+    value > expected - tolerance && value < expected + tolerance
+}
+
+__test bernoulliFrequency {
+    seed (31u64);
+
+    let mut nb = 0;
+    for _ in 0 .. 100_000 {
+        if bernoulli (0.3) { nb += 1; }
+    }
+    assert (nb > 29_000 && nb < 31_000, "biased bernoulli: " ~ nb.to![c8] ());
+
+    for _ in 0 .. 100 {
+        assert (!bernoulli (0.0) && !bernoulli (-1.0));
+        assert (bernoulli (1.0) && bernoulli (2.0));
+    }
+}
+
+__test normalMoments {
+    seed (37u64);
+
+    let dmut xs: [f64] = [];
+    for _ in 0 .. 100_000 { xs ~= [normal (5.0, 2.0)]; }
+
+    let (mean, variance) = meanAndVariance (xs);
+    assert (near (mean, 5.0, 0.05), "normal mean: " ~ mean.to![c8] ());
+    assert (near (variance, 4.0, 0.1), "normal variance: " ~ variance.to![c8] ());
+
+    let mut within = 0;
+    for x in xs {
+        if x > 3.0 && x < 7.0 { within += 1; }
+    }
+    // 68.27% of the draws are within one standard deviation
+    assert (within > 67_500 && within < 69_000, "normal shape: " ~ within.to![c8] ());
+
+    let f = normal (0.0f, 1.0f);
+    assert (f > -100.0f && f < 100.0f);
+}
+
+__test exponentialMoments {
+    seed (41u64);
+
+    let dmut xs: [f64] = [];
+    for _ in 0 .. 100_000 {
+        let x = exponential (4.0);
+        assert (x >= 0.0);
+        xs ~= [x];
+    }
+
+    let (mean, variance) = meanAndVariance (xs);
+    assert (near (mean, 0.25, 0.005), "exponential mean: " ~ mean.to![c8] ());
+    assert (near (variance, 0.0625, 0.003), "exponential variance: " ~ variance.to![c8] ());
+}
+
+__test poissonMoments {
+    seed (43u64);
+
+    // below and above the switch from Knuth's method to PTRS
+    for lambda in [0.5, 4.0, 10.0, 50.0, 1000.0] {
+        let dmut xs: [f64] = [];
+        for _ in 0 .. 100_000 {
+            xs ~= [cast!f64 (poisson (lambda))];
+        }
+
+        let (mean, variance) = meanAndVariance (xs);
+        assert (near (mean, lambda, 0.02 * sqrt (lambda)), "poisson mean: " ~ mean.to![c8] () ~ " for " ~ lambda.to![c8] ());
+        assert (near (variance, lambda, 0.05 * lambda), "poisson variance: " ~ variance.to![c8] () ~ " for " ~ lambda.to![c8] ());
+    }
+
+    assert (poisson (0.0) == 0u64);
+    assert (poisson (-3.0) == 0u64);
+
+    // P(X = 0) for lambda = 2 is e^-2
+    let mut zeros = 0;
+    for _ in 0 .. 100_000 {
+        if poisson (2.0) == 0u64 { zeros += 1; }
+    }
+    assert (zeros > 13_100 && zeros < 13_950, "poisson P(0): " ~ zeros.to![c8] ());
+
+    // P(X = 50) for lambda = 50 is about 0.0563, drawn by PTRS
+    let mut modes = 0;
+    for _ in 0 .. 100_000 {
+        if poisson (50.0) == 50u64 { modes += 1; }
+    }
+    assert (modes > 5_400 && modes < 5_850, "poisson P(50): " ~ modes.to![c8] ());
 }

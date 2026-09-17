@@ -14,6 +14,7 @@
 in generator;
 
 use std::traits;
+use std::math;
 use std::rand::errors;
 use etc::c::random;
 
@@ -162,6 +163,125 @@ pub class Random {
             cast!{T} (self:.bits() >> 40u64) * (1.0f / 16777216.0f)
         } else {
             cast!{T} (cast!{f64} (self:.bits() >> 11u64) * (1.0 / 9007199254740992.0))
+        }
+    }
+
+    /**
+     * @params:
+     *    - p: the probability of returning `true`
+     * @returns: `true` with probability `p`, `false` otherwise
+     * @info: a `p` lower than 0 always returns `false`, a `p` greater than 1 always `true`.
+     * @example:
+     * ```
+     * let dmut r = copy Random(seed-> 3u64);
+     * if r:.bernoulli(0.25) {
+     *     println("heads, one time out of four");
+     * }
+     * ```
+     */
+    pub fn bernoulli(mut self, p: f64)-> bool {
+        self:.rand!{f64}() < p
+    }
+
+    /**
+     * Draw from a normal (gaussian) distribution, using the Marsaglia polar method.
+     * @params:
+     *    - mean: the mean of the distribution
+     *    - stddev: its standard deviation
+     * @returns: a random number following the normal distribution `N(mean, stddev^2)`
+     * @example:
+     * ```
+     * let dmut r = copy Random(seed-> 3u64);
+     * let height = r:.normal(170.0, 10.0);
+     *
+     * println(height);
+     * ```
+     */
+    pub fn if isFloating!{T} normal {T} (mut self, mean: T, stddev: T)-> T {
+        let two = cast!{T} (2), one = cast!{T} (1), zero = cast!{T} (0);
+        loop {
+            let u = two * self:.rand!{T}() - one;
+            let v = two * self:.rand!{T}() - one;
+            let s = u * u + v * v;
+            if s > zero && s < one {
+                break mean + stddev * u * sqrt(-two * log(s) / s);
+            }
+        }
+    }
+
+    /**
+     * Draw from an exponential distribution, the time between two events of a Poisson process.
+     * @params:
+     *    - lambda: the rate of the distribution, which must be positive
+     * @returns: a non negative random number following the exponential distribution of rate
+     * `lambda`, whose mean is `1 / lambda`
+     * @example:
+     * ```
+     * let dmut r = copy Random(seed-> 3u64);
+     * let wait = r:.exponential(0.5); // 2 seconds between two events on average
+     *
+     * assert(wait >= 0.0);
+     * ```
+     */
+    pub fn if isFloating!{T} exponential {T} (mut self, lambda: T)-> T {
+        -log(cast!{T} (1) - self:.rand!{T}()) / lambda
+    }
+
+    /**
+     * Draw from a Poisson distribution, the number of events happening in a fixed interval.
+     * <br>
+     * Small rates are sampled by multiplying uniform draws (Knuth), large ones by transformed
+     * rejection (Hörmann's PTRS), whose cost does not grow with `lambda`.
+     * @params:
+     *    - lambda: the mean number of events in the interval
+     * @returns: a random number of events following the Poisson distribution of mean `lambda`,
+     * or 0 if `lambda` is not positive
+     * @example:
+     * ```
+     * let dmut r = copy Random(seed-> 3u64);
+     * let requests = r:.poisson(12.5);
+     *
+     * println(requests);
+     * ```
+     */
+    pub fn poisson(mut self, lambda: f64)-> u64 {
+        if !(lambda > 0.0) { return 0u64; }
+
+        if lambda < 10.0 {
+            let limit = exp(-lambda);
+            let mut k = 0u64;
+            let mut p = self:.rand!{f64}();
+            while p > limit {
+                k += 1u64;
+                p = p * self:.rand!{f64}();
+            }
+
+            return k;
+        }
+
+        let slam = sqrt(lambda);
+        let loglam = log(lambda);
+        let b = 0.931 + 2.53 * slam;
+        let a = -0.059 + 0.02483 * b;
+        let invalpha = 1.1239 + 1.1328 / (b - 3.4);
+        let vr = 0.9277 - 3.6224 / (b - 2.0);
+
+        loop {
+            let u = self:.rand!{f64}() - 0.5;
+            let v = self:.rand!{f64}();
+            let us = 0.5 - abs(u);
+            let k = floor((2.0 * a / us + b) * u + lambda + 0.43);
+
+            if us >= 0.07 && v <= vr {
+                break cast!{u64} (k);
+            }
+
+            if k >= 0.0 && (us >= 0.013 || v <= us) {
+                let mut sign = 0;
+                if log(v) + log(invalpha) - log(a / (us * us) + b) <= -lambda + k * loglam - lgamma_r(k + 1.0, alias &sign) {
+                    break cast!{u64} (k);
+                }
+            }
         }
     }
 
@@ -330,6 +450,8 @@ pub class Random {
         }
     }
 }
+
+extern (C) fn lgamma_r(x: f64, dmut sign: *i32)-> f64;
 
 /**
  * @returns: a seed read from the entropy pool of the kernel, or derived from the clock and the
