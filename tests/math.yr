@@ -420,6 +420,44 @@ fn stdHyperbolic {T} ()
     }
 }
 
+fn stdHelpers {T} ()
+    throws AssertError
+{
+    let zero = opaque (cast!{T} (0.0));
+    let one = opaque (cast!{T} (1.0));
+    let nan = zero / zero;
+    let inf = one / zero;
+    let pi = cast!{T} (std::math::PI);
+
+    near (std::math::copysign (opaque (cast!{T} (2.0)), opaque (cast!{T} (-1.0))), cast!{T} (-2.0), "copysign neg");
+    near (std::math::copysign (opaque (cast!{T} (-2.0)), opaque (cast!{T} (1.0))), cast!{T} (2.0), "copysign pos");
+    near (std::math::copysign (opaque (cast!{T} (2.0)), -zero), cast!{T} (-2.0), "copysign -0");
+    near (std::math::copysign (one, std::math::copysign (zero, opaque (cast!{T} (-1.0)))), -one, "copysign to zero");
+
+    near (std::math::degrees (pi), cast!{T} (180.0), "degrees pi");
+    near (std::math::degrees (opaque (cast!{T} (0.0))), cast!{T} (0.0), "degrees 0");
+    near (std::math::radians (opaque (cast!{T} (90.0))), pi / cast!{T} (2.0), "radians 90");
+    near (std::math::radians (opaque (cast!{T} (-360.0))), -cast!{T} (std::math::TAU), "radians -360");
+    for i in 0 .. 8 {
+        let a = opaque (cast!{T} (cast!f64 (i)) * cast!{T} (45.0));
+        near (std::math::degrees (std::math::radians (a)), a, "degrees (radians a)", tol-> 128u64);
+    }
+
+    assert (std::math::isFinite (one), "1 is finite");
+    assert (std::math::isFinite (T::max), "max is finite");
+    assert (std::math::isFinite (-T::max), "-max is finite");
+    assert (!std::math::isFinite (inf), "inf is not finite");
+    assert (!std::math::isFinite (-inf), "-inf is not finite");
+    assert (!std::math::isFinite (nan), "nan is not finite");
+
+    near (std::math::signum (opaque (cast!{T} (12.5))), cast!{T} (1.0), "signum pos");
+    near (std::math::signum (opaque (cast!{T} (-12.5))), cast!{T} (-1.0), "signum neg");
+    near (std::math::signum (inf), cast!{T} (1.0), "signum inf");
+    near (std::math::signum (zero), cast!{T} (0.0), "signum 0");
+    near (std::math::copysign (one, std::math::signum (-zero)), -one, "signum keeps -0");
+    assert (core::math::isNaN (std::math::signum (nan)), "signum nan");
+}
+
 __test round {
     stdRound!f32 (); stdRound!f64 (); stdRound!f80 (); stdRound!fsize ();
 }
@@ -442,6 +480,14 @@ __test rounding {
 
 __test hyperbolic {
     stdHyperbolic!f32 (); stdHyperbolic!f64 (); stdHyperbolic!f80 (); stdHyperbolic!fsize ();
+}
+
+__test helpers {
+    stdHelpers!f32 (); stdHelpers!f64 (); stdHelpers!f80 (); stdHelpers!fsize ();
+
+    assert (std::math::signum (opaque (-7)) == -1, "signum i32 neg");
+    assert (std::math::signum (opaque (7i64)) == 1i64, "signum i64 pos");
+    assert (std::math::signum (opaque (0i8)) == 0i8, "signum i8 zero");
 }
 
 __test constants {
