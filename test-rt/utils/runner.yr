@@ -212,8 +212,6 @@ pub class UnittestLauncher {
             _ => { return false; } // parsing failed
         };
 
-        self.resetCoverageUnlessResuming(testArgs.hasResume);
-
         _yrt_force_debug();
         self:.expandParameterizedTests();
 
@@ -225,6 +223,13 @@ pub class UnittestLauncher {
                                                filter-> testArgs.filter,
                                                resume-> testArgs.hasResume,
                                                already-> ref already);
+
+        if testArgs.hasList {
+            self.listTests(toLaunch);
+            return true;
+        }
+
+        self.resetCoverageUnlessResuming(testArgs.hasResume);
 
         let failed = if testArgs.jobs <= 1 || toLaunch.len <= 1us {
             self.runList(toLaunch, testArgs.hasStopFirst, ref already, ref durations)
@@ -247,6 +252,18 @@ pub class UnittestLauncher {
         }
 
         return !failed;
+    }
+
+    /**
+     * Print the name of every test of `tests`, one per line, as `-f` accepts it(see `displayName`)
+     *
+     * @params:
+     *    - tests: the names of the tests that would be run
+     * */
+    fn listTests(self, tests: [[c8]]) {
+        for test in tests {
+            println(displayName(test));
+        }
     }
 
     /**
