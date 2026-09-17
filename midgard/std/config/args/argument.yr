@@ -31,6 +31,9 @@ pub record Argument {
     // True iif the argument is a list instead of a uniq value
     let _list: bool = false;
 
+    // The value inserted in the configuration when the argument is not on the command line
+    let _default: (&Config)? = none;
+
     /**
      * Create a type argument
      * @params:
@@ -38,8 +41,9 @@ pub record Argument {
      *    - short: the short name of the argument
      *    - comments: the comments to print in the help
      *    - type: the type of the argument
+     *    - default: the value of the argument when it is not on the command line
      * */
-    pub self (long: [c8], short: [c8], comments: [c8], type: (&Config)?, hyphenated: bool, mandatory: bool = false, list: bool = false)
+    pub self (long: [c8], short: [c8], comments: [c8], type: (&Config)?, hyphenated: bool, mandatory: bool = false, list: bool = false, default: (&Config)? = none)
         with _long = long
         , _short = short
         , _comments = comments
@@ -47,6 +51,7 @@ pub record Argument {
         , _type = type
         , _mandatory = mandatory
         , _list = list
+        , _default = default
     {}
 
     /**
@@ -134,6 +139,24 @@ pub record Argument {
     @field
     pub fn isList(self)-> bool {
         self._list
+    }
+
+    /**
+     * @returns: the value of the argument when it is not on the command line, or none if it has no default
+     * */
+    @field
+    pub fn defaultValue(self)-> (&Config)? {
+        self._default
+    }
+
+    /**
+     * @returns: true iif the argument has a default value
+     * */
+    @field
+    pub fn hasDefault(self)-> bool {
+        if let Ok() = self._default { return true; }
+
+        false
     }
 
 }

@@ -85,50 +85,28 @@ pub record TestRunnerArgument {
             :.flag("resume", comments-> "re-run only failed tests")
             :.flag("durations", short-> "d", comments-> "list the slowest tests once the run is over")
             :.flag("list", short-> "l", comments-> "list the tests(after filtering) without running them")
-            :.option!{i64} ("jobs", short-> "j", comments-> "number of worker subprocesses to run tests in parallel (default: 1, sequential)")
+            :.option!{i64} ("jobs", default-> 1, short-> "j", comments-> "number of worker subprocesses to run tests in parallel (1 = sequential)")
             :.defaultHelp();
 
         {
             let ret = parser.parse(args);
-            if let Ok(Str(value-> f)) = ret["filter"]? {
-                self.filter = f;
-                self.hasFilter = true;
-            }
 
-            if let Ok(Bool(value-> b)) = ret["stop-first"]? {
-                self.hasStopFirst = b;
-            }
+            self.filter = ret["filter"].to!{[c8]} () ?? "";
+            self.hasFilter = "filter" in ret;
 
-            if let Ok(Bool(value-> b)) = ret["coverage"]? {
-                self.hasCoverage = b;
-            }
+            self.hasStopFirst = ret["stop-first"].to!{bool} () ?? false;
+            self.hasCoverage = ret["coverage"].to!{bool} () ?? false;
+            self.hasCallTree = ret["call-tree"].to!{bool} () ?? false;
+            self.hasMissing = ret["missing"].to!{bool} () ?? false;
+            self.hasResume = ret["resume"].to!{bool} () ?? false;
+            self.hasDurations = ret["durations"].to!{bool} () ?? false;
+            self.hasList = ret["list"].to!{bool} () ?? false;
 
-            if let Ok(Bool(value-> b)) = ret["call-tree"]? {
-                self.hasCallTree = b;
-            }
+            // listing the uncovered lines is only meaningful within a coverage report
+            if self.hasMissing { self.hasCoverage = true; }
 
-            if let Ok(Bool(value-> b)) = ret["missing"]? {
-                self.hasMissing = b;
-                // listing the uncovered lines is only meaningful within a coverage report
-                if b { self.hasCoverage = true; }
-            }
-
-            if let Ok(Bool(value-> b)) = ret["resume"]? {
-                self.hasResume = b;
-            }
-
-            if let Ok(Bool(value-> b)) = ret["durations"]? {
-                self.hasDurations = b;
-            }
-
-            if let Ok(Bool(value-> b)) = ret["list"]? {
-                self.hasList = b;
-            }
-
-            if let Ok(Int(value-> v)) = ret["jobs"]? {
-                self.jobs = if v < 1i64 { 1i64 } else { v };
-            }
-
+            let jobs = ret["jobs"].to!{i64} () ?? 1i64;
+            self.jobs = if jobs < 1i64 { 1i64 } else { jobs };
         } catch {
             HelpRequestError() => {
                 println(parser.getHelp());
