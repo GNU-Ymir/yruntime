@@ -10,6 +10,7 @@ pub mod ::argument;
 pub mod ::errors;
 
 use std::{stream, traits};
+use std::algorithm::searching;
 use std::config::{args::_, data};
 use std::conv::errors;
 
@@ -50,16 +51,41 @@ pub class ArgumentParser {
      * Parse command line options
      * @params:
      *   - args: the command line options to parse
+     * @info:
+     *   - an option value is either the next token(`--jobs 4`), attached after `=`(`--jobs=4`, `-j=4`)
+     *     or glued to the short name(`-j4`)
+     *   - a token that looks like a negative number(`-5`, `-.5`) is a value unless an argument is named after it
+     *   - `--` ends the options, every token after it is positional
+     * @example:
+     * ```
+     * use std::config::_;
+     *
+     * let parser = ArgumentParser()
+     *              :.option!{i64} ("jobs", short-> "j")
+     *              :.position!{[[c8]]} ("files");
+     *
+     * let args = parser.parse(copy ["./a.out", "-j4", "--", "-weird-file", "--jobs=2"]);
+     *
+     * assert(args["jobs"].to!{i64} () == 4);
+     * assert(args["files"].to!{[[c8]]} () == ["-weird-file", "--jobs=2"]);
+     * ```
      * */
     pub fn parse(self, args: [[c8]])-> &Dict
         throws CommandLineError
     {
         let mut currentPositional = 0us;
         let mut rest = args[1 .. $];
+        let mut literal = false;
         let dmut resultConfig = copy Dict();
 
         while rest.len > 0 {
-            let (name, isHyphenated) = self.parseOptionName(rest[0]);
+            if !literal && rest[0] == "--" {
+                literal = true;
+                rest = rest[1 .. $];
+                continue;
+            }
+
+            let (name, isHyphenated) = self.parseToken(rest[0], literal);
             if (isHyphenated) {
                 if let Ok(sub) = self.isSubCommand(name, true) {
                     resultConfig[sub.long] = self.parseSubCommand(sub, rest);
@@ -78,38 +104,27 @@ pub class ArgumentParser {
                 else if let Ok(opt) = self.isOption(name) {
                     let (val, rest_) = self.parseOption(opt, rest[1 .. $]);
                     rest = rest_;
-                    if opt.isList {
-                        if let Ok(lst: &Array) = resultConfig[opt.long]? {
-                            let dmut nLst = copy Array();
-                            for i in lst[] { nLst:.push(i); }
-                            nLst:.push(val);
-                            resultConfig[opt.long] = nLst;
-                        } else {
-                            let dmut lst = copy Array();
-                            lst:.push(val);
-                            resultConfig[opt.long] = lst;
-                        }
-                    } else {
-                        if opt.long in resultConfig {
-                            throw copy DuplicateArgument(opt.long);
-                        } else {
-                            resultConfig[opt.long] = val;
-                        }
-                    }
+                    self.insertOption(alias resultConfig, opt, val);
+                }
+
+                else if let Ok((opt, value)) = self.isAttachedOption(rest[0], name) {
+                    let (val, rest_) = self.parseOption(opt, (copy [value]) ~ rest[1 .. $], forced-> true, literal-> literal);
+                    rest = rest_;
+                    self.insertOption(alias resultConfig, opt, val);
                 }
 
                 else {
                     throw copy UnknownArgument(name);
                 }
             } else {
-                if let Ok(sub) = self.isSubCommand(name, false) {
+                if let Ok(sub) = self.isSubCommand(name, false, literal-> literal) {
                     resultConfig[sub.long] = self.parseSubCommand(sub, rest);
                     break;
                 }
 
                 else if currentPositional < self._positions.len {
                     let opt = self._positions[currentPositional];
-                    let (val, rest_) = self.parseOption(opt, rest);
+                    let (val, rest_) = self.parseOption(opt, rest, literal-> literal);
                     resultConfig[opt.long] = val;
                     currentPositional += 1;
                     rest = rest_;
@@ -599,9 +614,11 @@ pub class ArgumentParser {
      * @params:
      *    - name: the name of the subcommand to find
      *    - hyphenated: true if the name was hyphenated
+     *    - literal: true if the name was found after `--`, where no sub command can be triggered
      * @returns: the sub command or none if not found
      * */
-    prv fn isSubCommand(self, name: [c8], hyphenated: bool)-> (Argument)? {
+    prv fn isSubCommand(self, name: [c8], hyphenated: bool, literal: bool = false)-> (Argument)? {
+        if literal { return none; }
         for s in self._subCommands {
             if (hyphenated || !s.hyphenated) && (s.long == name || s.short == name) {
                 return s?;
@@ -641,6 +658,52 @@ pub class ArgumentParser {
         }
 
         none
+    }
+
+    /**
+     * Search for an option whose value is attached to its name, either after a `=`(`--jobs=4`, `-j=4`)
+     * or glued to its short name(`-j4`, the longest short name wins)
+     * @params:
+     *   - token: the command line token
+     *   - name: the token without its hyphens
+     * @returns: the option and its attached value, or none if not found
+     * */
+    prv fn isAttachedOption(self, token: [c8], name: [c8])-> (Argument, [c8])? {
+        if let Ok(i) = find(name, '=') {
+            if let Ok(opt) = self.isOption(name[0us .. i]) {
+                return (opt, name[i + 1us .. $])?;
+            }
+        }
+
+        if token.len < 2 || token[1] == '-' {
+            return none;
+        }
+
+        let mut found: (Argument)? = none;
+        let mut foundLen = 0us;
+        for o in self._options {
+            if o.short.len > foundLen && o.short.len < name.len && name[0us .. o.short.len] == o.short {
+                found = o?;
+                foundLen = o.short.len;
+            }
+        }
+
+        if let Ok(opt) = found {
+            return (opt, name[foundLen .. $])?;
+        }
+
+        none
+    }
+
+    /**
+     * @returns: true iif an argument that can be hyphenated is named 'name'
+     * */
+    prv fn isHyphenatedName(self, name: [c8])-> bool {
+        if let Ok() = self.isSubCommand(name, true) { return true; }
+        if let Ok() = self.isFlag(name) { return true; }
+        if let Ok() = self.isHelp(name) { return true; }
+        if let Ok() = self.isOption(name) { return true; }
+        false
     }
 
     /**
@@ -688,6 +751,63 @@ pub class ArgumentParser {
     }
 
     /**
+     * Parse a command line token
+     * @params:
+     *    - token: the token
+     *    - literal: true iif the token is a value whatever it looks like
+     * @returns:
+     *     - .0: the parsed name, or the token itself if it is a value
+     *     - .1: true if it is an argument name, false if it is a value
+     * */
+    prv fn parseToken(self, token: [c8], literal: bool)-> ([c8], bool) {
+        if literal {
+            return (token, false);
+        }
+
+        let (name, hyphenated) = self.parseOptionName(token);
+        if hyphenated && self.isNegativeNumber(token) && !self.isHyphenatedName(name) {
+            return (token, false);
+        }
+
+        (name, hyphenated)
+    }
+
+    /**
+     * @returns: true iif the token looks like a negative number(`-5`, `-.5`, `-1e3`)
+     * */
+    prv fn isNegativeNumber(self, token: [c8])-> bool {
+        if token.len < 2 || token[0] != '-' {
+            return false;
+        }
+
+        let c = if token[1] == '.' && token.len > 2 { token[2] } else { token[1] };
+        c >= '0' && c <= '9'
+    }
+
+    /**
+     * Insert the value of an option in the configuration, appending it if the option is a list
+     * @throws:
+     *    - &DuplicateArgument: if the option is not a list and already has a value
+     * */
+    prv fn insertOption(self, dmut cfg: &Dict, opt: Argument, val: &Config)
+        throws CommandLineError
+    {
+        if opt.isList {
+            let dmut lst = copy Array();
+            if let Ok(old: &Array) = cfg[opt.long]? {
+                for i in old[] { lst:.push(i); }
+            }
+
+            lst:.push(val);
+            cfg[opt.long] = lst;
+        } else if opt.long in cfg {
+            throw copy DuplicateArgument(opt.long);
+        } else {
+            cfg[opt.long] = val;
+        }
+    }
+
+    /**
      * Parse a sub command line option
      * @params:
      *    - sub: the sub command to run
@@ -712,18 +832,20 @@ pub class ArgumentParser {
      * @params:
      *    - opt: the argument option to parse
      *    - rest: the command line arguments
+     *    - forced: true iif the first argument is a value whatever it looks like
+     *    - literal: true iif every argument is a value whatever it looks like
      * @returns:
      *    - .0: the configuration
      *    - .1: the argument that are not consumed
      * */
-    prv fn parseOption(self, opt: Argument, rest: [[c8]])-> (&Config, [[c8]])
+    prv fn parseOption(self, opt: Argument, rest: [[c8]], forced: bool = false, literal: bool = false)-> (&Config, [[c8]])
         throws CommandLineError
     {
         match opt.type {
             Ok(Int()) => return self.parseIntOption(opt, rest);
             Ok(Float()) => return self.parseFloatOption(opt, rest);
-            Ok(Str()) => return self.parseStrOption(opt, rest);
-            Ok(a: &Array) => return self.parseArrayOption(opt, a, rest);
+            Ok(Str()) => return self.parseStrOption(opt, rest, forced-> forced || literal);
+            Ok(a: &Array) => return self.parseArrayOption(opt, a, rest, forced-> forced, literal-> literal);
         }
 
         throw copy InvalidCommandLine();
@@ -787,11 +909,12 @@ pub class ArgumentParser {
      * @params:
      *    - opt: the argument option to parse
      *    - rest: the command line arguments
+     *    - forced: true iif the first argument is a value whatever it looks like
      * @returns:
      *    - .0: the configuration
      *    - .1: the argument that are not consumed
      * */
-    prv fn parseStrOption(self, opt: Argument, rest: [[c8]])-> (&Config, [[c8]])
+    prv fn parseStrOption(self, opt: Argument, rest: [[c8]], forced: bool = false)-> (&Config, [[c8]])
         throws CommandLineError
     {
         if rest.len == 0 {
@@ -799,7 +922,7 @@ pub class ArgumentParser {
                                          (copy CastFailure((&Str)::__typeinfo__, [c8]::typeinfo))?);
         }
 
-        let (_, hyphenated) = self.parseOptionName(rest[0]);
+        let (_, hyphenated) = self.parseToken(rest[0], forced);
         if (hyphenated) { // --foo --bar, does not mean foo takes the value --bar
             throw copy MalformedArgument(
                 opt.long,
@@ -814,11 +937,13 @@ pub class ArgumentParser {
      * @params:
      *    - opt: the argument option to parse
      *    - rest: the command line arguments
+     *    - forced: true iif the first argument is a value whatever it looks like
+     *    - literal: true iif every argument is a value whatever it looks like
      * @returns:
      *    - .0: the configuration
      *    - .1: the argument that are not consumed
      * */
-    prv fn parseArrayOption(self, opt: Argument, a: &Array, rest: [[c8]])-> (&Config, [[c8]])
+    prv fn parseArrayOption(self, opt: Argument, a: &Array, rest: [[c8]], forced: bool = false, literal: bool = false)-> (&Config, [[c8]])
         throws CommandLineError
     {
         if rest.len == 0 {
@@ -836,7 +961,7 @@ pub class ArgumentParser {
                 let (z, rest_) = match inner {
                     Ok(Int()) => { self.parseIntOption(opt, args) }
                     Ok(Float()) => { self.parseFloatOption(opt, args) }
-                    Ok(Str()) => { self.parseStrOption(opt, args) }
+                    Ok(Str()) => { self.parseStrOption(opt, args, forced-> literal || (forced && result.len == 0us)) }
                     _ => {
                         throw copy InvalidCommandLine();
                     }
