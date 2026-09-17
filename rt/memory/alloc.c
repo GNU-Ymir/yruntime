@@ -14,6 +14,10 @@ uint64_t _yrt_i_next_pow2 (uint64_t x) {
 	}
 }
 
+uint8_t* _yrt_alloc_block(uint64_t size) {
+    return (uint8_t*) GC_malloc(size);
+}
+
 void _yrt_alloc_slice_no_set (_yrt_slice_t * result, uint64_t len, uint64_t size) {
 	if (len == 0) {
 		memset (result, 0, sizeof (_yrt_slice_t));
