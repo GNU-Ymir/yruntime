@@ -319,9 +319,41 @@ pub record JsonParser {
 
     /**
      * Parse an unicode in a string, having already consumed the leading '\u'
-     * @example: "\u{0x1F3B5}"
+     * @info: accepts the standard json form, `\uXXXX`(a surrogate pair written as two of them),
+     * and the braced form `\u{0xXXXX}`
+     * @example: "\u00e9", "\uD83C\uDFB5", "\u{0x1F3B5}"
      * */
     prv fn parseUnicode(mut self, dmut stream: &StringStream)
+        throws SyntaxError
+    {
+        let dmut res: [c8 ; 4] = ['\u{0}' ; 4];
+        if self._content.len != 0 && self._content[0] == '{' {
+            let nbProduced = std::conv::utf::toUtf8(self:.parseBracedUnicode(), ref res);
+            self.writeUtf8(res, nbProduced, alias stream);
+            return {};
+        }
+
+        let code = cast!c16(cast!u16(self:.parseHexCode(4us)));
+        let isHigh = (cast!u16(code) & 0xFC00u16) == 0xD800u16;
+        if isHigh && self._content.len >= 2us && self._content[0 .. 2] == "\\u" {
+            self:.advanceBy(2us);
+            let low = cast!c16(cast!u16(self:.parseHexCode(4us)));
+            let (nbRead, nbProduced) = std::conv::utf::toUtf8((code, low), ref res);
+            self.writeUtf8(res, nbProduced, alias stream);
+            if nbRead == 1u32 {
+                let nbLow = std::conv::utf::toUtf8(low, ref res);
+                self.writeUtf8(res, nbLow, alias stream);
+            }
+        } else {
+            let nbProduced = std::conv::utf::toUtf8(code, ref res);
+            self.writeUtf8(res, nbProduced, alias stream);
+        }
+    }
+
+    /**
+     * Parse the code of a `\u{0xXXXX}` escape, having already consumed the leading '\u'
+     * */
+    prv fn parseBracedUnicode(mut self)-> c32
         throws SyntaxError
     {
         let (lB, cB) = (self._line, self._col);
@@ -332,20 +364,53 @@ pub record JsonParser {
             let code = self._content[0 .. idx];
             self:.advanceBy(idx + 1); // consume up to and including '}'
 
-            let i = {
+            return {
                 cast!c32(std::conv::to!{u32, "x"} (code))
             } catch {
                 _ => throw copy SyntaxError("expected hexa code (not '" ~ code ~ "')", l, c);
             };
-
-            let dmut res: [c8 ; 4] = ['\u{0}' ; 4];
-            let nbProduced = std::conv::utf::toUtf8(i, ref res);
-
-            for z in 0 .. nbProduced {
-                stream:.write(res[z]);
-            }
         } else {
             throw copy SyntaxError("Unterminated unicode escape", lB, cB);
+        }
+    }
+
+    /**
+     * Consume exactly `n` hexadecimal digits
+     * @returns: the value they encode
+     * */
+    prv fn parseHexCode(mut self, n: usize)-> u32
+        throws SyntaxError
+    {
+        let (l, c) = (self._line, self._col);
+        let len = if self._content.len < n { self._content.len } else { n };
+        let code = self._content[0 .. len];
+        let mut res = 0u32;
+        for ch in code {
+            let digit = if ch >= '0' && ch <= '9' {
+                cast!u32(cast!u8(ch) - cast!u8('0'))
+            } else if ch >= 'a' && ch <= 'f' {
+                cast!u32(cast!u8(ch) - cast!u8('a')) + 10u32
+            } else if ch >= 'A' && ch <= 'F' {
+                cast!u32(cast!u8(ch) - cast!u8('A')) + 10u32
+            } else {
+                throw copy SyntaxError("expected hexa code (not '" ~ code ~ "')", l, c);
+            };
+
+            res = (res << 4u32) | digit;
+        }
+
+        if len < n { throw copy SyntaxError("Unterminated unicode escape", l, c); }
+
+        self:.advanceBy(n);
+        res
+    }
+
+    /**
+     * Write the `nb` first chars of `res` to `stream`
+     * */
+    prv fn writeUtf8(self, res: [c8 ; 4], nb: u32, dmut stream: &StringStream) {
+        for z in 0u32 .. nb {
+            stream:.write(res[z]);
         }
     }
 
