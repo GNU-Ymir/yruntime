@@ -33,12 +33,7 @@ in worker;
 
 use etc::c::process;
 use etc::runtime::threads;
-
-
-// `std::io::utils` (where this is declared) is a private submodule of `std::io`, not importable
-// from here; redeclaring the extern binding directly is the same pattern other modules use for
-// C bindings (e.g. `etc::c::process::getpid`).
-extern (C) fn _yrt_fflush_stdout();
+use std::io;
 
 /**
  * Fork/waitpid based mechanism to run a subset of the registered unittests in a dedicated OS
@@ -67,7 +62,7 @@ pub mod TestWorker {
      *        printed a second time, independently, by both processes
      * */
     pub fn fork()-> (u32)? {
-        _yrt_fflush_stdout();
+        flush();
         let pid = threads::_yrt_fork();
         if pid == 0 {
             return none;
