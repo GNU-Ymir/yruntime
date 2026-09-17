@@ -80,6 +80,61 @@ __test {
 }
 
 
+__test controlCharsEscapeRoundTrip {
+    let raw = "a\u{1}b\u{0x1F}c" ~ [cast!c8(0x7Fu8)] ~ "d\u{0}e\bf\fg\u{0xe9}h";
+    let dmut d = copy Dict();
+    d["s"] = copy Str(raw);
+
+    let dumpedJson = json::dump(d);
+    assert(dumpedJson == "{\n   \"s\" : \"a\\u0001b\\u001Fc\\u007Fd\\u0000e\\bf\\fg\u{0xe9}h\"\n}");
+    let parsedJson = json::parse(dumpedJson);
+    if let Ok(Str(value-> v)) = parsedJson["s"]? {
+        assert(v == raw);
+    } else assert(false);
+
+    let dumpedToml = toml::dump(d);
+    assert(dumpedToml == "s = \"a\\u0001b\\u001Fc\\u007Fd\\u0000e\\bf\\fg\u{0xe9}h\"\n");
+    let parsedToml = toml::parse(dumpedToml);
+    if let Ok(Str(value-> v)) = parsedToml["s"]? {
+        assert(v == raw);
+    } else assert(false);
+}
+
+__test jsonStandardUnicodeEscapes {
+    let parsed = json::parse("{\"a\": \"\\u00e9\\u00C9\", \"b\": \"\\uD83C\\uDFB5\", \"c\": \"\\u{0x1F3B5}\", \"d\": \"\\uD83Cx\"}");
+    if let Ok(Str(value-> v)) = parsed["a"]? { assert(v == "\u{0xe9}\u{0xc9}"); } else assert(false);
+    if let Ok(Str(value-> v)) = parsed["b"]? { assert(v == "\u{0x1F3B5}"); } else assert(false);
+    if let Ok(Str(value-> v)) = parsed["c"]? { assert(v == "\u{0x1F3B5}"); } else assert(false);
+    if let Ok(Str(value-> v)) = parsed["d"]? { assert(v == "\u{0xFFFD}x"); } else assert(false);
+
+    for bad in ["{\"a\": \"\\u00\"}", "{\"a\": \"\\u00g0\"}", "{\"a\": \"\\u12"] {
+        let failed = {
+            let _ = json::parse(bad);
+            false
+        } catch {
+            _: &SyntaxError => true
+        };
+        assert(failed);
+    }
+}
+
+__test tomlStandardUnicodeEscapes {
+    let parsed = toml::parse("a = \"\\u00e9\\u00C9\"\nb = \"\\U0001F3B5\"\nc = \"\\u{0x1F3B5}\"\n");
+    if let Ok(Str(value-> v)) = parsed["a"]? { assert(v == "\u{0xe9}\u{0xc9}"); } else assert(false);
+    if let Ok(Str(value-> v)) = parsed["b"]? { assert(v == "\u{0x1F3B5}"); } else assert(false);
+    if let Ok(Str(value-> v)) = parsed["c"]? { assert(v == "\u{0x1F3B5}"); } else assert(false);
+
+    for bad in ["a = \"\\u00\"\n", "a = \"\\U0001F3G5\"\n", "a = \"\\u12"] {
+        let failed = {
+            let _ = toml::parse(bad);
+            false
+        } catch {
+            _: &SyntaxError => true
+        };
+        assert(failed);
+    }
+}
+
 __test {
     // toml keys that are not valid bare keys are dumped quoted, and round trip
     let dmut inl = copy Dict();
