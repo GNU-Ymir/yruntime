@@ -236,7 +236,8 @@ pub record TomlParser {
                     "\\" => { result:.write("\\"); }
                     "\'" => { result:.write("'"); }
                     "\"" => { result:.write("\""); }
-                    "u" => { self:.parseUnicode(alias result); }
+                    "u" => { self:.parseUnicode(4us, alias result); }
+                    "U" => { self:.parseUnicode(8us, alias result); }
                     _ => throw copy SyntaxError("Undefined escape sequence: \\" ~ af, l, c);
                 }
             } else {
@@ -326,21 +327,40 @@ pub record TomlParser {
      */
 
     /**
-     * Parse an unicode in a string
-     * @example: "\u{0x1F3B5}"
+     * Parse an unicode in a string, having already consumed the leading '\u' or '\U'
+     * @info: accepts the standard toml forms, `\uXXXX` and `\UXXXXXXXX`, and the braced form `\u{0xXXXX}`
+     * @params:
+     *    - n: the number of hexa digits the unbraced form is made of
+     * @example: "\u00e9", "\U0001F3B5", "\u{0x1F3B5}"
      * */
-    prv fn parseUnicode(mut self, dmut stream: &StringStream)
+    prv fn parseUnicode(mut self, n: usize, dmut stream: &StringStream)
         throws SyntaxError
     {
-        self:.assertRead(["{"]);
-        let (code, l, c) = self._lex:.next();
+        let (first, l, c) = self._lex:.nextChar();
+        let dmut code = copy StringStream();
+        if first == "{" && n == 4us {
+            let (inner, _, _) = self._lex:.next();
+            code:.write(inner);
+            self:.assertRead(["}"]);
+        } else {
+            code:.write("0x", first);
+            for _ in 1us .. n {
+                let (d, _, _) = self._lex:.nextChar();
+                code:.write(d);
+            }
+
+            if code[].len != n + 2us { throw copy SyntaxError("Unterminated unicode escape", l, c); }
+            for ch in code[][2us .. $] {
+                if !isHexDigit(ch) { throw copy SyntaxError("expected hexa code (not '" ~ code[] ~ "')", l, c); }
+            }
+        }
+
         let i = {
-            cast!c32(std::conv::to!{u32, "x"} (code))
+            cast!c32(std::conv::to!{u32, "x"} (code[]))
         } catch {
-            _ => throw copy SyntaxError("expected hexa code (not '" ~ code ~ "')", l, c);
+            _ => throw copy SyntaxError("expected hexa code (not '" ~ code[] ~ "')", l, c);
         };
 
-        self:.assertRead(["}"]);
         let dmut res: [c8 ; 4] = ['\u{0}' ; 4];
         let nbProduced = std::conv::utf::toUtf8(i, ref res);
 
