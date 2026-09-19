@@ -126,10 +126,13 @@ pub class TaskPool {
             self._terminated = true;
             self._mails:.clear();
 
-            // trigger worker threads for termination
-            for i in 0us .. self._threads.len {
+            // a post wakes any idle worker, not a given one: wake them all before joining
+            for _ in 0us .. self._threads.len {
                 self._waitTask:.post();
-                self._threads[i].value; // join the worker thread
+            }
+
+            for i in 0us .. self._threads.len {
+                self._threads[i].value;
             }
 
             // Every worker has been joined, so none of them can be blocked on the
