@@ -286,9 +286,13 @@ process-global list, and `tree::mergedTree` folds them together at store time, s
   writing the `.ymir_test_success` file behind `--resume`.
 - `utils::colors` — terminal color helpers for pass/fail/coverage output.
 - `utils::runner` — `UnittestLauncher`: registers tests (a parameterized `__test` as its two
-  frames, which `expandParameterizedTests` turns into one `module::test[index]` entry per
-  parameter set — from `run`, since a provider called from the package ctor that registers it
-  would run allocating Ymir against an uninitialised GC), runs them (respecting filters,
+  frames: a provider returning a generator of pointers to boxed parameter sets, and the test
+  taking one such pointer; `expandParameterizedTests` drains the generator through
+  `_yrt_drain_parameter_sets` in `test-rt/run.c` and registers one `module::test[k]` entry per yielded set — from `run`, since a provider
+  called from the package ctor that registers it would run allocating Ymir against an
+  uninitialised GC. `[k]` filters and `--resume` rely on the generator yielding the same sets in
+  the same order on every run. This ABI pairs with gyc's YMI-110: a midgard and a gyc from
+  different sides of it do not work together), runs them (respecting filters,
   stop-first, resume-from-`.ymir_test_success`, and `-j`/`--jobs` parallelism across
   `utils::worker::TestWorker` subprocesses), and drives coverage/call-tree reporting.
 - `utils::worker` — `TestWorker`: fork/waitpid/exit/signal-decoding wrappers, no `execvp`, unlike
