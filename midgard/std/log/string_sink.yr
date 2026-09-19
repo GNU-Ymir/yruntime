@@ -1,0 +1,46 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in string_sink;
+
+use std::log::{format, sink};
+use std::stream;
+
+/**
+ * A sink appending to a string stream, without colors, e.g. to check what a test logged
+ * @example:
+ * ```
+ * use std::log;
+ * use std::stream;
+ *
+ * let dmut stream = copy StringStream();
+ * setSink(copy StringSink(alias stream));
+ * Logger("app").warn("hello");
+ * assert(stream[].len != 0us);
+ * ```
+ */
+@final
+pub class StringSink over LogSink {
+
+    let dmut _stream: &StringStream;
+
+    let _format: LogFormat;
+
+    /**
+     * @params:
+     *    - stream: the stream to append to
+     *    - format: how the records are rendered
+     */
+    pub self (dmut stream: &StringStream, format: LogFormat = LogFormat())
+        with _stream = alias stream, _format = format
+    {}
+
+    pub over emit(mut self, rec: LogRecord) {
+        let line = self._format.format(rec);
+        atomic self {
+            self._stream:.write(line);
+        }
+    }
+}
