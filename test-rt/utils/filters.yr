@@ -49,17 +49,24 @@ pub mod TestFilters {
 
     /**
      * Filter the list of tests
+     *
+     * A parameterized test is kept whole as long as one of its cases may pass the filter(see
+     * `mayPassParameterized`): its cases are only known once its generator runs, so each of them
+     * goes through `selects` when it is produced.
+     *
      * @params:
-     *    - tests: the list of tests registered in the program
+     *    - tests: the plain tests registered in the program
+     *    - parameterized: the parameterized tests registered in the program
      *    - hasFilters: true iff the argument parser has filter
      *    - filter: the filter to apply if hasFilters
      *    - resume: true iff the flag resume was found in argument parser
      *
      * @returns:
      *    - already: the list of tests that have been executed in the previous iteration(associated to success failure, flags)
-     *    - the list of tests to run
+     *    - the sorted list of tests to run
      */
     pub fn filterList(tests:            [[c8]],
+                      parameterized:    [[c8]],
                       hasFilters:       bool,
                       filter:           [c8],
                       resume:           bool,
@@ -68,22 +75,46 @@ pub mod TestFilters {
 
         let dmut toLaunch: [[c8]] = [];
         for t in tests {
-            let filteredOut = hasFilters && !TestFilters::passFilter(t, filter);
-            if !filteredOut {
-                if let Ok(x) = already[t] {
-                    if (!resume || !x) {
-                        toLaunch ~= [t];
-                        already[t] = false;
-                    }
-                } else {
-                    toLaunch ~= [t];
-                    already[t] = false;
-                }
+            if TestFilters::selects(t, hasFilters, filter, resume, ref already) {
+                toLaunch ~= [t];
+            }
+        }
+
+        for t in parameterized {
+            if !hasFilters || TestFilters::mayPassParameterized(t, filter) {
+                toLaunch ~= [t];
             }
         }
 
         let list = sort(alias toLaunch);
         return list;
+    }
+
+    /**
+     * Tell whether the test `name` must run, and if so record it as planned but not passed yet
+     *
+     * @params:
+     *    - name: the name of the test, or of a case of a parameterized test(see `params::caseName`)
+     *    - hasFilters: true iff the argument parser has filter
+     *    - filter: the filter to apply if hasFilters
+     *    - resume: true iff the flag resume was found in argument parser
+     *    - already: the outcome of each test of the previous run
+     *
+     * @returns: true iff the test passes the filter, and did not pass last time when resuming
+     * */
+    pub fn selects(name: [c8], hasFilters: bool, filter: [c8], resume: bool, ref dmut already: [[c8] => bool])-> bool {
+        if hasFilters && !TestFilters::passFilter(name, filter) {
+            return false;
+        }
+
+        if resume {
+            if let Ok(x) = already[name] {
+                if x { return false; }
+            }
+        }
+
+        already[name] = false;
+        return true;
     }
 
     /**
@@ -192,6 +223,49 @@ pub mod TestFilters {
         }
 
         return true;
+    }
+
+    /**
+     * @returns: true if a case of the parameterized test `name`(see `params::caseName`) may pass
+     * the filter, whatever the index of its parameter set
+     *
+     * The last segment of `filter` either matches `name[*]` as a glob, or ends with a `[...]`
+     * index selector and matches `name` once that selector is dropped. This over-approximates:
+     * `test[x]` is accepted although no case ever bears that name.
+     * */
+    pub fn mayPassParameterized(name: [c8], filter: [c8])-> bool {
+        let testFile = Path(name, sep-> "::").file();
+        let testName = Path(name, sep-> "::").parent().parent().push(testFile);
+        let nameParts = testName.parts();
+        let filterParts = Path(filter, sep-> "::").parts();
+
+        if nameParts.len != filterParts.len || nameParts.len == 0us {
+            return false;
+        }
+
+        for i in 0us .. filterParts.len - 1us {
+            if !globMatch(filterParts[i], nameParts[i]) {
+                return false;
+            }
+        }
+
+        let last = filterParts[$ - 1us];
+        let base = nameParts[$ - 1us];
+        if globMatch(last, base ~ "[*]") {
+            return true;
+        }
+
+        if last.len != 0us && last[$ - 1us] == ']' {
+            let mut i = last.len;
+            while i > 0us {
+                i -= 1us;
+                if last[i] == '[' {
+                    return globMatch(last[0us .. i], base);
+                }
+            }
+        }
+
+        return false;
     }
 
     /**

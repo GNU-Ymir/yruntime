@@ -208,7 +208,8 @@ Two separate versions live at the repo root, and mixing them up is the classic b
   `--resume` to re-run only previously-failed tests, `-cov` for a coverage report, `-ct` for a
   call-tree report, `-m` to list each file's uncovered lines under the coverage report, `-d` to
   list the slowest tests once the run is over, `-l` to list the tests `-f`/`--resume`
-  select without running them, `-j N` to run in N worker subprocesses — see
+  select without running them — a parameterized test once, as `name[*]`, since its cases are
+  unknown until its generator runs — `-j N` to run in N worker subprocesses — see
   `test-rt/utils/args.yr`). `-f` is **not** a substring match: the pattern is a `::`-separated
   path of glob segments (`*` the only wildcard, matched within one segment), and it must have
   exactly as many segments as the test name. So `-f rand` selects nothing, `-f "rand::*"` runs
@@ -290,14 +291,19 @@ process-global list, and `tree::mergedTree` folds them together at store time, s
 - `utils::colors` — terminal color helpers for pass/fail/coverage output.
 - `utils::runner` — `UnittestLauncher`: registers tests (a parameterized `__test` as its two
   frames: a provider returning a generator of pointers to boxed parameter sets, and the test
-  taking one such pointer; `expandParameterizedTests` drains the generator through
-  `_yrt_drain_parameter_sets` in `test-rt/run.c` and registers one `module::test[k]` entry per yielded set — from `run`, since a provider
-  called from the package ctor that registers it would run allocating Ymir against an
-  uninitialised GC. `[k]` filters and `--resume` rely on the generator yielding the same sets in
-  the same order on every run. This ABI pairs with gyc's YMI-110: a midgard and a gyc from
+  taking one such pointer. This ABI pairs with gyc's YMI-110: a midgard and a gyc from
   different sides of it do not work together), runs them (respecting filters,
   stop-first, resume-from-`.ymir_test_success`, and `-j`/`--jobs` parallelism across
   `utils::worker::TestWorker` subprocesses), and drives coverage/call-tree reporting.
+- `utils::params` — the cases of a parameterized test are produced *while the run goes on*, never
+  up front: `ParameterCursor` resumes the generator one set at a time (through
+  `_yrt_resume_parameter_sets` in `test-rt/run.c`), and case `k` is named `module::test[k]` and
+  goes through the filters and `--resume` (`TestFilters::selects`) only when it is produced.
+  Only from `run`: a provider called from the package ctor that registers it would run
+  allocating Ymir against an uninitialised GC. `CaseDispenser` is the `-j N` parent's side of it,
+  `ParameterReplay` the worker's; see "Parallel test execution" below. `[k]` filters,
+  `--resume` and `-j N` all rely on the generator yielding the same sets in the same order every
+  time it is started.
 - `utils::worker` — `TestWorker`: fork/waitpid/exit/signal-decoding wrappers, no `execvp`, unlike
   `std::concurrency::process::SubProcess`; see "Parallel test execution" below.
 - `utils::mailbox` — the IPC layer `-j N` is built on: `TestChannel` (one worker's pair of pipes,
@@ -399,16 +405,25 @@ decided up front, so a worker is idle only when there is genuinely nothing left 
 been registered into `UnittestLauncher::_tests` (compiler-generated glue calls
 `_yrt_register_unittest_impl` before `_yrt_run_unittests_impl`), so a forked child's
 copy-on-write memory already has the full test registry. That is also why **the payload is an
-index, not a name** — both sides index the same `toLaunch` list.
+index, not a name** — both sides index the same sorted list of units (a plain test, or a whole
+parameterized test).
+
+A parameter set is a pointer into the process that produced it, so it cannot travel: a case is
+sent as (unit, `k`), and the worker replays its own copy of the generator up to set `k`
+(`ParameterReplay`). The parent runs the generator too (`CaseDispenser`), only to learn whether
+set `k` exists and whether `test[k]` passes the filters. Once a worker takes a parameterized unit
+from the `TestQueue`, the parent hands its cases out to *every* worker asking, until the generator
+is exhausted — its cases run in parallel, and each worker only moves forward through the sets.
 
 The wire protocol (`utils::mailbox`) is two pipes per worker, both created *before* the fork:
-parent→worker carries one `i64` assignment (`STOP`, i.e. < 0, means wind down), worker→parent
-carries a fixed 3×`i64` `TestOutcome` (index, ok, micros). Not one shared pipe with many readers:
+parent→worker carries a 2×`i64` `TestAssignment` (unit, param — `NO_PARAM` for a plain test; unit
+`STOP`, i.e. < 0, means wind down), worker→parent carries a fixed 4×`i64` `TestOutcome` (unit,
+param, ok, micros). Not one shared pipe with many readers:
 POSIX guarantees atomicity for concurrent *writes* up to `PIPE_BUF`, not for concurrent *reads*,
 so two children reading one fd could split a record between them; per-worker pairs also tell the
 parent exactly who is idle. Both records are far below `PIPE_BUF`, so each is written by a single
 atomic `write(2)` — once `EPOLLIN` fires a whole record is there, and there is no framing layer.
-A worker's *first* message reports no outcome (index `READY`, < 0), which is what lets the parent
+A worker's *first* message reports no outcome (unit `READY`, < 0), which is what lets the parent
 answer every message with an assignment and needs no priming step.
 
 Things that will bite you here:
@@ -448,7 +463,7 @@ What the mailbox buys over the static split it replaced:
   finishes the test in its hand and persists its results normally. The old path SIGKILLed the
   survivors and then had to delete their half-written files, so tests that had already passed in
   another worker were re-run next time.
-- **A crashed worker is attributable.** The parent knows which index each worker is holding
+- **A crashed worker is attributable.** The parent knows which test each worker is holding
   (`TestChannel::holding`), so `EPOLLHUP` on its read end names the test that killed it, and
   `reapWorkers` adds the signal (`TestWorker::decodeSignal`/`signalName`).
 - **No result files to merge.** Outcomes travel over the channel, so there are no

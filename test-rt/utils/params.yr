@@ -1,0 +1,345 @@
+/*
+ *
+ * <hr>
+ *
+ * @Package: ymirc
+ * @Module: utils::params
+ * @File: utils/params.yr
+ * @Author(s):
+ *   - Emile Cadorel <ecadorel@gmail.com>
+ *
+ * @Created(YYYY-MM-DD): 2026-09-19
+ * @Copyright(C) 2021–2026 GNU-Ymir
+ * @License
+ *   ```text
+ *   This file is part of the Ymir language project.
+ *
+ *   Ymir is free software: you can redistribute it and/or modify it
+ *   under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation, either version 3 of the License, or
+ *   (at your option) any later version.
+ *
+ *   Ymir is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with Ymir.  If not, see <https://www.gnu.org/licenses/>.
+ *   ```
+ */
+
+in params;
+
+use utils::{filters, mailbox};
+
+use std::conv;
+
+extern (C) fn _yrt_resume_parameter_sets(closure: *void, func: *void, out: **void)-> bool;
+
+/**
+ * A parameterized `__test`, as it was registered(see `UnittestLauncher::registerParameterized`)
+ * */
+pub record ParameterizedTest {
+
+    // The name the test was registered under, the per-case names derive from it(see `caseName`)
+    pub let mut name: [c8];
+
+    // The frame returning the generator of parameter sets, as a (closure, func) delegate
+    pub let mut provider: fn ()-> (*void, *void);
+
+    // The test itself, called with a pointer to one parameter set
+    pub let mut test: fn (*void)-> void;
+
+    pub self (name: [c8], provider: fn ()-> (*void, *void), test: fn (*void)-> void)
+        with name = name
+        , provider = provider
+        , test = test
+    {}
+}
+
+/**
+ * @returns: the name of the case of `test` run with its `k`-th parameter set, e.g.
+ *           `integration::should_fail_when_that[12]`
+ * */
+pub fn caseName(test: [c8], k: usize)-> [c8] {
+    test ~ "[" ~ to![c8](k) ~ "]"
+}
+
+/**
+ * A position in the generator of parameter sets of one parameterized test, resumed one set at a
+ * time, so the sets are produced while the tests run rather than all up front.
+ *
+ * @warning: a case is addressed by its index, and a worker process replays its own copy of the
+ *           generator up to that index(see `seek`), so a generator must yield the same sets in
+ *           the same order every time it is started.
+ * */
+@final
+pub class ParameterCursor {
+
+    // The index of the test in the run's unit list
+    let _unit: i64;
+
+    // The test whose parameter sets are iterated
+    let _test: ParameterizedTest;
+
+    // The generator returned by the provider, valid once `_started`
+    let mut _closure: *void = null;
+    let mut _func: *void = null;
+
+    let mut _started: bool = false;
+    let mut _exhausted: bool = false;
+
+    // Number of sets yielded since the generator was started
+    let mut _count: usize = 0us;
+
+    // The last set yielded
+    let mut _set: *void = null;
+
+    /**
+     * @params:
+     *    - unit: the index of the test in the run's unit list
+     *    - test: the test whose parameter sets are iterated
+     * */
+    pub self (unit: i64, test: ParameterizedTest)
+        with _unit = unit
+        , _test = test
+    {}
+
+    /**
+     * Resume the generator, starting it on the first call
+     * @returns: false once the generator is exhausted
+     * */
+    pub fn advance(mut self)-> bool {
+        if (self._exhausted) return false;
+        if (!self._started) {
+            let provider = self._test.provider;
+            let (closure, func) = provider();
+
+            self._closure = closure;
+            self._func = func;
+            self._started = true;
+        }
+
+        let mut out: *void = null;
+        if (_yrt_resume_parameter_sets(self._closure, self._func, &out)) {
+            self._set = out;
+            self._count += 1us;
+            return true;
+        }
+
+        self._exhausted = true;
+        self._set = null;
+        return false;
+    }
+
+    /**
+     * Move to the `k`-th parameter set, starting the generator over if it is already past it
+     * @returns: false iff the generator is exhausted before its `k`-th set
+     * */
+    pub fn seek(mut self, k: usize)-> bool {
+        if (self._count > k + 1us) {
+            self._started = false;
+            self._exhausted = false;
+            self._count = 0us;
+            self._set = null;
+        }
+
+        while self._count < k + 1us {
+            if (!self:.advance()) return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * @returns: the index of the test in the run's unit list
+     * */
+    @field
+    pub fn unit(self)-> i64 {
+        self._unit
+    }
+
+    /**
+     * @returns: the test whose parameter sets are iterated
+     * */
+    @field
+    pub fn test(self)-> ParameterizedTest {
+        self._test
+    }
+
+    /**
+     * @returns: the index of the last set yielded, meaningful once `advance` returned true
+     * */
+    @field
+    pub fn current(self)-> usize {
+        self._count - 1us
+    }
+
+    /**
+     * @returns: the last set yielded, meaningful once `advance` returned true
+     * */
+    @field
+    pub fn set(self)-> *void {
+        self._set
+    }
+}
+
+/**
+ * Worker side: the parameter sets of the last parameterized test a worker ran a case of.
+ *
+ * The parent hands the cases of a test out in increasing order, so a worker only ever resumes
+ * its own copy of the generator forward, and runs it once per test at most.
+ * */
+@final
+pub class ParameterReplay {
+
+    // The generator of the last test a case was run of
+    let dmut _cursor: (&ParameterCursor)? = none;
+
+    pub self () {}
+
+    /**
+     * Move to the `k`-th parameter set of `test`, starting its generator if the last case run
+     * belonged to another test
+     *
+     * @params:
+     *    - unit: the index of the test in the run's unit list
+     *    - test: the test the case belongs to
+     *    - k: the index of the parameter set of the case
+     *
+     * @returns: the `k`-th parameter set, none if the generator yields fewer sets than that
+     * */
+    pub fn seek(mut self, unit: i64, test: ParameterizedTest, k: usize)-> (*void)? {
+        let mut reuse = false;
+        if let Ok(c) = self._cursor {
+            reuse = (c.unit == unit);
+        }
+
+        if (!reuse) {
+            self._cursor = (copy ParameterCursor(unit, test))?;
+        }
+
+        if let Ok(dmut c) = alias self._cursor {
+            if (c:.seek(k)) {
+                return (c.set)?;
+            }
+        }
+
+        return none;
+    }
+}
+
+/**
+ * Parent side: decides which test a worker is handed next, producing the cases of the
+ * parameterized tests while the run goes on rather than up front.
+ *
+ * The tests are taken from a `TestQueue`, which keeps its affinity regions. A parameterized test
+ * taken from it is opened, and its cases are handed out to every worker asking for work until
+ * its generator is exhausted -- so the cases of one test run in parallel. Each case is checked
+ * against the filters(see `TestFilters::selects`) when it is produced, never before.
+ * */
+@final
+pub class CaseDispenser {
+
+    // The tests of the run, sorted, indexed by the units of the assignments
+    let _units: [[c8]];
+
+    // The parameterized tests, by name
+    let _params: [[c8] => ParameterizedTest];
+
+    // The plain tests and parameterized tests not handed out yet
+    let dmut _queue: &TestQueue;
+
+    // The parameterized test whose cases are being handed out
+    let dmut _open: (&ParameterCursor)? = none;
+
+    let _hasFilters: bool;
+    let _filter: [c8];
+    let _resume: bool;
+
+    /**
+     * @params:
+     *    - units: the tests of the run, sorted
+     *    - params: the parameterized tests, by name
+     *    - jobs: the number of workers
+     *    - hasFilters: true iff the argument parser has filter
+     *    - filter: the filter to apply if hasFilters
+     *    - resume: true iff the flag resume was found in argument parser
+     * */
+    pub self (units: [[c8]], params: [[c8] => ParameterizedTest], jobs: usize, hasFilters: bool, filter: [c8], resume: bool)
+        with _units = units
+        , _params = params
+        , _queue = copy TestQueue(units.len, jobs)
+        , _hasFilters = hasFilters
+        , _filter = filter
+        , _resume = resume
+    {}
+
+    /**
+     * Take the next test for the worker `k`
+     *
+     * @params:
+     *    - k: the worker asking for work
+     *    - already: the outcome of each test of the previous run, where the case handed out is
+     *               recorded as planned but not passed yet
+     *
+     * @returns: the test to run, of unit `STOP`(< 0) if there is nothing left
+     * */
+    pub fn next(mut self, k: usize, ref dmut already: [[c8] => bool])-> TestAssignment {
+        loop {
+            if let Ok(dmut cursor) = alias self._open {
+                if (cursor:.advance()) {
+                    let name = caseName(self._units[cast!usize(cursor.unit)], cursor.current);
+                    if (TestFilters::selects(name, self._hasFilters, self._filter, self._resume, ref already)) {
+                        break TestAssignment(unit-> cursor.unit, param-> cast!i64(cursor.current));
+                    }
+
+                    continue;
+                }
+
+                self._open = none;
+            }
+
+            let next = self._queue:.next(k);
+            if (next.unit < 0i64 || next.param >= 0i64) break next;
+
+            if let Ok(p) = self._params[self._units[cast!usize(next.unit)]] {
+                self._open = (copy ParameterCursor(next.unit, p))?;
+            } else {
+                break next;
+            }
+        }
+    }
+
+    /**
+     * Put `assignment` back: it was handed to a worker that turned out to be gone
+     * */
+    pub fn giveBack(mut self, assignment: TestAssignment) {
+        self._queue:.giveBack(assignment);
+    }
+
+    /**
+     * @returns: the name of the test or case `assignment` designates
+     * */
+    pub fn nameOf(self, assignment: TestAssignment)-> [c8] {
+        let unit = self._units[cast!usize(assignment.unit)];
+        if (assignment.param < 0i64) {
+            return unit;
+        }
+
+        return caseName(unit, cast!usize(assignment.param));
+    }
+
+    /**
+     * @returns: true iff every test has been handed out, and no parameterized test has cases left
+     * */
+    @field
+    pub fn isEmpty(self)-> bool {
+        if let Ok(_) = self._open {
+            return false;
+        }
+
+        return self._queue.isEmpty;
+    }
+}

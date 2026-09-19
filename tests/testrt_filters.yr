@@ -42,3 +42,39 @@ __test globMatch {
     assert(TestFilters::globMatch("**", "anything"), "k");
     assert(!TestFilters::globMatch("a*c", "ab"), "l");
 }
+
+__test mayPassParameterized {
+    // a parameterized test is kept when one of its cases may pass, whatever its index
+    assert(TestFilters::mayPassParameterized("rand::__test::cases", "rand::cases[3]"), "a");
+    assert(TestFilters::mayPassParameterized("rand::__test::cases", "rand::cases[*]"), "b");
+    assert(TestFilters::mayPassParameterized("rand::__test::cases", "rand::ca*"), "c");
+    assert(TestFilters::mayPassParameterized("rand::__test::cases", "rand::*"), "d");
+    assert(TestFilters::mayPassParameterized("rand::__test::cases", "*::*[1*]"), "e");
+
+    // the bare name of the test matches none of its cases
+    assert(!TestFilters::mayPassParameterized("rand::__test::cases", "rand::cases"), "f");
+    assert(!TestFilters::mayPassParameterized("rand::__test::cases", "rand::other[3]"), "g");
+    assert(!TestFilters::mayPassParameterized("rand::__test::cases", "io::cases[3]"), "h");
+    assert(!TestFilters::mayPassParameterized("rand::__test::cases", "rand::cases[3]::x"), "i");
+}
+
+__test selects {
+    let dmut already: [[c8] => bool] = copy [];
+    already["rand::__test::cases[0]"] = true;
+    already["rand::__test::cases[1]"] = false;
+
+    // without resume, a test passing the filter runs, and is recorded as not passed yet
+    assert(TestFilters::selects("rand::__test::cases[0]", false, "", false, ref already), "a");
+    assert(!(already["rand::__test::cases[0]"] ?? true), "b");
+
+    // with resume, only the tests that did not pass last time run
+    already["rand::__test::cases[0]"] = true;
+    assert(!TestFilters::selects("rand::__test::cases[0]", false, "", true, ref already), "c");
+    assert(TestFilters::selects("rand::__test::cases[1]", false, "", true, ref already), "d");
+    assert(TestFilters::selects("rand::__test::cases[2]", false, "", true, ref already), "e");
+
+    // the filter applies to the name of the case
+    assert(TestFilters::selects("rand::__test::cases[2]", true, "rand::cases[2]", false, ref already), "f");
+    assert(!TestFilters::selects("rand::__test::cases[12]", true, "rand::cases[2]", false, ref already), "g");
+    assert(!("rand::__test::cases[12]" in already), "h");
+}

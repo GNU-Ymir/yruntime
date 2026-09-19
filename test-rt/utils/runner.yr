@@ -33,12 +33,11 @@ in runner;
 
 use core::exception::assertion;
 
-use utils::{args, colors, filters, mailbox, worker};
+use utils::{args, colors, filters, mailbox, params, worker};
 use utils::coverage::{conv, format, load, store, tree};
 
 use std::io;
 use std::algorithm::sorting;
-use std::config::data;
 use std::fs::path;
 use std::time::{dur, instant};
 
@@ -78,27 +77,6 @@ record TestDuration {
 }
 
 /**
- * A parameterized `__test`, as it was registered(see `UnittestLauncher::registerParameterized`)
- * */
-record ParameterizedTest {
-
-    // The name the test was registered under, the per-case names derive from it
-    pub let mut name: [c8];
-
-    // The frame returning the generator of parameter sets, as a (closure, func) delegate
-    pub let mut provider: fn ()-> (*void, *void);
-
-    // The test itself, called with a pointer to one parameter set
-    pub let mut test: fn (*void)-> void;
-
-    pub self (name: [c8], provider: fn ()-> (*void, *void), test: fn (*void)-> void)
-        with name = name
-        , provider = provider
-        , test = test
-    {}
-}
-
-/**
  * @returns: `name` without the trailing '\u{0}' the C registration shim appends to it
  * */
 fn stripNul(name: [c8])-> [c8] {
@@ -110,7 +88,6 @@ fn stripNul(name: [c8])-> [c8] {
 }
 
 extern (C) fn _yrt_force_debug()-> void;
-extern (C) fn _yrt_drain_parameter_sets(provider: fn ()-> (*void, *void))-> [*void];
 
 @{final}
 pub class UnittestLauncher {
@@ -121,8 +98,8 @@ pub class UnittestLauncher {
     // for internal usage. A delegate, so a parameterized case carries its parameter set.
     let dmut _tests: [[c8] => dg ()-> void] = copy [];
 
-    // The parameterized tests, until `expandParameterizedTests` turns them into `_tests` entries
-    let dmut _paramTests: [ParameterizedTest] = [];
+    // The parameterized tests, by name, whose cases are produced while the run goes on
+    let dmut _paramTests: [[c8] => ParameterizedTest] = copy [];
 
     /*!
      * ====================================================================================================
@@ -165,30 +142,8 @@ pub class UnittestLauncher {
      *    - test: the frame to execute once per parameter set
      * */
     pub fn registerParameterized(mut self, name: [c8], provider: fn ()-> (*void, *void), test: fn (*void)-> void) {
-        self._paramTests ~= [ParameterizedTest(name-> stripNul(name), provider-> provider, test-> test)];
-    }
-
-    /**
-     * Turn every registered parameterized test into one `_tests` entry per yielded parameter set,
-     * named `<test>[<k>]` for the k-th set -- e.g. `integration::should_fail_when_that[12]`
-     *
-     * @warning: this drains the generators, so it runs once the runtime is up and before the
-     *           filter list is built, which needs the per-case names. A generator must yield
-     *           the same sets in the same order on every run, or `[k]` filters and `--resume`
-     *           select another case than the one they named.
-     * */
-    fn expandParameterizedTests(mut self) {
-        let pending = self._paramTests;
-        self._paramTests = [];
-
-        for p in pending {
-            let params = _yrt_drain_parameter_sets(p.provider);
-            let test = p.test;
-
-            for i, set in params {
-                self._tests[p.name ~ "[" ~ conv::to![c8](i) ~ "]"] = copy || => { test(set); };
-            }
-        }
+        let stripped = stripNul(name);
+        self._paramTests[stripped] = ParameterizedTest(name-> stripped, provider-> provider, test-> test);
     }
 
     /*!
@@ -212,28 +167,28 @@ pub class UnittestLauncher {
         let testArgs = TestRunnerArgument(args);
 
         _yrt_force_debug();
-        self:.expandParameterizedTests();
 
         let dmut already: [[c8] => bool] = copy [];
         let dmut durations: [[c8] => u64] = copy [];
 
-        let toLaunch = TestFilters::filterList(copy [name for name, _ in self._tests],
-                                               hasFilters-> testArgs.hasFilter,
-                                               filter-> testArgs.filter,
-                                               resume-> testArgs.hasResume,
-                                               already-> ref already);
+        let units = TestFilters::filterList(copy [name for name, _ in self._tests],
+                                            copy [name for name, _ in self._paramTests],
+                                            hasFilters-> testArgs.hasFilter,
+                                            filter-> testArgs.filter,
+                                            resume-> testArgs.hasResume,
+                                            already-> ref already);
 
         if testArgs.hasList {
-            self.listTests(toLaunch);
+            self.listTests(units);
             return true;
         }
 
         self.resetCoverageUnlessResuming(testArgs.hasResume);
 
-        let failed = if testArgs.jobs <= 1 || toLaunch.len <= 1us {
-            self.runList(toLaunch, testArgs.hasStopFirst, ref already, ref durations)
+        let failed = if testArgs.jobs <= 1 || self.maxCases(units) <= 1us {
+            self.runList(units, testArgs, ref already, ref durations)
         } else {
-            self.runParallel(toLaunch, testArgs, ref already, ref durations)
+            self.runParallel(units, testArgs, ref already, ref durations)
         };
 
         TestFilters::dumpSuccessFile(already);
@@ -256,39 +211,71 @@ pub class UnittestLauncher {
     /**
      * Print the name of every test of `tests`, one per line, as `-f` accepts it(see `displayName`)
      *
+     * @info: the cases of a parameterized test are only known once its generator runs, so the
+     *        test is listed once, as `name[*]`
+     *
      * @params:
      *    - tests: the names of the tests that would be run
      * */
     fn listTests(self, tests: [[c8]]) {
         for test in tests {
-            println(displayName(test));
+            if (test in self._paramTests) {
+                println(displayName(test), "[*]");
+            } else {
+                println(displayName(test));
+            }
         }
     }
 
     /**
-     * Run every test of `tests` sequentially, in this process, recording each one's outcome
+     * @returns: an upper bound of the number of tests `units` runs, the maximum if one of them is
+     *           parameterized, as its cases are not known before its generator runs
+     * */
+    fn maxCases(self, units: [[c8]])-> usize {
+        for unit in units {
+            if (unit in self._paramTests) return usize::max;
+        }
+
+        return units.len;
+    }
+
+    /**
+     * Run every test of `units` sequentially, in this process, recording each one's outcome
      * into `already` and how long it took into `durations`
      *
+     * The parameter sets of a parameterized test are produced one at a time, right before the
+     * case they feed runs, and the name of each case goes through the filters then.
+     *
      * @params:
-     *    - tests: the names of the tests to run
-     *    - hasStopFirst: true iff execution must stop at the first failure
+     *    - units: the names of the tests to run
+     *    - testArgs: the parsed arguments of this run
      *    - already: the map to record each test's success/failure into
      *    - durations: the map to record each test's execution time(in microseconds) into
      *
-     * @returns: true iff at least one test of `tests` failed
+     * @returns: true iff at least one test failed
      * */
-    fn runList(self, tests: [[c8]], hasStopFirst: bool, ref dmut already: [[c8] => bool], ref dmut durations: [[c8] => u64])-> bool {
+    fn runList(self, units: [[c8]], testArgs: TestRunnerArgument, ref dmut already: [[c8] => bool], ref dmut durations: [[c8] => u64])-> bool {
         let mut failed = false;
-        for test in tests {
-            let start = Instant::now();
-            let ok = self.runOne(test);
+        for i, unit in units {
+            if let Ok(p) = self._paramTests[unit] {
+                let dmut cursor = copy ParameterCursor(cast!i64(i), p);
+                while cursor:.advance() {
+                    let name = caseName(unit, cursor.current);
+                    if (TestFilters::selects(name, testArgs.hasFilter, testArgs.filter, testArgs.hasResume, ref already)) {
+                        let set = cursor.set;
+                        let test = p.test;
 
-            durations[test] = (Instant::now() - start).allMicros;
-            already[test] = ok;
-
-            if (!ok) {
-                failed = true;
-                if (hasStopFirst) break;
+                        if (!self.runTimed(name, copy || => { test(set); }, ref already, ref durations)) {
+                            failed = true;
+                            if (testArgs.hasStopFirst) return true;
+                        }
+                    }
+                }
+            } else if let Ok(f) = self._tests[unit] {
+                if (!self.runTimed(unit, f, ref already, ref durations)) {
+                    failed = true;
+                    if (testArgs.hasStopFirst) return true;
+                }
             }
         }
 
@@ -296,38 +283,88 @@ pub class UnittestLauncher {
     }
 
     /**
-     * Run a single registered test, in this process
+     * Run a single test, in this process, recording its outcome into `already` and how long it
+     * took into `durations`
      *
-     * This is the one place a test is actually executed: the sequential path calls it in a loop
-     * (see `runList`), a worker calls it once per assignment(see `runWorkerLoop`).
-     *
-     * @params:
-     *    - test: the name of the test to run
-     *
-     * @returns: true iff the test passed(or is not registered, in which case there is nothing
-     *           to run)
+     * @returns: true iff the test passed
      * */
-    fn runOne(self, test: [c8])-> bool {
-        let mut ok = true;
-        if let Ok(f) = self._tests[test] {
-            let name = displayName(test);
+    fn runTimed(self, test: [c8], func: dg ()-> void, ref dmut already: [[c8] => bool], ref dmut durations: [[c8] => u64])-> bool {
+        let start = Instant::now();
+        let ok = self.runOne(test, func);
 
-            {
-                self.runTest(name, f);
-            } catch {
-                err: &Exception => {
-                    self.exposeError(name, err);
-                    ok = false;
-                }
-            }
-        }
+        durations[test] = (Instant::now() - start).allMicros;
+        already[test] = ok;
 
         return ok;
     }
 
     /**
-     * Fork `testArgs.jobs` `TestWorker` subprocesses and hand `toLaunch` out to them one test at
-     * a time, over a pipe-backed mailbox(see `TestMailbox`)
+     * Run a single test, in this process
+     *
+     * This is the one place a test is actually executed: the sequential path calls it in a loop
+     * (see `runList`), a worker calls it once per assignment(see `runWorkerLoop`).
+     *
+     * @params:
+     *    - test: the name of the test to run, or of the case of a parameterized test
+     *    - func: the test itself
+     *
+     * @returns: true iff the test passed
+     * */
+    fn runOne(self, test: [c8], func: dg ()-> void)-> bool {
+        let name = displayName(test);
+        {
+            self.runTest(name, func);
+        } catch {
+            err: &Exception => {
+                self.exposeError(name, err);
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Run, in a worker, the test `assignment` designates
+     *
+     * @params:
+     *    - replay: the generator of the last parameterized test this worker ran a case of
+     *    - units: the names of the tests of the run, indexed by the assignment
+     *    - assignment: the test to run
+     *
+     * @returns: true iff the test passed(or is not registered, in which case there is nothing
+     *           to run)
+     * */
+    fn runAssignment(self, dmut replay: &ParameterReplay, units: [[c8]], assignment: TestAssignment)-> bool {
+        let unit = units[cast!usize(assignment.unit)];
+        if (assignment.param < 0i64) {
+            if let Ok(f) = self._tests[unit] {
+                return self.runOne(unit, f);
+            }
+
+            return true;
+        }
+
+        if let Ok(p) = self._paramTests[unit] {
+            let k = cast!usize(assignment.param);
+            let name = caseName(unit, k);
+
+            if let Ok(set) = replay:.seek(assignment.unit, p, k) {
+                let test = p.test;
+                return self.runOne(name, copy || => { test(set); });
+            }
+
+            self.exposeMissingCase(name);
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Fork `testArgs.jobs` `TestWorker` subprocesses and hand `units` out to them one test at a
+     * time, over a pipe-backed mailbox(see `TestMailbox`), the cases of a parameterized test one
+     * case at a time(see `CaseDispenser`)
      *
      * Handing tests out on demand rather than splitting the list up front makes the balance
      * exact by construction: a worker is idle only when there is nothing left to give it. There
@@ -338,15 +375,15 @@ pub class UnittestLauncher {
      *        workers -- this is the accepted, expected behaviour of a parallel test runner
      *
      * @params:
-     *    - toLaunch: the names of the tests to run, indexed by the assignments sent to workers
+     *    - units: the names of the tests to run, indexed by the assignments sent to workers
      *    - testArgs: the parsed arguments of this run
      *    - already: the map to record each test's success/failure into
      *    - durations: the map to record each test's execution time(in microseconds) into
      *
      * @returns: true iff at least one test failed, or at least one worker died holding one
      * */
-    fn runParallel(self, toLaunch: [[c8]], testArgs: TestRunnerArgument, ref dmut already: [[c8] => bool], ref dmut durations: [[c8] => u64])-> bool {        
-        let jobs = normalizeJobs(testArgs.jobs, toLaunch.len);
+    fn runParallel(self, units: [[c8]], testArgs: TestRunnerArgument, ref dmut already: [[c8] => bool], ref dmut durations: [[c8] => u64])-> bool {
+        let jobs = normalizeJobs(testArgs.jobs, self.maxCases(units));
         let dmut box = {
             copy TestMailbox(jobs)
         } catch {
@@ -363,14 +400,16 @@ pub class UnittestLauncher {
                 let dmut ch = alias box:.channel(k);
                 ch:.setPid(pid);
             } else {
-                self.runWorkerLoop(alias box, k, toLaunch); // never returns
+                self.runWorkerLoop(alias box, k, units); // never returns
             }
         }
 
         let dmut crashed: [u32 => [c8]] = copy [];
         let failed = {
             box:.adoptParent();
-            self.dispatch(alias box, toLaunch, testArgs.hasStopFirst, ref already, ref durations, ref crashed)
+
+            let dmut dispenser = copy CaseDispenser(units, self._paramTests, jobs, testArgs.hasFilter, testArgs.filter, testArgs.hasResume);
+            self.dispatch(alias box, alias dispenser, testArgs.hasStopFirst, ref already, ref durations, ref crashed)
         } catch {
             _ => {
                 eprintln('[', Colors::RED, "ERROR", Colors::RESET, "] : could not poll the workers, aborting the run");
@@ -385,7 +424,8 @@ pub class UnittestLauncher {
     }
 
     /**
-     * Hand `toLaunch` out to the workers, one test at a time, until every one of them is done
+     * Hand the tests of `dispenser` out to the workers, one at a time, until every one of them is
+     * done
      *
      * A worker's message is always answered by an assignment(or by the stop sentinel once there
      * is nothing left to give), and its very first message reports no outcome -- so this loop
@@ -397,7 +437,7 @@ pub class UnittestLauncher {
      *
      * @params:
      *    - box: the mailbox multiplexing every worker
-     *    - toLaunch: the names of the tests to run, indexed by the assignments sent to workers
+     *    - dispenser: the tests to run, and the order in which workers take them
      *    - hasStopFirst: true iff the first failure must stop handing out work
      *    - already: the map to record each test's success/failure into
      *    - durations: the map to record each test's execution time(in microseconds) into
@@ -405,12 +445,11 @@ pub class UnittestLauncher {
      *
      * @returns: true iff at least one test failed, or at least one worker died holding one
      * */
-    fn dispatch(self, dmut box: &TestMailbox, toLaunch: [[c8]], hasStopFirst: bool,
+    fn dispatch(self, dmut box: &TestMailbox, dmut dispenser: &CaseDispenser, hasStopFirst: bool,
                 ref dmut already: [[c8] => bool], ref dmut durations: [[c8] => u64],
                 ref dmut crashed: [u32 => [c8]])-> bool
     {
         let mut failed = false, mut stopped = false;
-        let dmut queue = copy TestQueue(toLaunch.len, box.count);
 
         while box.liveCount > 0us {
             let event = box:.nextEvent();
@@ -420,9 +459,9 @@ pub class UnittestLauncher {
             if (event.kind == MailboxEventKind::GONE) {
                 // the worker will never speak again; if it was still holding a test, that test
                 // is what killed it -- `already` already has it as false(see
-                // `TestFilters::filterList`), so it simply runs again next time
-                if (ch.holding >= 0i64) {
-                    let name = toLaunch[cast!usize(ch.holding)];
+                // `TestFilters::selects`), so it simply runs again next time
+                if (ch.holding.unit >= 0i64) {
+                    let name = dispenser.nameOf(ch.holding);
                     crashed[ch.pid] = copy name;
                     self.exposeCrash(name);
 
@@ -433,8 +472,8 @@ pub class UnittestLauncher {
                 continue;
             }
 
-            if (event.outcome.index >= 0i64) {
-                let name = toLaunch[cast!usize(event.outcome.index)];
+            if (event.outcome.unit >= 0i64) {
+                let name = dispenser.nameOf(TestAssignment(unit-> event.outcome.unit, param-> event.outcome.param));
                 already[name] = event.outcome.ok;
                 durations[name] = event.outcome.micros;
                 ch:.release();
@@ -445,20 +484,20 @@ pub class UnittestLauncher {
                 }
             }
 
-            let index = if stopped { STOP } else { queue:.next(event.worker) };
-            if (index < 0i64) {
+            let next = if stopped { TestAssignment() } else { dispenser:.next(event.worker, ref already) };
+            if (next.unit < 0i64) {
                 // graceful, unlike the SIGKILL this replaces: the worker finishes the test it
                 // has in hand and persists its results before exiting
                 box:.stop(event.worker);
-            } else if (!box:.assign(event.worker, index)) {
-                queue:.giveBack(index); // that worker had just died; the test still has to run
+            } else if (!box:.assign(event.worker, next)) {
+                dispenser:.giveBack(next); // that worker had just died; the test still has to run
             }
         }
 
         // every worker is gone but the list was not exhausted, and no single test can be blamed
         // for it -- the run is incomplete, so it must not be reported as a pass(the tests that
         // never ran are still `false` in `already`, so `--resume` picks them up)
-        if (!stopped && !queue.isEmpty) {
+        if (!stopped && !dispenser.isEmpty) {
             eprintln('[', Colors::RED, "ERROR", Colors::RESET, "] : every worker ended before the test list was exhausted");
             failed = true;
         }
@@ -477,26 +516,26 @@ pub class UnittestLauncher {
      * @params:
      *    - box: the mailbox; every fd this worker does not own is closed on entry
      *    - k: the index of the worker this process just became
-     *    - toLaunch: the names of the tests, indexed by the assignments the parent sends
+     *    - units: the names of the tests, indexed by the assignments the parent sends
      * */
-    fn runWorkerLoop(self, dmut box: &TestMailbox, k: usize, toLaunch: [[c8]]) {
+    fn runWorkerLoop(self, dmut box: &TestMailbox, k: usize, units: [[c8]]) {
         box:.adoptWorker(k);
 
         {
             let dmut ch = alias box:.channel(k);
+            let dmut replay = copy ParameterReplay();
             ch:.report(TestOutcome()); // "ready, nothing to report yet"
 
             let mut running = true;
             while running {
-                let index = ch:.awaitAssignment();
-                if (index < 0i64) {
+                let assignment = ch:.awaitAssignment();
+                if (assignment.unit < 0i64) {
                     running = false;
                 } else {
-                    let name = toLaunch[cast!usize(index)];
                     let start = Instant::now();
-                    let ok = self.runOne(name);
+                    let ok = self.runAssignment(alias replay, units, assignment);
 
-                    ch:.report(TestOutcome(index-> index, ok-> ok, micros-> (Instant::now() - start).allMicros));
+                    ch:.report(TestOutcome(unit-> assignment.unit, param-> assignment.param, ok-> ok, micros-> (Instant::now() - start).allMicros));
                 }
             }
         } catch {
@@ -538,6 +577,19 @@ pub class UnittestLauncher {
         println('[', Colors::RED, "CRASH", Colors::RESET, "] : ", displayName(name));
 
         println(" --> the worker running this test died before reporting a result");
+    }
+
+    /**
+     * Print the failure of a case the worker's own run of its generator did not yield
+     *
+     * @params:
+     *     - name: the name of the case
+     * */
+    fn exposeMissingCase(self, name: [c8]) {
+        println("====================================");
+        println('[', Colors::RED, "FAILURE", Colors::RESET, "] : ", displayName(name));
+
+        println(" --> the generator of this test yielded fewer parameter sets in this worker, it must yield the same sets on every run");
     }
 
     /**

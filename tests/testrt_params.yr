@@ -1,0 +1,237 @@
+in testrt_params;
+
+use utils::{mailbox, params};
+
+extern (C) fn testrt_params_counting()-> (*void, *void);
+extern (C) fn testrt_params_empty()-> (*void, *void);
+extern (C) fn testrt_params_shrinking()-> (*void, *void);
+extern (C) fn testrt_params_value(set: *void)-> i64;
+extern (C) fn testrt_params_starts()-> i64;
+extern (C) fn testrt_params_yielded()-> i64;
+extern (C) fn testrt_params_reset();
+
+fn noop(_: *void) {}
+
+fn counting(name: [c8] = "b::__test::cases")-> ParameterizedTest {
+    ParameterizedTest(name-> name, provider-> &testrt_params_counting, test-> &noop)
+}
+
+fn empty()-> ParameterizedTest {
+    ParameterizedTest(name-> "b::__test::none", provider-> &testrt_params_empty, test-> &noop)
+}
+
+fn shrinking()-> ParameterizedTest {
+    ParameterizedTest(name-> "b::__test::shrink", provider-> &testrt_params_shrinking, test-> &noop)
+}
+
+fn dispenser(units: [[c8]], jobs: usize, filter: [c8] = "", resume: bool = false)-> dmut &CaseDispenser {
+    let dmut ps: [[c8] => ParameterizedTest] = copy [];
+    ps["b::__test::cases"] = counting();
+    ps["b::__test::none"] = empty();
+
+    copy CaseDispenser(units, ps, jobs, filter.len != 0us, filter, resume)
+}
+
+yield squares ()-> (i32, i32) {
+    for i in 0 .. 6 {
+        yield (i, i * i);
+    }
+}
+
+@parameters (squares ())
+__test square (i: i32, sq: i32) {
+    assert(i * i == sq);
+}
+
+@parameters ((yield (i, i + 1) for i in 1 .. 4))
+__test increasing (a: i32, b: i32) {
+    assert(a < b);
+}
+
+class Produced {
+    pub let mut count: i32 = 0;
+    pub self () {}
+}
+
+lazy dmut __PRODUCED__ = copy Produced();
+
+yield produced ()-> i32 {
+    for k in 0 .. 4 {
+        __PRODUCED__.count = __PRODUCED__.count + 1;
+        yield k;
+    }
+}
+
+// a set is produced right before its case runs, sequentially and in a worker replaying the
+// generator alike
+@parameters (produced ())
+__test producedLazily (k: i32) {
+    assert(__PRODUCED__.count == k + 1);
+}
+
+__test caseName {
+    assert(caseName("b::__test::cases", 0us) == "b::__test::cases[0]", "a");
+    assert(caseName("b::__test::cases", 12us) == "b::__test::cases[12]", "b");
+}
+
+__test cursorIsLazy {
+    // nothing runs until the first set is asked for, and then only one set at a time
+    testrt_params_reset();
+    let dmut cursor = copy ParameterCursor(4i64, counting());
+    assert(cursor.unit == 4i64, "a");
+    assert(testrt_params_starts() == 0i64, "b");
+
+    assert(cursor:.advance(), "c");
+    assert(testrt_params_starts() == 1i64 && testrt_params_yielded() == 1i64, "d");
+    assert(cursor.current == 0us && testrt_params_value(cursor.set) == 0i64, "e");
+
+    assert(cursor:.advance() && cursor:.advance(), "f");
+    assert(cursor.current == 2us && testrt_params_value(cursor.set) == 20i64, "g");
+
+    // an exhausted generator stays exhausted, and is not started again
+    assert(!cursor:.advance(), "h");
+    assert(!cursor:.advance(), "i");
+    assert(testrt_params_starts() == 1i64 && testrt_params_yielded() == 3i64, "j");
+}
+
+__test cursorEmpty {
+    testrt_params_reset();
+    let dmut cursor = copy ParameterCursor(0i64, empty());
+    assert(!cursor:.advance(), "a");
+}
+
+__test cursorSeek {
+    testrt_params_reset();
+    let dmut cursor = copy ParameterCursor(0i64, counting());
+
+    // seeking forward resumes the generator, without starting it again
+    assert(cursor:.seek(1us), "a");
+    assert(testrt_params_value(cursor.set) == 10i64, "b");
+    assert(cursor:.seek(1us) && cursor:.seek(2us), "c");
+    assert(testrt_params_value(cursor.set) == 20i64, "d");
+    assert(testrt_params_starts() == 1i64 && testrt_params_yielded() == 3i64, "e");
+
+    // seeking backward starts it over
+    assert(cursor:.seek(0us), "f");
+    assert(testrt_params_value(cursor.set) == 0i64, "g");
+    assert(testrt_params_starts() == 2i64, "h");
+
+    // past the last set
+    assert(!cursor:.seek(3us), "i");
+}
+
+__test replaySeek {
+    testrt_params_reset();
+    let dmut replay = copy ParameterReplay();
+
+    // forward within one test: a single run of its generator
+    assert(testrt_params_value(replay:.seek(0i64, counting(), 0us) ?? null) == 0i64, "a");
+    assert(testrt_params_value(replay:.seek(0i64, counting(), 2us) ?? null) == 20i64, "b");
+    assert(testrt_params_starts() == 1i64, "c");
+
+    // a case of another test starts that test's generator
+    assert(testrt_params_value(replay:.seek(1i64, counting(name-> "c::__test::cases"), 1us) ?? null) == 10i64, "d");
+    assert(testrt_params_starts() == 2i64, "e");
+}
+
+__test replayMissingCase {
+    // a generator yielding fewer sets than it did in the parent leaves the case without a set
+    testrt_params_reset();
+    let dmut replay = copy ParameterReplay();
+
+    assert(testrt_params_value(replay:.seek(0i64, shrinking(), 2us) ?? null) == 20i64, "a");
+    assert(testrt_params_value(replay:.seek(0i64, shrinking(), 0us) ?? null) == 0i64, "b");
+
+    let mut missing = true;
+    if let Ok(_) = replay:.seek(0i64, shrinking(), 2us) {
+        missing = false;
+    }
+
+    assert(missing, "c");
+}
+
+__test dispenserPlainAndCases {
+    testrt_params_reset();
+    let dmut already: [[c8] => bool] = copy [];
+    let dmut d = dispenser(copy ["a::__test::plain", "b::__test::cases"], 1us);
+
+    let a = d:.next(0us, ref already);
+    assert(a.unit == 0i64 && a.param == NO_PARAM, "a");
+    assert(d.nameOf(a) == "a::__test::plain", "b");
+    assert(testrt_params_starts() == 0i64, "c");
+
+    // the cases are produced one at a time, as they are handed out
+    for k in 0 .. 3 {
+        let c = d:.next(0us, ref already);
+        assert(c.unit == 1i64 && c.param == cast!i64(k), "d");
+        assert(testrt_params_yielded() == cast!i64(k + 1), "e");
+        assert(d.nameOf(c) == caseName("b::__test::cases", cast!usize(k)), "f");
+        assert(!(already[d.nameOf(c)] ?? true), "g");
+    }
+
+    // the generator is only known to be exhausted once asked for one more set
+    assert(!d.isEmpty, "h");
+    assert(d:.next(0us, ref already).unit < 0i64, "i");
+    assert(d.isEmpty, "j");
+}
+
+__test dispenserSharesCases {
+    // every worker asking for work gets the next case of the open test
+    testrt_params_reset();
+    let dmut already: [[c8] => bool] = copy [];
+    let dmut d = dispenser(copy ["b::__test::cases"], 2us);
+
+    let first = d:.next(1us, ref already);
+    let second = d:.next(0us, ref already);
+    let third = d:.next(1us, ref already);
+
+    assert(first.param == 0i64 && second.param == 1i64 && third.param == 2i64, "a");
+    assert(d:.next(0us, ref already).unit < 0i64, "b");
+    assert(d:.next(1us, ref already).unit < 0i64, "c");
+}
+
+__test dispenserFilters {
+    // the filter and the outcome of the previous run apply to each case as it is produced
+    testrt_params_reset();
+    let dmut already: [[c8] => bool] = copy [];
+    let dmut filtered = dispenser(copy ["b::__test::cases"], 1us, filter-> "b::cases[1]");
+
+    assert(filtered:.next(0us, ref already).param == 1i64, "a");
+    assert(filtered:.next(0us, ref already).unit < 0i64, "b");
+
+    already["b::__test::cases[0]"] = true;
+    already["b::__test::cases[1]"] = false;
+    let dmut resumed = dispenser(copy ["b::__test::cases"], 1us, resume-> true);
+
+    assert(resumed:.next(0us, ref already).param == 1i64, "c");
+    assert(resumed:.next(0us, ref already).param == 2i64, "d");
+    assert(resumed:.next(0us, ref already).unit < 0i64, "e");
+}
+
+__test dispenserEmptyGenerator {
+    testrt_params_reset();
+    let dmut already: [[c8] => bool] = copy [];
+    let dmut d = dispenser(copy ["b::__test::none"], 1us);
+
+    assert(d:.next(0us, ref already).unit < 0i64, "a");
+    assert(d.isEmpty, "b");
+}
+
+__test dispenserGiveBack {
+    // a case handed to a worker that turned out to be gone goes out again
+    testrt_params_reset();
+    let dmut already: [[c8] => bool] = copy [];
+    let dmut d = dispenser(copy ["b::__test::cases"], 1us);
+
+    let lost = d:.next(0us, ref already);
+    d:.giveBack(lost);
+
+    let dmut seen = copy [0, 0, 0];
+    loop {
+        let a = d:.next(0us, ref already);
+        if (a.unit < 0i64) break;
+        seen[a.param] += 1;
+    }
+
+    assert(seen[0] == 1 && seen[1] == 1 && seen[2] == 1, "a");
+}

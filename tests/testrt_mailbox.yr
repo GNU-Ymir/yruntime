@@ -18,24 +18,27 @@ __test channelRoundTrip {
     // the parent side receives the very same fields back
     let dmut ch = copy TestChannel();
 
-    ch:.report(TestOutcome(index-> 7i64, ok-> false, micros-> 123456u64));
+    ch:.report(TestOutcome(unit-> 7i64, param-> 3i64, ok-> false, micros-> 123456u64));
     let got = ch:.receive();
 
-    assert(got.index == 7i64, "a");
+    assert(got.unit == 7i64, "a");
+    assert(got.param == 3i64, "a2");
     assert(!got.ok, "b");
     assert(got.micros == 123456u64, "c");
 
     // and an assignment travels the other way, on the other pipe
-    ch:.send(42i64);
-    assert(ch:.awaitAssignment() == 42i64, "d");
+    ch:.send(TestAssignment(unit-> 42i64, param-> 12i64));
+    let assignment = ch:.awaitAssignment();
+    assert(assignment.unit == 42i64, "d");
+    assert(assignment.param == 12i64, "d2");
 
     // the two sentinels are what the loops actually test for: an outcome that reports nothing,
     // and an assignment that says "no more work"
     ch:.report(TestOutcome());
-    assert(ch:.receive().index < 0i64, "e");
+    assert(ch:.receive().unit < 0i64, "e");
 
-    ch:.send(STOP);
-    assert(ch:.awaitAssignment() < 0i64, "f");
+    ch:.send(TestAssignment());
+    assert(ch:.awaitAssignment().unit < 0i64, "f");
 
     ch:.closeAll();
 }
@@ -48,7 +51,7 @@ __test closedChannelThrows {
 
     let mut sendFailed = false;
     {
-        ch:.send(1i64);
+        ch:.send(TestAssignment(unit-> 1i64));
     } catch {
         _ => { sendFailed = true; }
     }
@@ -70,10 +73,10 @@ __test queueRegions {
     // tests(and whatever process-local caches they warm) inside one process
     let dmut queue = copy TestQueue(9us, 3us);
 
-    assert(queue:.next(0us) == 0i64, "a");
-    assert(queue:.next(0us) == 1i64, "b");
-    assert(queue:.next(1us) == 3i64, "c");
-    assert(queue:.next(2us) == 6i64, "d");
+    assert(queue:.next(0us).unit == 0i64, "a");
+    assert(queue:.next(0us).unit == 1i64, "b");
+    assert(queue:.next(1us).unit == 3i64, "c");
+    assert(queue:.next(2us).unit == 6i64, "d");
     assert(!queue.isEmpty, "e");
 }
 
@@ -83,19 +86,19 @@ __test queueStealsFromTail {
     let dmut queue = copy TestQueue(6us, 2us);
 
     // worker 0 burns through 0,1,2 while worker 1 has not asked for anything yet
-    assert(queue:.next(0us) == 0i64, "a");
-    assert(queue:.next(0us) == 1i64, "b");
-    assert(queue:.next(0us) == 2i64, "c");
+    assert(queue:.next(0us).unit == 0i64, "a");
+    assert(queue:.next(0us).unit == 1i64, "b");
+    assert(queue:.next(0us).unit == 2i64, "c");
 
     // its region is empty, so it takes the last test of worker 1's region
-    assert(queue:.next(0us) == 5i64, "d");
-    assert(queue:.next(1us) == 3i64, "e");
-    assert(queue:.next(0us) == 4i64, "f");
+    assert(queue:.next(0us).unit == 5i64, "d");
+    assert(queue:.next(1us).unit == 3i64, "e");
+    assert(queue:.next(0us).unit == 4i64, "f");
 
     // everything has been handed out: no worker can be left idle while work remains
     assert(queue.isEmpty, "g");
-    assert(queue:.next(0us) < 0i64, "h");
-    assert(queue:.next(1us) < 0i64, "i");
+    assert(queue:.next(0us).unit < 0i64, "h");
+    assert(queue:.next(1us).unit < 0i64, "i");
 }
 
 __test queueGiveBack {
@@ -103,14 +106,19 @@ __test queueGiveBack {
     // being silently dropped
     let dmut queue = copy TestQueue(2us, 2us);
 
-    assert(queue:.next(0us) == 0i64, "a");
-    assert(queue:.next(1us) == 1i64, "b");
+    assert(queue:.next(0us).unit == 0i64, "a");
+    assert(queue:.next(1us).unit == 1i64, "b");
     assert(queue.isEmpty, "c");
 
-    queue:.giveBack(0i64);
+    queue:.giveBack(TestAssignment(unit-> 0i64));
     assert(!queue.isEmpty, "d");
 
     // and it is handed out ahead of anything else, to whichever worker asks next
-    assert(queue:.next(1us) == 0i64, "e");
+    assert(queue:.next(1us).unit == 0i64, "e");
     assert(queue.isEmpty, "f");
+
+    // a case of a parameterized test comes back with its parameter set index
+    queue:.giveBack(TestAssignment(unit-> 1i64, param-> 4i64));
+    let back = queue:.next(0us);
+    assert(back.unit == 1i64 && back.param == 4i64, "g");
 }
