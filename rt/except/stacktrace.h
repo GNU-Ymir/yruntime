@@ -31,6 +31,7 @@ _yrt_slice_t _yrt_exc_get_stack_trace ();
 
 /**
  * Transform a list of stacktrace symbols into a list of printable strings
+ * Resolutions are serialized, the ELF and DWARF loaders being shared by every thread
  * @params:
  *   - syms: the stack trace acquired with _yrt_exc_get_stack_trace
  * @returns: a list of string
