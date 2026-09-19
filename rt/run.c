@@ -10,6 +10,7 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/syscall.h>
 
 
 int __YRT_DEBUG__ = 0;
@@ -22,18 +23,25 @@ void _yrt_exit (int i) {
     exit (i);
 }
 
+/**
+ * Aborts on the first segfault with a stack trace; a segfault of another thread meanwhile waits
+ * for that abort, one of the owner's while resolving the trace aborts without trace
+ */
 void _yrt_i_bt_sighandler(int sig
 #ifdef __linux__
                    , struct sigcontext ctx
 #endif
                    )
 {
-    static int first = 0;
-    if (first == 0) {
-        first = 1;
+    static pid_t owner = 0;
+    pid_t self = (pid_t) syscall (SYS_gettid);
+    pid_t expected = 0;
+    if (__atomic_compare_exchange_n (&owner, &expected, self, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
         _yrt_i_exc_panic_seg_fault ();
-    } else {
+    } else if (expected == self) {
         _yrt_exc_panic_no_trace ();
+    } else {
+        for (;;) pause ();
     }
 }
 
