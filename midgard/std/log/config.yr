@@ -1,0 +1,188 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in config;
+
+use std::log::{stream_sink, utils};
+
+lazy dmut __LOG_CONFIG__ = copy LogConfig();
+
+class LogConfig {
+
+    let mut _level: Level = Level::INFO;
+
+    let mut _levels: [mut ([c8], Level)] = [];
+
+    let dmut _sinks: [&LogSink] = [];
+
+    pub self () {
+        let dmut sink: &LogSink = copy StreamSink::stderr();
+        self._sinks = copy [alias sink];
+    }
+
+    pub fn setLevel(mut self, level: Level) {
+        self._level = level;
+    }
+
+    pub fn setLevel(mut self, name: [c8], level: Level) {
+        for i in 0us .. self._levels.len {
+            if self._levels[i]._0 == name {
+                self._levels[i] = (name, level);
+                return;
+            }
+        }
+
+        self._levels ~= [(name, level)];
+    }
+
+    pub fn levelOf(self, name: [c8])-> Level {
+        let mut best = self._level;
+        let mut bestLen = 0us;
+        for entry in self._levels {
+            let prefix = entry._0;
+            if prefix.len >= bestLen && isPrefix(prefix, name) {
+                best = entry._1;
+                bestLen = prefix.len;
+            }
+        }
+
+        best
+    }
+
+    pub fn setSink(mut self, dmut sink: &LogSink) {
+        self._sinks = copy [alias sink];
+    }
+
+    pub fn addSink(mut self, dmut sink: &LogSink) {
+        self._sinks ~= copy [alias sink];
+    }
+
+    pub fn removeSink(mut self, sink: &LogSink) {
+        let dmut kept: [&LogSink] = [];
+        for dmut s in alias self._sinks if s !is sink {
+            kept ~= copy [alias s];
+        }
+
+        self._sinks = alias kept;
+    }
+
+    pub fn dispatch(mut self, rec: LogRecord) {
+        for dmut sink in alias self._sinks {
+            sink:.emit(rec);
+        }
+    }
+}
+
+/**
+ * Set the minimum level of the loggers that have no level of their own(`INFO` by default)
+ * @example:
+ * ```
+ * use std::log;
+ *
+ * setLevel(Level::WARN);
+ * assert(!isEnabled("app", Level::INFO));
+ * ```
+ */
+pub fn setLevel(level: Level) {
+    atomic __LOG_CONFIG__ {
+        __LOG_CONFIG__:.setLevel(level);
+    }
+}
+
+/**
+ * Set the minimum level of a logger and of every logger under it
+ * @params:
+ *    - name: the name of the logger, `std` covers `std` and `std::net::http`, but not `stdx`
+ *    - level: its minimum level, overriding the level set for a shorter prefix of the name
+ * @example:
+ * ```
+ * use std::log;
+ *
+ * setLevel("std", Level::WARN);
+ * setLevel("std::net", Level::DEBUG);
+ * assert(!isEnabled("std::fs", Level::INFO));
+ * assert(isEnabled("std::net::http", Level::DEBUG));
+ * ```
+ */
+pub fn setLevel(name: [c8], level: Level) {
+    atomic __LOG_CONFIG__ {
+        __LOG_CONFIG__:.setLevel(name, level);
+    }
+}
+
+/**
+ * @returns: true if a message of the given level emitted by the logger named `name` is written
+ * @example:
+ * ```
+ * use std::log;
+ *
+ * assert(!isEnabled("app", Level::TRACE));
+ * ```
+ */
+pub fn isEnabled(name: [c8], level: Level)-> bool {
+    atomic __LOG_CONFIG__ {
+        cast!u8(level) >= cast!u8(__LOG_CONFIG__.levelOf(name))
+    }
+}
+
+/**
+ * Replace every sink by `sink`
+ * @example:
+ * ```
+ * use std::log;
+ *
+ * setSink(copy StreamSink::stdout(colors-> false));
+ * ```
+ */
+pub fn setSink(dmut sink: &LogSink) {
+    atomic __LOG_CONFIG__ {
+        __LOG_CONFIG__:.setSink(alias sink);
+    }
+}
+
+/**
+ * Add a sink, next to the ones already registered
+ * @example:
+ * ```
+ * use std::log;
+ *
+ * addSink(copy StreamSink::stdout());
+ * ```
+ */
+pub fn addSink(dmut sink: &LogSink) {
+    atomic __LOG_CONFIG__ {
+        __LOG_CONFIG__:.addSink(alias sink);
+    }
+}
+
+/**
+ * Unregister a sink, the other ones are left in place
+ * @example:
+ * ```
+ * use std::log;
+ * use std::stream;
+ *
+ * let dmut stream = copy StringStream();
+ * let dmut sink = copy StringSink(alias stream);
+ * addSink(alias sink);
+ * Logger("app").info("captured");
+ * removeSink(sink);
+ * Logger("app").info("not captured");
+ * ```
+ */
+pub fn removeSink(sink: &LogSink) {
+    atomic __LOG_CONFIG__ {
+        __LOG_CONFIG__:.removeSink(sink);
+    }
+}
+
+/**
+ * Write a record to every registered sink, whatever its level
+ */
+pub fn dispatch(rec: LogRecord) {
+    atomic __LOG_CONFIG__ {
+        __LOG_CONFIG__:.dispatch(rec);
+    }
+}
