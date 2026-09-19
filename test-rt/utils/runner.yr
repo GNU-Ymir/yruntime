@@ -33,10 +33,11 @@ in runner;
 
 use core::exception::assertion;
 
-use utils::{args, colors, filters, mailbox, worker};
+use utils::{args, colors, filters};
 use utils::coverage::{conv, format, load, store, tree};
 
 use std::io;
+use std::concurrency::{mail, task};
 use std::algorithm::sorting;
 use std::config::data;
 use std::fs::path;
@@ -75,6 +76,18 @@ record TestDuration {
         with name = name
         , micros = micros
     {}
+}
+
+/**
+ * @returns: `jobs`(clamped to at least 1), further clamped so it never exceeds `total`
+ * */
+pub fn normalizeJobs(jobs: i64, total: usize)-> usize {
+    let n = if jobs < 1 { 1us } else { cast!usize(jobs) };
+    if n > total {
+        return total;
+    }
+
+    return n;
 }
 
 /**
@@ -280,15 +293,16 @@ pub class UnittestLauncher {
     fn runList(self, tests: [[c8]], hasStopFirst: bool, ref dmut already: [[c8] => bool], ref dmut durations: [[c8] => u64])-> bool {
         let mut failed = false;
         for test in tests {
-            let start = Instant::now();
-            let ok = self.runOne(test);
+            if let Ok(f) = self._tests[test] {
+                let (ok, micros) = self.runOne(test, f);
 
-            durations[test] = (Instant::now() - start).allMicros;
-            already[test] = ok;
+                durations[test] = micros;
+                already[test] = ok;
 
-            if (!ok) {
-                failed = true;
-                if (hasStopFirst) break;
+                if (!ok) {
+                    failed = true;
+                    if (hasStopFirst) break;
+                }
             }
         }
 
@@ -296,255 +310,84 @@ pub class UnittestLauncher {
     }
 
     /**
-     * Run a single registered test, in this process
+     * Run a single test, in the calling thread
      *
      * This is the one place a test is actually executed: the sequential path calls it in a loop
-     * (see `runList`), a worker calls it once per assignment(see `runWorkerLoop`).
+     * (see `runList`), the parallel path calls it once per task(see `runParallel`).
      *
      * @params:
-     *    - test: the name of the test to run
+     *    - test: the name of the test
+     *    - func: the body of the test
      *
-     * @returns: true iff the test passed(or is not registered, in which case there is nothing
-     *           to run)
+     * @returns: true iff the test passed, and how long it took, in microseconds
      * */
-    fn runOne(self, test: [c8])-> bool {
+    fn runOne(self, test: [c8], func: dg ()-> void)-> (bool, u64) {
+        let name = displayName(test);
+        let start = Instant::now();
         let mut ok = true;
-        if let Ok(f) = self._tests[test] {
-            let name = displayName(test);
 
-            {
-                self.runTest(name, f);
-            } catch {
-                err: &Exception => {
-                    self.exposeError(name, err);
-                    ok = false;
-                }
+        {
+            self.runTest(name, func);
+        } catch {
+            err: &Exception => {
+                self.exposeError(name, err);
+                ok = false;
             }
         }
 
-        return ok;
+        return (ok, (Instant::now() - start).allMicros);
     }
 
     /**
-     * Fork `testArgs.jobs` `TestWorker` subprocesses and hand `toLaunch` out to them one test at
-     * a time, over a pipe-backed mailbox(see `TestMailbox`)
+     * Run `toLaunch` on a `TaskPool` of `testArgs.jobs` threads, one task per test
      *
-     * Handing tests out on demand rather than splitting the list up front makes the balance
-     * exact by construction: a worker is idle only when there is nothing left to give it. There
-     * is no cost model and no history file, so a cold run is already balanced, and the run
-     * self-corrects when a test's cost changes.
-     *
-     * @info: worker stdout/stderr is inherited and unpiped, so it freely interleaves across
-     *        workers -- this is the accepted, expected behaviour of a parallel test runner
+     * @info: a test that crashes the process(e.g. a segfault) takes the whole run down with it,
+     *        its trace naming the faulty thread
      *
      * @params:
-     *    - toLaunch: the names of the tests to run, indexed by the assignments sent to workers
+     *    - toLaunch: the names of the tests to run
      *    - testArgs: the parsed arguments of this run
      *    - already: the map to record each test's success/failure into
      *    - durations: the map to record each test's execution time(in microseconds) into
      *
-     * @returns: true iff at least one test failed, or at least one worker died holding one
+     * @returns: true iff at least one test failed
      * */
-    fn runParallel(self, toLaunch: [[c8]], testArgs: TestRunnerArgument, ref dmut already: [[c8] => bool], ref dmut durations: [[c8] => u64])-> bool {        
-        let jobs = normalizeJobs(testArgs.jobs, toLaunch.len);
-        let dmut box = {
-            copy TestMailbox(jobs)
-        } catch {
-            _ => {
-                eprintln('[', Colors::RED, "ERROR", Colors::RESET, "] : could not create the worker pipes, aborting the run");
-                return true;
-            }
-        };
+    fn runParallel(self, toLaunch: [[c8]], testArgs: TestRunnerArgument, ref dmut already: [[c8] => bool], ref dmut durations: [[c8] => u64])-> bool {
+        let dmut pool = copy TaskPool(nbThreads-> cast!u32(normalizeJobs(testArgs.jobs, toLaunch.len)));
+        let dmut outcomes = copy MailBox!{([c8], bool, u64)} ();
+        let dmut stopped = copy [false];
+        let hasStopFirst = testArgs.hasStopFirst;
 
-        TestWorker::ignoreSigPipe();
+        for test in toLaunch {
+            if let Ok(f) = self._tests[test] {
+                pool:.submit(copy || => {
+                    if (stopped[0]) return;
 
-        for k in 0us .. jobs {
-            if let Ok(pid) = TestWorker::fork() {
-                let dmut ch = alias box:.channel(k);
-                ch:.setPid(pid);
-            } else {
-                self.runWorkerLoop(alias box, k, toLaunch); // never returns
+                    let (ok, micros) = self.runOne(test, f);
+                    outcomes:.send((test, ok, micros));
+                    if (!ok && hasStopFirst) stopped[0] = true;
+                });
             }
         }
 
-        let dmut crashed: [u32 => [c8]] = copy [];
-        let failed = {
-            box:.adoptParent();
-            self.dispatch(alias box, toLaunch, testArgs.hasStopFirst, ref already, ref durations, ref crashed)
-        } catch {
-            _ => {
-                eprintln('[', Colors::RED, "ERROR", Colors::RESET, "] : could not poll the workers, aborting the run");
-                true
-            }
-        };
+        pool:.join();
+        pool:.dispose();
 
-        box:.dispose();
-        self.reapWorkers(jobs, crashed);
-
-        return failed;
-    }
-
-    /**
-     * Hand `toLaunch` out to the workers, one test at a time, until every one of them is done
-     *
-     * A worker's message is always answered by an assignment(or by the stop sentinel once there
-     * is nothing left to give), and its very first message reports no outcome -- so this loop
-     * needs no priming step.
-     *
-     * @warning: **poll first, reap last**. Nothing here may block on `waitpid`: a worker could
-     *           be blocked writing to a pipe nobody is draining. Reaping happens in
-     *           `reapWorkers`, once this loop has returned.
-     *
-     * @params:
-     *    - box: the mailbox multiplexing every worker
-     *    - toLaunch: the names of the tests to run, indexed by the assignments sent to workers
-     *    - hasStopFirst: true iff the first failure must stop handing out work
-     *    - already: the map to record each test's success/failure into
-     *    - durations: the map to record each test's execution time(in microseconds) into
-     *    - crashed: the map to record, per worker pid, the test it died on
-     *
-     * @returns: true iff at least one test failed, or at least one worker died holding one
-     * */
-    fn dispatch(self, dmut box: &TestMailbox, toLaunch: [[c8]], hasStopFirst: bool,
-                ref dmut already: [[c8] => bool], ref dmut durations: [[c8] => u64],
-                ref dmut crashed: [u32 => [c8]])-> bool
-    {
-        let mut failed = false, mut stopped = false;
-        let dmut queue = copy TestQueue(toLaunch.len, box.count);
-
-        while box.liveCount > 0us {
-            let event = box:.nextEvent();
-            if (event.kind == MailboxEventKind::NONE) break;
-
-            let dmut ch = alias box:.channel(event.worker);
-            if (event.kind == MailboxEventKind::GONE) {
-                // the worker will never speak again; if it was still holding a test, that test
-                // is what killed it -- `already` already has it as false(see
-                // `TestFilters::filterList`), so it simply runs again next time
-                if (ch.holding >= 0i64) {
-                    let name = toLaunch[cast!usize(ch.holding)];
-                    crashed[ch.pid] = copy name;
-                    self.exposeCrash(name);
-
-                    failed = true;
-                    if (hasStopFirst) { stopped = true; }
-                }
-
-                continue;
-            }
-
-            if (event.outcome.index >= 0i64) {
-                let name = toLaunch[cast!usize(event.outcome.index)];
-                already[name] = event.outcome.ok;
-                durations[name] = event.outcome.micros;
-                ch:.release();
-
-                if (!event.outcome.ok) {
-                    failed = true;
-                    if (hasStopFirst) { stopped = true; }
-                }
-            }
-
-            let index = if stopped { STOP } else { queue:.next(event.worker) };
-            if (index < 0i64) {
-                // graceful, unlike the SIGKILL this replaces: the worker finishes the test it
-                // has in hand and persists its results before exiting
-                box:.stop(event.worker);
-            } else if (!box:.assign(event.worker, index)) {
-                queue:.giveBack(index); // that worker had just died; the test still has to run
-            }
-        }
-
-        // every worker is gone but the list was not exhausted, and no single test can be blamed
-        // for it -- the run is incomplete, so it must not be reported as a pass(the tests that
-        // never ran are still `false` in `already`, so `--resume` picks them up)
-        if (!stopped && !queue.isEmpty) {
-            eprintln('[', Colors::RED, "ERROR", Colors::RESET, "] : every worker ended before the test list was exhausted");
-            failed = true;
+        let mut failed = false;
+        while let Ok((test, ok, micros)) = outcomes:.receive() {
+            already[test] = ok;
+            durations[test] = micros;
+            if (!ok) failed = true;
         }
 
         return failed;
-    }
-
-    /**
-     * The body of a forked worker: ask the parent for a test, run it, report the outcome, ask
-     * again -- until the parent sends the stop sentinel or goes away. Never returns.
-     *
-     * @info: results travel back over the channel, so a worker writes no success file of its
-     *        own; its coverage still goes to its own pid-named file, which is already
-     *        multi-process safe(see `CoverageStore::storePid`)
-     *
-     * @params:
-     *    - box: the mailbox; every fd this worker does not own is closed on entry
-     *    - k: the index of the worker this process just became
-     *    - toLaunch: the names of the tests, indexed by the assignments the parent sends
-     * */
-    fn runWorkerLoop(self, dmut box: &TestMailbox, k: usize, toLaunch: [[c8]]) {
-        box:.adoptWorker(k);
-
-        {
-            let dmut ch = alias box:.channel(k);
-            ch:.report(TestOutcome()); // "ready, nothing to report yet"
-
-            let mut running = true;
-            while running {
-                let index = ch:.awaitAssignment();
-                if (index < 0i64) {
-                    running = false;
-                } else {
-                    let name = toLaunch[cast!usize(index)];
-                    let start = Instant::now();
-                    let ok = self.runOne(name);
-
-                    ch:.report(TestOutcome(index-> index, ok-> ok, micros-> (Instant::now() - start).allMicros));
-                }
-            }
-        } catch {
-            _ => {} // the parent is gone: wind down like any other worker
-        }
-
-        self.storeCoverage();
-
-        TestWorker::exit(0);
-    }
-
-    /**
-     * Reap every worker, now that the dispatch loop has drained(see `dispatch`), naming the
-     * signal that killed the ones that died holding a test
-     *
-     * @params:
-     *    - jobs: the number of workers that were forked
-     *    - crashed: the test each dead worker was holding, per pid(see `dispatch`)
-     * */
-    fn reapWorkers(self, jobs: usize, crashed: [u32 => [c8]]) {
-        for _ in 0us .. jobs {
-            let (pid, _, signal) = TestWorker::waitAny();
-            if (pid == 0u32) break; // no child left to reap
-
-            if let Ok(name) = crashed[pid] {
-                println(" --> worker ", pid, " died on ", displayName(name), ": ", TestWorker::signalName(signal));
-            }
-        }
-    }
-
-    /**
-     * Print the failure of a test whose worker died before reporting a result
-     *
-     * @params:
-     *     - name: the name of the test the worker was holding when it died
-     * */
-    fn exposeCrash(self, name: [c8]) {
-        println("====================================");
-        println('[', Colors::RED, "CRASH", Colors::RESET, "] : ", displayName(name));
-
-        println(" --> the worker running this test died before reporting a result");
     }
 
     /**
      * Print the slowest tests of the run(see `--durations`)
      *
      * @info: this is a report and nothing else -- durations are never fed back into the way work
-     *        is distributed, which the mailbox makes unnecessary
+     *        is scheduled
      *
      * @params:
      *    - durations: how long each test took, in microseconds
