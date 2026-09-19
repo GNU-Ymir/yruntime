@@ -68,22 +68,42 @@ pub mod TestFilters {
 
         let dmut toLaunch: [[c8]] = [];
         for t in tests {
-            let filteredOut = hasFilters && !TestFilters::passFilter(t, filter);
-            if !filteredOut {
-                if let Ok(x) = already[t] {
-                    if (!resume || !x) {
-                        toLaunch ~= [t];
-                        already[t] = false;
-                    }
-                } else {
-                    toLaunch ~= [t];
-                    already[t] = false;
-                }
+            if TestFilters::select(t, hasFilters-> hasFilters, filter-> filter, resume-> resume, already-> ref already) {
+                toLaunch ~= [t];
             }
         }
 
         let list = sort(alias toLaunch);
         return list;
+    }
+
+    /**
+     * Decide whether the test `name` runs, marking it as not passed yet in `already` if it does
+     *
+     * @params:
+     *    - name: the name of the test
+     *    - hasFilters: true iff the argument parser has filter
+     *    - filter: the filter to apply if hasFilters
+     *    - resume: true iff the flag resume was found in argument parser
+     *    - already: the success/failure of the tests of the previous run
+     *
+     * @returns: true iff `name` passes the filter, and did not already pass when resuming
+     * */
+    pub fn select(name:             [c8],
+                  hasFilters:       bool,
+                  filter:           [c8],
+                  resume:           bool,
+                  ref dmut already: [[c8] => bool])-> bool {
+        if hasFilters && !TestFilters::passFilter(name, filter) {
+            return false;
+        }
+
+        if resume && (already[name] ?? false) {
+            return false;
+        }
+
+        already[name] = false;
+        return true;
     }
 
     /**
@@ -195,10 +215,49 @@ pub mod TestFilters {
     }
 
     /**
+     * @returns: false if no case `<name>[<k>]` of the parameterized test `name` can pass `filter`
+     *
+     * @info: an over-approximation, a true does not mean a case passes -- only `passFilter`
+     *        on the name of the case tells
+     * */
+    pub fn mayPassCaseFilter(name: [c8], filter: [c8])-> bool {
+        let testFile = Path(name, sep-> "::").file();
+        let nameParts = Path(name, sep-> "::").parent().parent().push(testFile).parts();
+        let filterParts = Path(filter, sep-> "::").parts();
+
+        if nameParts.len != filterParts.len {
+            return false;
+        }
+
+        for i in 0us .. filterParts.len - 1us {
+            if !globMatch(filterParts[i], nameParts[i]) {
+                return false;
+            }
+        }
+
+        return globMatchPrefix(filterParts[$-1], nameParts[$-1] ~ "[");
+    }
+
+    /**
+     * @returns: true if some text starting with `prefix` matches `pattern`(cf. `globMatch`)
+     * */
+    pub fn globMatchPrefix(pattern: [c8], prefix: [c8])-> bool {
+        return globMatchImpl(pattern, prefix, wholeText-> false);
+    }
+
+    /**
      * @returns: true if `text` matches `pattern`, where '*' in `pattern` stands for "zero or
      * more of any character"(the only wildcard supported — no other character is special)
      * */
     pub fn globMatch(pattern: [c8], text: [c8])-> bool {
+        return globMatchImpl(pattern, text, wholeText-> true);
+    }
+
+    /**
+     * @returns: true if `pattern` matches `text` entirely if `wholeText`, or matches some text
+     * starting with `text` otherwise
+     * */
+    fn globMatchImpl(pattern: [c8], text: [c8], wholeText: bool)-> bool {
         let mut pIdx = 0us;
         let mut tIdx = 0us;
         let mut starIdx: i64 = -1;
@@ -219,6 +278,10 @@ pub mod TestFilters {
             } else {
                 return false;
             }
+        }
+
+        if !wholeText {
+            return true;
         }
 
         while pIdx < pattern.len && pattern[pIdx] == '*' {
