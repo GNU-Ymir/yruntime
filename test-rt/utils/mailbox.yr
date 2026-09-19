@@ -43,24 +43,51 @@ pub def READY = -1i64;
 
 // The assignment that tells a worker no more work is coming, and that it must wind down(persist
 // its coverage and exit). Same value as `READY`, but the two travel on opposite pipes and are
-// never confused: an index < 0 in an outcome means "nothing to report", an index < 0 in an
+// never confused: a unit < 0 in an outcome means "nothing to report", a unit < 0 in an
 // assignment means "stop".
 pub def STOP = -1i64;
 
-// Number of i64 fields a `TestOutcome` occupies on the wire(index, ok, micros). The whole
-// record is 24 bytes, far below PIPE_BUF(4096), so POSIX guarantees each one is written by a
+// The parameter set index of a test that is not parameterized
+pub def NO_PARAM = -1i64;
+
+// Number of i64 fields a `TestAssignment` occupies on the wire(unit, param)
+def ASSIGNMENT_FIELDS = 2us;
+
+// Number of i64 fields a `TestOutcome` occupies on the wire(unit, param, ok, micros). The whole
+// record is 32 bytes, far below PIPE_BUF(4096), so POSIX guarantees each one is written by a
 // single atomic write(2): once `EPOLLIN` fires, a *whole* record is readable, and no framing or
 // parsing layer is needed.
-def OUTCOME_FIELDS = 3us;
+def OUTCOME_FIELDS = 4us;
+
+/**
+ * One test to run, as it travels from the parent down to a worker.
+ * */
+pub record TestAssignment {
+
+    // The index of the test in the run's unit list, or `STOP` when the worker must wind down
+    pub let mut unit: i64;
+
+    // The index of the parameter set to run a parameterized test with, `NO_PARAM` for a plain
+    // test
+    pub let mut param: i64;
+
+    pub self (unit: i64 = STOP, param: i64 = NO_PARAM)
+        with unit = unit
+        , param = param
+    {}
+}
 
 /**
  * The result of one test, as it travels from a worker back to the parent.
  * */
 pub record TestOutcome {
 
-    // The index of the test in the run's `toLaunch` list, or `READY` when this outcome only
-    // announces that the worker is idle
-    pub let mut index: i64;
+    // The index of the test in the run's unit list, or `READY` when this outcome only announces
+    // that the worker is idle
+    pub let mut unit: i64;
+
+    // The index of the parameter set the test ran with, `NO_PARAM` for a plain test
+    pub let mut param: i64;
 
     // True iff the test passed
     pub let mut ok: bool;
@@ -68,8 +95,9 @@ pub record TestOutcome {
     // How long the test took, in microseconds(a report, never a scheduling input)
     pub let mut micros: u64;
 
-    pub self (index: i64 = READY, ok: bool = true, micros: u64 = 0u64)
-        with index = index
+    pub self (unit: i64 = READY, param: i64 = NO_PARAM, ok: bool = true, micros: u64 = 0u64)
+        with unit = unit
+        , param = param
         , ok = ok
         , micros = micros
     {}
@@ -136,10 +164,10 @@ pub class TestChannel {
     // The pid of the worker, once forked
     let mut _pid: u32 = 0u32;
 
-    // Parent side: the test index handed to this worker and not yet answered(`READY` when the
+    // Parent side: the test handed to this worker and not yet answered(unit `READY` when the
     // worker is idle). It is what makes a crash attributable -- if the worker dies while this
     // is set, *that* test is the one that killed it.
-    let mut _holding: i64 = READY;
+    let mut _holding: TestAssignment = TestAssignment(unit-> READY);
 
     /**
      * Create both pipes of the channel
@@ -226,15 +254,15 @@ pub class TestChannel {
      */
 
     /**
-     * Parent side: hand `index` to the worker(or `STOP` to tell it to wind down)
+     * Parent side: hand `assignment` to the worker(or unit `STOP` to tell it to wind down)
      * @throws:
      *    - IOError: if the worker is gone(the write failed, typically EPIPE)
      * */
-    pub fn send(mut self, index: i64)
+    pub fn send(mut self, assignment: TestAssignment)
         throws IOError
     {
-        let payload = copy [index];
-        if (!writeExact(self._assignW, cast!{*u8} (cast!{*void} (payload.ptr)), i64::size)) {
+        let payload = copy [assignment.unit, assignment.param];
+        if (!writeExact(self._assignW, cast!{*u8} (cast!{*void} (payload.ptr)), ASSIGNMENT_FIELDS * i64::size)) {
             throw copy IOError();
         }
     }
@@ -254,7 +282,7 @@ pub class TestChannel {
             throw copy IOError();
         }
 
-        return TestOutcome(index-> payload[0], ok-> (payload[1] != 0i64), micros-> cast!u64(payload[2]));
+        return TestOutcome(unit-> payload[0], param-> payload[1], ok-> (payload[2] != 0i64), micros-> cast!u64(payload[3]));
     }
 
     /*!
@@ -267,19 +295,19 @@ pub class TestChannel {
 
     /**
      * Worker side: block until the parent hands out the next test
-     * @returns: the index of the test to run, or `STOP`(< 0) when there is no more work
+     * @returns: the test to run, of unit `STOP`(< 0) when there is no more work
      * @throws:
      *    - IOError: if the parent is gone
      * */
-    pub fn awaitAssignment(mut self)-> i64
+    pub fn awaitAssignment(mut self)-> TestAssignment
         throws IOError
     {
-        let dmut payload = copy [0i64];
-        if (!readExact(self._assignR, cast!{*u8} (cast!{*void} (payload.ptr)), i64::size)) {
+        let dmut payload = copy [0i64 ; ASSIGNMENT_FIELDS];
+        if (!readExact(self._assignR, cast!{*u8} (cast!{*void} (payload.ptr)), ASSIGNMENT_FIELDS * i64::size)) {
             throw copy IOError();
         }
 
-        return payload[0];
+        return TestAssignment(unit-> payload[0], param-> payload[1]);
     }
 
     /**
@@ -290,7 +318,7 @@ pub class TestChannel {
     pub fn report(mut self, outcome: TestOutcome)
         throws IOError
     {
-        let payload = copy [outcome.index, if outcome.ok { 1i64 } else { 0i64 }, cast!i64(outcome.micros)];
+        let payload = copy [outcome.unit, outcome.param, if outcome.ok { 1i64 } else { 0i64 }, cast!i64(outcome.micros)];
         if (!writeExact(self._resultW, cast!{*u8} (cast!{*void} (payload.ptr)), OUTCOME_FIELDS * i64::size)) {
             throw copy IOError();
         }
@@ -321,10 +349,10 @@ pub class TestChannel {
     }
 
     /**
-     * @returns: the index of the test this worker is currently running, `READY`(< 0) if it is idle
+     * @returns: the test this worker is currently running, of unit `READY`(< 0) if it is idle
      * */
     @field
-    pub fn holding(self)-> i64 {
+    pub fn holding(self)-> TestAssignment {
         self._holding
     }
 
@@ -344,17 +372,17 @@ pub class TestChannel {
     }
 
     /**
-     * Record that `index` was handed to this worker and has not been answered yet
+     * Record that `assignment` was handed to this worker and has not been answered yet
      * */
-    pub fn hold(mut self, index: i64) {
-        self._holding = index;
+    pub fn hold(mut self, assignment: TestAssignment) {
+        self._holding = assignment;
     }
 
     /**
      * Record that this worker answered whatever it was holding
      * */
     pub fn release(mut self) {
-        self._holding = READY;
+        self._holding = TestAssignment(unit-> READY);
     }
 }
 
@@ -552,14 +580,14 @@ pub class TestMailbox {
     }
 
     /**
-     * Hand the test `index` to the worker `k`, recording it as the test that worker is holding
+     * Hand `assignment` to the worker `k`, recording it as the test that worker is holding
      * @returns: false iff the worker turned out to be gone, in which case it is retired
      * */
-    pub fn assign(mut self, k: usize, index: i64)-> bool {
+    pub fn assign(mut self, k: usize, assignment: TestAssignment)-> bool {
         let dmut ch = alias self._channels[k];
         {
-            ch:.send(index);
-            ch:.hold(index);
+            ch:.send(assignment);
+            ch:.hold(assignment);
 
             return true;
         } catch {
@@ -582,7 +610,7 @@ pub class TestMailbox {
     pub fn stop(mut self, k: usize)-> bool {
         let dmut ch = alias self._channels[k];
         {
-            ch:.send(STOP);
+            ch:.send(TestAssignment());
 
             return true;
         } catch {
@@ -681,7 +709,7 @@ pub class TestQueue {
 
     // Tests whose assignment failed because the worker had just died: they left the queue but
     // never ran, so they go back out before anything else(see `giveBack`)
-    let dmut _returned: [i64] = [];
+    let dmut _returned: [TestAssignment] = [];
 
     // Number of tests not handed out yet
     let mut _left: usize = 0us;
@@ -710,16 +738,17 @@ pub class TestQueue {
      * Take the next test for the worker `k`: its own region first, then the tail of the region
      * with the most left
      *
-     * @returns: the index of the test to run, or `STOP`(< 0) if there is nothing left
+     * @returns: the test to run, of unit `STOP`(< 0) if there is nothing left. Its param is
+     *           `NO_PARAM` unless it is a case given back(see `giveBack`)
      * */
-    pub fn next(mut self, k: usize)-> i64 {
+    pub fn next(mut self, k: usize)-> TestAssignment {
         if (self._returned.len != 0us) {
-            let index = self._returned[$ - 1us];
+            let assignment = self._returned[$ - 1us];
 
             self._returned = alias self._returned[0us .. $ - 1us];
             self._left -= 1us;
 
-            return index;
+            return assignment;
         }
 
         if (self._cursor[k] < self._end[k]) {
@@ -728,26 +757,26 @@ pub class TestQueue {
             self._cursor[k] = index + 1us;
             self._left -= 1us;
 
-            return cast!i64(index);
+            return TestAssignment(unit-> cast!i64(index));
         }
 
         let victim = self.largestRegion();
-        if (victim >= self._end.len) return STOP;
+        if (victim >= self._end.len) return TestAssignment();
 
         let index = self._end[victim] - 1us;
 
         self._end[victim] = index;
         self._left -= 1us;
 
-        return cast!i64(index);
+        return TestAssignment(unit-> cast!i64(index));
     }
 
     /**
-     * Put `index` back in the pool: it was handed to a worker that turned out to be gone, so it
-     * never ran and must go to whoever asks next
+     * Put `assignment` back in the pool: it was handed to a worker that turned out to be gone,
+     * so it never ran and must go to whoever asks next
      * */
-    pub fn giveBack(mut self, index: i64) {
-        self._returned ~= [index];
+    pub fn giveBack(mut self, assignment: TestAssignment) {
+        self._returned ~= [assignment];
         self._left += 1us;
     }
 
