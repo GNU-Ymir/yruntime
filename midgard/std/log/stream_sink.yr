@@ -1,0 +1,63 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in stream_sink;
+
+use etc::c::files;
+
+use std::io;
+use std::log::{format, sink, utils};
+
+/**
+ * A sink writing to stdout or stderr
+ * @example:
+ * ```
+ * use std::log;
+ *
+ * setSink(copy StreamSink::stdout());
+ * Logger("app").info("hello");
+ * ```
+ */
+@final
+pub class StreamSink over LogSink {
+
+    let _format: LogFormat;
+
+    let _stdout: bool;
+
+    /**
+     * A sink writing to stderr
+     * @params:
+     *    - colors: whether the lines are colored, by default iff stderr is a terminal and `NO_COLOR` is not set
+     *    - utc: whether the timestamps are written in UTC instead of local time
+     *    - uid: whether the identifier of each message is written on each of its lines
+     */
+    pub self stderr(colors: bool = isColorTerminal(StdFileNumbers::STDERR), utc: bool = false, uid: bool = false)
+        with _format = LogFormat(colors-> colors, utc-> utc, uid-> uid), _stdout = false
+    {}
+
+    /**
+     * A sink writing to stdout
+     * @params:
+     *    - colors: whether the lines are colored, by default iff stdout is a terminal and `NO_COLOR` is not set
+     *    - utc: whether the timestamps are written in UTC instead of local time
+     *    - uid: whether the identifier of each message is written on each of its lines
+     */
+    pub self stdout(colors: bool = isColorTerminal(StdFileNumbers::STDOUT), utc: bool = false, uid: bool = false)
+        with _format = LogFormat(colors-> colors, utc-> utc, uid-> uid), _stdout = true
+    {}
+
+    pub over emit(mut self, rec: LogRecord) {
+        let line = self._format.format(rec);
+        atomic self {
+            if self._stdout {
+                print(line);
+                flush();
+            } else {
+                eprint(line);
+            }
+        }
+    }
+}
