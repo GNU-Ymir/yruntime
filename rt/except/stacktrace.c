@@ -150,7 +150,6 @@ _yrt_slice_t _yrt_exc_resolve_stack_trace (_yrt_slice_t syms) {
 
     _yrt_slice_t tmp = _yrt_i_str_create ("\n╰\0");
     _yrt_append_slice (&result, &tmp, sizeof (uint8_t));
-    _yrt_reflect_clear_debug_info ();
     free (messages);
     pthread_mutex_unlock (&__YRT_STACK_TRACE_MUTEX__);
 
