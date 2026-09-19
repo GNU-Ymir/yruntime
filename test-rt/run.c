@@ -14,9 +14,12 @@ void _yrt_init_runtime (int isDebug);
 _yrt_slice_t _yrt_create_args_slice (int len, char ** argv);
 int _yrt_run_unittests_impl (_yrt_slice_t);
 void _yrt_register_unittest_impl (_yrt_slice_t name, void (*ptr) (_yrt_slice_t));
+
+typedef struct { void * closure; uint8_t (*func) (void *, void **); } _yrt_param_gen_t;
+
 void _yrt_register_parameterized_unittest_impl (_yrt_slice_t name,
-                                                _yrt_slice_t (*provider) (),
-                                                void (*ptr) (_yrt_slice_t, uint64_t));
+                                                _yrt_param_gen_t (*provider) (),
+                                                void (*ptr) (void *));
 
 void _yrt_unittest_coverage_hit_call (void * caller, void * callee);
 void _yrt_unittest_coverage_hit_enter (void * func);
@@ -35,13 +38,32 @@ void _yrt_register_unittest (char * func, void (*ptr) (_yrt_slice_t)) {
   _yrt_register_unittest_impl (test_name_slice (func), ptr);
 }
 
-// Register a parameterized __test: `provider` returns its parameter sets as a slice, and `ptr`
-// is called once per element with that slice and the index of the element. `provider` runs from
-// the launcher, not here: the runtime is not initialized yet (cf. _yrt_run_unittests).
+// Register a parameterized __test: `provider` returns a generator yielding a pointer to each of
+// its parameter sets, and `ptr` is called once per yielded pointer. `provider` runs from the
+// launcher, not here: the runtime is not initialized yet (cf. _yrt_run_unittests).
 void _yrt_register_parameterized_unittest (char * func,
-                                           _yrt_slice_t (*provider) (),
-                                           void (*ptr) (_yrt_slice_t, uint64_t)) {
+                                           _yrt_param_gen_t (*provider) (),
+                                           void (*ptr) (void *)) {
   _yrt_register_parameterized_unittest_impl (test_name_slice (func), provider, ptr);
+}
+
+// Call `provider` and resume the generator it returns until it is exhausted.
+// Returns the yielded parameter set pointers, in order, in a GC-allocated slice.
+_yrt_slice_t _yrt_drain_parameter_sets (_yrt_param_gen_t (*provider) ()) {
+  _yrt_param_gen_t gen = provider ();
+  _yrt_slice_t res = { 0, NULL, NULL };
+  uint64_t cap = 0;
+  void * out = NULL;
+
+  while (gen.func (gen.closure, &out)) {
+    if (res.len == cap) {
+      cap = cap == 0 ? 8 : cap * 2;
+      res.data = GC_realloc (res.data, cap * sizeof (void *));
+    }
+    ((void **) res.data) [res.len++] = out;
+  }
+
+  return res;
 }
 
 int _yrt_run_unittests (int argc, char ** argv) {

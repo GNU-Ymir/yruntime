@@ -521,7 +521,8 @@ __test jsonNull { // MID-56: a null literal parses to a None node, and is dumped
 
 __test jsonMacroNull { // MID-56: the json macro accepts null as a value
   {
-    let dmut d = json#{"a": null, "b": [1, null], "c": {"d": null}, "e": "null"};
+    let nullable = 42;
+    let dmut d = json#{"a": null, "b": [1, null], "c": {"d": null}, "e": "null", "f": nullable, "g": [nullable, null]};
 
     if let Ok(a) = d["a"]? {
         assert(a of None, "a");
@@ -533,6 +534,9 @@ __test jsonMacroNull { // MID-56: the json macro accepts null as a value
 
     assert(d["c"]["d"] of None, "e");
     assert(d["e"].to!{[c8]} () == "null", "f");
+    assert(d["f"].to!{i32} () == 42, "g");
+    assert(d["g"][0u32].to!{i32} () == 42, "h");
+    assert(d["g"][1u32] of None, "i");
   } catch {
     err => { println(err); assert(false, "threw"); }
   }

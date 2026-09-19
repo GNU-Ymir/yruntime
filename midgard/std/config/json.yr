@@ -100,7 +100,7 @@ pub macro json {
         }
     }
 
-    fn array("[" a=(array | dict | emptyDict | value) b=("," inner=(array | dict | emptyDict | value))* "]") skips(" " | "\n" | "\t" | "\r") #{
+    fn array("[" a=(array | dict | emptyDict | nullValue | value) b=("," inner=(array | dict | emptyDict | nullValue | value))* "]") skips(" " | "\n" | "\t" | "\r") #{
         {
             let dmut array_#{__index} = copy Array();
             array_#{__index}:.push(#{a});
@@ -111,8 +111,12 @@ pub macro json {
         }
     }
 
-    fn dictEntry(key=__str ":" value=(array | dict | emptyDict | value)) skips(" " | "\n" | "\t" | "\r") #{(std::conv::to!{[c8]} (#{key}), #{value})}
+    fn dictEntry(key=__str ":" value=(array | dict | emptyDict | nullValue | value)) skips(" " | "\n" | "\t" | "\r") #{(std::conv::to!{[c8]} (#{key}), #{value})}
+    fn nullValue(__key["null"]) skips(" " | "\n" | "\t" | "\r") #{
+        copy std::config::data::None()
+    }
+
     fn value(a=__expr) skips(" " | "\n" | "\t" | "\r") #{
-        cte if (template!{typeof(#{a})}{X of typeof(null)}) { copy std::config::data::None() } else { std::config::conv::to!{&Config} (#{a}) }
+        std::config::conv::to!{&Config} (#{a})
     }
 }

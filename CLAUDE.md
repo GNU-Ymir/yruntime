@@ -171,12 +171,15 @@ Build system is `gyllir` (`gyllir.toml` at the repo root), driven by targets tha
 Ymir compiler, looked up as `gyc` on `PATH` (`compiler = "gyc"` in `gyllir.toml`). CMake
 (`CMakeLists.txt`) has been removed — do not reintroduce a `.build/`/`cmake ..`/`make` flow.
 
-The tree is kept compiling under both the released `gyc` and the in-development one. To switch, edit
-`compiler` in `gyllir.toml` to an absolute path (`compiler = "/home/emile/ymir/gcc/gcc-install/bin/gyc"`)
-and **`gyllir clean` first**: `.target/` is keyed by target and build kind only, never by compiler,
+The tree targets the gyc named by `YMIR_BOOTSTRAP_VERSION` in `YMIR_VERSION`, which may not be
+released yet; an older gyc on `PATH` is not expected to compile it (1.5.3, for instance, lacks the
+`__key` macro rule `std::config::json` uses and still emits the slice ABI of parameterized tests).
+Until that release is installed, build with the in-development compiler: edit `compiler` in
+`gyllir.toml` to an absolute path (`compiler = "/home/emile/ymir/gcc/gcc-install/bin/gyc"`), and
+**`gyllir clean` first**: `.target/` is keyed by target and build kind only, never by compiler,
 so switching without a clean relinks objects the other compiler produced. gyllir has no env-var or
-`--compiler` override — the toml key is the only knob. The in-development compiler adds a check the
-released one lacks, `Warning[E3038] : no symbol is resolved through the use of ...`; keep it at zero.
+`--compiler` override — the toml key is the only knob. Keep gyc's unused-import check,
+`Warning[E3038] : no symbol is resolved through the use of ...`, at zero.
 Note that it only credits a `use` when a symbol is reached through the *shortened* path, so
 `use std::env;` pairs with `setVar(...)`, not with `std::env::setVar(...)`.
 
@@ -286,9 +289,13 @@ process-global list, and `tree::mergedTree` folds them together at store time, s
   writing the `.ymir_test_success` file behind `--resume`.
 - `utils::colors` — terminal color helpers for pass/fail/coverage output.
 - `utils::runner` — `UnittestLauncher`: registers tests (a parameterized `__test` as its two
-  frames, which `expandParameterizedTests` turns into one `module::test[index]` entry per
-  parameter set — from `run`, since a provider called from the package ctor that registers it
-  would run allocating Ymir against an uninitialised GC), runs them (respecting filters,
+  frames: a provider returning a generator of pointers to boxed parameter sets, and the test
+  taking one such pointer; `expandParameterizedTests` drains the generator through
+  `_yrt_drain_parameter_sets` in `test-rt/run.c` and registers one `module::test[k]` entry per yielded set — from `run`, since a provider
+  called from the package ctor that registers it would run allocating Ymir against an
+  uninitialised GC. `[k]` filters and `--resume` rely on the generator yielding the same sets in
+  the same order on every run. This ABI pairs with gyc's YMI-110: a midgard and a gyc from
+  different sides of it do not work together), runs them (respecting filters,
   stop-first, resume-from-`.ymir_test_success`, and `-j`/`--jobs` parallelism across
   `utils::worker::TestWorker` subprocesses), and drives coverage/call-tree reporting.
 - `utils::worker` — `TestWorker`: fork/waitpid/exit/signal-decoding wrappers, no `execvp`, unlike
