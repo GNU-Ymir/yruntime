@@ -171,12 +171,15 @@ Build system is `gyllir` (`gyllir.toml` at the repo root), driven by targets tha
 Ymir compiler, looked up as `gyc` on `PATH` (`compiler = "gyc"` in `gyllir.toml`). CMake
 (`CMakeLists.txt`) has been removed — do not reintroduce a `.build/`/`cmake ..`/`make` flow.
 
-The tree is kept compiling under both the released `gyc` and the in-development one. To switch, edit
-`compiler` in `gyllir.toml` to an absolute path (`compiler = "/home/emile/ymir/gcc/gcc-install/bin/gyc"`)
-and **`gyllir clean` first**: `.target/` is keyed by target and build kind only, never by compiler,
+The tree targets the gyc named by `YMIR_BOOTSTRAP_VERSION` in `YMIR_VERSION`, which may not be
+released yet; an older gyc on `PATH` is not expected to compile it (1.5.3, for instance, lacks the
+`__key` macro rule `std::config::json` uses and still emits the slice ABI of parameterized tests).
+Until that release is installed, build with the in-development compiler: edit `compiler` in
+`gyllir.toml` to an absolute path (`compiler = "/home/emile/ymir/gcc/gcc-install/bin/gyc"`), and
+**`gyllir clean` first**: `.target/` is keyed by target and build kind only, never by compiler,
 so switching without a clean relinks objects the other compiler produced. gyllir has no env-var or
-`--compiler` override — the toml key is the only knob. The in-development compiler adds a check the
-released one lacks, `Warning[E3038] : no symbol is resolved through the use of ...`; keep it at zero.
+`--compiler` override — the toml key is the only knob. Keep gyc's unused-import check,
+`Warning[E3038] : no symbol is resolved through the use of ...`, at zero.
 Note that it only credits a `use` when a symbol is reached through the *shortened* path, so
 `use std::env;` pairs with `setVar(...)`, not with `std::env::setVar(...)`.
 
