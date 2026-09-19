@@ -35,9 +35,7 @@ pub fn print(c: c32)  {
     let dmut rets: [c8 ; 4] = ['\u{0}' ; 4];
 
     let nbProduced = std::conv::utf::toUtf8(c, ref rets);
-    for i in 0 .. nbProduced {
-        putchar(rets[i]);
-    }
+    utils::fwrite(rets.ptr, 1us, cast!usize(nbProduced), utils::stdout);
 }
 
 /**
@@ -47,9 +45,7 @@ pub fn eprint(c: c32) {
     let dmut rets: [c8 ; 4] = ['\u{0}' ; 4];
 
     let nbProduced = std::conv::utf::toUtf8(c, ref rets);
-    for i in 0 .. nbProduced {
-        putc(rets[i], utils::stderr);
-    }
+    utils::fwrite(rets.ptr, 1us, cast!usize(nbProduced), utils::stderr);
 }
 
 /**
@@ -59,9 +55,7 @@ pub fn print(c: c16) {
     let dmut rets: [c8 ; 4] = ['\u{0}' ; 4];
 
     let nbProduced = std::conv::utf::toUtf8(c, ref rets);
-    for i in 0 .. nbProduced {
-        putchar(rets[i]);
-    }
+    utils::fwrite(rets.ptr, 1us, cast!usize(nbProduced), utils::stdout);
 }
 
 /**
@@ -71,9 +65,7 @@ pub fn eprint(c: c16) {
     let dmut rets: [c8 ; 4] = ['\u{0}' ; 4];
 
     let nbProduced = std::conv::utf::toUtf8(c, ref rets);
-    for i in 0 .. nbProduced {
-        putc(rets[i], utils::stderr);
-    }
+    utils::fwrite(rets.ptr, 1us, cast!usize(nbProduced), utils::stderr);
 }
 
 /*!
@@ -89,18 +81,22 @@ pub fn eprint(c: c16) {
  * Print an utf32 string to stdout.
  */
 pub fn print(s: [c32]) {
+    utils::flockfile(utils::stdout);
     for c in s {
         print(c);
     }
+    utils::funlockfile(utils::stdout);
 }
 
 /**
  * Print an utf32 string to stderr.
  */
 pub fn eprint(s:  [c32]) {
+    utils::flockfile(utils::stderr);
     for c in s {
         eprint(c);
     }
+    utils::funlockfile(utils::stderr);
 }
 
 /**
@@ -108,6 +104,7 @@ pub fn eprint(s:  [c32]) {
  */
 pub fn print(s: [c16]) {
     if s.len == 0 { return; }
+    utils::flockfile(utils::stdout);
 
     let dmut codes = ['\u{0}'c8 ; 4];
     let mut i = 0us;
@@ -123,6 +120,7 @@ pub fn print(s: [c16]) {
     if i == s.len - 1 {
         print(s[$ - 1]);
     }
+    utils::funlockfile(utils::stdout);
 }
 
 /**
@@ -130,6 +128,7 @@ pub fn print(s: [c16]) {
  */
 pub fn eprint(s: [c16]) {
     if s.len == 0 { return; }
+    utils::flockfile(utils::stderr);
 
     let dmut codes = ['\u{0}'c8 ; 4];
     let mut i = 0us;
@@ -145,24 +144,21 @@ pub fn eprint(s: [c16]) {
     if i == s.len - 1 {
         eprint(s[$ - 1]);
     }
+    utils::funlockfile(utils::stderr);
 }
 
 /**
  * Print an utf8 string to stdout.
  */
 pub fn print(s: [c8]) {
-    for c in s {
-        putchar(c);
-    }
+    utils::fwrite(s.ptr, 1us, s.len, utils::stdout);
 }
 
 /**
  * Print an utf8 string to stderr.
  */
 pub fn eprint(s: [c8]) {
-    for c in s {
-        putc(c, utils::stderr);
-    }
+    utils::fwrite(s.ptr, 1us, s.len, utils::stderr);
 }
 
 /*!
@@ -344,72 +340,88 @@ pub fn eprint {T} (i: *T) {
  * Print a fptr address to stdout
  * */
 pub fn print {T} (a: fn ()-> T) {
+    utils::flockfile(utils::stdout);
     print(typeof(a)::typeid);
     printf("{%x}".ptr, a);
+    utils::funlockfile(utils::stdout);
 }
 
 /**
  * Print a fptr address to stderr
  * */
 pub fn eprint {T} (a: fn ()-> T) {
+    utils::flockfile(utils::stderr);
     eprint(typeof(a)::typeid);
     fprintf(utils::stderr, "{%x}".ptr, a);
+    utils::funlockfile(utils::stderr);
 }
 
 /**
  * Print a fptr address to stdout
  * */
 pub fn print {T, P...} (a: fn (P)-> T) {
+    utils::flockfile(utils::stdout);
     print(typeof(a)::typeid);
     printf("{%x}".ptr, a);
+    utils::funlockfile(utils::stdout);
 }
 
 /**
  * Print a fptr address to stderr
  * */
 pub fn eprint {T, P...} (a: fn (P)-> T) {
+    utils::flockfile(utils::stderr);
     eprint(typeof(a)::typeid);
     fprintf(utils::stderr, "{%x}".ptr, a);
+    utils::funlockfile(utils::stderr);
 }
 
 /**
  * Print a dg address to stdout
  * */
 pub fn print {T} (a: dg ()-> T) {
+    utils::flockfile(utils::stdout);
     print(typeof(a)::typeid);
     printf(" {%x,%x}".ptr,
            __pragma!field(a, "closure"),
            __pragma!field(a, "func"));
+    utils::funlockfile(utils::stdout);
 }
 
 /**
  * Print a dg address to stdout
  * */
 pub fn eprint {T} (a: dg ()-> T) {
+    utils::flockfile(utils::stderr);
     eprint(typeof(a)::typeid);
     fprintf(utils::stderr, " {%x,%x}".ptr,
             __pragma!field(a, "closure"),
             __pragma!field(a, "func"));
+    utils::funlockfile(utils::stderr);
 }
 
 /**
  * Print a dg address to stdout
  * */
 pub fn print {T, P...} (a: dg (P)-> T) {
+    utils::flockfile(utils::stdout);
     print(typeof(a)::typeid);
     printf(" {%x,%x}".ptr,
            __pragma!field(a, "closure"),
            __pragma!field(a, "func"));
+    utils::funlockfile(utils::stdout);
 }
 
 /**
  * Print a dg address to stdout
  * */
 pub fn eprint {T, P...} (a: dg (P)-> T) {
+    utils::flockfile(utils::stderr);
     eprint(typeof(a)::typeid);
     fprintf(utils::stderr, " {%x,%x}".ptr,
             __pragma!field(a, "closure"),
             __pragma!field(a, "func"));
+    utils::funlockfile(utils::stderr);
 }
 
 /*!
@@ -542,6 +554,7 @@ pub fn eprint(b: bool)  {
  *    - U: any
  */
 pub fn print {T of [U], U} (s: T)  {
+    utils::flockfile(utils::stdout);
     putchar('[');
     if s.len > 0 {
         print(s[0]);
@@ -553,6 +566,7 @@ pub fn print {T of [U], U} (s: T)  {
     }
 
     putchar(']');
+    utils::funlockfile(utils::stdout);
 }
 
 /**
@@ -564,6 +578,7 @@ pub fn print {T of [U], U} (s: T)  {
  *    - U: any
  */
 pub fn eprint {T of [U], U} (s: T)  {
+    utils::flockfile(utils::stderr);
     eprint('[');
     if s.len > 0 {
         eprint(s[0]);
@@ -574,6 +589,7 @@ pub fn eprint {T of [U], U} (s: T)  {
     }
 
     eprint(']');
+    utils::funlockfile(utils::stderr);
 }
 
 /*!
@@ -591,6 +607,7 @@ pub fn eprint {T of [U], U} (s: T)  {
  *    - m: the map to print
  * */
 pub fn print {M of [K => V], K, V} (m: M) {
+    utils::flockfile(utils::stdout);
     putchar('[');
     let mut fst = true;
     for k, v in m {
@@ -604,6 +621,7 @@ pub fn print {M of [K => V], K, V} (m: M) {
         print(v);
     }
     putchar(']');
+    utils::funlockfile(utils::stdout);
 }
 
 /**
@@ -612,6 +630,7 @@ pub fn print {M of [K => V], K, V} (m: M) {
  *    - m: the map to print
  * */
 pub fn eprint {M of [K => V], K, V} (m: M) {
+    utils::flockfile(utils::stderr);
     eprint('[');
     let mut fst = true;
     for k, v in m {
@@ -625,6 +644,7 @@ pub fn eprint {M of [K => V], K, V} (m: M) {
         eprint(v);
     }
     eprint(']');
+    utils::funlockfile(utils::stderr);
 }
 
 /*!
@@ -646,6 +666,7 @@ pub fn eprint {M of [K => V], K, V} (m: M) {
  *    - N: the static size
  */
 pub fn print {T of [U;N], U, N: usize} (a: T)  {
+    utils::flockfile(utils::stdout);
     putchar('[');
     cte if N > 0 {
         print(a[0]);
@@ -656,6 +677,7 @@ pub fn print {T of [U;N], U, N: usize} (a: T)  {
         }
     }
     putchar(']');
+    utils::funlockfile(utils::stdout);
 }
 
 /**
@@ -668,6 +690,7 @@ pub fn print {T of [U;N], U, N: usize} (a: T)  {
  *    - N: the static size
  */
 pub fn eprint {T of [U;N], U, N: usize} (a: T)  {
+    utils::flockfile(utils::stderr);
     eprint('[');
     cte if N > 0 {
         eprint(a[0]);
@@ -677,6 +700,7 @@ pub fn eprint {T of [U;N], U, N: usize} (a: T)  {
         }
     }
     eprint(']');
+    utils::funlockfile(utils::stderr);
 }
 
 /*!
@@ -778,6 +802,7 @@ pub fn eprint {T} (a: T?)  {
  *    - a: a tuple of arbitrary arity
  */
 pub fn print {T of (U,), U...} (a: T) {
+    utils::flockfile(utils::stdout);
     print('(');
     cte if T::arity > 0 {
         print(a.0);
@@ -790,6 +815,7 @@ pub fn print {T of (U,), U...} (a: T) {
 
     cte if (T::arity == 1) putchar(',');
     putchar(')');
+    utils::funlockfile(utils::stdout);
 }
 
 
@@ -799,6 +825,7 @@ pub fn print {T of (U,), U...} (a: T) {
  *    - a: a tuple of arbitrary arity
  */
 pub fn eprint {T of (U,), U...} (a: T) {
+    utils::flockfile(utils::stderr);
     eprint('(');
     cte if T::arity > 0 {
         eprint(a.0);
@@ -812,14 +839,17 @@ pub fn eprint {T of (U,), U...} (a: T) {
     else {
         fprintf(utils::stderr, ")".ptr);
     }
+    utils::funlockfile(utils::stderr);
 }
 
 /**
  * Print an empty tuple to stdout
  * */
 pub fn print(_: ()) {
+    utils::flockfile(utils::stdout);
     putchar('(');
     putchar(')');
+    utils::funlockfile(utils::stdout);
 }
 
 /**
@@ -896,6 +926,7 @@ pub fn if (template!{T}{record R} || template!{T}{entity E}) eprint {T} (ref a: 
  * Print multiple elements to stdout
  * */
 pub fn print  {F, T...} (a: F, b: T) {
+    utils::flockfile(utils::stdout);
     print(a);
     cte if ((T,)::arity >= 2us) {
         cte for i in b {
@@ -904,12 +935,14 @@ pub fn print  {F, T...} (a: F, b: T) {
     } else {
         print(b);
     }
+    utils::funlockfile(utils::stdout);
 }
 
 /**
  * Print multiple elements to stderr
  * */
 pub fn eprint  {F, T...} (a: F, b: T) {
+    utils::flockfile(utils::stderr);
     eprint(a);
     cte if ((T,)::arity >= 2us) {
         cte for i in b {
@@ -918,6 +951,7 @@ pub fn eprint  {F, T...} (a: F, b: T) {
     } else {
         eprint(b);
     }
+    utils::funlockfile(utils::stderr);
 }
 
 
@@ -925,6 +959,7 @@ pub fn eprint  {F, T...} (a: F, b: T) {
  * Print variadic elements to stdout, and end the writing by a line return
  * */
 pub fn println {F, T...} (a: F, b: T) {
+    utils::flockfile(utils::stdout);
     print(a);
     cte if ((T,)::arity >= 2us) {
         cte for i in b {
@@ -934,14 +969,17 @@ pub fn println {F, T...} (a: F, b: T) {
         print(b);
     }
     putchar('\n');
+    utils::funlockfile(utils::stdout);
 }
 
 /**
  * Print an element to stdout, and end the writing by a line return
  * */
 pub fn println {T} (a: T) {
+    utils::flockfile(utils::stdout);
     print(a);
     putchar('\n');
+    utils::funlockfile(utils::stdout);
 }
 
 /**
@@ -955,6 +993,7 @@ pub fn println() {
  * Print variadic elements to stderr, and end the writing by a line return
  * */
 pub fn eprintln {F, T...} (a: F, b: T) {
+    utils::flockfile(utils::stderr);
     eprint(a);
     cte if ((T,)::arity >= 2us) {
         cte for i in b {
@@ -964,14 +1003,17 @@ pub fn eprintln {F, T...} (a: F, b: T) {
         eprint(b);
     }
     fprintf(utils::stderr, "\n".ptr);
+    utils::funlockfile(utils::stderr);
 }
 
 /**
  * Print an element to stdout, and end the writing by a line return
  * */
 pub fn eprintln {T} (a: T) {
+    utils::flockfile(utils::stderr);
     eprint(a);
     fprintf(utils::stderr, "\n".ptr);
+    utils::funlockfile(utils::stderr);
 }
 
 /**

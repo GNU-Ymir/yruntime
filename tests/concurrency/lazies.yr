@@ -1,0 +1,31 @@
+in lazies;
+
+use std::time::dur;
+
+lazy dmut __NB_INITS__: [i32] = copy [0];
+
+fn slowInit()-> [i32] {
+    atomic {
+        __NB_INITS__[0] += 1;
+    }
+
+    sleep((20).millis());
+    copy [1, 2, 3]
+}
+
+lazy __SHARED__: [i32] = slowInit();
+
+fn readShared()-> [i32] {
+    __SHARED__
+}
+
+__test initializedOnce {
+    let dmut a = spawn readShared();
+    let dmut b = spawn readShared();
+    let dmut c = spawn readShared();
+    let first = readShared();
+
+    assert(a.value.ptr == first.ptr && b.value.ptr == first.ptr && c.value.ptr == first.ptr);
+
+    assert(__NB_INITS__[0] == 1);
+}

@@ -1,9 +1,11 @@
+#define _GNU_SOURCE
 #include <rt/except/stacktrace.h>
 
 #include <rt/utils/demangle.h>
 #include <rt/memory/alloc.h>
 
 #include <getopt.h>
+#include <pthread.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,6 +23,8 @@
 
 int __YRT_MAXIMUM_TRACE_LEN__ = 128;
 
+static pthread_mutex_t __YRT_STACK_TRACE_MUTEX__ = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
+
 #include <execinfo.h>
 #include <unistd.h>
 
@@ -35,10 +39,11 @@ char* _yrt_i_resolve_path (const char * filename, char * resolved, int size) {
     }
 
     char * PATH_AUX = getenv ("PATH");
-    char * PATH = malloc (strlen (PATH_AUX));
-    memcpy (PATH, PATH_AUX, strlen (PATH_AUX));
+    if (PATH_AUX == NULL) return NULL;
+    char * PATH = strdup (PATH_AUX);
 
-    char * strToken = strtok (PATH, ":");
+    char * savePtr = NULL;
+    char * strToken = strtok_r (PATH, ":", &savePtr);
     int found = 0;
     while (strToken != NULL) {
         if (found == 0) {
@@ -53,7 +58,7 @@ char* _yrt_i_resolve_path (const char * filename, char * resolved, int size) {
                 }
             }
         }
-        strToken = strtok (NULL, ":");
+        strToken = strtok_r (NULL, ":", &savePtr);
     }
 
     free (PATH);
@@ -66,6 +71,7 @@ _yrt_slice_t _yrt_exc_resolve_stack_trace (_yrt_slice_t syms) {
 	memset (&result, 0, sizeof (result));
     if (__YRT_DEBUG__ != 1 && __YRT_FORCE_DEBUG__ != 1) return result;
 
+    pthread_mutex_lock (&__YRT_STACK_TRACE_MUTEX__);
     char** messages = NULL;
     messages = backtrace_symbols (syms.data, (uint32_t) syms.len);
     result = _yrt_i_str_create ("╭  Stack trace :");
@@ -145,6 +151,8 @@ _yrt_slice_t _yrt_exc_resolve_stack_trace (_yrt_slice_t syms) {
     _yrt_slice_t tmp = _yrt_i_str_create ("\n╰\0");
     _yrt_append_slice (&result, &tmp, sizeof (uint8_t));
     _yrt_reflect_clear_debug_info ();
+    free (messages);
+    pthread_mutex_unlock (&__YRT_STACK_TRACE_MUTEX__);
 
 	return result;
 }
