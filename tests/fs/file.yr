@@ -3,9 +3,11 @@ in file;
 use std::{fs::{file, path, errors}, io};
 
 __test createWriteAppend {
-    // Create a file named "foo.txt", and write something in it
+    let path = Path("midgard_test_create_write_append.txt");
+
+    // Create a file, and write something in it
     {
-        let dmut file = File::create(Path("foo.txt"), write-> true);
+        let dmut file = File::create(path, write-> true);
         file:.write("Hello World!");
     } catch {
         err: &FsError => { // creation failed for some reason
@@ -16,7 +18,7 @@ __test createWriteAppend {
 
     {
         let content = {
-            let dmut file = File::open(Path("foo.txt"));
+            let dmut file = File::open(path);
             file:.readAll() // read the all the content of the file
         } catch {
             // File does not exist or permission denied
@@ -27,7 +29,7 @@ __test createWriteAppend {
     }
 
     {
-        let dmut file = File::open(Path("foo.txt"), append-> true);
+        let dmut file = File::open(path, append-> true);
         file:.write("\nAppending content");
         // files are entities, so automatically closed when scope is exited
     } catch {
@@ -40,7 +42,7 @@ __test createWriteAppend {
 
     {
         let content = {
-            let dmut file = File::open(Path("foo.txt"));
+            let dmut file = File::open(path);
             file:.readAll() // read the all the content of the file
         } catch {
             // File does not exist or permission denied
@@ -53,7 +55,7 @@ __test createWriteAppend {
     // seek / tell / len are 64-bit offsets
     {
         let (fullLen, afterSeek, restLen, rest) = {
-            let dmut file = File::open(Path("foo.txt"));
+            let dmut file = File::open(path);
             let l = file.len();
             file:.seek(6u64);
             (l, file.tell(), file.len(), file:.readAll())
@@ -70,8 +72,8 @@ __test createWriteAppend {
         assert(rest == "World!\nAppending content");
     }
 
-    assert(sys::isFile(Path("foo.txt")));
-    sys::removeFile(Path("foo.txt"));
-    assert(!sys::isFile(Path("foo.txt")));
+    assert(sys::isFile(path));
+    sys::removeFile(path);
+    assert(!sys::isFile(path));
 
 }
