@@ -290,12 +290,14 @@ process-global list, and `tree::mergedTree` folds them together at store time, s
 - `utils::colors` — terminal color helpers for pass/fail/coverage output.
 - `utils::runner` — `UnittestLauncher`: registers tests (a parameterized `__test` as its two
   frames: a provider returning a generator of pointers to boxed parameter sets, and the test
-  taking one such pointer; `expandParameterizedTests` drains the generator through
-  `_yrt_drain_parameter_sets` in `test-rt/run.c` and registers one `module::test[k]` entry per yielded set — from `run`, since a provider
-  called from the package ctor that registers it would run allocating Ymir against an
-  uninitialised GC. `[k]` filters and `--resume` rely on the generator yielding the same sets in
-  the same order on every run. This ABI pairs with gyc's YMI-110: a midgard and a gyc from
-  different sides of it do not work together), runs them (respecting filters,
+  taking one such pointer). A parameterized test is never drained up front: `forEachCase`
+  resumes its generator (`_yrt_next_parameter_set` in `test-rt/run.c`) while the run goes on,
+  names the k-th yielded set `module::test[k]`, and applies `-f`/`--resume` to each case as it
+  comes (`TestFilters::select`) before running it or handing it to the pool. So `-l` lists such a
+  test as `module::test[*]`, and `TestFilters::mayPassCaseFilter` only decides whether its
+  generator is worth starting. `[k]` filters and `--resume` rely on the generator yielding the
+  same sets in the same order on every run. This ABI pairs with gyc's YMI-110: a midgard and a
+  gyc from different sides of it do not work together. It runs them (respecting filters,
   stop-first, resume-from-`.ymir_test_success`, and `-j`/`--jobs` parallelism across a
   `TaskPool` of worker threads), and drives coverage/call-tree reporting.
 - `utils::coverage::tree` — `CoverageTree`/`CoverageInfo`: in-memory record of branch/enter/exit
@@ -387,8 +389,8 @@ hits/call-counts across files, and that generated/compiler-synthesized functions
 `-j N` (`N > 1`) and more than one test to run, `runParallel` runs them on a
 `std::concurrency::task::TaskPool` of N threads, in the one test process:
 
-- The master looks each test up in `_tests` and submits one task per test, closing over its name
-  and delegate. A worker never touches the registry: `runOne(name, dg)` runs the test on the
+- The master walks the tests (`forEachCase`, resuming parameterized generators as it goes) and
+  submits one task per case, closing over its name and delegate. A worker never touches the registry: `runOne(name, dg)` runs the test on the
   calling thread and returns `(ok, micros)`, and the task sends `(name, ok, micros)` to a
   `std::concurrency::mail::MailBox`.
 - Once `pool:.join()` returns (every task has finished), the master drains that mailbox into

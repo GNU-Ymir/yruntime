@@ -42,3 +42,27 @@ __test globMatch {
     assert(TestFilters::globMatch("**", "anything"), "k");
     assert(!TestFilters::globMatch("a*c", "ab"), "l");
 }
+
+__test globMatchPrefix {
+    assert(TestFilters::globMatchPrefix("abc", "ab"), "a");
+    assert(TestFilters::globMatchPrefix("abc", "abc"), "b");
+    assert(!TestFilters::globMatchPrefix("abc", "abcd"), "c");
+    assert(!TestFilters::globMatchPrefix("abc", "ax"), "d");
+    assert(TestFilters::globMatchPrefix("*", "anything"), "e");
+    assert(TestFilters::globMatchPrefix("a*z", "abc"), "f");
+    assert(TestFilters::globMatchPrefix("", ""), "g");
+    assert(!TestFilters::globMatchPrefix("", "a"), "h");
+}
+
+__test mayPassCaseFilter {
+    // the cases of `io::__test::read` are named `io::read[<k>]`
+    assert(TestFilters::mayPassCaseFilter("io::__test::read", "io::*"), "a");
+    assert(TestFilters::mayPassCaseFilter("io::__test::read", "io::read[3]"), "b");
+    assert(TestFilters::mayPassCaseFilter("io::__test::read", "io::read[*]"), "c");
+    assert(TestFilters::mayPassCaseFilter("io::__test::read", "*::re*"), "d");
+
+    assert(!TestFilters::mayPassCaseFilter("io::__test::read", "io::read"), "e");
+    assert(!TestFilters::mayPassCaseFilter("io::__test::read", "io::readAll[*]"), "f");
+    assert(!TestFilters::mayPassCaseFilter("io::__test::read", "fs::*"), "g");
+    assert(!TestFilters::mayPassCaseFilter("io::__test::read", "io::*::*"), "h");
+}

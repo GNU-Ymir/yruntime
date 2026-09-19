@@ -47,23 +47,10 @@ void _yrt_register_parameterized_unittest (char * func,
   _yrt_register_parameterized_unittest_impl (test_name_slice (func), provider, ptr);
 }
 
-// Call `provider` and resume the generator it returns until it is exhausted.
-// Returns the yielded parameter set pointers, in order, in a GC-allocated slice.
-_yrt_slice_t _yrt_drain_parameter_sets (_yrt_param_gen_t (*provider) ()) {
-  _yrt_param_gen_t gen = provider ();
-  _yrt_slice_t res = { 0, NULL, NULL };
-  uint64_t cap = 0;
-  void * out = NULL;
-
-  while (gen.func (gen.closure, &out)) {
-    if (res.len == cap) {
-      cap = cap == 0 ? 8 : cap * 2;
-      res.data = GC_realloc (res.data, cap * sizeof (void *));
-    }
-    ((void **) res.data) [res.len++] = out;
-  }
-
-  return res;
+// Resume the generator (closure, func) a provider returned once, storing the parameter set
+// pointer it yields in `out`. Returns 0 once the generator is exhausted.
+uint8_t _yrt_next_parameter_set (void * closure, uint8_t (*func) (void *, void **), void ** out) {
+  return func (closure, out);
 }
 
 int _yrt_run_unittests (int argc, char ** argv) {
