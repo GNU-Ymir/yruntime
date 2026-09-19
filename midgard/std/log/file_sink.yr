@@ -1,0 +1,66 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in file_sink;
+
+use etc::c::files;
+use etc::runtime::errno;
+
+use std::conv;
+use std::fs::{errors, path};
+use std::log::{format, sink};
+
+/**
+ * A sink appending to a file, without colors
+ * @example:
+ * ```
+ * use std::log;
+ * use std::fs::path;
+ *
+ * addSink(copy FileSink(Path("/tmp/app.log")));
+ * ```
+ */
+@final
+pub class FileSink over LogSink {
+
+    let dmut _handle: *void = null;
+
+    let _format: LogFormat;
+
+    /**
+     * @params:
+     *    - path: the file to append to, created if it does not exist
+     *    - utc: whether the timestamps are written in UTC instead of local time
+     *    - uid: whether the identifier of each message is written on each of its lines
+     * @throws:
+     *    - FsError: if the file could not be opened
+     */
+    pub self (path: Path, utc: bool = false, uid: bool = false)
+        with _format = LogFormat(utc-> utc, uid-> uid)
+        throws FsError
+    {
+        self._handle = fopen(path.toStr().toStringZ(), "a"s8.toStringZ());
+        if self._handle == null {
+            throw copy FsError(std::fs::errors::to!(FsErrorCode) (errno()), path.toStr());
+        }
+    }
+
+    pub over emit(mut self, rec: LogRecord) {
+        let line = self._format.format(rec);
+        atomic self {
+            if self._handle != null {
+                fwrite(cast!{*void} (line.ptr), 1us, line.len, alias self._handle);
+                fflush(alias self._handle);
+            }
+        }
+    }
+
+    __dtor(mut self) {
+        if self._handle != null {
+            fclose(alias self._handle);
+            self._handle = null;
+        }
+    }
+}
