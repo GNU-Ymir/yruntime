@@ -234,8 +234,9 @@ Two separate versions live at the repo root, and mixing them up is the classic b
 Three top-level modules declared in `midgard/__lib__.yr`:
 
 - `std` (`midgard/std.yr`): general-purpose stdlib — `algorithm`, `any`, `box`, `char`,
-  `concurrency`, `config`, `conv`, `env`, `format`, `fs`, `io`, `math`, `net`, `rand`, `stream`,
-  `syntax`, `time`, `traits`, `unit`.
+  `concurrency`, `config`, `conv`, `env`, `format`, `fs`, `io`, `log`, `math`, `net`, `rand`,
+  `stream`, `syntax`, `time`, `traits`, `unit`. `std::log` is the logging facility: library code
+  reports through a named `Logger` rather than `println`, so the application picks the level and sinks.
 - `core` (`midgard/core.yr`): language-support types — `atom`, `exception`, `concurrency`,
   `math`, `types`, `reflect`. `core::exception::Exception` is the root of the exception
   hierarchy; in `DEBUG_LIB` builds it captures a stack trace at construction.
@@ -415,5 +416,7 @@ Things that will bite you here:
   under coverage hooks, and costs seconds. The tests formatting exceptions (`errors::*`,
   `config::args::errorsToStream`, ...) queue on that lock and dominate a `-j 8` run's tail.
 
-Known, accepted simplification: every worker prints to the same stdout, so the `[RUN]`/`[SUCCESS]`
-lines of concurrent tests interleave (each `println` stays whole).
+Known, accepted simplification: every worker prints to the same stdout, so the `run`/`passed`
+log lines of concurrent tests interleave (each record stays whole). The runner logs through
+`std::log` as `test-rt::runner`, and `run` points the process's sinks at stdout — a test that
+wants to capture logs adds a `StringSink` and removes it, it never replaces the sinks.
