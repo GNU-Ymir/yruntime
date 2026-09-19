@@ -72,12 +72,12 @@ extern (C) fn _yrt_register_unittest_impl(name: [c8], func: fn ()-> void) {
 }
 
 /**
- * Register a parameterized `__test`: `provider` produces its parameter sets, `func` is called
- * once per element with that slice and the index of the element.
+ * Register a parameterized `__test`: `provider` returns a generator yielding a pointer to each
+ * of its parameter sets, `func` is called once per yielded pointer.
  *
- * @info: the element type is unknown here, hence `[u8]` -- every slice has the same layout
+ * @info: the generator is opaque here, it is only drained by `_yrt_drain_parameter_sets`
  * */
-extern (C) fn _yrt_register_parameterized_unittest_impl(name: [c8], provider: fn ()-> [u8], func: fn ([u8], usize)-> void) {
+extern (C) fn _yrt_register_parameterized_unittest_impl(name: [c8], provider: fn ()-> (*void, *void), func: fn (*void)-> void) {
     __LAUNCHER__:.registerParameterized(name, provider, func);
 }
 

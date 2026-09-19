@@ -85,13 +85,13 @@ record ParameterizedTest {
     // The name the test was registered under, the per-case names derive from it
     pub let mut name: [c8];
 
-    // The frame producing the parameter sets
-    pub let mut provider: fn ()-> [u8];
+    // The frame returning the generator of parameter sets, as a (closure, func) delegate
+    pub let mut provider: fn ()-> (*void, *void);
 
-    // The test itself, called with the parameter slice and the index of one element
-    pub let mut test: fn ([u8], usize)-> void;
+    // The test itself, called with a pointer to one parameter set
+    pub let mut test: fn (*void)-> void;
 
-    pub self (name: [c8], provider: fn ()-> [u8], test: fn ([u8], usize)-> void)
+    pub self (name: [c8], provider: fn ()-> (*void, *void), test: fn (*void)-> void)
         with name = name
         , provider = provider
         , test = test
@@ -110,6 +110,7 @@ fn stripNul(name: [c8])-> [c8] {
 }
 
 extern (C) fn _yrt_force_debug()-> void;
+extern (C) fn _yrt_drain_parameter_sets(provider: fn ()-> (*void, *void))-> [*void];
 
 @{final}
 pub class UnittestLauncher {
@@ -117,7 +118,7 @@ pub class UnittestLauncher {
     // The list of test registered in the launcher These delegates are cheated
     // by the compiler as they don't respect the non throwing convention, as
     // they throw when they fail. It is the standard accepted way, as it is only
-    // for internal usage. A delegate, so a parameterized case carries its slice.
+    // for internal usage. A delegate, so a parameterized case carries its parameter set.
     let dmut _tests: [[c8] => dg ()-> void] = copy [];
 
     // The parameterized tests, until `expandParameterizedTests` turns them into `_tests` entries
@@ -160,30 +161,32 @@ pub class UnittestLauncher {
      *
      * @params:
      *    - name: the name of the test to register
-     *    - provider: the frame producing the parameter sets
+     *    - provider: the frame returning the generator of parameter sets
      *    - test: the frame to execute once per parameter set
      * */
-    pub fn registerParameterized(mut self, name: [c8], provider: fn ()-> [u8], test: fn ([u8], usize)-> void) {
+    pub fn registerParameterized(mut self, name: [c8], provider: fn ()-> (*void, *void), test: fn (*void)-> void) {
         self._paramTests ~= [ParameterizedTest(name-> stripNul(name), provider-> provider, test-> test)];
     }
 
     /**
-     * Turn every registered parameterized test into one `_tests` entry per parameter set, named
-     * `<test>[<index>]` -- e.g. `integration::should_fail_when_that[12]`
+     * Turn every registered parameterized test into one `_tests` entry per yielded parameter set,
+     * named `<test>[<k>]` for the k-th set -- e.g. `integration::should_fail_when_that[12]`
      *
-     * @warning: this calls the providers, so it runs once the runtime is up and before the
-     *           filter list is built, which needs the per-case names.
+     * @warning: this drains the generators, so it runs once the runtime is up and before the
+     *           filter list is built, which needs the per-case names. A generator must yield
+     *           the same sets in the same order on every run, or `[k]` filters and `--resume`
+     *           select another case than the one they named.
      * */
     fn expandParameterizedTests(mut self) {
         let pending = self._paramTests;
         self._paramTests = [];
 
         for p in pending {
-            let params = (p.provider)();
+            let params = _yrt_drain_parameter_sets(p.provider);
             let test = p.test;
 
-            for i in 0us .. params.len {
-                self._tests[p.name ~ "[" ~ conv::to![c8](i) ~ "]"] = copy || => { test(params, i); };
+            for i, set in params {
+                self._tests[p.name ~ "[" ~ conv::to![c8](i) ~ "]"] = copy || => { test(set); };
             }
         }
     }
