@@ -11,9 +11,11 @@ use core::concurrency::sync::semaphore;
 
 use etc::c::{files, poll};
 
-use std::net::_;
+use std::{log, net::_};
 use std::concurrency::mail;
 use std::fs::path;
+
+lazy __LOG__ = Logger("std::net::http::server");
 
 /**
  * Multi threaded http server, managing client request using a task pool
@@ -198,6 +200,7 @@ pub class HttpServer {
 
         self._pollingTh = (th)?;
         self._ready:.wait();
+        __LOG__.info("listening on ", self._addr);
     } catch {
         e => {
             throw copy errors::HttpError(500, msg-> std::conv::to!{[c8]} (e));
@@ -315,7 +318,7 @@ pub class HttpServer {
                         let dmut stream = l:.accept();
                         self:.submitJob(alias stream);
                     } catch {
-                        _ => {}
+                        err => { __LOG__.warn("failed to accept a connection: ", err); }
                     }
                 } else if let Ok(dmut i) = alias self._triggerI && i.getHandle() == event.data.fd {
                     if let Ok(1) = i:.read!u8()? {
@@ -374,13 +377,19 @@ pub class HttpServer {
                     self.onRequest(rqt)
                 } catch {
                     err => {
+                        __LOG__.debug("rejected a request: ", err);
                         let mut resp = response::HttpResponse(err.code);
                         resp.header.version = header::HttpVersion::V1_1;
                         resp
                     }
                 };
 
-                resp.send(alias sock)?;
+                {
+                    resp.send(alias sock);
+                } catch {
+                    err => { __LOG__.warn("failed to send a response: ", err); }
+                }
+
                 sock:.dispose();
             }
         }

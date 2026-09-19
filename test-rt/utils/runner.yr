@@ -37,11 +37,14 @@ use utils::{args, colors, filters};
 use utils::coverage::{conv, format, load, store, tree};
 
 use std::io;
+use std::log;
 use std::concurrency::{mail, task};
 use std::algorithm::sorting;
 use std::config::data;
 use std::fs::path;
 use std::time::{dur, instant};
+
+lazy __LOG__ = Logger("test-rt::runner");
 
 // Number of tests listed by the `--durations` report, slowest first.
 def SLOWEST_COUNT = 10us;
@@ -203,6 +206,8 @@ pub class UnittestLauncher {
         let testArgs = TestRunnerArgument(args);
 
         _yrt_force_debug();
+        setSink(copy StreamSink::stdout());
+        setLevel("test-rt", Level::INFO);
 
         let dmut already: [[c8] => bool] = copy [];
         let dmut durations: [[c8] => u64] = copy [];
@@ -508,7 +513,7 @@ pub class UnittestLauncher {
         {
             CoverageStore::storePid(tree::mergedTree());
         } catch {
-            err => { println("err ", err); }
+            err => { __LOG__.error("failed to store the coverage\n", err); }
         }
     }
 
@@ -538,12 +543,10 @@ pub class UnittestLauncher {
     fn runTest(self, name: [c8], func: dg ()-> void)
         throws Exception
     {
-        println('[', Colors::BLUE, "RUN", Colors::RESET, "] : ", name);
-        println("====================================");
+        __LOG__.info("run ", name);
         self.fake_throw(true);
         func();
-        println("====================================");
-        println('[', Colors::GREEN, "SUCCESS", Colors::RESET, "] : ", name);
+        __LOG__.info("passed ", name);
     }
 
     /**
@@ -555,10 +558,7 @@ pub class UnittestLauncher {
      *
      * */
     fn exposeError(self, name: [c8], err: &Exception) {
-        println("====================================");
-        println('[', Colors::RED, "FAILURE", Colors::RESET, "] : ", name);
-
-        println(" --> ", err);
+        __LOG__.error("failed ", name, "\n", err);
     }
 
     /*!

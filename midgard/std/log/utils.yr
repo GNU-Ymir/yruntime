@@ -1,0 +1,87 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in utils;
+
+use etc::c::files;
+
+use std::rand::generator;
+use std::stream;
+
+@thread
+lazy dmut __LOG_RANDOM__: &Random = copy Random();
+
+pub enum LogColors
+| BOLD   = "\u{0x001B}[1m"s8
+| PURPLE = "\u{0x001B}[1;35m"s8
+| BLUE   = "\u{0x001B}[1;36m"s8
+| GREEN  = "\u{0x001B}[1;32m"s8
+| YELLOW = "\u{0x001B}[1;33m"s8
+| RED    = "\u{0x001B}[1;31m"s8
+| RESET  = "\u{0x001B}[0m"s8;
+
+/**
+ * @returns: a new random message identifier, drawn from a generator of its own so logging never
+ * shifts the sequence of `std::rand`
+ */
+pub fn newUid()-> u64 {
+    __LOG_RANDOM__:.bits() & 0xffffffffffffu64
+}
+
+/**
+ * @returns: the name of the level, as written by `LogFormat`
+ */
+pub fn levelName(level: Level)-> [c8] {
+    match level {
+        Level::TRACE => { "TRACE" }
+        Level::DEBUG => { "DEBUG" }
+        Level::INFO  => { "INFO" }
+        Level::WARN  => { "WARN" }
+        _            => { "ERROR" }
+    }
+}
+
+pub fn levelColor(level: Level)-> [c8] {
+    match level {
+        Level::TRACE => { LogColors::PURPLE }
+        Level::DEBUG => { LogColors::BLUE }
+        Level::INFO  => { LogColors::GREEN }
+        Level::WARN  => { LogColors::YELLOW }
+        _            => { LogColors::RED }
+    }
+}
+
+pub fn skipEscape(msg: [c8], start: usize)-> usize {
+    if start + 1us >= msg.len || msg[start + 1us] != '['c8 return start + 1us;
+
+    let mut i = start + 2us;
+    while i < msg.len && (msg[i] < '@'c8 || msg[i] > '~'c8) {
+        i += 1us;
+    }
+
+    if i < msg.len { i + 1us } else { i }
+}
+
+pub fn writePadded(dmut stream: &StringStream, value: i32, width: i32) {
+    let mut bound = 10;
+    for _ in 1 .. width {
+        if value < bound { stream:.write('0'); }
+        bound *= 10;
+    }
+
+    stream:.write(value);
+}
+
+pub fn isColorTerminal(fd: StdFileNumbers)-> bool {
+    if isatty(cast!i32(cast!u32(fd))) == 0 return false;
+
+    let noColor = unsafe { std::env::getVar("NO_COLOR") };
+    noColor.len == 0us
+}
+
+pub fn isPrefix(prefix: [c8], name: [c8])-> bool {
+    if prefix.len > name.len || name[0us .. prefix.len] != prefix return false;
+    prefix.len == name.len || (name.len >= prefix.len + 2us && name[prefix.len .. prefix.len + 2us] == "::")
+}

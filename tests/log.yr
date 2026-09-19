@@ -1,0 +1,176 @@
+in log;
+
+use helpers;
+
+use std::{log, stream};
+use std::fs::{file, sys};
+use std::time::instant;
+
+fn lines(text: [c8])-> [[c8]] {
+    let mut res: [[c8]] = [];
+    let mut start = 0us;
+    for i in 0us .. text.len if text[i] == '\n'c8 {
+        res ~= copy [text[start .. i]];
+        start = i + 1us;
+    }
+
+    res ~= copy [text[start .. $]];
+    res
+}
+
+__test formatLine {
+    let fmt = LogFormat(utc-> true);
+    assert (fmt.format(LogRecord(Instant(0u64, 0u64), Level::WARN, "app", "hello", 0u64)) == "1970-01-01 00:00:00.000Z [WARN]  | app: hello\n");
+    assert (fmt.format(LogRecord(Instant(1758310325u64, 7000u64), Level::ERROR, "app::db", "x", 0u64)) == "2025-09-19 19:32:05.007Z [ERROR] | app::db: x\n");
+}
+
+__test formatLevels {
+    let fmt = LogFormat(utc-> true);
+    let t = Instant(0u64, 0u64);
+    assert (fmt.format(LogRecord(t, Level::TRACE, "a", "m", 0u64)) == "1970-01-01 00:00:00.000Z [TRACE] | a: m\n");
+    assert (fmt.format(LogRecord(t, Level::DEBUG, "a", "m", 0u64)) == "1970-01-01 00:00:00.000Z [DEBUG] | a: m\n");
+    assert (fmt.format(LogRecord(t, Level::INFO, "a", "m", 0u64))  == "1970-01-01 00:00:00.000Z [INFO]  | a: m\n");
+}
+
+__test formatMultiLine {
+    let utc = LogFormat(utc-> true).format(LogRecord(Instant(0u64, 0u64), Level::ERROR, "app", "a\nb\n", 0u64));
+    assert (utc == "1970-01-01 00:00:00.000Z [ERROR] | app: a\n                                 | b\n                                 | \n");
+
+    let local = LogFormat().format(LogRecord(Instant(0u64, 0u64), Level::ERROR, "app", "a\nb", 0u64));
+    let lines = lines(local);
+    assert (lines.len == 3us);
+    assert (lines[0].len > 32us && lines[0][32] == '|'c8);
+    assert (lines[1] == "                                | b");
+}
+
+__test formatColors {
+    let line = LogFormat(colors-> true, utc-> true).format(LogRecord(Instant(0u64, 0u64), Level::WARN, "app", "hello", 0u64));
+    assert (line == "\u{0x001B}[1m1970-01-01 00:00:00.000Z\u{0x001B}[0m [\u{0x001B}[1;33mWARN\u{0x001B}[0m]  | \u{0x001B}[1mapp\u{0x001B}[0m: hello\n"s8);
+}
+
+__test levelPrefixes {
+    assert (!isEnabled ("tests::log::prefix", Level::DEBUG));
+
+    setLevel ("tests::log::prefix", Level::DEBUG);
+    assert (isEnabled ("tests::log::prefix", Level::DEBUG));
+    assert (isEnabled ("tests::log::prefix::sub", Level::DEBUG));
+    assert (!isEnabled ("tests::log::prefixed", Level::DEBUG));
+    assert (!isEnabled ("tests::log::prefix", Level::TRACE));
+
+    setLevel ("tests::log::prefix::sub", Level::ERROR);
+    assert (!isEnabled ("tests::log::prefix::sub::deeper", Level::WARN));
+    assert (isEnabled ("tests::log::prefix::other", Level::DEBUG));
+
+    setLevel ("tests::log::prefix", Level::WARN);
+    assert (!isEnabled ("tests::log::prefix", Level::INFO));
+}
+
+__test captureAndRemove {
+    let dmut stream = copy StringStream();
+    let dmut sink = copy StringSink(alias stream);
+    addSink (alias sink);
+
+    let log = Logger("tests::log::capture");
+    log.info("several ", 1, ' ', [2, 3]);
+    log.debug("below the level");
+    removeSink (sink);
+    log.warn("after removal");
+
+    let mut mine: [[c8]] = [];
+    for line in lines(stream[]) if contains(line, "tests::log::capture") {
+        mine ~= copy [line];
+    }
+
+    assert (mine.len == 1us);
+    assert (contains(mine[0], "[INFO]  | tests::log::capture: several 1 [2, 3]"));
+}
+
+lazy dmut __FORMATTED__: [i32] = copy [0];
+
+class Counted {
+    pub self () {}
+
+    impl Streamable {
+        pub over toStream(self, dmut stream: &StringStream) {
+            atomic { __FORMATTED__[0] += 1; }
+            stream:.write("counted");
+        }
+    }
+}
+
+__test disabledIsNotFormatted {
+    let c = copy Counted();
+    let log = Logger("tests::log::lazy");
+    log.debug(c);
+    assert (__FORMATTED__[0] == 0);
+
+    setLevel ("tests::log::lazy", Level::ERROR);
+    log.warn(c);
+    assert (__FORMATTED__[0] == 0);
+}
+
+__test fileSink {
+    let dir = tempDirectory(prefix-> "log");
+    let p = dir.push("app.log");
+    {
+        let dmut sink = copy FileSink(p, utc-> true, uid-> true);
+        addSink (alias sink);
+        Logger("tests::log::file").error("first\nsecond");
+        removeSink (sink);
+        sink:.emit(LogRecord(Instant(0u64, 0u64), Level::INFO, "tests::log::file", "direct", 0xbeefu64));
+    }
+
+    let content = {
+        let dmut f = File::open(p);
+        f:.readAll()
+    } catch {
+        _ => { copy ""s8 }
+    };
+
+    removeDir(dir, recursive-> true)?;
+
+    let fileLines = lines(content);
+    assert (fileLines.len == 4us);
+    let uid = fileLines[0][35us .. 47us];
+    assert (fileLines[0][25us .. 34us] == "[ERROR] |");
+    assert (fileLines[0][47us .. $] == " | tests::log::file: first");
+    assert (fileLines[1] == "                                 | " ~ uid ~ " | second");
+    assert (fileLines[2] == "1970-01-01 00:00:00.000Z [INFO]  | 00000000beef | tests::log::file: direct");
+}
+
+__test formatUid {
+    let fmt = LogFormat(utc-> true, uid-> true);
+    let line = fmt.format(LogRecord(Instant(0u64, 0u64), Level::ERROR, "app", "a\nb", 0x3f2a9c01be47u64));
+    assert (line == "1970-01-01 00:00:00.000Z [ERROR] | 3f2a9c01be47 | app: a\n                                 | 3f2a9c01be47 | b\n");
+
+    let padded = fmt.format(LogRecord(Instant(0u64, 0u64), Level::INFO, "app", "x", 0xau64));
+    assert (padded == "1970-01-01 00:00:00.000Z [INFO]  | 00000000000a | app: x\n");
+}
+
+__test formatStripsEscapes {
+    let msg = "\u{0x001B}[33mfn\u{0x001B}[0m at \u{0x001B}[1;32mfile.yr\u{0x001B}[0m:3"s8;
+    let plain = LogFormat(utc-> true).format(LogRecord(Instant(0u64, 0u64), Level::INFO, "app", msg, 0u64));
+    assert (plain == "1970-01-01 00:00:00.000Z [INFO]  | app: fn at file.yr:3\n");
+
+    let colored = LogFormat(colors-> true, utc-> true).format(LogRecord(Instant(0u64, 0u64), Level::INFO, "app", msg, 0u64));
+    assert (contains(colored, msg));
+}
+
+__test uidsDiffer {
+    let dmut stream = copy StringStream();
+    let dmut sink = copy StringSink(alias stream, format-> LogFormat(utc-> true, uid-> true));
+    addSink (alias sink);
+
+    let log = Logger("tests::log::uids");
+    log.info("first");
+    log.info("second");
+    removeSink (sink);
+
+    let mut uids: [[c8]] = [];
+    for line in lines(stream[]) if contains(line, "tests::log::uids") {
+        uids ~= copy [line[35us .. 47us]];
+    }
+
+    assert (uids.len == 2us);
+    assert (uids[0] != uids[1]);
+}

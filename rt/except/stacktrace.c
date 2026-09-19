@@ -94,7 +94,7 @@ _yrt_slice_t _yrt_exc_resolve_stack_trace (_yrt_slice_t syms) {
         memset (&debugInfo.file, 0, sizeof (debugInfo.file));
 
         if (succ != NULL) {
-            _yrt_slice_t resolvedC8 = _yrt_i_str_create (resolved);
+            _yrt_slice_t resolvedC8 = _yrt_i_str_copy_len (resolved, strlen (resolved));
             ref_sym = _yrt_reflect_find_function_from_addr_with_elf_name (sym, resolvedC8);
             debugInfo = _yrt_reflect_get_debug_info (resolvedC8, sym, ref_sym);
         }

@@ -1,0 +1,108 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in logger;
+
+use std::log::{config, utils};
+use std::stream;
+use std::time::instant;
+
+/**
+ * A named logger, emitting messages to the sinks registered in this module.
+ * @info: a logger is only a name, creating one is free, and its level is set with `setLevel`
+ * @example:
+ * ```
+ * use std::log;
+ *
+ * let log = Logger("app::http");
+ * log.warn("slow request: ", 1234, "ms");
+ * log.error("request failed\nconnection reset by peer");
+ * ```
+ */
+pub record Logger {
+
+    let _name: [c8];
+
+    /**
+     * @params:
+     *    - name: the name of the logger, a `::` separated path(e.g. `app::db`)
+     */
+    pub self (name: [c8])
+        with _name = name
+    {}
+
+    /**
+     * @returns: the name of the logger
+     */
+    @field
+    pub fn name(self)-> [c8] {
+        self._name
+    }
+
+    /**
+     * Emit a message of level `TRACE`, written the way `println` would write the arguments.
+     * @info: removed at compile time with `-fversion=LOG_NO_TRACE` or `-fversion=LOG_NO_DEBUG`
+     */
+    pub fn trace {T...} (self, msg: T) {
+        cte if (__version!LOG_NO_TRACE || __version!LOG_NO_DEBUG) {
+            msg;
+        } else {
+            self.log(Level::TRACE, msg);
+        }
+    }
+
+    /**
+     * Emit a message of level `DEBUG`, written the way `println` would write the arguments.
+     * @info: removed at compile time with `-fversion=LOG_NO_DEBUG`
+     */
+    pub fn debug {T...} (self, msg: T) {
+        cte if (__version!LOG_NO_DEBUG) {
+            msg;
+        } else {
+            self.log(Level::DEBUG, msg);
+        }
+    }
+
+    /**
+     * Emit a message of level `INFO`, written the way `println` would write the arguments.
+     */
+    pub fn info {T...} (self, msg: T) {
+        self.log(Level::INFO, msg);
+    }
+
+    /**
+     * Emit a message of level `WARN`, written the way `println` would write the arguments.
+     */
+    pub fn warn {T...} (self, msg: T) {
+        self.log(Level::WARN, msg);
+    }
+
+    /**
+     * Emit a message of level `ERROR`, written the way `println` would write the arguments.
+     */
+    pub fn error {T...} (self, msg: T) {
+        self.log(Level::ERROR, msg);
+    }
+
+    /**
+     * Emit a message of the given level, written the way `println` would write the arguments.
+     * @info: the arguments are only formatted if the level passes the level of the logger
+     */
+    fn log {T...} (self, level: Level, msg: T) {
+        if !isEnabled(self._name, level) return;
+
+        let time = Instant::now();
+        let dmut stream = copy StringStream();
+        cte if (template!{typeof(msg)} {Z of (U,), U...}) {
+            for i in msg {
+                stream:.write(i);
+            }
+        } else {
+            stream:.write(msg);
+        }
+
+        dispatch(LogRecord(time, level, self._name, stream[], newUid()));
+    }
+}

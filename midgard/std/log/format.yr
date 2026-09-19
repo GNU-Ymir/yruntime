@@ -1,0 +1,116 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in format;
+
+use std::log::utils;
+use std::stream;
+use std::time::{date, instant};
+
+/**
+ * Renders a log record as one line, `timestamp [LEVEL] | name: message`, the continuation lines of a
+ * multi-line message being aligned on the `|`. With `uid`, the identifier of the record is written
+ * after the `|` of every line, `timestamp [LEVEL] | 3f2a9c01be47 | name: message`, so grepping it
+ * gives back the whole message.
+ * @info: without colors, the escape sequences of the message(e.g. of a stack trace) are removed
+ * @example:
+ * ```
+ * use std::log;
+ * use std::time::instant;
+ *
+ * let fmt = LogFormat(utc-> true);
+ * let line = fmt.format(LogRecord(Instant(0u64, 0u64), Level::WARN, "app", "hello", 0u64));
+ * assert(line == "1970-01-01 00:00:00.000Z [WARN]  | app: hello\n");
+ *
+ * let withUid = LogFormat(utc-> true, uid-> true);
+ * let uidLine = withUid.format(LogRecord(Instant(0u64, 0u64), Level::WARN, "app", "a\nb", 0x3f2au64));
+ * assert(uidLine == "1970-01-01 00:00:00.000Z [WARN]  | 000000003f2a | app: a\n                                 | 000000003f2a | b\n");
+ * ```
+ */
+pub record LogFormat {
+
+    /** Whether the timestamp, level and name are written with terminal colors */
+    pub let colors: bool;
+
+    /** Whether the timestamp is written in UTC instead of local time */
+    pub let utc: bool;
+
+    /** Whether the identifier of the record is written on each of its lines */
+    pub let uid: bool;
+
+    pub self (colors: bool = false, utc: bool = false, uid: bool = false)
+        with colors = colors, utc = utc, uid = uid
+    {}
+
+    /**
+     * @returns: the record rendered as a line, ending with a line return
+     */
+    pub fn format(self, rec: LogRecord)-> [c8] {
+        let dmut stream = copy StringStream();
+        self.writeTime(alias stream, rec.time);
+
+        stream:.write(" [");
+        if self.colors { stream:.write(levelColor(rec.level)); }
+        stream:.write(levelName(rec.level));
+        if self.colors { stream:.write(LogColors::RESET); }
+        stream:.write(if levelName(rec.level).len == 4us { "]  | " } else { "] | " });
+        self.writeUid(alias stream, rec.uid);
+
+        if self.colors { stream:.write(LogColors::BOLD); }
+        stream:.write(rec.name);
+        if self.colors { stream:.write(LogColors::RESET); }
+        stream:.write(": ");
+
+        let indent = if self.utc { "                                 " } else { "                                " };
+        let mut i = 0us;
+        while i < rec.msg.len {
+            let c = rec.msg[i];
+            if c == '\n'c8 {
+                stream:.write("\n", indent, "| ");
+                self.writeUid(alias stream, rec.uid);
+            } else if c == '\u{0x001B}'c8 && !self.colors {
+                i = skipEscape(rec.msg, i);
+                continue;
+            } else {
+                stream:.write(c);
+            }
+
+            i += 1us;
+        }
+
+        stream:.write("\n");
+        stream[]
+    }
+
+    fn writeUid(self, dmut stream: &StringStream, uid: u64) {
+        if !self.uid return;
+
+        let digits = "0123456789abcdef";
+        for k in 0 .. 12 {
+            stream:.write(digits[cast!usize((uid >> cast!u64(4 * (11 - k))) & 0xfu64)]);
+        }
+
+        stream:.write(" | ");
+    }
+
+    fn writeTime(self, dmut stream: &StringStream, time: Instant) {
+        let date = DateTime(time, gmt-> self.utc);
+        if self.colors { stream:.write(LogColors::BOLD); }
+        stream:.write(date.year, '-');
+        writePadded(alias stream, date.month, 2);
+        stream:.write('-');
+        writePadded(alias stream, date.day, 2);
+        stream:.write(' ');
+        writePadded(alias stream, date.hour, 2);
+        stream:.write(':');
+        writePadded(alias stream, date.minute, 2);
+        stream:.write(':');
+        writePadded(alias stream, date.second, 2);
+        stream:.write('.');
+        writePadded(alias stream, cast!i32(time.usec / 1000u64), 3);
+        if self.utc { stream:.write('Z'); }
+        if self.colors { stream:.write(LogColors::RESET); }
+    }
+}

@@ -1,0 +1,60 @@
+/**
+ * This module implements levelled, named logging. A `Logger` tags each message with its name and a
+ * `Level`; the messages that pass the configured minimum level are handed to every registered
+ * `LogSink`, which decides how and where they are written.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * By default every message of level `INFO` or above is written to stderr, as:
+ * ```text
+ * 2026-09-19 18:52:00.123 [INFO]  | app::db: connected to 127.0.0.1:5432
+ * 2026-09-19 18:52:01.002 [ERROR] | app::db: giving up
+ *                                 | caused by: ECONNREFUSED
+ * ```
+ * The calls to `trace`(resp. `trace` and `debug`) are removed at compile time when the program is
+ * compiled with `-fversion=LOG_NO_TRACE`(resp. `-fversion=LOG_NO_DEBUG`).
+ * @example:
+ * ```
+ * use std::log;
+ *
+ * let log = Logger("app::db");
+ * log.info("connected to ", "127.0.0.1", ':', 5432);
+ *
+ * // only warnings and errors of the loggers under `std`
+ * setLevel("std", Level::WARN);
+ *
+ * // a lower minimum level for this logger, and every logger under it
+ * setLevel("app::db", Level::TRACE);
+ * log.trace("pool size: ", 12);
+ * ```
+ */
+
+in log;
+
+mod ::level;
+mod ::record_;
+mod ::logger;
+mod ::format;
+mod ::sink;
+mod ::stream_sink;
+mod ::file_sink;
+mod ::string_sink;
+mod ::config;
+mod ::utils;
+
+pub def Level: level::Level;
+pub def LogRecord: record_::LogRecord;
+pub def Logger: logger::Logger;
+pub def LogFormat: format::LogFormat;
+pub def LogSink: sink::LogSink;
+pub def StreamSink: stream_sink::StreamSink;
+pub def FileSink: file_sink::FileSink;
+pub def StringSink: string_sink::StringSink;
+
+pub def setLevel = config::setLevel;
+pub def isEnabled = config::isEnabled;
+pub def setSink = config::setSink;
+pub def addSink = config::addSink;
+pub def removeSink = config::removeSink;
+
+pub def levelName = utils::levelName;
