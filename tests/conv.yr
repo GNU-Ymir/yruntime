@@ -644,3 +644,113 @@ __test floatPrecisionBounds { // rendering at the precision bounds
     assert(f64::inf.to![c8] () == "inf" && (-f64::inf).to![c8] () == "-inf", "g");
     assert(f64::nan.to![c8] ().len == 3us, "h");
 }
+
+__test appendUnsignedToString {
+    let dmut a = copy "x = "s8;
+    to!{typeof(a)} (12u32, ref a);
+    to!{typeof(a)} (0u32, ref a);
+    assert(a == "x = 120", "a");
+
+    let dmut b = copy ""s8;
+    to!{typeof(b), 16us} (12345u32, ref b);
+    to!{typeof(b), 2us} (12345u32, ref b);
+    to!{typeof(b), 5us} (12345u32, ref b);
+    assert(b == "3039" ~ "11000000111001" ~ "343340", "b");
+
+    let dmut c = copy ""s8;
+    to!{typeof(c), 16us} (255u32, ref c, upper-> true);
+    assert(c == "FF", "c");
+
+    let dmut d = copy ""s32;
+    to!{typeof(d)} (879u32, ref d);
+    assert(d == "879"s32, "d");
+
+    let dmut e = copy ""s8;
+    to!{typeof(e)} (u64::max, ref e);
+    assert(e == u64::max.to!{[c8]} (), "e");
+}
+
+__test appendSignedToString {
+    let dmut a = copy "x = "s8;
+    to!{typeof(a)} (-12, ref a);
+    to!{typeof(a)} (0, ref a);
+    to!{typeof(a)} (7, ref a);
+    assert(a == "x = -1207", "a");
+
+    let dmut b = copy ""s8;
+    to!{typeof(b), 21us} (-89102, ref b);
+    assert(b == "-9d0k", "b");
+
+    let dmut c = copy ""s8;
+    to!{typeof(c)} (i64::min, ref c);
+    assert(c == i64::min.to!{[c8]} (), "c");
+
+    let dmut d = copy ""s8;
+    to!{typeof(d)} (i32::min, ref d);
+    assert(d == i32::min.to!{[c8]} (), "d");
+}
+
+__test appendFallbackToString { // types with no in place conversion go through an allocation
+    let dmut a = copy "b = "s8;
+    to!{typeof(a)} (true, ref a);
+    to!{typeof(a)} (false, ref a);
+    assert(a == "b = truefalse", "a");
+
+    let dmut b = copy ""s8;
+    to!{typeof(b)} (1.5, ref b);
+    assert(b == (1.5).to!{[c8]} (), "b");
+}
+
+__test appendMatchesAllocatingConversion {
+    for i in -300 .. 300 {
+        let dmut acc = copy ""s8;
+        to!{typeof(acc)} (i, ref acc);
+        assert(acc == i.to!{[c8]} (), "i = " ~ i.to!{[c8]} ());
+    }
+
+    for i in 0us .. 300us {
+        let dmut acc = copy ""s8;
+        to!{typeof(acc), 7us} (i, ref acc);
+        assert(acc == i.to!{[c8], 7us} (), "u = " ~ i.to!{[c8]} ());
+    }
+}
+
+__test appendFloatToString {
+    let dmut a = copy "f = "s8;
+    to!{typeof(a)} (1.5, ref a, prec-> 2u32);
+    assert(a == "f = 1.50", a);
+
+    let dmut b = copy ""s8;
+    to!{typeof(b), "e"} (120.0, ref b, prec-> 2u32);
+    assert(b == "1.20e+02", b);
+
+    let dmut c = copy ""s32;
+    to!{typeof(c)} (1.5, ref c, prec-> 2u32);
+    assert(c == "1.50"s32, "c");
+
+    let dmut d = copy ""s8;
+    to!{typeof(d)} (1.5f, ref d);
+    to!{typeof(d)} (2.5, ref d);
+    assert(d == (1.5f).to!{[c8]} () ~ (2.5).to!{[c8]} (), d);
+
+    let dmut e = copy ""s8;
+    to!{typeof(e)} (f64::inf, ref e);
+    to!{typeof(e)} (-f64::inf, ref e);
+    assert(e == "inf-inf", e);
+}
+
+__test appendFloatMatchesAllocatingConversion {
+    for p in 0u32 .. 12u32 {
+        let dmut acc = copy ""s8;
+        to!{typeof(acc)} (-3.14159, ref acc, prec-> p);
+        assert(acc == (-3.14159).to!{[c8]} (prec-> p), acc);
+
+        let dmut exp = copy ""s8;
+        to!{typeof(exp), "e"} (-3.14159, ref exp, prec-> p);
+        assert(exp == (-3.14159).to!{[c8], "e"} (prec-> p), exp);
+    }
+
+    let dmut wide = copy ""s8;
+    to!{typeof(wide)} (0.5, ref wide, prec-> 60u32);
+    assert(wide == (0.5).to!{[c8]} (prec-> 60u32), "wide");
+}

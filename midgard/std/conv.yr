@@ -384,6 +384,249 @@ pub fn if (isSigned!{I} && isChar!{C} && isIntegral!{N}) to {T of [C], C, base: 
 /*!
  * ====================================================================================================
  * ====================================================================================================
+ * ===============================          APPEND CONVERSION          ================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Append the string representation of an unsigned int at the end of a slice, using the base `base`.
+ * @info: no intermediate slice is allocated, the digits are written straight at the end of `res`.
+ * @template:
+ *    - base: the base to use when converting the int to string.
+ * @params:
+ *    - a: the value to write.
+ *    - res: the slice the digits are appended to.
+ * @cteassert `(base <= 36)`
+ * @example:
+ * ```
+ * let dmut res = copy "0x"s8;
+ * to!{typeof(res), 16us} (255u32, ref res);
+ *
+ * assert(res == "0xff");
+ * ```
+ */
+pub fn if (isUnsigned!{I} && isChar!{C} && isIntegral!{N}) to {T of [C], C, base: N, I, N} (a: I, ref dmut res: T, upper: bool = false)-> void {
+    cte assert(36 >= base, "Maximum base is 36");
+
+    let b: __pragma!unproxied(I) = cast!{__pragma!unproxied(I)} (base);
+
+    let mut n: __pragma!unproxied(I) = a;
+    let mut len = 1us;
+    while n >= b {
+        len += 1us;
+        n /= b;
+    }
+
+    let dmut region: [C] = [];
+    utils::Grow!{C}::_yrt_grow_slice(ref res, ref region, len, C::size);
+
+    let mut m: __pragma!unproxied(I) = a;
+    cte if (base == 10) {
+        upper;
+        for i in len .. 0us {
+            region[i - 1us] = cast!C(cast!c8(cast!u8('0') + cast!u8(m % b)));
+            m /= b;
+        }
+    } else {
+        for i in len .. 0us {
+            region[i - 1us] = std::conv::utils::to!C(m % b, b, upper-> upper);
+            m /= b;
+        }
+    }
+}
+
+/**
+ * Append the string representation of an unsigned int at the end of a slice, using base 10.
+ * @info: no intermediate slice is allocated, the digits are written straight at the end of `res`.
+ * @params:
+ *    - a: the value to write.
+ *    - res: the slice the digits are appended to.
+ * @example:
+ * ```
+ * let dmut res = copy "x = "s8;
+ * to!{typeof(res)} (12u32, ref res);
+ *
+ * assert(res == "x = 12");
+ * ```
+ */
+pub fn if (isUnsigned!{F} && isChar!{U}) to {T of [U], U, F} (a: F, ref dmut res: T)-> void {
+    to!{T, 10, F} (a, ref res);
+}
+
+/**
+ * Append the string representation of a signed int at the end of a slice, using the base `base`.
+ * @info: no intermediate slice is allocated, the digits are written straight at the end of `res`.
+ * @template:
+ *    - base: the base to use when converting the int to string.
+ * @params:
+ *    - a: the value to write.
+ *    - res: the slice the digits are appended to.
+ * @cteassert `(base <= 36)`
+ * @example:
+ * ```
+ * let dmut res = copy "v = "s8;
+ * to!{typeof(res), 21us} (-89102, ref res);
+ *
+ * assert(res == "v = -9d0k");
+ * ```
+ */
+pub fn if (isSigned!{I} && isChar!{C} && isIntegral!{N}) to {T of [C], C, base: N, I, N} (a: I, ref dmut res: T, upper: bool = false)-> void {
+    cte assert(36 >= base, "Maximum base is 36");
+
+    let b: __pragma!unproxied(I) = cast!{__pragma!unproxied(I)} (base);
+    let sign = a < 0;
+
+    // digits are extracted from the negative side: -I::min overflows, but I::min
+    // itself is representable, so every value of I goes through the same path
+    let negVal: __pragma!unproxied(I) = if (sign) { a } else { -a };
+
+    let mut n = negVal;
+    let mut len = 1us;
+    while n <= -b {
+        len += 1us;
+        n /= b;
+    }
+
+    let dmut region: [C] = [];
+    let mut m = negVal;
+
+    if (sign) {
+        utils::Grow!{C}::_yrt_grow_slice(ref res, ref region, len + 1us, C::size);
+        region[0] = '-';
+
+        cte if (base == 10) {
+            upper;
+            for i in len .. 0us {
+                region[i] = cast!C(cast!c8(cast!u8('0') + cast!u8(-(m % b))));
+                m /= b;
+            }
+        } else {
+            for i in len .. 0us {
+                region[i] = std::conv::utils::to!C(-(m % b), b, upper-> upper);
+                m /= b;
+            }
+        }
+    } else {
+        utils::Grow!{C}::_yrt_grow_slice(ref res, ref region, len, C::size);
+
+        cte if (base == 10) {
+            upper;
+            for i in len .. 0us {
+                region[i - 1us] = cast!C(cast!c8(cast!u8('0') + cast!u8(-(m % b))));
+                m /= b;
+            }
+        } else {
+            for i in len .. 0us {
+                region[i - 1us] = std::conv::utils::to!C(-(m % b), b, upper-> upper);
+                m /= b;
+            }
+        }
+    }
+}
+
+/**
+ * Append the string representation of a signed int at the end of a slice, using base 10.
+ * @info: no intermediate slice is allocated, the digits are written straight at the end of `res`.
+ * @params:
+ *    - a: the value to write.
+ *    - res: the slice the digits are appended to.
+ * @example:
+ * ```
+ * let dmut res = copy "x = "s8;
+ * to!{typeof(res)} (-12, ref res);
+ *
+ * assert(res == "x = -12");
+ * ```
+ */
+pub fn if (isSigned!{F} && isChar!{U}) to {T of [U], U, F} (a: F, ref dmut res: T)-> void {
+    to!{T, 10, F} (a, ref res);
+}
+
+/**
+ * Append the string representation of a float at the end of a slice.
+ * @info: for a utf8 slice nothing is allocated, the text is written straight at the end of `res`.
+ * @params:
+ *    - a: the value to write.
+ *    - res: the slice the representation is appended to.
+ *    - prec: the number of decimals to write.
+ * @example:
+ * ```
+ * let dmut res = copy "f = "s8;
+ * to!{typeof(res)} (1.5, ref res, prec-> 2u32);
+ *
+ * assert(res == "f = 1.50");
+ * ```
+ */
+pub fn if (isChar!{U} && isFloating!{F}) to {T of [U], U, F} (a: F, ref dmut res: T, prec: u32 = 6u32)-> void {
+    cte if template!{U}{X of c8} {
+        cte if template!{F}{X of f32} {
+            utils::_yrt_append_f32_to_string (ref res, a, prec);
+        } else cte if template!{F}{X of f64} {
+            utils::_yrt_append_f64_to_string (ref res, a, prec);
+        } else cte if template!{F}{X of f80} {
+            utils::_yrt_append_f80_to_string (ref res, a, prec);
+        } else {
+            utils::_yrt_append_fsize_to_string (ref res, a, prec);
+        }
+    } else {
+        res ~= to!{T} (a, prec-> prec);
+    }
+}
+
+/**
+ * Append the string representation of a float at the end of a slice, using scientific notation.
+ * @info: for a utf8 slice nothing is allocated, the text is written straight at the end of `res`.
+ * @params:
+ *    - a: the value to write.
+ *    - res: the slice the representation is appended to.
+ *    - prec: the number of decimals to write.
+ * @example:
+ * ```
+ * let dmut res = copy "f = "s8;
+ * to!{typeof(res), "e"} (120.0, ref res, prec-> 2u32);
+ *
+ * assert(res == "f = 1.20e+02");
+ * ```
+ */
+pub fn if (isChar!{U} && isFloating!{F}) to {T of [U], U, "e", F} (a: F, ref dmut res: T, prec: u32 = 6u32)-> void {
+    cte if template!{U}{X of c8} {
+        cte if template!{F}{X of f32} {
+            utils::_yrt_append_f32_to_string_exp (ref res, a, prec);
+        } else cte if template!{F}{X of f64} {
+            utils::_yrt_append_f64_to_string_exp (ref res, a, prec);
+        } else cte if template!{F}{X of f80} {
+            utils::_yrt_append_f80_to_string_exp (ref res, a, prec);
+        } else {
+            utils::_yrt_append_fsize_to_string_exp (ref res, a, prec);
+        }
+    } else {
+        res ~= to!{T, "e"} (a, prec-> prec);
+    }
+}
+
+/**
+ * Append the string representation of a value at the end of a slice.
+ * @info: fallback for the types that have no in place conversion, the value is converted to a new
+ *        slice that is then appended to `res`.
+ * @params:
+ *    - a: the value to write.
+ *    - res: the slice the representation is appended to.
+ * @example:
+ * ```
+ * let dmut res = copy "b = "s8;
+ * to!{typeof(res)} (true, ref res);
+ *
+ * assert(res == "b = true");
+ * ```
+ */
+pub fn if (!isUnsigned!{F} && !isSigned!{F} && !isFloating!{F} && isChar!{U}) to {T of [U], U, F} (a: F, ref dmut res: T)-> void {
+    res ~= to!{T} (a);
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
  * ================================          STRING ENCODING          =================================
  * ====================================================================================================
  * ====================================================================================================
