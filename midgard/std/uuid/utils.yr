@@ -5,6 +5,8 @@
 
 in utils;
 
+use std::uuid::errors;
+
 /** The value returned by `hexValue` for a character that is not an hexadecimal digit */
 pub def NOT_HEX = 0xffu8;
 
@@ -43,4 +45,48 @@ pub fn hasUrnPrefix(s: [c8])-> bool {
     }
 
     true
+}
+
+/**
+ * Read a UUID written in the canonical `8-4-4-4-12` hexadecimal form, in upper or lower case, and
+ * optionally prefixed by `urn:uuid:`.
+ * @params:
+ *    - str: the text to read
+ * @returns: the identifier written in `str`
+ * @throws:
+ *    - &UuidError: if `str` is not a canonical UUID
+ */
+pub fn parse(str: [c8])-> Uuid
+    throws UuidError
+{
+    let s = if hasUrnPrefix(str) { str[9us .. $] } else { str };
+
+    if s.len != 36us {
+        throw copy UuidError("expected 36 characters, got '" ~ str ~ "'");
+    }
+
+    if s[8] != '-'c8 || s[13] != '-'c8 || s[18] != '-'c8 || s[23] != '-'c8 {
+        throw copy UuidError("expected the 8-4-4-4-12 form, got '" ~ str ~ "'");
+    }
+
+    let dmut bytes = [0u8 ; 16];
+    let mut b = 0us, mut i = 0us;
+
+    while i < 36us {
+        if i == 8us || i == 13us || i == 18us || i == 23us {
+            i += 1us;
+            continue;
+        }
+
+        let hi = hexValue(s[i]), lo = hexValue(s[i + 1us]);
+        if hi == NOT_HEX || lo == NOT_HEX {
+            throw copy UuidError("expected an hexadecimal digit, got '" ~ str ~ "'");
+        }
+
+        bytes[b] = (hi << 4u8) | lo;
+        b += 1us;
+        i += 2us;
+    }
+
+    Uuid(bytes)
 }
