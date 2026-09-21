@@ -18,7 +18,8 @@ lazy dmut __DATE_MUTEX__ = copy Mutex();
 /**
  * A date and a time of day, read in a given time zone, to the microsecond. The zone is kept as the
  * offset from utc of the instant the date was built from, so a date always knows the zone it is
- * written in. `format` renders it in any layout, and `to!{DateTime}` reads one back.
+ * written in. Printing a date writes it in ISO 8601, `format` renders it in any other layout, and
+ * `to!{DateTime}` reads one back.
  * @example:
  * ```
  * use std::io;
@@ -34,7 +35,7 @@ lazy dmut __DATE_MUTEX__ = copy Mutex();
  * assert(later.hour == 15 && later.minute == 33);
  * assert(later - d == (90).minutes());
  *
- * println(d.format(fmt-> DateFormat::ISO8601)); // 2026-08-26T14:03:11Z
+ * println(d); // 2026-08-26T14:03:11Z
  * ```
  */
 pub record DateTime {
@@ -411,48 +412,7 @@ pub record DateTime {
 
     impl Streamable {
         pub over toStream(self, dmut stream: &StringStream) {
-            if self._value.tm_mday < 10 {
-                stream:.write("0", self._value.tm_mday);
-            } else {
-                stream:.write(self._value.tm_mday);
-            }
-
-            if self.month < 10 {
-                stream:.write("/0", self.month);
-            } else { stream:.write("/", self.month); }
-
-            if self.year > 2000 {
-                if (self.year % 100) < 10 {
-                    stream:.write("/0", self.year % 100);
-                } else {
-                    stream:.write("/", self.year % 100);
-                }
-            } else {
-                stream:.write("/", self.year);
-            }
-
-            if self._value.tm_hour < 10 {
-                stream:.write(" 0", self._value.tm_hour);
-            } else {
-                stream:.write(" ", self._value.tm_hour);
-            }
-
-            if self._value.tm_min < 10 {
-                stream:.write(":0", self._value.tm_min);
-            } else {
-                stream:.write(":", self._value.tm_min);
-            }
-
-            if self._value.tm_sec < 10 {
-                stream:.write(":0", self._value.tm_sec);
-            } else {
-                stream:.write(":", self._value.tm_sec);
-            }
-
-            if self._usec != 0 {
-                stream:.write(".", self._usec);
-            }
+            stream:.write(render(self, if self._usec != 0u64 { DateFormat::ISO8601_MICROS } else { DateFormat::ISO8601 }));
         }
     }
-
 }

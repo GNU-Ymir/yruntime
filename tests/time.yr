@@ -50,13 +50,23 @@ __test dateTimeNormalized {
 }
 
 __test dateTimeYearDay {
-    // YMI-168: yearDay must return tm_yday, not the weekday, and toStream must print
-    // a 1-based month and a two-digit (year % 100) year.
+    // YMI-168: yearDay must return tm_yday, not the weekday, and month must be 1-based
     let d = DateTime(usec-> 0u64, sec-> 0, min-> 0, hour-> 12, day-> 25, month-> 11, year-> 126);
     assert(d.month == 12);
     assert(d.yearDay == 358);
     assert(d.weekDay != d.yearDay);
-    assert(d.to![c8] () == "25/12/26 12:00:00");
+}
+
+__test dateTimeStream { // a date prints as ISO 8601, in the zone it is written in
+    let utc = DateTime::at(utcOffset-> 0i64, year-> 2026, month-> 12, day-> 25, hour-> 12);
+    assert(utc.to![c8] () == "2026-12-25T12:00:00Z", utc.to![c8] ());
+
+    let east = DateTime::at(utcOffset-> 7_200i64, year-> 2026, month-> 12, day-> 25, hour-> 12);
+    assert(east.to![c8] () == "2026-12-25T12:00:00+02:00", east.to![c8] ());
+
+    // the microseconds are written only when there are some
+    let frac = DateTime::at(utcOffset-> 0i64, usec-> 500u64, year-> 2026, month-> 12, day-> 25);
+    assert(frac.to![c8] () == "2026-12-25T00:00:00.000500Z", frac.to![c8] ());
 }
 
 __test componentAccessors { // every component accessor, on a duration built from components
