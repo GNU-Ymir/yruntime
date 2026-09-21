@@ -44,6 +44,20 @@ _yrt_slice_t  _yrt_f64_to_string_exp (double f, uint32_t prec);
 _yrt_slice_t  _yrt_f80_to_string_exp (long double f, uint32_t prec);
 _yrt_slice_t  _yrt_fsize_to_string_exp (long double f, uint32_t prec);
 
+/**
+ * Append the string representation of a float at the end of a slice
+ * @info: no intermediate slice is allocated, the text is written straight at the end of 'res'
+ *  */
+void _yrt_append_f32_to_string (_yrt_slice_t * res, float f, uint32_t prec);
+void _yrt_append_f64_to_string (_yrt_slice_t * res, double f, uint32_t prec);
+void _yrt_append_f80_to_string (_yrt_slice_t * res, long double f, uint32_t prec);
+void _yrt_append_fsize_to_string (_yrt_slice_t * res, long double f, uint32_t prec);
+
+void _yrt_append_f32_to_string_exp (_yrt_slice_t * res, float f, uint32_t prec);
+void _yrt_append_f64_to_string_exp (_yrt_slice_t * res, double f, uint32_t prec);
+void _yrt_append_f80_to_string_exp (_yrt_slice_t * res, long double f, uint32_t prec);
+void _yrt_append_fsize_to_string_exp (_yrt_slice_t * res, long double f, uint32_t prec);
+
 float _yrt_string_to_f32 (_yrt_slice_t str, uint8_t * succ);
 double _yrt_string_to_f64 (_yrt_slice_t str, uint8_t * succ);
 long double _yrt_string_to_f80 (_yrt_slice_t str, uint8_t * succ);
