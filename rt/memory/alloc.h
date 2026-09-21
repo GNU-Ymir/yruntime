@@ -47,5 +47,20 @@ void _yrt_concat_slices (_yrt_slice_t * result, _yrt_slice_t * left, _yrt_slice_
  *  */
 void _yrt_append_slice (_yrt_slice_t * result, _yrt_slice_t * right, uint64_t size);
 
+/**
+ * Extend a slice by 'len' uninitialized elements
+ * @returns: the address of the first appended element
+ * @info: reallocates with the gc when the block has no room left
+ *  */
+uint8_t* _yrt_i_grow_slice (_yrt_slice_t * result, uint64_t len, uint64_t size);
+
+/**
+ * Extend a slice by 'len' uninitialized elements, and view them
+ * @params:
+ *   - result: the slice to extend
+ *   - appended: set to a view of the appended elements, for the caller to fill
+ *  */
+void _yrt_grow_slice (_yrt_slice_t * result, _yrt_slice_t * appended, uint64_t len, uint64_t size);
+
 
 #endif // ALLOCS_H_
