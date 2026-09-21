@@ -151,6 +151,70 @@ _yrt_slice_t  _yrt_fsize_to_string_exp (long double f, uint32_t prec) {
     return result;
 }
 
+void _yrt_append_f32_to_string (_yrt_slice_t * res, float f, uint32_t prec) {
+    int nb = snprintf (NULL, 0, "%.*f", prec, f);
+
+    uint8_t * out = _yrt_i_grow_slice (res, nb + 1, 1);	 // + 1 for the null char
+    snprintf ((char*) out, nb + 1, "%.*f", prec, f);
+    _yrt_drop_null_char (res);
+}
+
+void _yrt_append_f64_to_string (_yrt_slice_t * res, double f, uint32_t prec) {
+    int nb = snprintf (NULL, 0, "%.*lf", prec, f);
+
+    uint8_t * out = _yrt_i_grow_slice (res, nb + 1, 1);	 // + 1 for the null char
+    snprintf ((char*) out, nb + 1, "%.*lf", prec, f);
+    _yrt_drop_null_char (res);
+}
+
+void _yrt_append_f80_to_string (_yrt_slice_t * res, long double f, uint32_t prec) {
+    int nb = snprintf (NULL, 0, "%.*Lf", prec, f);
+
+    uint8_t * out = _yrt_i_grow_slice (res, nb + 1, 1);	 // + 1 for the null char
+    snprintf ((char*) out, nb + 1, "%.*Lf", prec, f);
+    _yrt_drop_null_char (res);
+}
+
+void _yrt_append_fsize_to_string (_yrt_slice_t * res, long double f, uint32_t prec) {
+    int nb = snprintf (NULL, 0, "%.*Lf", prec, f);
+
+    uint8_t * out = _yrt_i_grow_slice (res, nb + 1, 1);	 // + 1 for the null char
+    snprintf ((char*) out, nb + 1, "%.*Lf", prec, f);
+    _yrt_drop_null_char (res);
+}
+
+void _yrt_append_f32_to_string_exp (_yrt_slice_t * res, float f, uint32_t prec) {
+    int nb = snprintf (NULL, 0, "%.*e", prec, f);
+
+    uint8_t * out = _yrt_i_grow_slice (res, nb + 1, 1);	 // + 1 for the null char
+    snprintf ((char*) out, nb + 1, "%.*e", prec, f);
+    _yrt_drop_null_char (res);
+}
+
+void _yrt_append_f64_to_string_exp (_yrt_slice_t * res, double f, uint32_t prec) {
+    int nb = snprintf (NULL, 0, "%.*le", prec, f);
+
+    uint8_t * out = _yrt_i_grow_slice (res, nb + 1, 1);	 // + 1 for the null char
+    snprintf ((char*) out, nb + 1, "%.*le", prec, f);
+    _yrt_drop_null_char (res);
+}
+
+void _yrt_append_f80_to_string_exp (_yrt_slice_t * res, long double f, uint32_t prec) {
+    int nb = snprintf (NULL, 0, "%.*Le", prec, f);
+
+    uint8_t * out = _yrt_i_grow_slice (res, nb + 1, 1);	 // + 1 for the null char
+    snprintf ((char*) out, nb + 1, "%.*Le", prec, f);
+    _yrt_drop_null_char (res);
+}
+
+void _yrt_append_fsize_to_string_exp (_yrt_slice_t * res, long double f, uint32_t prec) {
+    int nb = snprintf (NULL, 0, "%.*Le", prec, f);
+
+    uint8_t * out = _yrt_i_grow_slice (res, nb + 1, 1);	 // + 1 for the null char
+    snprintf ((char*) out, nb + 1, "%.*Le", prec, f);
+    _yrt_drop_null_char (res);
+}
+
 /*!
  * ====================================================================================================
  * ====================================================================================================

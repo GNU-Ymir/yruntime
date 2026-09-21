@@ -73,32 +73,44 @@ void _yrt_concat_slices (_yrt_slice_t * result, _yrt_slice_t * left, _yrt_slice_
 }
 
 void _yrt_append_slice (_yrt_slice_t * result, _yrt_slice_t * right, uint64_t size) {
-	if (result-> blk_info == NULL) { // no blk info, slice may be allocated on the stack
-		_yrt_slice_t tmp = *result;
-		_yrt_concat_slices (result, &tmp, right, size);
+	// read before growing: 'right' may be 'result' itself
+	uint64_t rlen = right-> len;
+	void * rdata = right-> data;
 
-		return;
-	}
+	uint8_t * out = _yrt_i_grow_slice (result, rlen, size);
+	memcpy (out, rdata, rlen * size);
+}
 
-	uint8_t * end = ((uint8_t*) result-> blk_info) + (result-> blk_info-> len * size) + sizeof (_yrt_slice_blk_info_t);
-	if (end != result-> data + (result-> len * size)) { // blk info, but slice was cut down before the end
-		_yrt_slice_t tmp = *result;
-		_yrt_concat_slices (result, &tmp, right, size);
-
-		return;
-	}
-
-	if (result-> blk_info-> len + right-> len > result-> blk_info-> cap) { // end of the slice but no space left
-		_yrt_slice_t tmp = *result;
-		_yrt_concat_slices (result, &tmp, right, size);
-
-		return;
-	}
-
-	// enough space no need to make the slice grow
+uint8_t* _yrt_i_grow_slice (_yrt_slice_t * result, uint64_t len, uint64_t size) {
 	uint64_t oldLen = result-> len;
-	result-> blk_info-> len += right-> len;
-	result-> len += right-> len;
+	uint8_t * tail = (uint8_t*) result-> data + (oldLen * size);
 
-	memcpy (result-> data + (oldLen * size), right-> data, right-> len * size);
+	if (len == 0) return tail;
+
+	uint8_t inPlace = (result-> blk_info != NULL);
+	if (inPlace) { // the slice must end where the block does, and the block must have room left
+		uint8_t * end = ((uint8_t*) result-> blk_info) + sizeof (_yrt_slice_blk_info_t) + (result-> blk_info-> len * size);
+		inPlace = (end == tail) && (result-> blk_info-> len + len <= result-> blk_info-> cap);
+	}
+
+	if (!inPlace) {
+		void * oldData = result-> data;
+		_yrt_alloc_slice_no_set (result, oldLen + len, size);
+		memcpy (result-> data, oldData, oldLen * size);
+
+		return (uint8_t*) result-> data + (oldLen * size);
+	}
+
+	result-> blk_info-> len += len;
+	result-> len += len;
+
+	return tail;
+}
+
+void _yrt_grow_slice (_yrt_slice_t * result, _yrt_slice_t * appended, uint64_t len, uint64_t size) {
+	uint8_t * out = _yrt_i_grow_slice (result, len, size);
+
+	appended-> len = len;
+	appended-> data = out;
+	appended-> blk_info = result-> blk_info;
 }

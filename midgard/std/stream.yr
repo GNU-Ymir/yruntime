@@ -187,7 +187,19 @@ pub class StringStream {
      *   - c: the value to write
      * */
     pub fn if (!(template!{T}{class C}) && !(template!{T}{record C}) && !(template!{T}{entity E})) write {T} (mut self, c: T)-> dmut &StringStream {
-        self:.write(std::conv::to!{[c8]} (c))
+        cte if (__pragma!compile({std::conv::to!{typeof(self._content)} (c, ref self._content);})) {
+            // entabing inserts text between the chars, so it cannot be written in place
+            if (self._entabingLen != 0us) {
+                return self:.write(std::conv::to!{[c8]} (c));
+            }
+
+            std::conv::to!{typeof(self._content)} (c, ref self._content);
+            self._willEntab = (self._content.len != 0us && self._content[$ - 1us] == '\n');
+
+            alias self
+        } else {
+            self:.write(std::conv::to!{[c8]} (c))
+        }
     }
 
     /**

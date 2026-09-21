@@ -1,0 +1,50 @@
+in slice;
+
+__test appendGrowsInPlace { // a slice grows amortized, keeping its content
+    let dmut a: [i32] = [];
+    for i in 0 .. 100 {
+        a ~= [i];
+    }
+
+    assert(a.len == 100us, "len");
+    for i in 0 .. 100 {
+        assert(a[i] == i, "content");
+    }
+}
+
+__test appendSelf { // appending a slice to itself
+    let dmut a = copy "ab"s8;
+    a ~= a;
+    a ~= a;
+
+    assert(a == "abababab", a);
+}
+
+__test appendToCutSlice { // a slice cut before the end of its block reallocates on append
+    let dmut a = copy "0123456789"s8;
+    let dmut b = copy a[0us .. 4us];
+    b ~= "xy";
+
+    assert(b == "0123xy", b);
+    assert(a == "0123456789", a);
+}
+
+__test appendEmpty { // appending nothing changes nothing
+    let dmut a = copy "ab"s8;
+    let empty: [c8] = [];
+    a ~= empty;
+
+    assert(a == "ab", a);
+
+    let dmut b: [c8] = [];
+    b ~= empty;
+    assert(b.len == 0us, "empty");
+}
+
+__test concatDoesNotAliasSource { // ~ leaves its operands alone
+    let a = copy "ab"s8;
+    let b = copy "cd"s8;
+    let c = a ~ b;
+
+    assert(c == "abcd" && a == "ab" && b == "cd", c);
+}
