@@ -1,0 +1,184 @@
+in uuid;
+
+use std::{conv, format, uuid};
+use std::algorithm::sorting;
+use std::conv::errors;
+use std::time::instant;
+use std::uuid::{conv, errors, generator};
+
+def SAMPLE = "01993a18-4f0e-7cdb-b32e-c6621e1a644b";
+
+__test canonicalForm {
+    let id = Uuid([0x01u8, 0x99u8, 0x3au8, 0x18u8, 0x4fu8, 0x0eu8, 0x7cu8, 0xdbu8,
+                   0xb3u8, 0x2eu8, 0xc6u8, 0x62u8, 0x1eu8, 0x1au8, 0x64u8, 0x4bu8]);
+
+    assert(format("{}", id) == SAMPLE, format("{}", id));
+    assert(id.to![c8] () == SAMPLE);
+}
+
+__test nilAndMax {
+    assert(Uuid::nil().isNil());
+    assert(Uuid::nil().to![c8] () == "00000000-0000-0000-0000-000000000000");
+
+    assert(!Uuid::max().isNil());
+    assert(Uuid::max().to![c8] () == "ffffffff-ffff-ffff-ffff-ffffffffffff");
+
+    assert(Uuid::nil() < Uuid::max());
+}
+
+__test versionAndVariant {
+    let id = (SAMPLE).to!{Uuid} ();
+
+    assert(id.version == 7u8, id.version.to![c8] ());
+    assert(id.variant == UuidVariant::RFC9562);
+
+    assert(Uuid::nil().variant == UuidVariant::NCS);
+    assert(Uuid::max().variant == UuidVariant::FUTURE);
+    assert(("00000000-0000-0000-c000-000000000000"s8).to!{Uuid} ().variant == UuidVariant::MICROSOFT);
+}
+
+__test parseAcceptedForms {
+    let a = (SAMPLE).to!{Uuid} ();
+
+    assert(("URN:UUID:" ~ SAMPLE).to!{Uuid} () == a);
+    assert(("urn:uuid:" ~ SAMPLE).to!{Uuid} () == a);
+    assert(("01993A18-4F0E-7CDB-B32E-C6621E1A644B"s8).to!{Uuid} () == a);
+}
+
+__test parseRejectedForms {
+    let rejected = ["",
+                    "01993a18-4f0e-7cdb-b32e-c6621e1a644",
+                    "01993a18-4f0e-7cdb-b32e-c6621e1a644bb",
+                    "01993a184f0e-7cdb-b32e--c6621e1a644b",
+                    "01993a18-4f0e-7cdb-b32e-c6621e1a644z",
+                    "01993a18-4f0e-7cdb-b32e-c6621e1a-44b",
+                    "urn:uuid:" ~ SAMPLE ~ "0"];
+
+    for r in rejected {
+        let mut rejectedAsExpected = false;
+        {
+            let _ = (r).to!{Uuid} ();
+        } catch {
+            c: &CastFailure => {
+                match c.sub {
+                    Ok(_: &UuidError) => { rejectedAsExpected = true; }
+                    _ => {}
+                }
+            }
+        }
+
+        assert(rejectedAsExpected, "accepted '" ~ r ~ "'");
+    }
+}
+
+__test toUuidWrapsTheError {
+    let mut target = ""s8;
+    let mut hasSubError = false;
+    {
+        let _ = ("nope"s8).to!{Uuid} ();
+    } catch {
+        c: &CastFailure => {
+            target = c.to.name;
+            match c.sub {
+                Ok(_: &UuidError) => { hasSubError = true; }
+                _ => {}
+            }
+        }
+    }
+
+    assert(target == Uuid::__typeinfo__.name, target);
+    assert(hasSubError, "no UuidError sub error");
+}
+
+__test byteConversions {
+    let id = (SAMPLE).to!{Uuid} ();
+
+    assert(id.bytes.to!{Uuid} () == id);
+    assert(id.to!{[u8 ; 16]} () == id.bytes);
+    assert(id.bytes[0] == 0x01u8 && id.bytes[15] == 0x4bu8);
+}
+
+__test v4IsRandomAndTagged {
+    let dmut gen = copy UuidGenerator();
+
+    let mut seen: [Uuid => mut ()] = copy [];
+    for _ in 0 .. 1_000 {
+        let id = gen:.v4();
+
+        assert(id.version == 4u8, id.to![c8] ());
+        assert(id.variant == UuidVariant::RFC9562, id.to![c8] ());
+
+        assert(id !in seen, "drawn twice: " ~ id.to![c8] ());
+        seen [id] = ();
+    }
+}
+
+__test v7IsTaggedAndMonotonic {
+    let dmut gen = copy UuidGenerator();
+
+    let mut last = Uuid::nil();
+    for _ in 0 .. 10_000 {
+        let id = gen:.v7();
+
+        assert(id.version == 7u8, id.to![c8] ());
+        assert(id.variant == UuidVariant::RFC9562, id.to![c8] ());
+        assert(last < id, last.to![c8] () ~ " >= " ~ id.to![c8] ());
+
+        last = id;
+    }
+}
+
+__test v7WritesTheCurrentMillisecond {
+    let before = Instant::now();
+    let id = v7();
+    let after = Instant::now();
+
+    let mut ms = 0u64;
+    for i in 0us .. 6us {
+        ms = (ms << 8u64) | cast!u64(id.bytes[i]);
+    }
+
+    let low = before.sec * 1_000u64 + before.usec / 1_000u64;
+    let high = after.sec * 1_000u64 + after.usec / 1_000u64;
+
+    assert(ms >= low && ms <= high, ms.to![c8] ());
+}
+
+__test seedReplaysTheSequence {
+    seed(42u64);
+    let a = v4(), b = v4();
+
+    seed(42u64);
+    assert(v4() == a);
+    assert(v4() == b);
+
+    let dmut gen = copy UuidGenerator(42u64);
+    assert(gen:.v4() == a);
+}
+
+__test generatorLeavesStdRandAlone {
+    std::rand::seed(7u64);
+    let expected = std::rand::randBits();
+
+    std::rand::seed(7u64);
+    let _ = v4();
+    let _ = v7();
+
+    assert(std::rand::randBits() == expected);
+}
+
+__test orderingAndHashing {
+    let a = ("00000000-0000-0000-0000-000000000001"s8).to!{Uuid} ();
+    let b = ("00000000-0000-0000-0000-000000000002"s8).to!{Uuid} ();
+    let c = ("00000001-0000-0000-0000-000000000000"s8).to!{Uuid} ();
+
+    assert(a < b && b < c);
+    assert(a <= a && a >= a);
+    assert(a != b);
+
+    let sorted = (copy [c, a, b]).sort();
+    assert(sorted == [a, b, c]);
+
+    assert(a.toHash() == ("00000000-0000-0000-0000-000000000001"s8).to!{Uuid} ().toHash());
+    assert(a.toHash() != b.toHash());
+}
