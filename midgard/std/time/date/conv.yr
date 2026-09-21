@@ -1,0 +1,59 @@
+/**
+ * This module declares the function reading a date from a text.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @example:
+ * ```
+ * use std::time::date;
+ * use std::time::date::conv;
+ *
+ * let d = ("2026-08-26T14:03:11Z").to!{DateTime} ();
+ *
+ * assert(d.year == 2026 && d.month == 8 && d.day == 26);
+ * assert(d.hour == 14 && d.utcOffset == 0i64);
+ * ```
+ */
+
+in conv;
+
+use std::conv::errors;
+use std::time::date::{errors, parser};
+
+/**
+ * Read a date from a text following a `strftime` style layout, ISO 8601 by default.
+ * @params:
+ *    - str: the text to read
+ *    - fmt: the layout `str` follows
+ * @throws:
+ *    - &CastFailure: if `str` does not follow `fmt`, the `DateError` explaining why being its sub
+ *      error
+ * @example:
+ * ```
+ * use std::io;
+ * use std::time::date;
+ * use std::time::date::conv;
+ *
+ * // ISO 8601, with the offset of the zone the date is written in
+ * let iso = ("2026-08-26T16:03:11+02:00").to!{DateTime} ();
+ * assert(iso.hour == 16 && iso.utcOffset == 7_200i64);
+ *
+ * // and the same instant, read from the `Date` header of an HTTP response
+ * let http = ("Wed, 26 Aug 2026 14:03:11 GMT").to!{DateTime} (fmt-> DateFormat::RFC1123);
+ * assert(http == iso);
+ *
+ * // a text the layout does not describe is a failed cast
+ * println(("26 août 2026").to!{DateTime} ()?);
+ * ```
+ */
+pub fn to {I of DateTime, T of [c8]} (str: T, fmt: [c8] = DateFormat::ISO8601)-> DateTime
+    throws CastFailure
+{
+    {
+        parse(str, fmt)
+    } catch {
+        err: &DateError => {
+            throw copy CastFailure(T::__typeinfo__, I::__typeinfo__, subError-> (err)?);
+        }
+    }
+}

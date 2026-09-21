@@ -1,244 +1,47 @@
 /**
- * This module implements the structure `DateTime` and some utility function to encode dates.
+ * This module implements the record `DateTime`, a date and a time of day read in a given time zone,
+ * and the functions rendering one as a text and reading one back.
  * @Authors: Emile Cadorel
  * @License: GPLv3
  * <hr>
+ * A layout is written the way `strftime` writes one, each `%` directive naming a field of the date
+ * (`formatter::format` lists them all), and the layouts that matter are named: `DateFormat::ISO8601`,
+ * `DateFormat::ISO8601_MICROS`, `DateFormat::RFC1123`, `DateFormat::DATE_ONLY` and `DateFormat::TIME_ONLY`.
  * @example:
  * ```
  * use std::io;
  * use std::time::_;
+ * use std::time::date::conv;
  *
  * let today = DateTime(Instant::now());
- * println("Today is: ", today);
+ * println("Today is: ", today.format(fmt-> DateFormat::DATE_ONLY));
  *
- * let gmt_today = DateTime(Instant::now(), gmt-> true);
- * println("Today is: ", gmt_today, " in GMT");
+ * // a date knows the zone it is written in, and renders it
+ * println("Now is: ", DateTime(Instant::now(), gmt-> true).format(fmt-> DateFormat::ISO8601));
+ *
+ * // and a date is read back from any layout it can be rendered with
+ * let d = ("2026-08-26T14:03:11Z").to!{DateTime} ();
+ * assert(d.format(fmt-> DateFormat::RFC1123) == "Wed, 26 Aug 2026 14:03:11 GMT");
+ *
+ * // dates are points in time, so durations move them, and two dates subtract to one
+ * assert((d + (1).days()) - d == (24).hours());
  * ```
  */
 
-
 in date;
 
-use std::stream;
-use std::time::instant;
-use core::concurrency::sync::mutex;
+mod ::date_;
+mod ::days;
+mod ::months;
+mod ::formats;
+mod ::formatter;
+mod ::parser;
+mod ::utils;
 
-use etc::c::time;
+pub mod ::errors;
+pub mod ::conv;
 
-lazy dmut __DATE_MUTEX__ = copy Mutex();
-
-pub enum Days
-| MONDAY    = "Mon."
-| TUESDAY   = "Tue."
-| WEDNESDAY = "Wed."
-| THURSDAY  = "Thu."
-| FRIDAY    = "Fri."
-| SATURDAY  = "Sat."
-| SUNDAY    = "Sun.";
-
-pub enum Months
-| JANUARY   = "Jan."
-| FEBRUARY  = "Feb."
-| MARCH     = "Mar."
-| APRIL     = "Apr."
-| May       = "May."
-| JUNE      = "Jun."
-| JULY      = "Jul."
-| AUGUST    = "Aug."
-| SEPTEMBER = "Sep."
-| OCTOBER   = "Oct."
-| NOVEMBER  = "Nov."
-| DECEMBER  = "Dec.";
-
-pub record DateTime {
-
-    let mut _value: tm_t = tm_t();
-    let mut _usec: u64 = 0u64;
-
-    /*!
-     * ====================================================================================================
-     * ====================================================================================================
-     * =====================================          CTORS          ======================================
-     * ====================================================================================================
-     * ====================================================================================================
-     */
-
-    /**
-     * Create the date time from an instant
-     * */
-    pub self (instant: Instant, gmt: bool = false) {
-        let sec = instant.sec;
-        atomic __DATE_MUTEX__ {
-            if gmt {
-                self._value = unsafe { *gmtime(&sec) };
-            } else {
-                self._value = unsafe { *localtime(&sec) };
-            }
-        }
-
-        self._usec = instant.usec;
-    }
-
-    /**
-     * Ceeate a date using local date information
-     * @info: correct the date if invalid by setting the correct month, days, etc. (e.g., january 33th will become february 2nd) (cf. mktime of libc)
-     * */
-    pub self (usec: u64 = 0, sec: i32 = 0, min: i32 = 0, hour: i32 = 0, day: i32 = 0, month: i32 = 0, year: i32 = 0) {
-        self._value.tm_sec = sec;
-        self._value.tm_min = min;
-        self._value.tm_hour = hour;
-        self._value.tm_mday = day;
-        self._value.tm_mon = month;
-        self._value.tm_year = year;
-
-        // -1 lets mktime figure out whether DST is in effect for that local date, instead of
-        // asserting it is not (which shifts the result by an hour in DST).
-        self._value.tm_isdst = -1;
-
-        atomic __DATE_MUTEX__ {
-            let t = mktime(&self._value);
-            self._value = unsafe { *localtime(&t) };
-        }
-
-        self._usec = usec;
-    }
-
-    /*!
-     * ====================================================================================================
-     * ====================================================================================================
-     * ====================================          GETTERS          =====================================
-     * ====================================================================================================
-     * ====================================================================================================
-     */
-
-    /**
-     * @returns: the instant of the date
-     * */
-    pub fn instant(self)-> Instant {
-        let sec = atomic __DATE_MUTEX__ {
-            mktime(&self._value)
-        };
-
-        Instant(sec, self._usec)
-    }
-
-    /**
-     * @returns: the second in the minute
-     * */
-    @field
-    pub fn second(self)-> i32 {
-        self._value.tm_sec
-    }
-
-    /**
-     * @returns: the minute in the hour
-     * */
-    @field
-    pub fn minute(self)-> i32 {
-        self._value.tm_min
-    }
-
-    /**
-     * @returns: the hour in the day
-     * */
-    @field
-    pub fn hour(self)-> i32 {
-        self._value.tm_hour
-    }
-
-    /**
-     * @returns: the day in the month
-     * */
-    @field
-    pub fn day(self)-> i32 {
-        self._value.tm_mday
-    }
-
-    /**
-     * @returns: the month in the year, 1-based (`1` = January, `12` = December)
-     * */
-    @field
-    pub fn month(self)-> i32 {
-        self._value.tm_mon + 1
-    }
-
-    /**
-     * @returns: the year
-     * */
-    @field
-    pub fn year(self)-> i32 {
-        self._value.tm_year + 1900
-    }
-
-    /**
-     * @returns: the day of the week
-     * */
-    @field
-    pub fn weekDay(self)-> i32 {
-        self._value.tm_wday
-    }
-
-    /**
-     * @returns: the day in the year, 0-based (`0` = January 1st)
-     * */
-    @field
-    pub fn yearDay(self)-> i32 {
-        self._value.tm_yday
-    }
-
-    /*!
-     * ====================================================================================================
-     * ====================================================================================================
-     * ======================================          MISC          ======================================
-     * ====================================================================================================
-     * ====================================================================================================
-     */
-
-
-    impl Streamable {
-        pub over toStream(self, dmut stream: &StringStream) {
-            if self._value.tm_mday < 10 {
-                stream:.write("0", self._value.tm_mday);
-            } else {
-                stream:.write(self._value.tm_mday);
-            }
-
-            if self.month < 10 {
-                stream:.write("/0", self.month);
-            } else { stream:.write("/", self.month); }
-
-            if self.year > 2000 {
-                if (self.year % 100) < 10 {
-                    stream:.write("/0", self.year % 100);
-                } else {
-                    stream:.write("/", self.year % 100);
-                }
-            } else {
-                stream:.write("/", self.year);
-            }
-
-            if self._value.tm_hour < 10 {
-                stream:.write(" 0", self._value.tm_hour);
-            } else {
-                stream:.write(" ", self._value.tm_hour);
-            }
-
-            if self._value.tm_min < 10 {
-                stream:.write(":0", self._value.tm_min);
-            } else {
-                stream:.write(":", self._value.tm_min);
-            }
-
-            if self._value.tm_sec < 10 {
-                stream:.write(":0", self._value.tm_sec);
-            } else {
-                stream:.write(":", self._value.tm_sec);
-            }
-
-            if self._usec != 0 {
-                stream:.write(".", self._usec);
-            }
-        }
-    }
-
-}
+pub def DateTime: date_::DateTime;
+pub def Days: days::Days;
+pub def Months: months::Months;
+pub def DateFormat: formats::DateFormat;
