@@ -1,0 +1,79 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in days;
+
+use std::algorithm::comparison;
+
+/** The abbreviated english name of a day of the week */
+pub enum Days
+| MONDAY    = "Mon"s8
+| TUESDAY   = "Tue"s8
+| WEDNESDAY = "Wed"s8
+| THURSDAY  = "Thu"s8
+| FRIDAY    = "Fri"s8
+| SATURDAY  = "Sat"s8
+| SUNDAY    = "Sun"s8;
+
+/**
+ * @params:
+ *    - wday: the day of the week, `0` being sunday, as `DateTime::weekDay` reports it
+ * @returns: the day named by `wday`
+ */
+pub fn dayOf(wday: i32)-> Days {
+    match wday {
+        1 => { Days::MONDAY }
+        2 => { Days::TUESDAY }
+        3 => { Days::WEDNESDAY }
+        4 => { Days::THURSDAY }
+        5 => { Days::FRIDAY }
+        6 => { Days::SATURDAY }
+        _ => { Days::SUNDAY }
+    }
+}
+
+/**
+ * @returns: the abbreviated english name of `day`
+ */
+pub fn shortName(day: Days)-> [c8] {
+    match day {
+        Days::MONDAY    => { Days::MONDAY }
+        Days::TUESDAY   => { Days::TUESDAY }
+        Days::WEDNESDAY => { Days::WEDNESDAY }
+        Days::THURSDAY  => { Days::THURSDAY }
+        Days::FRIDAY    => { Days::FRIDAY }
+        Days::SATURDAY  => { Days::SATURDAY }
+        _               => { Days::SUNDAY }
+    }
+}
+
+/**
+ * @returns: the full english name of `day`
+ */
+pub fn fullName(day: Days)-> [c8] {
+    match day {
+        Days::MONDAY    => { "Monday" }
+        Days::TUESDAY   => { "Tuesday" }
+        Days::WEDNESDAY => { "Wednesday" }
+        Days::THURSDAY  => { "Thursday" }
+        Days::FRIDAY    => { "Friday" }
+        Days::SATURDAY  => { "Saturday" }
+        _               => { "Sunday" }
+    }
+}
+
+/**
+ * @params:
+ *    - name: a full or abbreviated english day name, whatever the case of its letters
+ * @returns: the index of the day, `0` being sunday, or `-1` if `name` names no day
+ */
+pub fn dayIndex(name: [c8])-> i32 {
+    for i in 0 .. 7 {
+        let d = dayOf(i);
+        if eqIgnoreCase(name, shortName(d)) || eqIgnoreCase(name, fullName(d)) return i;
+    }
+
+    return -1;
+}
