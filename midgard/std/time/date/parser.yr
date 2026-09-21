@@ -1,0 +1,266 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in parser;
+
+use std::algorithm::comparison;
+use std::char;
+use std::conv;
+use std::time::date::{days, errors, months};
+use std::time::instant;
+
+/**
+ * Read a date written following a `strftime` style layout, the one `format` renders.
+ * <br>
+ * Every directive but `%j` is understood. A number is read with or without its leading zeroes, the
+ * day name `%a`/`%A` reads is checked and dropped, and `%S` also reads the fraction of a second
+ * written after the seconds unless the layout reads it itself with `%f` or `%L`. A blank in the
+ * layout reads any number of blanks, including none, and any other character has to be found as it
+ * is. The fields the layout leaves out are those of the 1st of January 1970, in utc.
+ * @params:
+ *    - str: the text to read
+ *    - fmt: the layout `str` follows
+ * @returns: the date written in `str`
+ * @throws:
+ *    - &DateError: if `str` does not follow `fmt`
+ */
+pub fn parse(str: [c8], fmt: [c8])-> DateTime
+    throws DateError
+{
+    let mut year = 1970;
+    let mut month = 1;
+    let mut day = 1;
+    let mut hour = 0;
+    let mut minute = 0;
+    let mut second = 0;
+    let mut usec = 0u64;
+    let mut offset = 0i64;
+    let mut meridiem = ' 'c8;
+    let mut epoch = 0u64;
+    let mut hasEpoch = false;
+
+    let mut si = 0us;
+    let mut fi = 0us;
+
+    while fi < fmt.len {
+        if isBlank(fmt[fi]) {
+            si = skipBlanks(str, si);
+            fi += 1us;
+            continue;
+        }
+
+        if fmt[fi] != '%' || fi + 1us >= fmt.len {
+            if si >= str.len || str[si] != fmt[fi] {
+                throw copy DateError(expected(fmt[fi .. fi + 1us], str, si));
+            }
+
+            si += 1us;
+            fi += 1us;
+            continue;
+        }
+
+        let di = if fmt[fi + 1us] == ':' { fi + 2us } else { fi + 1us };
+        if di >= fmt.len throw copy DateError("layout ends on an unterminated directive");
+
+        let spec = fmt[di];
+        fi = di + 1us;
+
+        if spec == '%' {
+            if si >= str.len || str[si] != '%' throw copy DateError(expected("'%'", str, si));
+            si += 1us;
+        } else if spec == 'z' {
+            let (o, end) = readOffset(str, si);
+            if end == si throw copy DateError(expected("a utc offset", str, si));
+
+            offset = o;
+            si = end;
+        } else if spec == 'a' || spec == 'A' {
+            let end = readName(str, si);
+            if end == si || dayIndex(str[si .. end]) == -1 {
+                throw copy DateError(expected("a day name", str, si));
+            }
+
+            si = end;
+        } else if spec == 'b' || spec == 'B' {
+            let end = readName(str, si);
+            let m = if end == si { -1 } else { monthIndex(str[si .. end]) };
+            if m == -1 throw copy DateError(expected("a month name", str, si));
+
+            month = m;
+            si = end;
+        } else if spec == 'p' {
+            if si + 2us > str.len || !(eqIgnoreCase(str[si .. si + 2us], "AM") || eqIgnoreCase(str[si .. si + 2us], "PM")) {
+                throw copy DateError(expected("'AM' or 'PM'", str, si));
+            }
+
+            meridiem = toLower(str[si]);
+            si += 2us;
+        } else if spec == 'n' || spec == 't' {
+            si = skipBlanks(str, si);
+        } else if isNumeric(spec) {
+            if spec == 'e' { si = skipBlanks(str, si); }
+
+            let (value, end) = readInt(str, si, maxDigits(spec));
+            if end == si throw copy DateError(expected("a number", str, si));
+
+            let read = end - si;
+            si = end;
+
+            if spec == 'Y' { year = cast!i32(value); }
+            else if spec == 'y' { year = if value >= 69i64 { 1_900 + cast!i32(value) } else { 2_000 + cast!i32(value) }; }
+            else if spec == 'm' { month = cast!i32(value); }
+            else if spec == 'd' || spec == 'e' { day = cast!i32(value); }
+            else if spec == 'H' || spec == 'I' { hour = cast!i32(value); }
+            else if spec == 'M' { minute = cast!i32(value); }
+            else if spec == 'f' { usec = scale(value, read); }
+            else if spec == 'L' { usec = scale(value, read); }
+            else if spec == 's' { epoch = cast!u64(value); hasEpoch = true; }
+            else {
+                second = cast!i32(value);
+                let readsIt = fi < fmt.len && fmt[fi] == '.';
+                if !readsIt && si + 1us < str.len && str[si] == '.' && isDigit(str[si + 1us]) {
+                    let (frac, fend) = readInt(str, si + 1us, 6us);
+                    usec = scale(frac, fend - (si + 1us));
+                    si = fend;
+                }
+            }
+        } else {
+            throw copy DateError("directive '%" ~ fmt[di .. di + 1us] ~ "' cannot be read");
+        }
+    }
+
+    if skipBlanks(str, si) != str.len {
+        throw copy DateError("trailing text after the date: '" ~ str[si .. $] ~ "'");
+    }
+
+    if hasEpoch return DateTime::zoned(Instant(epoch, usec), offset);
+
+    if meridiem == 'a' && hour == 12 { hour = 0; }
+    else if meridiem == 'p' && hour != 12 { hour += 12; }
+
+    DateTime::at(utcOffset-> offset, usec-> usec, sec-> second, min-> minute,
+                 hour-> hour, day-> day, month-> month, year-> year)
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ====================================          PRIVATE          =====================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * @returns: true iif the directive `spec` reads a number
+ */
+fn isNumeric(spec: c8)-> bool {
+    spec == 'Y' || spec == 'y' || spec == 'm' || spec == 'd' || spec == 'e' || spec == 'H'
+        || spec == 'I' || spec == 'M' || spec == 'S' || spec == 'f' || spec == 'L' || spec == 's'
+}
+
+/**
+ * @returns: the maximum number of digits the directive `spec` reads
+ */
+fn maxDigits(spec: c8)-> usize {
+    if spec == 'Y' { 4us }
+    else if spec == 'f' { 6us }
+    else if spec == 'L' { 3us }
+    else if spec == 's' { 20us }
+    else { 2us }
+}
+
+/**
+ * @returns: true iif `c` is a space, a tabulation or a line return
+ */
+fn isBlank(c: c8)-> bool {
+    c == ' ' || c == '\t' || c == '\n' || c == '\r'
+}
+
+/**
+ * @returns: the index of the first character of `str` after `start` that is not a blank
+ */
+fn skipBlanks(str: [c8], start: usize)-> usize {
+    let mut i = start;
+    while i < str.len && isBlank(str[i]) { i += 1us; }
+
+    i
+}
+
+/**
+ * Read a decimal number of at most `max` digits.
+ * @returns:
+ *    - .0: the value that was read
+ *    - .1: the index of the first character left, `start` iif there was no number to read
+ */
+fn readInt(str: [c8], start: usize, max: usize)-> (i64, usize) {
+    let mut i = start;
+    let mut negative = false;
+    if i < str.len && (str[i] == '+' || str[i] == '-') {
+        negative = str[i] == '-';
+        i += 1us;
+    }
+
+    let mut value = 0i64;
+    let mut read = 0us;
+    while i < str.len && read < max && isDigit(str[i]) {
+        value = (value * 10i64) + cast!i64(cast!u8(str[i]) - cast!u8('0'c8));
+        i += 1us;
+        read += 1us;
+    }
+
+    if read == 0us { (0i64, start) }
+    else { (if negative { -value } else { value }, i) }
+}
+
+/**
+ * Read a utc offset, written `Z`, `+hh`, `+hhmm` or `+hh:mm`.
+ * @returns:
+ *    - .0: the number of seconds east of utc
+ *    - .1: the index of the first character left, `start` iif there was no offset to read
+ */
+fn readOffset(str: [c8], start: usize)-> (i64, usize) {
+    if start < str.len && toLower(str[start]) == 'z' return (0i64, start + 1us);
+    if start >= str.len || (str[start] != '+' && str[start] != '-') return (0i64, start);
+
+    let sign = if str[start] == '-' { -1i64 } else { 1i64 };
+    let (hours, afterHours) = readInt(str, start + 1us, 2us);
+    if afterHours == start + 1us return (0i64, start);
+
+    let minStart = if afterHours < str.len && str[afterHours] == ':' { afterHours + 1us } else { afterHours };
+    let (minutes, end) = readInt(str, minStart, 2us);
+    if end == minStart return (sign * hours * 3_600i64, afterHours);
+
+    (sign * ((hours * 3_600i64) + (minutes * 60i64)), end)
+}
+
+/**
+ * @returns: the index of the first character of `str` after `start` that is not an ascii letter
+ */
+fn readName(str: [c8], start: usize)-> usize {
+    let mut i = start;
+    while i < str.len && toLower(str[i]) >= 'a' && toLower(str[i]) <= 'z' { i += 1us; }
+
+    i
+}
+
+/**
+ * @returns: `value`, written on `read` digits of a fraction of a second, as microseconds
+ */
+fn scale(value: i64, read: usize)-> u64 {
+    let mut v = cast!u64(value);
+    let mut n = read;
+
+    while n < 6us { v *= 10u64; n += 1us; }
+    while n > 6us { v /= 10u64; n -= 1us; }
+
+    v
+}
+
+/**
+ * @returns: the message of the error thrown when `what` was expected at `index` of `str`
+ */
+fn expected(what: [c8], str: [c8], index: usize)-> [c8] {
+    "expected " ~ what ~ " at index " ~ index.to![c8] () ~ " of '" ~ str ~ "'"
+}
