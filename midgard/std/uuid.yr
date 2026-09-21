@@ -1,0 +1,112 @@
+/**
+ * This module implements universally unique identifiers, as described by RFC 9562. A `Uuid` is a
+ * 128 bits value, written in the canonical `8-4-4-4-12` lower case hexadecimal form, that can be
+ * compared, sorted, hashed, and used as a key of a map.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * Two versions are generated: version 4, whose bits are drawn at random, and version 7, whose 48
+ * most significant bits are the number of milliseconds since epoch, so identifiers sort by the
+ * instant they were generated. The free functions of this module draw from a generator owned by
+ * the calling thread, so generating identifiers never shifts the sequence of `std::rand`, and
+ * threads never race on a shared state.
+ * @warning: these identifiers are unique, but predictable, never use one as a secret.
+ * @example:
+ * ```
+ * use std::{conv, io};
+ * use std::uuid::_;
+ *
+ * let id = v7();
+ * println(id); // 01993a18-4f0e-7cdb-b32e-c6621e1a644b
+ *
+ * assert(id.version == 7u8);
+ * assert(id.variant == UuidVariant::RFC9562);
+ *
+ * // version 7 identifiers sort by the instant they were generated
+ * assert(id < v7());
+ *
+ * // and they are read back from their canonical form
+ * assert((id.to![c8] ()).to!{Uuid} () == id);
+ * ```
+ */
+
+in uuid;
+
+mod ::uuid_;
+mod ::variant;
+mod ::utils;
+
+pub mod ::errors;
+pub mod ::generator;
+pub mod ::conv;
+
+use std::uuid::generator;
+
+pub def Uuid: uuid_::Uuid;
+pub def UuidVariant: variant::UuidVariant;
+
+@thread
+lazy dmut __THREAD_UUID__: &UuidGenerator = copy UuidGenerator();
+
+/**
+ * @returns: the generator the free functions of this module draw from in the calling thread
+ * @example:
+ * ```
+ * use std::uuid::_;
+ *
+ * fn tagged(dmut g: &UuidGenerator)-> Uuid {
+ *     g:.v7()
+ * }
+ *
+ * let id = tagged(alias threadGenerator());
+ * assert(id.version == 7u8);
+ * ```
+ */
+pub fn threadGenerator()-> dmut &UuidGenerator {
+    alias __THREAD_UUID__
+}
+
+/**
+ * Reset the generator of the calling thread to the start of the sequence identified by `seed`.
+ * @info: the generators of the other threads are left untouched.
+ * @example:
+ * ```
+ * use std::uuid;
+ *
+ * seed(42u64);
+ * let a = v4();
+ *
+ * seed(42u64);
+ * assert(v4() == a);
+ * ```
+ */
+pub fn seed(seed: u64) {
+    __THREAD_UUID__:.reseed(seed);
+}
+
+/**
+ * @returns: a version 4 identifier, whose 122 free bits are drawn at random
+ * @example:
+ * ```
+ * use std::uuid;
+ *
+ * assert(v4() != v4());
+ * ```
+ */
+pub fn v4()-> Uuid {
+    __THREAD_UUID__:.v4()
+}
+
+/**
+ * @returns: a version 7 identifier, whose 48 most significant bits are the number of milliseconds
+ * since epoch, so it sorts after every identifier the calling thread generated before it
+ * @example:
+ * ```
+ * use std::uuid;
+ *
+ * assert(v7() < v7());
+ * ```
+ */
+pub fn v7()-> Uuid {
+    __THREAD_UUID__:.v7()
+}

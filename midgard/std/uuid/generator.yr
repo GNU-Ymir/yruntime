@@ -1,0 +1,147 @@
+/**
+ * This module implements the generator of version 4 and version 7 UUIDs.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in generator;
+
+use std::rand::generator;
+use std::time::instant;
+
+/**
+ * A source of universally unique identifiers, drawing from a random generator of its own so
+ * generating identifiers never shifts the sequence of `std::rand`.
+ * @info: an instance is not shared between threads, `std::uuid::threadGenerator` returns the one
+ * owned by the calling thread.
+ * @example:
+ * ```
+ * use std::uuid::generator;
+ *
+ * let dmut gen = copy UuidGenerator(42u64);
+ *
+ * // the same seed replays the same version 4 identifiers
+ * let a = gen:.v4();
+ * gen:.reseed(42u64);
+ *
+ * assert(gen:.v4() == a);
+ * ```
+ */
+@final
+pub class UuidGenerator {
+
+    // The source of the random bits of the generated identifiers
+    let dmut _rand: &Random;
+
+    // The millisecond written in the last version 7 identifier
+    let mut _lastMs: u64 = 0u64;
+
+    // The counter written in the last version 7 identifier, over 12 bits
+    let mut _counter: u64 = 0u64;
+
+    /**
+     * Create a generator seeded from the entropy of the system
+     */
+    pub self ()
+        with _rand = copy Random()
+    {}
+
+    /**
+     * Create a generator whose sequence of identifiers is reproducible
+     * @params:
+     *    - seed: the seed of the random generator
+     */
+    pub self (seed: u64)
+        with _rand = copy Random(seed)
+    {}
+
+    /**
+     * Reset the generator to the start of the sequence identified by `seed`
+     */
+    pub fn reseed(mut self, seed: u64) {
+        self._rand:.reseed(seed);
+        self._lastMs = 0u64;
+        self._counter = 0u64;
+    }
+
+    /**
+     * @returns: a version 4 identifier, whose 122 free bits are drawn at random
+     * @example:
+     * ```
+     * use std::uuid::_;
+     *
+     * let dmut gen = copy UuidGenerator();
+     * let id = gen:.v4();
+     *
+     * assert(id.version == 4u8);
+     * assert(id.variant == UuidVariant::RFC9562);
+     * ```
+     */
+    pub fn v4(mut self)-> Uuid {
+        let rnd = self._rand:.bytes(16us);
+        let dmut bytes = [0u8 ; 16];
+        for i in 0us .. 16us {
+            bytes[i] = rnd[i];
+        }
+
+        bytes[6] = (bytes[6] & 0x0fu8) | 0x40u8;
+        bytes[8] = (bytes[8] & 0x3fu8) | 0x80u8;
+
+        Uuid(bytes)
+    }
+
+    /**
+     * @returns: a version 7 identifier, whose 48 most significant bits are the number of
+     * milliseconds since epoch, followed by a counter and random bits
+     * @info: two identifiers generated in that order by the same generator always compare in that
+     * order, even within the same millisecond
+     * @example:
+     * ```
+     * use std::uuid::_;
+     *
+     * let dmut gen = copy UuidGenerator();
+     * let id = gen:.v7();
+     *
+     * assert(id.version == 7u8);
+     * assert(id.variant == UuidVariant::RFC9562);
+     * ```
+     */
+    pub fn v7(mut self)-> Uuid {
+        let now = Instant::now();
+        let mut ms = now.sec * 1_000u64 + now.usec / 1_000u64;
+
+        if ms > self._lastMs {
+            self._lastMs = ms;
+
+            // leave room above the seed for the identifiers of the same millisecond
+            self._counter = self._rand:.bits() & 0x7ffu64;
+        } else {
+            // the millisecond is over, or the clock went backwards: keep counting
+            ms = self._lastMs;
+            self._counter += 1u64;
+
+            if self._counter > 0xfffu64 {
+                ms += 1u64;
+                self._lastMs = ms;
+                self._counter = self._rand:.bits() & 0x7ffu64;
+            }
+        }
+
+        let rnd = self._rand:.bytes(8us);
+        let dmut bytes = [0u8 ; 16];
+        for i in 0us .. 6us {
+            bytes[i] = cast!u8((ms >> cast!u64((5us - i) * 8us)) & 0xffu64);
+        }
+
+        bytes[6] = 0x70u8 | cast!u8((self._counter >> 8u64) & 0x0fu64);
+        bytes[7] = cast!u8(self._counter & 0xffu64);
+
+        for i in 0us .. 8us {
+            bytes[8us + i] = rnd[i];
+        }
+
+        bytes[8] = (bytes[8] & 0x3fu8) | 0x80u8;
+
+        Uuid(bytes)
+    }
+}

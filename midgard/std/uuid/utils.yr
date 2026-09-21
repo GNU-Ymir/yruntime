@@ -1,0 +1,92 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in utils;
+
+use std::uuid::errors;
+
+/** The value returned by `hexValue` for a character that is not an hexadecimal digit */
+pub def NOT_HEX = 0xffu8;
+
+/**
+ * @returns: the value of the hexadecimal digit `c`, upper or lower case, or `NOT_HEX` if `c` is
+ * not an hexadecimal digit
+ */
+pub fn hexValue(c: c8)-> u8 {
+    if c >= '0'c8 && c <= '9'c8 return cast!u8(c) - cast!u8('0'c8);
+    if c >= 'a'c8 && c <= 'f'c8 return cast!u8(c) - cast!u8('a'c8) + 10u8;
+    if c >= 'A'c8 && c <= 'F'c8 return cast!u8(c) - cast!u8('A'c8) + 10u8;
+
+    NOT_HEX
+}
+
+/**
+ * @returns: the lower case hexadecimal digit of the four low bits of `v`
+ */
+pub fn hexDigit(v: u8)-> c8 {
+    let d = v & 0x0fu8;
+    if d < 10u8 { cast!c8(cast!u8('0'c8) + d) }
+    else { cast!c8(cast!u8('a'c8) + d - 10u8) }
+}
+
+/**
+ * @returns: true iif `s` starts with the `urn:uuid:` prefix, whatever the case of its letters
+ */
+pub fn hasUrnPrefix(s: [c8])-> bool {
+    let prefix = "urn:uuid:";
+    if s.len < prefix.len return false;
+
+    for i in 0us .. prefix.len {
+        let c = s[i];
+        let lower = if c >= 'A'c8 && c <= 'Z'c8 { cast!c8(cast!u8(c) + 32u8) } else { c };
+        if lower != prefix[i] return false;
+    }
+
+    true
+}
+
+/**
+ * Read a UUID written in the canonical `8-4-4-4-12` hexadecimal form, in upper or lower case, and
+ * optionally prefixed by `urn:uuid:`.
+ * @params:
+ *    - str: the text to read
+ * @returns: the identifier written in `str`
+ * @throws:
+ *    - &UuidError: if `str` is not a canonical UUID
+ */
+pub fn parse(str: [c8])-> Uuid
+    throws UuidError
+{
+    let s = if hasUrnPrefix(str) { str[9us .. $] } else { str };
+
+    if s.len != 36us {
+        throw copy UuidError("expected 36 characters, got '" ~ str ~ "'");
+    }
+
+    if s[8] != '-'c8 || s[13] != '-'c8 || s[18] != '-'c8 || s[23] != '-'c8 {
+        throw copy UuidError("expected the 8-4-4-4-12 form, got '" ~ str ~ "'");
+    }
+
+    let dmut bytes = [0u8 ; 16];
+    let mut b = 0us, mut i = 0us;
+
+    while i < 36us {
+        if i == 8us || i == 13us || i == 18us || i == 23us {
+            i += 1us;
+            continue;
+        }
+
+        let hi = hexValue(s[i]), lo = hexValue(s[i + 1us]);
+        if hi == NOT_HEX || lo == NOT_HEX {
+            throw copy UuidError("expected an hexadecimal digit, got '" ~ str ~ "'");
+        }
+
+        bytes[b] = (hi << 4u8) | lo;
+        b += 1us;
+        i += 2us;
+    }
+
+    Uuid(bytes)
+}

@@ -1,0 +1,75 @@
+/**
+ * This module declares the functions converting UUIDs from and to their textual and binary forms.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @example:
+ * ```
+ * use std::conv;
+ * use std::uuid::_;
+ *
+ * let id = ("01993a18-4f0e-7cdb-b32e-c6621e1a644b"s8).to!{Uuid} ();
+ *
+ * assert(id.version == 7u8);
+ * assert(id.to![c8] () == "01993a18-4f0e-7cdb-b32e-c6621e1a644b");
+ * assert(id.to!{[u8 ; 16]} ()[0] == 0x01u8);
+ * ```
+ */
+
+in conv;
+
+use std::conv::errors;
+use std::uuid::{errors, utils};
+
+/**
+ * Transform a string into a UUID, read from the canonical `8-4-4-4-12` hexadecimal form, in upper
+ * or lower case, and optionally prefixed by `urn:uuid:`.
+ * @throws:
+ *    - &CastFailure: if the string is not a canonical UUID, the `UuidError` explaining why being
+ *      its sub error
+ * @example:
+ * ```
+ * use std::uuid::_;
+ *
+ * println(("01993a18-4f0e-7cdb-b32e-c6621e1a644b"s8).to!{Uuid} ());
+ * ```
+ */
+pub fn to {I of Uuid, T of [c8]} (str: T)-> Uuid
+    throws CastFailure
+{
+    {
+        parse(str)
+    } catch {
+        err: &UuidError => {
+            throw copy CastFailure(T::__typeinfo__, I::__typeinfo__, subError-> (err)?);
+        }
+    }
+}
+
+/**
+ * Transform the 16 bytes of an identifier, most significant first, into a UUID.
+ * @example:
+ * ```
+ * use std::uuid::_;
+ *
+ * let id = ([0u8 ; 16]).to!{Uuid} ();
+ *
+ * assert(id.isNil());
+ * ```
+ */
+pub fn to {I of Uuid, T of [u8 ; 16]} (bytes: T)-> Uuid {
+    Uuid(bytes)
+}
+
+/**
+ * Transform a UUID into its 16 bytes, most significant first.
+ * @example:
+ * ```
+ * use std::uuid::_;
+ *
+ * assert(Uuid::nil().to!{[u8 ; 16]} () == [0u8 ; 16]);
+ * ```
+ */
+pub fn to {T of [u8 ; 16], I of Uuid} (id: I)-> [u8 ; 16] {
+    id.bytes
+}
