@@ -1,0 +1,31 @@
+/**
+ * This module implements the error class thrown when a text cannot be read as a UUID.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in errors;
+
+@final
+pub class UuidError over core::exception::Exception {
+
+    // The message explaining the error
+    pub let msg: [c8];
+
+    /**
+     * @params:
+     *   - msg: the message explaining the error
+     */
+    pub self (msg: [c8])
+        with msg = msg
+    {}
+
+    impl std::stream::Streamable {
+        pub over toStream(self, dmut stream: &std::stream::StringStream) {
+            stream:.write(self.__typeinfo__.name, "(", self.msg, ")");
+            if (self.hasTrace()) {
+                stream:.write(":\n", self.getStackTrace());
+            }
+        }
+    }
+}
