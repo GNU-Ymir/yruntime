@@ -2,6 +2,8 @@ in time;
 
 use std::time::_;
 use std::conv;
+use std::conv::errors;
+use std::time::date::conv;
 use std::format;
 
 __test durationFromComponents {
@@ -205,4 +207,165 @@ __test instantShift { // shifting an instant by a duration, forwards and backwar
     assert(carried.sec == 11u64, "d");
 
     assert(format("{}", Instant(2u64, 0u64)) == "2s", format("{}", Instant(2u64, 0u64)));
+}
+
+__test dateTimeZones { // a date remembers the zone it is written in, and renders it
+    let utc = DateTime::zoned(Instant(0u64, 0u64), 0i64);
+    assert(utc.utcOffset == 0i64 && utc.hour == 0 && utc.day == 1, "a");
+
+    // the same instant, an hour east of utc
+    let east = DateTime::zoned(Instant(0u64, 0u64), 3_600i64);
+    assert(east.utcOffset == 3_600i64 && east.hour == 1, "b");
+
+    // and five hours west of it, which is the day before
+    let west = DateTime::zoned(Instant(0u64, 0u64), -18_000i64);
+    assert(west.year == 1969 && west.month == 12 && west.day == 31 && west.hour == 19, "c");
+
+    // whatever the zone, they all name the same instant
+    assert(utc == east && east == west, "d");
+    assert(utc.instant().sec == 0u64 && west.instant().sec == 0u64, "e");
+}
+
+__test dateTimeComponents { // DateTime::at takes the components the getters report
+    let d = DateTime::at(utcOffset-> 0i64, year-> 2026, month-> 8, day-> 26, hour-> 14, min-> 3, sec-> 11);
+
+    assert(d.year == 2026 && d.month == 8 && d.day == 26, "a");
+    assert(d.hour == 14 && d.minute == 3 && d.second == 11, "b");
+
+    // the day and month enums name that day
+    assert(d.dayName == Days::WEDNESDAY && d.monthName == Months::AUGUST, "c");
+
+    // an out of range component is normalized
+    let n = DateTime::at(utcOffset-> 0i64, year-> 2026, month-> 1, day-> 33);
+    assert(n.month == 2 && n.day == 2, "d");
+}
+
+__test dateTimeFormat { // every directive of a layout
+    let d = DateTime::at(utcOffset-> 0i64, usec-> 123_456u64, year-> 2026, month-> 8, day-> 6,
+                         hour-> 14, min-> 3, sec-> 11);
+
+    assert(d.format() == "2026-08-06T14:03:11Z", d.format());
+    assert(d.format(fmt-> DateFormat::ISO8601_MICROS) == "2026-08-06T14:03:11.123456Z", d.format(fmt-> DateFormat::ISO8601_MICROS));
+    assert(d.format(fmt-> DateFormat::RFC1123) == "Thu, 06 Aug 2026 14:03:11 GMT", d.format(fmt-> DateFormat::RFC1123));
+    assert(d.format(fmt-> DateFormat::DATE_ONLY) == "2026-08-06", d.format(fmt-> DateFormat::DATE_ONLY));
+    assert(d.format(fmt-> DateFormat::TIME_ONLY) == "14:03:11", d.format(fmt-> DateFormat::TIME_ONLY));
+
+    assert(d.format(fmt-> "%A %e %B %y") == "Thursday  6 August 26", d.format(fmt-> "%A %e %B %y"));
+    assert(d.format(fmt-> "%I:%M %p") == "02:03 PM", d.format(fmt-> "%I:%M %p"));
+    assert(d.format(fmt-> "%F %T %D %R") == "2026-08-06 14:03:11 08/06/26 14:03", d.format(fmt-> "%F %T %D %R"));
+    assert(d.format(fmt-> "%j %L %s") == "218 123 1786024991", d.format(fmt-> "%j %L %s"));
+    assert(d.format(fmt-> "100%% %z") == "100% +0000", d.format(fmt-> "100%% %z"));
+
+    // midnight and noon on the twelve hours clock
+    let midnight = DateTime::at(utcOffset-> 0i64, year-> 2026, month-> 1, day-> 1);
+    assert(midnight.format(fmt-> "%I %p") == "12 AM", midnight.format(fmt-> "%I %p"));
+    assert((midnight + (12).hours()).format(fmt-> "%I %p") == "12 PM");
+
+    // an unknown directive is written as it is, a layout never fails
+    assert(d.format(fmt-> "%Q") == "%Q");
+}
+
+__test dateTimeFormatOffsets { // %z and %:z, which writes utc as Z
+    let east = DateTime::at(utcOffset-> 7_200i64, year-> 2026, month-> 8, day-> 26, hour-> 16);
+    assert(east.format(fmt-> "%z") == "+0200", east.format(fmt-> "%z"));
+    assert(east.format(fmt-> "%:z") == "+02:00", east.format(fmt-> "%:z"));
+    assert(east.format() == "2026-08-26T16:00:00+02:00", east.format());
+
+    let west = DateTime::at(utcOffset-> -12_600i64, year-> 2026, month-> 8, day-> 26);
+    assert(west.format(fmt-> "%z %:z") == "-0330 -03:30", west.format(fmt-> "%z %:z"));
+}
+
+__test dateTimeParse { // a date is read back from the layouts it is rendered with
+    let iso = ("2026-08-26T14:03:11Z").to!{DateTime} ();
+    assert(iso.year == 2026 && iso.month == 8 && iso.day == 26, "a");
+    assert(iso.hour == 14 && iso.minute == 3 && iso.second == 11 && iso.utcOffset == 0i64, "b");
+
+    // the offset of the zone the date is written in is kept
+    let east = ("2026-08-26T16:03:11+02:00").to!{DateTime} ();
+    assert(east.hour == 16 && east.utcOffset == 7_200i64, "c");
+
+    // and it names the same instant as the utc one
+    assert(east == iso, "d");
+
+    // %S also reads the fraction of a second the layout does not mention
+    let frac = ("2026-08-26T14:03:11.5Z").to!{DateTime} ();
+    assert(frac.usec == 500_000u64, "e");
+
+    // every layout is readable, not only ISO 8601
+    let http = ("Wed, 26 Aug 2026 14:03:11 GMT").to!{DateTime} (fmt-> DateFormat::RFC1123);
+    assert(http == iso, "f");
+
+    let named = ("Wednesday 26 August 2026, 02:03 PM").to!{DateTime} (fmt-> "%A %e %B %Y, %I:%M %p");
+    assert(named.hour == 14 && named.minute == 3 && named.day == 26, "g");
+
+    // the fields a layout leaves out are those of the 1st of january 1970, in utc
+    let partial = ("07:30").to!{DateTime} (fmt-> "%H:%M");
+    assert(partial.year == 1970 && partial.month == 1 && partial.day == 1, "h");
+    assert(partial.hour == 7 && partial.minute == 30, "i");
+}
+
+__test dateTimeParseRoundTrip { // every preset round trips through a parse
+    let d = DateTime::at(utcOffset-> 19_800i64, usec-> 987_654u64, year-> 2027, month-> 2,
+                         day-> 28, hour-> 23, min-> 59, sec-> 59);
+
+    assert(d.format(fmt-> DateFormat::ISO8601_MICROS).to!{DateTime} (fmt-> DateFormat::ISO8601_MICROS) == d, "a");
+    assert(d.format(fmt-> DateFormat::ISO8601_MICROS).to!{DateTime} (fmt-> DateFormat::ISO8601_MICROS).usec == d.usec, "b");
+    assert(d.format(fmt-> DateFormat::ISO8601).to!{DateTime} ().utcOffset == 19_800i64, "c");
+
+    // %s reads the instant straight, whatever the fields around it
+    assert(("1786370591").to!{DateTime} (fmt-> "%s").instant().sec == 1_786_370_591u64, "d");
+}
+
+__test dateTimeParseErrors { // a text the layout does not describe is a failed cast
+    let ok = {
+        ("26 August 2026").to!{DateTime} ();
+        false
+    } catch {
+        _: &CastFailure => { true }
+    };
+
+    assert(ok, "a");
+
+    // a trailing text is not silently dropped
+    let trailing = {
+        ("2026-08-26T14:03:11Z and then some").to!{DateTime} ();
+        false
+    } catch {
+        _: &CastFailure => { true }
+    };
+
+    assert(trailing, "b");
+
+    // nor is a month name that names no month
+    let month = {
+        ("Wed, 26 Aou 2026 14:03:11 GMT").to!{DateTime} (fmt-> DateFormat::RFC1123);
+        false
+    } catch {
+        _: &CastFailure => { true }
+    };
+
+    assert(month, "c");
+}
+
+__test dateTimeArithmetic { // durations move a date, and two dates subtract to one
+    let d = DateTime::at(utcOffset-> 0i64, year-> 2026, month-> 12, day-> 31, hour-> 23, min-> 30);
+
+    let next = d + (1).hours();
+    assert(next.year == 2027 && next.month == 1 && next.day == 1, "a");
+    assert(next.hour == 0 && next.minute == 30, "b");
+
+    // the zone of the date is kept as it moves
+    let east = DateTime::at(utcOffset-> 7_200i64, year-> 2026, month-> 6, day-> 1, hour-> 12);
+    assert((east + (1).days()).utcOffset == 7_200i64, "c");
+    assert((east - (1).days()).day == 31 && (east - (1).days()).hour == 12, "d");
+
+    // and the difference of two dates is a duration, whatever their zones
+    assert(next - d == (1).hours(), "e");
+    assert(DateTime::at(utcOffset-> 0i64, year-> 2026, month-> 1, day-> 8)
+           - DateTime::at(utcOffset-> 0i64, year-> 2026, month-> 1, day-> 1) == (1).weeks(), "f");
+
+    // dates compare on the instant they name
+    let utcNoon = DateTime::at(utcOffset-> 0i64, year-> 2026, month-> 6, day-> 1, hour-> 12);
+    let westNoon = DateTime::at(utcOffset-> -3_600i64, year-> 2026, month-> 6, day-> 1, hour-> 12);
+    assert(utcNoon < westNoon, "g");
 }
