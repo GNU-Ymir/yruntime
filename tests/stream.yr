@@ -268,3 +268,28 @@ __test libraryInstantiations { // the aggregate writers, on the instantiations t
     raw:.write(etc::c::time::tm_t());
     assert(raw[].startsWith("etc::c::time::tm_t("), raw[]);
 }
+
+__test inPlaceNumberWrite { // numbers are written straight into the content when there is no entabing
+    let dmut str = copy StringStream();
+    str:.write(12u32, " ", -7, " ", 0, " ", u64::max);
+    assert(str[] == "12 -7 0 18446744073709551615", str[]);
+
+    str:.clear();
+    for i in 0 .. 5 {
+        str:.write(i);
+    }
+    assert(str[] == "01234", str[]);
+}
+
+__test entabingAroundNumbers { // switching entabing on and off around an in place write
+    let dmut str = copy StringStream();
+    str:.write("a\n");
+    str:.entabing();
+    str:.write(1, "\n");
+    str:.detabing();
+    str:.write(2, "\n");
+    str:.entabing();
+    str:.write(3);
+
+    assert(str[] == "a\n\t1\n2\n\t3", str[]);
+}
