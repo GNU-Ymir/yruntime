@@ -31,3 +31,20 @@ __test either {
     let y = either!{|x| => x > 3} (1, 2, 3);
     assert(y == none);
 }
+
+__test eqIgnoreCaseMatches {
+    assert(eqIgnoreCase("GMT", "gmt"), "a");
+    assert(eqIgnoreCase("Wednesday", "wEdNeSdAy"), "b");
+    assert(eqIgnoreCase("", ""), "c");
+
+    // only letters have a case, the other characters are compared as they are
+    assert(eqIgnoreCase("+02:00", "+02:00"), "d");
+    assert(!eqIgnoreCase("+02:00", "-02:00"), "e");
+
+    // a text is never the same as a longer one
+    assert(!eqIgnoreCase("a", "ab"), "f");
+    assert(!eqIgnoreCase("gmt", "utc"), "g");
+
+    // and it works on the wider character types too
+    assert(eqIgnoreCase("Aug"s32, "aug"s32), "h");
+}
