@@ -1,0 +1,458 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in date_;
+
+use std::stream;
+use std::time::date::{days, formatter, months};
+use std::time::{dur, instant};
+
+use core::concurrency::sync::mutex;
+
+use etc::c::time;
+
+lazy dmut __DATE_MUTEX__ = copy Mutex();
+
+/**
+ * A date and a time of day, read in a given time zone, to the microsecond. The zone is kept as the
+ * offset from utc of the instant the date was built from, so a date always knows the zone it is
+ * written in. `format` renders it in any layout, and `to!{DateTime}` reads one back.
+ * @example:
+ * ```
+ * use std::io;
+ * use std::time::_;
+ *
+ * let d = DateTime::at(utcOffset-> 0i64, year-> 2026, month-> 8, day-> 26, hour-> 14, min-> 3, sec-> 11);
+ *
+ * assert(d.year == 2026 && d.month == 8 && d.day == 26);
+ * assert(d.utcOffset == 0i64);
+ *
+ * // a date is a point in time, so durations move it, and two dates subtract to one
+ * let later = d + (90).minutes();
+ * assert(later.hour == 15 && later.minute == 33);
+ * assert(later - d == (90).minutes());
+ *
+ * println(d.format(fmt-> DateFormat::ISO8601)); // 2026-08-26T14:03:11Z
+ * ```
+ */
+pub record DateTime {
+
+    let mut _value: tm_t = tm_t();
+    let mut _usec: u64 = 0u64;
+
+    // number of seconds east of utc of the zone the date is written in
+    let mut _offset: i64 = 0i64;
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * =====================================          CTORS          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Create the date time from an instant
+     * @params:
+     *    - instant: the instant to read
+     *    - gmt: if true the instant is read in utc, otherwise in the local time zone
+     * */
+    pub self (instant: Instant, gmt: bool = false) {
+        let sec = instant.sec;
+        atomic __DATE_MUTEX__ {
+            if gmt {
+                self._value = unsafe { *gmtime(&sec) };
+            } else {
+                self._value = unsafe { *localtime(&sec) };
+            }
+        }
+
+        self._offset = self._value.tm_gmtoff;
+        self._usec = instant.usec;
+    }
+
+    /**
+     * Ceeate a date using local date information
+     * @info: the components are the raw fields of the C `struct tm` (`year` counted from 1900, and
+     * `month` 0-based), unlike `DateTime::at` which takes them as the getters report them
+     * @info: correct the date if invalid by setting the correct month, days, etc. (e.g., january 33th will become february 2nd) (cf. mktime of libc)
+     * */
+    pub self (usec: u64 = 0, sec: i32 = 0, min: i32 = 0, hour: i32 = 0, day: i32 = 0, month: i32 = 0, year: i32 = 0) {
+        self._value.tm_sec = sec;
+        self._value.tm_min = min;
+        self._value.tm_hour = hour;
+        self._value.tm_mday = day;
+        self._value.tm_mon = month;
+        self._value.tm_year = year;
+
+        // -1 lets mktime figure out whether DST is in effect for that local date, instead of
+        // asserting it is not (which shifts the result by an hour in DST).
+        self._value.tm_isdst = -1;
+
+        atomic __DATE_MUTEX__ {
+            let t = mktime(&self._value);
+            self._value = unsafe { *localtime(&t) };
+        }
+
+        self._offset = self._value.tm_gmtoff;
+        self._usec = usec;
+    }
+
+    /**
+     * Create the date of an instant, read in the zone `utcOffset` seconds east of utc.
+     * @example:
+     * ```
+     * use std::time::_;
+     *
+     * // an hour past midnight in Paris is midnight in utc, in winter
+     * let d = DateTime::zoned(Instant(0u64, 0u64), 3_600i64);
+     *
+     * assert(d.hour == 1 && d.day == 1 && d.month == 1 && d.year == 1970);
+     * ```
+     */
+    pub self zoned (instant: Instant, utcOffset: i64) {
+        let shifted = if utcOffset >= 0i64 { instant.sec + cast!u64(utcOffset) } else { instant.sec - cast!u64(-utcOffset) };
+        atomic __DATE_MUTEX__ {
+            self._value = unsafe { *gmtime(&shifted) };
+        }
+
+        self._value.tm_gmtoff = utcOffset;
+        self._offset = utcOffset;
+        self._usec = instant.usec;
+    }
+
+    /**
+     * Create a date from its calendar components, read in the zone `utcOffset` seconds east of utc.
+     * @info: the components are taken as the getters report them, `year` being the full year and
+     * `month` 1-based; an out of range component is normalized the way `mktime` does it
+     * @example:
+     * ```
+     * use std::time::date;
+     *
+     * let d = DateTime::at(utcOffset-> 0i64, year-> 2026, month-> 12, day-> 25, hour-> 12);
+     * assert(d.year == 2026 && d.month == 12 && d.day == 25 && d.hour == 12);
+     * ```
+     */
+    pub self at (utcOffset: i64, usec: u64 = 0u64, sec: i32 = 0, min: i32 = 0, hour: i32 = 0, day: i32 = 1, month: i32 = 1, year: i32 = 1970) {
+        self._value.tm_sec = sec;
+        self._value.tm_min = min;
+        self._value.tm_hour = hour;
+        self._value.tm_mday = day;
+        self._value.tm_mon = month - 1;
+        self._value.tm_year = year - 1900;
+        self._value.tm_isdst = 0;
+
+        atomic __DATE_MUTEX__ {
+            let t = timegm(&self._value);
+            self._value = unsafe { *gmtime(&t) };
+        }
+
+        self._value.tm_gmtoff = utcOffset;
+        self._offset = utcOffset;
+        self._usec = usec;
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          GETTERS          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * @returns: the instant of the date
+     * */
+    pub fn instant(self)-> Instant {
+        let mut broken = self._value;
+        let utc = atomic __DATE_MUTEX__ {
+            timegm(&broken)
+        };
+
+        let sec = if self._offset >= 0i64 { utc - cast!u64(self._offset) } else { utc + cast!u64(-self._offset) };
+        Instant(sec, self._usec)
+    }
+
+    /**
+     * @returns: the micro second in the second
+     * */
+    @field
+    pub fn usec(self)-> u64 {
+        self._usec
+    }
+
+    /**
+     * @returns: the second in the minute
+     * */
+    @field
+    pub fn second(self)-> i32 {
+        self._value.tm_sec
+    }
+
+    /**
+     * @returns: the minute in the hour
+     * */
+    @field
+    pub fn minute(self)-> i32 {
+        self._value.tm_min
+    }
+
+    /**
+     * @returns: the hour in the day
+     * */
+    @field
+    pub fn hour(self)-> i32 {
+        self._value.tm_hour
+    }
+
+    /**
+     * @returns: the day in the month
+     * */
+    @field
+    pub fn day(self)-> i32 {
+        self._value.tm_mday
+    }
+
+    /**
+     * @returns: the month in the year, 1-based (`1` = January, `12` = December)
+     * */
+    @field
+    pub fn month(self)-> i32 {
+        self._value.tm_mon + 1
+    }
+
+    /**
+     * @returns: the year
+     * */
+    @field
+    pub fn year(self)-> i32 {
+        self._value.tm_year + 1900
+    }
+
+    /**
+     * @returns: the day of the week
+     * */
+    @field
+    pub fn weekDay(self)-> i32 {
+        self._value.tm_wday
+    }
+
+    /**
+     * @returns: the day in the year, 0-based (`0` = January 1st)
+     * */
+    @field
+    pub fn yearDay(self)-> i32 {
+        self._value.tm_yday
+    }
+
+    /**
+     * @returns: the number of seconds east of utc of the zone the date is written in
+     * @example:
+     * ```
+     * use std::time::_;
+     *
+     * assert(DateTime(Instant::now(), gmt-> true).utcOffset == 0i64);
+     * assert(DateTime::zoned(Instant::now(), -18_000i64).utcOffset == -18_000i64);
+     * ```
+     */
+    @field
+    pub fn utcOffset(self)-> i64 {
+        self._offset
+    }
+
+    /**
+     * @returns: the day of the week of the date
+     * @example:
+     * ```
+     * use std::time::date;
+     *
+     * assert(DateTime::at(utcOffset-> 0i64, year-> 1970, month-> 1, day-> 1).dayName == Days::THURSDAY);
+     * ```
+     */
+    @field
+    pub fn dayName(self)-> Days {
+        dayOf(self._value.tm_wday)
+    }
+
+    /**
+     * @returns: the month of the year of the date
+     * @example:
+     * ```
+     * use std::time::date;
+     *
+     * assert(DateTime::at(utcOffset-> 0i64, year-> 1970, month-> 1, day-> 1).monthName == Months::JANUARY);
+     * ```
+     */
+    @field
+    pub fn monthName(self)-> Months {
+        monthOf(self._value.tm_mon + 1)
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ===================================          OPERATIONS          ===================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * @returns: the date `right` after `self`, in the same zone
+     * @example:
+     * ```
+     * use std::time::_;
+     *
+     * let d = DateTime::at(utcOffset-> 0i64, year-> 2026, month-> 12, day-> 31, hour-> 23, min-> 30);
+     * let n = d + (1).hours();
+     *
+     * assert(n.year == 2027 && n.month == 1 && n.day == 1 && n.hour == 0 && n.minute == 30);
+     * ```
+     */
+    pub fn opBinary {"+"} (self, right: Duration)-> DateTime {
+        DateTime::zoned(self.instant() + right, self._offset)
+    }
+
+    /**
+     * @returns: the date `right` before `self`, in the same zone
+     * @example:
+     * ```
+     * use std::time::_;
+     *
+     * let d = DateTime::at(utcOffset-> 0i64, year-> 2027, month-> 1, day-> 1);
+     * assert((d - (1).days()).day == 31);
+     * ```
+     */
+    pub fn opBinary {"-"} (self, right: Duration)-> DateTime {
+        DateTime::zoned(self.instant() - right, self._offset)
+    }
+
+    /**
+     * @returns: the duration between two dates, whatever the zones they are written in
+     * @example:
+     * ```
+     * use std::time::_;
+     *
+     * let a = DateTime::at(utcOffset-> 0i64, year-> 2026, month-> 1, day-> 1);
+     * let b = DateTime::at(utcOffset-> 0i64, year-> 2026, month-> 1, day-> 8);
+     *
+     * assert(b - a == (1).weeks());
+     * ```
+     */
+    pub fn opBinary {"-"} (self, right: DateTime)-> Duration {
+        self.instant() - right.instant()
+    }
+
+    /**
+     * Compare two dates on the instant they name, whatever the zones they are written in.
+     * @example:
+     * ```
+     * use std::time::date;
+     *
+     * // noon in utc is before noon an hour west of it
+     * let utc = DateTime::at(utcOffset-> 0i64, year-> 2026, month-> 6, day-> 1, hour-> 12);
+     * let west = DateTime::at(utcOffset-> -3_600i64, year-> 2026, month-> 6, day-> 1, hour-> 12);
+     *
+     * assert(utc < west);
+     * ```
+     */
+    pub fn opCmp(self, right: DateTime)-> i32 {
+        self.instant().opCmp(right.instant())
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ======================================          MISC          ======================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+
+    /**
+     * Render the date following a `strftime` style layout, every `%` directive being replaced by a
+     * field of the date, and every other character written as it is.
+     * <br>
+     * The known directives are:
+     * ```text
+     * %Y  the year, at least four digits      %a  the abbreviated day name (Wed)
+     * %y  the year modulo 100, two digits     %A  the full day name (Wednesday)
+     * %m  the month, 1-based, two digits      %b  the abbreviated month name (Aug)
+     * %d  the day of the month, two digits    %B  the full month name (August)
+     * %e  the day of the month, space padded  %j  the day of the year, 1-based, three digits
+     * %H  the hour, 00 to 23                  %p  AM or PM
+     * %I  the hour, 01 to 12                  %z  the utc offset (+0200)
+     * %M  the minute, two digits              %:z the utc offset, colon separated (+02:00, Z in utc)
+     * %S  the second, two digits              %s  the number of seconds since epoch
+     * %f  the microsecond, six digits         %F  the date, %Y-%m-%d
+     * %L  the millisecond, three digits       %T  the time of day, %H:%M:%S
+     * %%  a percent sign                      %D  the date, %m/%d/%y
+     * %n  a line return, %t a tabulation      %R  the time of day, %H:%M
+     * ```
+     * An unknown directive is written as it is, so a layout never fails.
+     * @params:
+     *    - fmt: the layout to follow
+     * @example:
+     * ```
+     * use std::time::date;
+     *
+     * let d = DateTime::at(utcOffset-> 0i64, year-> 2026, month-> 8, day-> 26, hour-> 14, min-> 3, sec-> 11);
+     *
+     * assert(d.format() == "2026-08-26T14:03:11Z");
+     * assert(d.format(fmt-> DateFormat::RFC1123) == "Wed, 26 Aug 2026 14:03:11 GMT");
+     * assert(d.format(fmt-> "%A %e %B %Y, %I:%M %p") == "Wednesday 26 August 2026, 02:03 PM");
+     * ```
+     */
+    pub fn format(self, fmt: [c8] = DateFormat::ISO8601)-> [c8] {
+        render(self, fmt)
+    }
+
+
+    impl Streamable {
+        pub over toStream(self, dmut stream: &StringStream) {
+            if self._value.tm_mday < 10 {
+                stream:.write("0", self._value.tm_mday);
+            } else {
+                stream:.write(self._value.tm_mday);
+            }
+
+            if self.month < 10 {
+                stream:.write("/0", self.month);
+            } else { stream:.write("/", self.month); }
+
+            if self.year > 2000 {
+                if (self.year % 100) < 10 {
+                    stream:.write("/0", self.year % 100);
+                } else {
+                    stream:.write("/", self.year % 100);
+                }
+            } else {
+                stream:.write("/", self.year);
+            }
+
+            if self._value.tm_hour < 10 {
+                stream:.write(" 0", self._value.tm_hour);
+            } else {
+                stream:.write(" ", self._value.tm_hour);
+            }
+
+            if self._value.tm_min < 10 {
+                stream:.write(":0", self._value.tm_min);
+            } else {
+                stream:.write(":", self._value.tm_min);
+            }
+
+            if self._value.tm_sec < 10 {
+                stream:.write(":0", self._value.tm_sec);
+            } else {
+                stream:.write(":", self._value.tm_sec);
+            }
+
+            if self._usec != 0 {
+                stream:.write(".", self._usec);
+            }
+        }
+    }
+
+}
