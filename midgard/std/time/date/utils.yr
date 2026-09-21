@@ -1,0 +1,44 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in utils;
+
+use std::stream;
+
+/**
+ * Write `value` in decimal, left padded with `'0'` up to `width` digits.
+ */
+pub fn writePadded(dmut stream: &StringStream, value: i64, width: i32) {
+    if value < 0i64 {
+        stream:.write('-');
+        writePadded(alias stream, -value, width);
+        return;
+    }
+
+    let mut bound = 10i64;
+    for _ in 1 .. width {
+        if value < bound { stream:.write('0'); }
+        bound *= 10i64;
+    }
+
+    stream:.write(value);
+}
+
+/**
+ * Write a utc offset of `offset` seconds east of utc, as `+hhmm`, or as `+hh:mm` if `colon`.
+ * @info: with `zulu`, an offset of zero is written `Z` instead.
+ */
+pub fn writeOffset(dmut stream: &StringStream, offset: i64, colon: bool, zulu: bool) {
+    if offset == 0i64 && zulu {
+        stream:.write('Z');
+        return;
+    }
+
+    let abs = if offset < 0i64 { -offset } else { offset };
+    stream:.write(if offset < 0i64 { '-'c8 } else { '+'c8 });
+    writePadded(alias stream, abs / 3_600i64, 2);
+    if colon { stream:.write(':'); }
+    writePadded(alias stream, (abs / 60i64) % 60i64, 2);
+}

@@ -1,0 +1,94 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in formatter;
+
+use std::stream;
+use std::time::date::{days, months, utils};
+
+/**
+ * Render a date following a `strftime` style layout, every `%` directive being replaced by a field
+ * of the date, and every other character written as it is. `DateTime::format` documents the
+ * directives it knows.
+ * @params:
+ *    - date: the date to render
+ *    - fmt: the layout to follow
+ * @returns: the rendered date
+ */
+pub fn render(date: DateTime, fmt: [c8])-> [c8] {
+    let dmut stream = copy StringStream();
+    let mut i = 0us;
+
+    while i < fmt.len {
+        if fmt[i] != '%'c8 || i + 1us >= fmt.len {
+            stream:.write(fmt[i]);
+            i += 1us;
+            continue;
+        }
+
+        let colon = fmt[i + 1us] == ':'c8;
+        let j = if colon { i + 2us } else { i + 1us };
+        if j >= fmt.len {
+            stream:.write(fmt[i .. fmt.len]);
+            break;
+        }
+
+        writeField(alias stream, date, fmt[j], colon);
+        i = j + 1us;
+    }
+
+    stream[]
+}
+
+/**
+ * Write the field named by the directive `spec`, `colon` being true iif the directive was written
+ * `%:`.
+ */
+fn writeField(dmut stream: &StringStream, date: DateTime, spec: c8, colon: bool) {
+    match spec {
+        'Y'c8 => { writePadded(alias stream, cast!i64(date.year), 4); }
+        'y'c8 => { writePadded(alias stream, cast!i64(((date.year % 100) + 100) % 100), 2); }
+        'm'c8 => { writePadded(alias stream, cast!i64(date.month), 2); }
+        'd'c8 => { writePadded(alias stream, cast!i64(date.day), 2); }
+        'e'c8 => {
+            if date.day < 10 { stream:.write(' '); }
+            stream:.write(date.day);
+        }
+        'H'c8 => { writePadded(alias stream, cast!i64(date.hour), 2); }
+        'I'c8 => { writePadded(alias stream, cast!i64(hour12(date.hour)), 2); }
+        'p'c8 => { stream:.write(if date.hour < 12 { "AM" } else { "PM" }); }
+        'M'c8 => { writePadded(alias stream, cast!i64(date.minute), 2); }
+        'S'c8 => { writePadded(alias stream, cast!i64(date.second), 2); }
+        'f'c8 => { writePadded(alias stream, cast!i64(date.usec), 6); }
+        'L'c8 => { writePadded(alias stream, cast!i64(date.usec / 1_000u64), 3); }
+        'j'c8 => { writePadded(alias stream, cast!i64(date.yearDay + 1), 3); }
+        'a'c8 => { stream:.write(shortName(date.dayName)); }
+        'A'c8 => { stream:.write(fullName(date.dayName)); }
+        'b'c8 => { stream:.write(shortName(date.monthName)); }
+        'B'c8 => { stream:.write(fullName(date.monthName)); }
+        'z'c8 => { writeOffset(alias stream, date.utcOffset, colon, colon); }
+        's'c8 => { stream:.write(date.instant().sec); }
+        'F'c8 => { stream:.write(render(date, DateFormat::DATE_ONLY)); }
+        'T'c8 => { stream:.write(render(date, DateFormat::TIME_ONLY)); }
+        'D'c8 => { stream:.write(render(date, "%m/%d/%y")); }
+        'R'c8 => { stream:.write(render(date, "%H:%M")); }
+        'n'c8 => { stream:.write('\n'); }
+        't'c8 => { stream:.write('\t'); }
+        '%'c8 => { stream:.write('%'); }
+        _ => {
+            stream:.write('%');
+            if colon { stream:.write(':'); }
+            stream:.write(spec);
+        }
+    }
+}
+
+/**
+ * @returns: `hour` written on the twelve hours clock
+ */
+fn hour12(hour: i32)-> i32 {
+    let h = hour % 12;
+    if h == 0 { 12 } else { h }
+}
