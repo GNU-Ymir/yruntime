@@ -616,15 +616,105 @@ pub fn removeFsEntry(path: Path)
 pub fn copyFsEntry(src: Path, dst: Path)
     throws FsError
 {
-    if isReadable(dst) { throw copy FsError(FsErrorCode::ALREADY_EXISTS, dst.toStr()); }
-    if !isDir(src) && !isFile(src) {
-        let dmut buf = ['\u{0}' ; 255us];
-        if readlink(src.toStr().toStringZ(), alias buf.ptr, 255) == -1 {
-            throw copy FsError(errors::to!{FsErrorCode} (errno()), src.toStr());
+    if exists(dst, followLink-> false) { throw copy FsError(FsErrorCode::ALREADY_EXISTS, dst.toStr()); }
+    if isLink(src) {
+        symlink(readLink(src), dst);
+    }
+}
+
+/**
+ * Create a symbolic link.
+ * @params:
+ *    - target: the path the link points to, if relative it is resolved from the directory of the link, not from cwd
+ *    - link: the path of the link to create
+ * @info: target does not have to exist, the link is dangling until it does.
+ * @throws:
+ *   - FsError:
+ *      + link already exists
+ *      + the parent directory of link does not exist
+ *      + permission denied
+ *      + other reasons
+ * @example:
+ * ```
+ * use std::fs::{sys, path};
+ *
+ * symlink(Path("file.txt"), Path("./some/dir/file.lnk"));
+ * assert(isLink(Path("./some/dir/file.lnk")));
+ * assert(readLink(Path("./some/dir/file.lnk")) == Path("file.txt"));
+ * ```
+ */
+pub fn symlink(target: Path, link: Path)
+    throws FsError
+{
+    if etc::c::dirent::symlink(target.toStr().toStringZ(), link.toStr().toStringZ()) == -1 {
+        throw copy FsError(errors::to!{FsErrorCode} (errno()), link.toStr());
+    }
+}
+
+/**
+ * Create a hard link, a new name for an existing file, both names sharing the same content.
+ * @params:
+ *    - target: the path of the existing file
+ *    - link: the new path of the file
+ * @info: the content of the file is kept until every name of the file is removed.
+ * @throws:
+ *   - FsError:
+ *      + target does not exist, or is a directory
+ *      + link already exists
+ *      + target and link are on different filesystems (CROSS_DEVICE)
+ *      + permission denied
+ *      + other reasons
+ * @example:
+ * ```
+ * use std::fs::{sys, path};
+ *
+ * hardLink(Path("./some/dir/file.txt"), Path("./some/dir/other.txt"));
+ * removeFile(Path("./some/dir/file.txt"));
+ * assert(isFile(Path("./some/dir/other.txt")));
+ * ```
+ */
+pub fn hardLink(target: Path, link: Path)
+    throws FsError
+{
+    if etc::c::dirent::link(target.toStr().toStringZ(), link.toStr().toStringZ()) == -1 {
+        throw copy FsError(errors::to!{FsErrorCode} (errno()), link.toStr());
+    }
+}
+
+/**
+ * Read the path a symbolic link points to.
+ * @params:
+ *    - path: the path of the link
+ * @returns: the target of the link, as it was given when the link was created (a relative target is relative to the directory of the link)
+ * @throws:
+ *   - FsError:
+ *      + the link does not exist
+ *      + this is not a link
+ *      + permission denied
+ * @example:
+ * ```
+ * use std::fs::{sys, path};
+ *
+ * let link = Path("./some/dir/file.lnk");
+ * let target = readLink(link);
+ *
+ * // The file pointed by the link, relative to cwd
+ * let file = if target.isAbsolute() { target } else { link.parent().push(target) };
+ * println(file);
+ * ```
+ */
+pub fn readLink(path: Path)-> Path
+    throws FsError
+{
+    let target = _yrt_read_link(path.toStr().toStringZ());
+    if target.len == 0us {
+        let code = errors::to!{FsErrorCode} (errno());
+        if exists(path, followLink-> false) && !isLink(path) {
+            throw copy FsError(FsErrorCode::NOT_A_LINK, path.toStr());
         }
 
-        if symlink(dst.toStr().toStringZ(), buf.ptr) == -1 {
-            throw copy FsError(errors::to!{FsErrorCode} (errno()), src.toStr());
-        }
+        throw copy FsError(code, path.toStr());
     }
+
+    Path(target)
 }

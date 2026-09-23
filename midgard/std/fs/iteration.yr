@@ -116,13 +116,12 @@ pub record FsEntry {
      */
     pub fn follow(self)-> Path {
         if self._kind == FsEntryKind::LINK {
-            let dmut path = ['\u{0}'c8 ; 256];
-            let size = readlink(self._path.toStr().toStringZ(), alias path.ptr, cast!i32(path.len));
-            if (size == -1) {
+            let target = etc::runtime::files::_yrt_read_link(self._path.toStr().toStringZ());
+            if target.len == 0us {
                 return self._path;
             }
 
-            Path(copy path[0 .. size])
+            Path(target)
         } else {
             self._path
         }

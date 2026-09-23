@@ -1,6 +1,6 @@
 in sys;
 
-use std::fs::{sys, path, file, errors};
+use std::fs::{sys, path, file, errors, iteration};
 use std::unit;
 
 fn fixture(prefix: [c8], content: [c8] = "Hello World!")-> (Path, Path)
@@ -89,6 +89,41 @@ __test readWriteFile {
     assert({ readFile(dir); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_A_FILE });
     assert({ writeFile(dir, "x"); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_A_FILE });
     assert({ writeFile(dir.push("missing").push("file.txt"), "x"); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_FOUND });
+
+    removeDir(dir, recursive-> true);
+}
+
+__test links {
+    let (dir, f) = fixture("links");
+    let lnk = dir.push("file.lnk");
+
+    symlink(Path("file.txt"), lnk);
+    assert(isLink(lnk) && isFile(lnk) && !isFile(lnk, followLink-> false));
+    assert(readLink(lnk) == Path("file.txt"));
+    assert(FsEntry(lnk, FsEntryKind::LINK).follow() == Path("file.txt"));
+    assert(readFile(lnk) == "Hello World!");
+
+    let dangling = dir.push("dangling.lnk");
+    symlink(Path("missing"), dangling);
+    assert(exists(dangling, followLink-> false) && !exists(dangling));
+
+    let long = Path(copy ['a' ; 300us]);
+    symlink(long, dir.push("long.lnk"));
+    assert(readLink(dir.push("long.lnk")) == long);
+
+    let copied = dir.push("copied.lnk");
+    copyFsEntry(lnk, copied);
+    assert(readLink(copied) == Path("file.txt") && readLink(lnk) == Path("file.txt"));
+
+    assert({ symlink(Path("file.txt"), lnk); false } catch { FsError(code-> c) => c == FsErrorCode::ALREADY_EXISTS });
+    assert({ readLink(f); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_A_LINK });
+    assert({ readLink(dir.push("missing")); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_FOUND });
+
+    let hard = dir.push("hard.txt");
+    hardLink(f, hard);
+    removeFile(f);
+    assert(readFile(hard) == "Hello World!");
+    assert({ hardLink(dir.push("missing"), dir.push("x")); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_FOUND });
 
     removeDir(dir, recursive-> true);
 }

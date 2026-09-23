@@ -6,6 +6,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <rt/memory/alloc.h>
 
 void _yrt_fd_set (int fd, fd_set * set) {
     FD_SET(fd, set);
@@ -83,4 +87,23 @@ char _yrt_is_writable (char * path) {
 
 char _yrt_is_readable (char * path) {
     return access (path, R_OK) == 0;
+}
+
+_yrt_slice_t _yrt_read_link (char * path) {
+    _yrt_slice_t result;
+    memset (&result, 0, sizeof (_yrt_slice_t));
+
+    for (size_t size = 256; ; size *= 2) {
+        char * buf = malloc (size);
+        if (buf == NULL) return result;
+
+        ssize_t len = readlink (path, buf, size);
+        if (len >= 0 && (size_t) len < size) {
+            _yrt_alloc_slice_no_set (&result, len, 1);
+            memcpy (result.data, buf, len);
+        }
+
+        free (buf);
+        if (len < 0 || (size_t) len < size) return result;
+    }
 }

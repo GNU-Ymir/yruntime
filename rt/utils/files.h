@@ -2,6 +2,7 @@
 #define FILES_H_
 #include <sys/select.h>
 #include <stdint.h>
+#include <rt/memory/types.h>
 
 
 void _yrt_fd_set (int fd, fd_set * set);
@@ -19,5 +20,7 @@ char _yrt_is_dir (char * path, char followLink);
 char _yrt_is_executable (char * path);
 char _yrt_is_writable (char * path);
 char _yrt_is_readable (char * path);
+
+_yrt_slice_t _yrt_read_link (char * path);
 
 #endif // FILES_H_
