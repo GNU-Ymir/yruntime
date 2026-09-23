@@ -84,3 +84,638 @@ __test foldClosureArray {
         j.fold(copy |x,y| => x + y + z);
     }));
 }
+
+__test foldTemplateGenerator {
+    let i = copy [1, 2, 3, 4];
+    assert(i.iter().fold!{|x,y| => x + y} () == 10?, "a");
+    assert(i.map!{|x| => x * 2} ().fold!{|x,y| => x * y} () == 384?, "b");
+
+    let j = i[0 .. 0];
+    assert(j.iter().fold!{|x,y| => x + y} () == none, "c");
+}
+
+__test foldLambdaGenerator {
+    let i = copy [1, 2, 3, 4];
+    assert(i.iter().fold(|x,y| => x + y) == 10?, "a");
+    assert(i.iter().fold(|x,y| => x * y) == 24?, "b");
+
+    let j = i[0 .. 0];
+    assert(j.iter().fold(|x,y| => x + y) == none, "c");
+}
+
+__test foldClosureGenerator {
+    let i = copy [1, 2, 3, 4];
+    let z = 2;
+
+    let a = i.iter().fold(copy |x, y| => x + y + z); // 1 + (2 + 2) + (3 + 2) + (4 + 2)
+    assert(a == 16?, "a");
+
+    let j = i[0 .. 0];
+    assert(j.iter().fold(copy |x, y| => x + y + z) == none, "b");
+}
+
+__test iterCollect {
+    let a = copy [1, 2, 3];
+    assert(a.iter().collect() == [1, 2, 3], "a");
+
+    let b = [1, 2, 3];
+    assert(b.iter().collect() == [1, 2, 3], "b");
+
+    let e = a[0 .. 0];
+    assert(e.iter().collect().len == 0us, "c");
+}
+
+__test generatorIsSinglePass {
+    let a = copy [1, 2, 3];
+    let g = a.iter();
+
+    assert(g.collect() == [1, 2, 3], "a");
+    assert(g.collect().len == 0us, "b");
+}
+
+__test eachSlice {
+    let a = copy [1, 2, 3];
+    let dmut acc = copy [0, 0];
+    a.each(copy |x| => { acc[0] += x; acc[1] += 1; });
+
+    assert(acc == [6, 3], "a");
+
+    let e = a[0 .. 0];
+    let dmut none_ = copy [0];
+    e.each(copy |x| => { none_[0] += x; });
+    assert(none_[0] == 0, "b");
+}
+
+__test eachArray {
+    let a = [1, 2, 3];
+    let dmut acc = copy [0, 0];
+    a.each(copy |x| => { acc[0] += x; acc[1] += 1; });
+
+    assert(acc == [6, 3], "a");
+}
+
+__test eachGenerator {
+    let a = copy [1, 2, 3];
+    let dmut acc = copy [0, 0];
+    a.iter().each(copy |x| => { acc[0] += x; acc[1] += 1; });
+
+    assert(acc == [6, 3], "a");
+}
+
+__test mapSlice {
+    let a = copy [1, 2, 3];
+    assert(a.map!{|x| => x * 2} ().collect() == [2, 4, 6], "a");
+    assert(a.map(|x: i32|-> i32 => x * 2).collect() == [2, 4, 6], "b");
+    assert(a.map!{i32} (|x| => x * 2).collect() == [2, 4, 6], "c");
+
+    let z = 10;
+    assert(a.map(copy |x: i32|-> i32 => x * z).collect() == [10, 20, 30], "d");
+
+    let e = a[0 .. 0];
+    assert(e.map!{|x| => x * 2} ().collect().len == 0us, "e");
+
+    // the result type does not have to be the element type
+    assert(a.map!{|x| => cast!f64(x)} ().collect() == [1.0, 2.0, 3.0], "f");
+}
+
+__test mapArray {
+    let a = [1, 2, 3];
+    assert(a.map!{|x| => x * 2} ().collect() == [2, 4, 6], "a");
+    assert(a.map(|x: i32|-> i32 => x * 2).collect() == [2, 4, 6], "b");
+}
+
+__test mapGenerator {
+    let a = copy [1, 2, 3];
+    assert(a.iter().map!{|x| => x * 2} ().collect() == [2, 4, 6], "a");
+    assert(a.iter().map(|x: i32|-> i32 => x * 2).collect() == [2, 4, 6], "b");
+    assert(a.map!{|x| => x * 2} ().map!{|x| => x + 1} ().collect() == [3, 5, 7], "c");
+
+    let e = a[0 .. 0];
+    assert(e.iter().map!{|x| => x * 2} ().collect().len == 0us, "d");
+}
+
+__test mapIsLazy {
+    let a = copy [1, 2, 3];
+    let dmut calls = copy [0];
+    let g = a.map(copy |x: i32|-> i32 => { calls[0] += 1; x * 2 });
+
+    assert(calls[0] == 0, "a");
+    assert(g.next() == (2)?, "b");
+    assert(calls[0] == 1, "c");
+}
+
+__test filterSlice {
+    let a = copy [1, 2, 3, 4];
+    assert(a.filter(|x| => x % 2 == 0).collect() == [2, 4], "a");
+    assert(a.filter(|x| => x > 9).collect().len == 0us, "b");
+    assert(a.filter(|x| => x > 0).collect() == [1, 2, 3, 4], "c");
+
+    let z = 2;
+    assert(a.filter(copy |x| => x > z).collect() == [3, 4], "d");
+}
+
+__test filterArray {
+    let a = [1, 2, 3, 4];
+    assert(a.filter(|x| => x % 2 == 0).collect() == [2, 4], "a");
+}
+
+__test filterGenerator {
+    let a = copy [1, 2, 3, 4];
+    assert(a.iter().filter(|x| => x % 2 == 0).collect() == [2, 4], "a");
+    assert(a.filter(|x| => x > 1).filter(|x| => x < 4).collect() == [2, 3], "b");
+}
+
+__test filterMapSlice {
+    let a = copy [1, 2, 3, 4];
+    let r = a.filterMap!{|x| => { if (x % 2 == 0) { (x * 10)? } else { none } }} ();
+    assert(r.collect() == [20, 40], "a");
+
+    let z = 2;
+    let r2 = a.filterMap(copy |x: i32|-> (i32)? => {
+        if (x % z == 0) { (x * 10)? } else { none }
+    });
+    assert(r2.collect() == [20, 40], "b");
+
+    let r3 = a.filterMap!{|x| => { if (x > 9) { (x)? } else { none } }} ();
+    assert(r3.collect().len == 0us, "c");
+}
+
+__test filterMapArray {
+    let a = [1, 2, 3, 4];
+    let r = a.filterMap!{|x| => { if (x % 2 == 0) { (x * 10)? } else { none } }} ();
+    assert(r.collect() == [20, 40], "a");
+
+    let r2 = a.filterMap(|x: i32|-> (i32)? => { if (x % 2 == 0) { (x * 10)? } else { none } });
+    assert(r2.collect() == [20, 40], "b");
+}
+
+__test filterMapGenerator {
+    let a = copy [1, 2, 3, 4];
+    let r = a.iter().filterMap!{|x| => { if (x % 2 == 0) { (x * 10)? } else { none } }} ();
+    assert(r.collect() == [20, 40], "a");
+
+    let r2 = a.iter().filterMap(|x: i32|-> (i32)? => { if (x % 2 == 0) { (x * 10)? } else { none } });
+    assert(r2.collect() == [20, 40], "b");
+}
+
+__test flattenSlice {
+    let a = copy [copy [1, 2], copy [3], copy [4, 5]];
+    assert(a.flatten().collect() == [1, 2, 3, 4, 5], "a");
+
+    let b = copy [copy [1], (copy [1])[0 .. 0], copy [2]];
+    assert(b.flatten().collect() == [1, 2], "b");
+}
+
+__test flattenArray {
+    let a = [copy [1, 2], copy [3]];
+    assert(a.flatten().collect() == [1, 2, 3], "a");
+}
+
+__test flattenGenerator {
+    let a = copy [copy [1, 2], copy [3], copy [4, 5]];
+    assert(a.iter().flatten().collect() == [1, 2, 3, 4, 5], "a");
+}
+
+__test flatMapSlice {
+    let a = copy [1, 2, 3];
+    assert(a.flatMap!{|x| => copy [x, x * 10]} ().collect() == [1, 10, 2, 20, 3, 30], "a");
+
+    let z = 10;
+    assert(a.flatMap(copy |x: i32|-> [i32] => copy [x, x * z]).collect() == [1, 10, 2, 20, 3, 30], "b");
+    assert(a.flatMap!{|x| => { let _ = x; copy [0 ; 0us] }} ().collect().len == 0us, "c");
+}
+
+__test flatMapArray {
+    let a = [1, 2, 3];
+    assert(a.flatMap!{|x| => copy [x, x * 10]} ().collect() == [1, 10, 2, 20, 3, 30], "a");
+    assert(a.flatMap(|x: i32|-> [i32] => copy [x, x * 10]).collect() == [1, 10, 2, 20, 3, 30], "b");
+}
+
+__test flatMapGenerator {
+    let a = copy [1, 2, 3];
+    assert(a.iter().flatMap!{|x| => copy [x, x * 10]} ().collect() == [1, 10, 2, 20, 3, 30], "a");
+    assert(a.iter().flatMap(|x: i32|-> [i32] => copy [x, x * 10]).collect() == [1, 10, 2, 20, 3, 30], "b");
+}
+
+__test uniqueSlice {
+    let a = copy [1, 2, 1, 3, 2];
+    assert(a.unique().collect() == [1, 2, 3], "a");
+
+    let e = a[0 .. 0];
+    assert(e.unique().collect().len == 0us, "b");
+    assert((copy [1, 1, 1]).unique().collect() == [1], "c");
+}
+
+__test uniqueArray {
+    let a = [1, 2, 1, 3, 2];
+    assert(a.unique().collect() == [1, 2, 3], "a");
+}
+
+__test uniqueGenerator {
+    let a = copy [1, 2, 1, 3, 2];
+    assert(a.iter().unique().collect() == [1, 2, 3], "a");
+    assert(a.map!{|x| => x % 2} ().unique().collect() == [1, 0], "b");
+}
+
+__test dedupSlice {
+    let a = copy [1, 1, 2, 2, 2, 1];
+    assert(a.dedup().collect() == [1, 2, 1], "a");
+
+    let e = a[0 .. 0];
+    assert(e.dedup().collect().len == 0us, "b");
+    assert((copy [1, 2, 3]).dedup().collect() == [1, 2, 3], "c");
+}
+
+__test dedupArray {
+    let a = [1, 1, 2, 2, 2, 1];
+    assert(a.dedup().collect() == [1, 2, 1], "a");
+}
+
+__test dedupGenerator {
+    let a = copy [1, 1, 2, 2, 2, 1];
+    assert(a.iter().dedup().collect() == [1, 2, 1], "a");
+
+    let e = a[0 .. 0];
+    assert(e.iter().dedup().collect().len == 0us, "b");
+}
+
+__test reverseSlice {
+    let a = copy [1, 2, 3];
+    assert(a.reverse().collect() == [3, 2, 1], "a");
+
+    let e = a[0 .. 0];
+    assert(e.reverse().collect().len == 0us, "b");
+    assert(a.reverse().reverse().collect() == [1, 2, 3], "c");
+}
+
+__test reverseArray {
+    let a = [1, 2, 3];
+    assert(a.reverse().collect() == [3, 2, 1], "a");
+}
+
+__test reverseGenerator {
+    let a = copy [1, 2, 3];
+    assert(a.map!{|x| => x * 2} ().reverse().collect() == [6, 4, 2], "a");
+
+    let e = a[0 .. 0];
+    assert(e.iter().reverse().collect().len == 0us, "b");
+}
+
+__test reduceSlice {
+    let a = copy [1, 2, 3, 4];
+    assert(a.reduce!{|acc, x| => acc + x} (0) == 10, "a");
+    assert(a.reduce(0, |acc, x| => acc + x) == 10, "b");
+
+    // unlike fold, an empty slice reduces to the seed
+    let e = a[0 .. 0];
+    assert(e.reduce!{|acc, x| => acc + x} (7) == 7, "c");
+
+    // and the accumulator does not have to be the element type
+    let s = a.reduce!{|acc, x| => acc ~ std::conv::to!{[c8]} (x)} (""s8);
+    assert(s == "1234"s8, "d");
+
+    let z = 10;
+    assert(a.reduce(0, copy |acc, x| => acc + x * z) == 100, "e");
+}
+
+__test reduceArray {
+    let a = [1, 2, 3, 4];
+    assert(a.reduce!{|acc, x| => acc + x} (0) == 10, "a");
+    assert(a.reduce(0, |acc, x| => acc + x) == 10, "b");
+}
+
+__test reduceGenerator {
+    let a = copy [1, 2, 3, 4];
+    assert(a.iter().reduce!{|acc, x| => acc + x} (0) == 10, "a");
+    assert(a.iter().reduce(0, |acc, x| => acc + x) == 10, "b");
+    assert(a.filter(|x| => x > 9).reduce!{|acc, x| => acc + x} (7) == 7, "c");
+}
+
+__test sumProductSlice {
+    let a = copy [1, 2, 3, 4];
+    assert(a.sum() == 10, "a");
+    assert(a.product() == 24, "b");
+
+    let e = a[0 .. 0];
+    assert(e.sum() == 0, "c");
+    assert(e.product() == 1, "d");
+
+    let f = copy [1.5, 2.5];
+    assert(f.sum() == 4.0, "e");
+}
+
+__test sumProductArray {
+    let a = [1, 2, 3, 4];
+    assert(a.sum() == 10, "a");
+    assert(a.product() == 24, "b");
+}
+
+__test sumProductGenerator {
+    let a = copy [1, 2, 3, 4];
+    assert(a.iter().sum() == 10, "a");
+    assert(a.iter().product() == 24, "b");
+
+    let e = a[0 .. 0];
+    assert(e.iter().sum() == 0, "c");
+    assert(e.iter().product() == 1, "d");
+}
+
+__test minMaxBySlice {
+    let a = copy ["abc"s8, "z"s8, "de"s8];
+    assert(a.minBy!{|x| => x.len} () == ("z"s8)?, "a");
+    assert(a.maxBy!{|x| => x.len} () == ("abc"s8)?, "b");
+    assert(a.minBy(|x: [c8]|-> usize => x.len) == ("z"s8)?, "c");
+    assert(a.maxBy(|x: [c8]|-> usize => x.len) == ("abc"s8)?, "d");
+
+    let e = a[0 .. 0];
+    assert(e.minBy!{|x| => x.len} () == none, "e");
+    assert(e.maxBy!{|x| => x.len} () == none, "f");
+
+    // ties keep the first element
+    let t = copy ["ab"s8, "cd"s8];
+    assert(t.minBy!{|x| => x.len} () == ("ab"s8)?, "g");
+    assert(t.maxBy!{|x| => x.len} () == ("ab"s8)?, "h");
+}
+
+__test minMaxByArray {
+    let a = ["abc"s8, "z"s8, "de"s8];
+    assert(a.minBy!{|x| => x.len} () == "z"s8, "a");
+    assert(a.maxBy!{|x| => x.len} () == "abc"s8, "b");
+    assert(a.minBy(|x: [c8]|-> usize => x.len) == "z"s8, "c");
+    assert(a.maxBy(|x: [c8]|-> usize => x.len) == "abc"s8, "d");
+}
+
+__test minMaxByGenerator {
+    let a = copy ["abc"s8, "z"s8, "de"s8];
+    assert(a.iter().minBy!{|x| => x.len} () == ("z"s8)?, "a");
+    assert(a.iter().maxBy!{|x| => x.len} () == ("abc"s8)?, "b");
+    assert(a.iter().minBy(|x: [c8]|-> usize => x.len) == ("z"s8)?, "c");
+    assert(a.iter().maxBy(|x: [c8]|-> usize => x.len) == ("abc"s8)?, "d");
+
+    let e = a[0 .. 0];
+    assert(e.iter().minBy!{|x| => x.len} () == none, "e");
+    assert(e.iter().maxBy!{|x| => x.len} () == none, "f");
+
+    // ties keep the first value
+    let t = copy ["ab"s8, "cd"s8];
+    assert(t.iter().minBy!{|x| => x.len} () == ("ab"s8)?, "g");
+    assert(t.iter().maxBy!{|x| => x.len} () == ("ab"s8)?, "h");
+}
+
+__test zipSlice {
+    let a = copy [1, 2, 3], b = copy ["x"s8, "y"s8];
+    let r = a.zip(b).collect();
+
+    assert(r.len == 2us, "a");
+    assert(r[0] == (1, "x"s8), "b");
+    assert(r[1] == (2, "y"s8), "c");
+
+    let e = a[0 .. 0];
+    assert(e.zip(b).collect().len == 0us, "d");
+}
+
+__test zipArray {
+    let a = [1, 2, 3], b = ["x"s8, "y"s8];
+    let r = a.zip(b).collect();
+
+    assert(r.len == 2us, "a");
+    assert(r[0] == (1, "x"s8), "b");
+}
+
+__test zipGenerator {
+    let a = copy [1, 2, 3], b = copy ["x"s8, "y"s8];
+    let r = a.iter().zip(b.iter()).collect();
+
+    assert(r.len == 2us, "a");
+    assert(r[0] == (1, "x"s8), "b");
+    assert(r[1] == (2, "y"s8), "c");
+
+    let r2 = b.iter().zip(a.map!{|x| => x * 10} ()).collect();
+    assert(r2 == [("x"s8, 10), ("y"s8, 20)], "d");
+
+    let e = a[0 .. 0];
+    assert(e.iter().zip(b.iter()).collect().len == 0us, "e");
+}
+
+__test enumerateSlice {
+    let a = copy ["x"s8, "y"s8];
+    let r = a.enumerate().collect();
+
+    assert(r.len == 2us, "a");
+    assert(r[0] == (0us, "x"s8), "b");
+    assert(r[1] == (1us, "y"s8), "c");
+
+    let e = a[0 .. 0];
+    assert(e.enumerate().collect().len == 0us, "d");
+}
+
+__test enumerateArray {
+    let a = ["x"s8, "y"s8];
+    let r = a.enumerate().collect();
+
+    assert(r.len == 2us, "a");
+    assert(r[1] == (1us, "y"s8), "b");
+}
+
+__test enumerateGenerator {
+    let a = copy [5, 6, 7];
+    let r = a.filter(|x| => x != 6).enumerate().collect();
+
+    assert(r == [(0us, 5), (1us, 7)], "a");
+}
+
+__test takeDropSlice {
+    let a = copy [1, 2, 3, 4];
+    assert(a.take(2us).collect() == [1, 2], "a");
+    assert(a.take(0us).collect().len == 0us, "b");
+    assert(a.take(9us).collect() == [1, 2, 3, 4], "c");
+
+    assert(a.drop(2us).collect() == [3, 4], "d");
+    assert(a.drop(0us).collect() == [1, 2, 3, 4], "e");
+    assert(a.drop(9us).collect().len == 0us, "f");
+}
+
+__test takeDropArray {
+    let a = [1, 2, 3, 4];
+    assert(a.take(2us).collect() == [1, 2], "a");
+    assert(a.take(9us).collect() == [1, 2, 3, 4], "b");
+    assert(a.drop(2us).collect() == [3, 4], "c");
+    assert(a.drop(9us).collect().len == 0us, "d");
+}
+
+__test takeDropGenerator {
+    let a = copy [1, 2, 3, 4];
+    assert(a.iter().take(2us).collect() == [1, 2], "a");
+    assert(a.iter().take(0us).collect().len == 0us, "b");
+    assert(a.iter().take(9us).collect() == [1, 2, 3, 4], "c");
+
+    assert(a.iter().drop(2us).collect() == [3, 4], "d");
+    assert(a.iter().drop(0us).collect() == [1, 2, 3, 4], "e");
+    assert(a.iter().drop(9us).collect().len == 0us, "f");
+}
+
+__test takeIsLazy {
+    let a = copy [1, 2, 3, 4];
+    let dmut calls = copy [0];
+    let r = a.map(copy |x: i32|-> i32 => { calls[0] += 1; x * 2 }).take(2us).collect();
+
+    assert(r == [2, 4], "a");
+    assert(calls[0] == 2, "b");
+}
+
+__test takeDropWhileSlice {
+    let a = copy [1, 2, 9, 3];
+    assert(a.takeWhile(|x| => x < 5).collect() == [1, 2], "a");
+    assert(a.dropWhile(|x| => x < 5).collect() == [9, 3], "b");
+
+    // nothing matches
+    assert(a.takeWhile(|x| => x > 100).collect().len == 0us, "c");
+    assert(a.dropWhile(|x| => x > 100).collect() == [1, 2, 9, 3], "d");
+
+    // everything matches
+    assert(a.takeWhile(|x| => x < 100).collect() == [1, 2, 9, 3], "e");
+    assert(a.dropWhile(|x| => x < 100).collect().len == 0us, "f");
+}
+
+__test takeDropWhileArray {
+    let a = [1, 2, 9, 3];
+    assert(a.takeWhile(|x| => x < 5).collect() == [1, 2], "a");
+    assert(a.dropWhile(|x| => x < 5).collect() == [9, 3], "b");
+    assert(a.dropWhile(|x| => x < 100).collect().len == 0us, "c");
+}
+
+__test takeDropWhileGenerator {
+    let a = copy [1, 2, 9, 3];
+    assert(a.iter().takeWhile(|x| => x < 5).collect() == [1, 2], "a");
+    assert(a.iter().dropWhile(|x| => x < 5).collect() == [9, 3], "b");
+    assert(a.iter().takeWhile(|x| => x < 100).collect() == [1, 2, 9, 3], "c");
+    assert(a.iter().dropWhile(|x| => x < 100).collect().len == 0us, "d");
+}
+
+__test chunksSlice {
+    let a = copy [1, 2, 3, 4, 5];
+    let r = a.chunks(2us).collect();
+
+    assert(r.len == 3us, "a");
+    assert(r[0] == [1, 2], "b");
+    assert(r[1] == [3, 4], "c");
+    assert(r[2] == [5], "d");
+
+    assert(a.chunks(5us).collect().len == 1us, "e");
+    assert(a.chunks(9us).collect()[0] == [1, 2, 3, 4, 5], "f");
+    assert(a.chunks(0us).collect().len == 0us, "g");
+
+    let e = a[0 .. 0];
+    assert(e.chunks(2us).collect().len == 0us, "h");
+}
+
+__test chunksArray {
+    let a = [1, 2, 3, 4, 5];
+    let r = a.chunks(2us).collect();
+
+    assert(r.len == 3us, "a");
+    assert(r[2] == [5], "b");
+    assert(a.chunks(0us).collect().len == 0us, "c");
+}
+
+__test chunksGenerator {
+    let a = copy [1, 2, 3, 4, 5];
+    let r = a.iter().chunks(2us).collect();
+
+    assert(r.len == 3us, "a");
+    assert(r[0] == [1, 2], "b");
+    assert(r[2] == [5], "c");
+    assert(a.iter().chunks(5us).collect()[0] == [1, 2, 3, 4, 5], "d");
+    assert(a.iter().chunks(0us).collect().len == 0us, "e");
+
+    let e = a[0 .. 0];
+    assert(e.iter().chunks(2us).collect().len == 0us, "f");
+}
+
+__test windowsSlice {
+    let a = copy [1, 2, 3, 4];
+    let r = a.windows(2us).collect();
+
+    assert(r.len == 3us, "a");
+    assert(r[0] == [1, 2], "b");
+    assert(r[2] == [3, 4], "c");
+
+    assert(a.windows(4us).collect().len == 1us, "d");
+    assert(a.windows(5us).collect().len == 0us, "e");
+    assert(a.windows(0us).collect().len == 0us, "f");
+}
+
+__test windowsArray {
+    let a = [1, 2, 3, 4];
+    let r = a.windows(2us).collect();
+
+    assert(r.len == 3us, "a");
+    assert(r[2] == [3, 4], "b");
+    assert(a.windows(5us).collect().len == 0us, "c");
+}
+
+__test windowsGenerator {
+    let a = copy [1, 2, 3, 4];
+    let r = a.iter().windows(2us).collect();
+
+    assert(r.len == 3us, "a");
+    assert(r[0] == [1, 2], "b");
+    assert(r[1] == [2, 3], "c");
+    assert(r[2] == [3, 4], "d");
+    assert(a.iter().windows(4us).collect().len == 1us, "e");
+    assert(a.iter().windows(5us).collect().len == 0us, "f");
+    assert(a.iter().windows(0us).collect().len == 0us, "g");
+}
+
+__test splitSlice {
+    assert("a,bc,,d"s8.split(',').collect() == ["a"s8, "bc"s8, ""s8, "d"s8], "a");
+
+    let a = copy [1, 0, 2, 3, 0];
+    let r = a.split(0).collect();
+    assert(r.len == 3us, "b");
+    assert(r[0] == [1], "c");
+    assert(r[1] == [2, 3], "d");
+    assert(r[2].len == 0us, "e");
+
+    let p = a.split(|x| => x == 0).collect();
+    assert(p.len == 3us, "f");
+    assert(p[1] == [2, 3], "g");
+
+    // no separator at all gives back the whole slice
+    assert(a.split(9).collect().len == 1us, "h");
+}
+
+__test splitArray {
+    let a = [1, 0, 2, 3, 0];
+    let r = a.split(0).collect();
+
+    assert(r.len == 3us, "a");
+    assert(r[1] == [2, 3], "b");
+
+    let p = a.split(|x| => x == 0).collect();
+    assert(p.len == 3us, "c");
+    assert(p[0] == [1], "d");
+}
+
+__test splitGenerator {
+    let a = copy [1, 0, 2, 3, 0];
+    let r = a.iter().split(0).collect();
+
+    assert(r.len == 3us, "a");
+    assert(r[0] == [1], "b");
+    assert(r[1] == [2, 3], "c");
+    assert(r[2].len == 0us, "d");
+
+    let p = a.iter().split(|x| => x == 0).collect();
+    assert(p.len == 3us, "e");
+    assert(p[1] == [2, 3], "f");
+}
+
+__test pipeline {
+    let a = copy [1, 2, 3, 4, 5, 6];
+    let r = a.filter(|x| => x % 2 == 0)
+             .map!{|x| => x * x} ()
+             .reduce!{|acc, x| => acc + x} (0);
+
+    assert(r == 56, "a"); // 4 + 16 + 36
+}

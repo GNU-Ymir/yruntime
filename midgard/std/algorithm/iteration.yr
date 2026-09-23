@@ -1,5 +1,8 @@
 /**
  * Module containing generic iteration algorithms.
+ * <br>
+ * The algorithms producing a sequence are lazy: they return a generator computing each value only
+ * when it is pulled, and `collect` gathers the values of a generator into a slice.
  * @authors: Emile Cadorel
  * @license: GPLv3
  */
@@ -149,4 +152,2471 @@ pub fn if (N > 0) fold {T of [U ; N], U, N: usize} (a: T, func: dg (U, U)-> U)->
     }
 
     res
+}
+
+/**
+ * Implement the homonym function fold
+ * @returns: the accumulation of the values yielded by the generator, none if it yields nothing
+ * @example:
+ * ```
+ * let i = copy [1, 2, 3, 4];
+ * assert(i.map!{|x| => x * 2} ().fold!{|x,y| => x + y} () == 20?);
+ * assert(i.filter(|x| => x > 9).fold!{|x,y| => x + y} () == none);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ */
+pub fn fold {F: fn (U, U)-> U, T of (yield-> U), U} (a: T)-> U? {
+    if let Ok(first) = a.next() {
+        let mut res = first;
+        for i in a {
+            res = F(res, i);
+        }
+
+        res?
+    } else {
+        none
+    }
+}
+
+/**
+ * Implement the homonym function fold
+ * @returns: the accumulation of the values yielded by the generator, none if it yields nothing
+ * @example:
+ * ```
+ * let i = copy [1, 2, 3, 4];
+ * assert(i.map!{|x| => x * 2} ().fold(|x,y| => x + y) == (20)?);
+ * assert(i.iter().fold(|x,y| => x * y) == (24)?);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ */
+pub fn fold {T of (yield-> U), U} (a: T, func: fn (U, U)-> U)-> U? {
+    if let Ok(first) = a.next() {
+        let mut res = first;
+        for i in a {
+            res = func(res, i);
+        }
+
+        res?
+    } else {
+        none
+    }
+}
+
+/**
+ * Implement the homonym function fold
+ * @returns: the accumulation of the values yielded by the generator, none if it yields nothing
+ * @example:
+ * ```
+ * let i = copy [1, 2, 3, 4];
+ * let z = 2;
+ *
+ * let a = i.iter().fold(copy |x,y| => x + y + z); // 1 + (2 + 2) + (3 + 2) + (4 + 2)
+ * assert(a == 16?);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ */
+pub fn fold {T of (yield-> U), U} (a: T, func: dg (U, U)-> U)-> U? {
+    if let Ok(first) = a.next() {
+        let mut res = first;
+        for i in a {
+            res = func(res, i);
+        }
+
+        res?
+    } else {
+        none
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ====================================          ITER / COLLECT       =================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Traverse a slice lazily
+ * @returns: a generator yielding the elements of a, in order
+ * @params:
+ *    - a: a slice to traverse
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * for i in a.iter() {
+ *     println(i);
+ * }
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield iter {T of [U], U} (a: T)-> U {
+    for i in a {
+        yield i;
+    }
+}
+
+/**
+ * Traverse an array lazily
+ * @returns: a generator yielding the elements of a, in order
+ * @params:
+ *    - a: an array to traverse
+ * @example:
+ * ```
+ * let a = [1, 2, 3];
+ * for i in a.iter() {
+ *     println(i);
+ * }
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield if (N > 0) iter {T of [U ; N], U, N: usize} (a: T)-> U {
+    for i in a {
+        yield i;
+    }
+}
+
+/**
+ * Exhaust a generator into a slice
+ * @returns: a new slice containing every value yielded by a, in order
+ * @params:
+ *    - a: a generator to exhaust
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * assert(a.map!{|x| => x * 2} ().collect() == [2, 4, 6]);
+ * ```
+ * @complexity: O(n), with n the number of yielded values
+ */
+pub fn collect {T of (yield-> U), U} (a: T)-> mut [mut U] {
+    copy [i for i in a]
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ======================================          EACH         =======================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Call a function on every element of a slice
+ * @params:
+ *    - a: a slice to traverse
+ *    - f: the function to call on each element
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * a.each(|x| => { println(x); });
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn each {T of [U], U} (a: T, f: dg (U)-> void) {
+    for i in a {
+        f(i);
+    }
+}
+
+/**
+ * Call a function on every element of an array
+ * @params:
+ *    - a: an array to traverse
+ *    - f: the function to call on each element
+ * @example:
+ * ```
+ * let a = [1, 2, 3];
+ * a.each(|x| => { println(x); });
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn if (N > 0) each {T of [U ; N], U, N: usize} (a: T, f: dg (U)-> void) {
+    for i in a {
+        f(i);
+    }
+}
+
+/**
+ * Call a function on every value yielded by a generator
+ * @params:
+ *    - a: a generator to exhaust
+ *    - f: the function to call on each value
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * a.map!{|x| => x * 2} ().each(|x| => { println(x); });
+ * ```
+ * @complexity: O(n), with n the number of yielded values
+ */
+pub fn each {T of (yield-> U), U} (a: T, f: dg (U)-> void) {
+    for i in a {
+        f(i);
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =======================================          MAP         =======================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Apply a transformation to every element of a slice
+ * @returns: a generator yielding the transformed elements
+ * @params:
+ *    - a: a slice to traverse
+ * @templates:
+ *    - F: the transformation to apply
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * assert(a.map!{|x| => x * 2} ().collect() == [2, 4, 6]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield map {F: fn (U)-> V, T of [U], U, V} (a: T)-> V {
+    for i in a {
+        yield F(i);
+    }
+}
+
+/**
+ * Apply a transformation to every element of a slice
+ * @returns: a generator yielding the transformed elements
+ * @params:
+ *    - a: a slice to traverse
+ *    - f: the transformation to apply
+ * @info: the result type cannot be guessed from an untyped lambda, so either the lambda is typed
+ * as in the example below, or the result type is passed explicitly (`a.map!{f64} (f)`), or the
+ * template form `a.map!{f} ()` is used instead
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * let z = 2;
+ *
+ * assert(a.map(copy |x: i32|-> i32 => x * z).collect() == [2, 4, 6]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield map {V, T of [U], U} (a: T, f: dg (U)-> V)-> V {
+    for i in a {
+        yield f(i);
+    }
+}
+
+/**
+ * Apply a transformation to every element of an array
+ * @returns: a generator yielding the transformed elements
+ * @params:
+ *    - a: an array to traverse
+ * @templates:
+ *    - F: the transformation to apply
+ * @example:
+ * ```
+ * let a = [1, 2, 3];
+ * assert(a.map!{|x| => x * 2} ().collect() == [2, 4, 6]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield if (N > 0) map {F: fn (U)-> V, T of [U ; N], U, V, N: usize} (a: T)-> V {
+    for i in a {
+        yield F(i);
+    }
+}
+
+/**
+ * Apply a transformation to every element of an array
+ * @returns: a generator yielding the transformed elements
+ * @params:
+ *    - a: an array to traverse
+ *    - f: the transformation to apply
+ * @example:
+ * ```
+ * let a = [1, 2, 3];
+ * let z = 2;
+ *
+ * assert(a.map(copy |x: i32|-> i32 => x * z).collect() == [2, 4, 6]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield if (N > 0) map {V, T of [U ; N], U, N: usize} (a: T, f: dg (U)-> V)-> V {
+    for i in a {
+        yield f(i);
+    }
+}
+
+/**
+ * Apply a transformation to every value yielded by a generator
+ * @returns: a generator yielding the transformed values
+ * @params:
+ *    - a: a generator to traverse
+ * @templates:
+ *    - F: the transformation to apply
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * assert(a.iter().map!{|x| => x * 2} ().collect() == [2, 4, 6]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the number of values yielded by a
+ */
+pub yield map {F: fn (U)-> V, T of (yield-> U), U, V} (a: T)-> V {
+    for i in a {
+        yield F(i);
+    }
+}
+
+/**
+ * Apply a transformation to every value yielded by a generator
+ * @returns: a generator yielding the transformed values
+ * @params:
+ *    - a: a generator to traverse
+ *    - f: the transformation to apply
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * let z = 2;
+ *
+ * assert(a.iter().map(copy |x: i32|-> i32 => x * z).collect() == [2, 4, 6]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the number of values yielded by a
+ */
+pub yield map {V, T of (yield-> U), U} (a: T, f: dg (U)-> V)-> V {
+    for i in a {
+        yield f(i);
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =====================================          FILTER        =======================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Keep only the elements of a slice verifying a predicate
+ * @returns: a generator yielding the elements verifying the predicate, in their original order
+ * @params:
+ *    - a: a slice to traverse
+ *    - f: the predicate to verify
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * assert(a.filter(|x| => x % 2 == 0).collect() == [2, 4]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield filter {T of [U], U} (a: T, f: dg (U)-> bool)-> U {
+    for i in a {
+        if f(i) {
+            yield i;
+        }
+    }
+}
+
+/**
+ * Keep only the elements of an array verifying a predicate
+ * @returns: a generator yielding the elements verifying the predicate, in their original order
+ * @params:
+ *    - a: an array to traverse
+ *    - f: the predicate to verify
+ * @example:
+ * ```
+ * let a = [1, 2, 3, 4];
+ * assert(a.filter(|x| => x % 2 == 0).collect() == [2, 4]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield if (N > 0) filter {T of [U ; N], U, N: usize} (a: T, f: dg (U)-> bool)-> U {
+    for i in a {
+        if f(i) {
+            yield i;
+        }
+    }
+}
+
+/**
+ * Keep only the values yielded by a generator verifying a predicate
+ * @returns: a generator yielding the values verifying the predicate, in their original order
+ * @params:
+ *    - a: a generator to traverse
+ *    - f: the predicate to verify
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * assert(a.iter().filter(|x| => x % 2 == 0).collect() == [2, 4]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the number of values yielded by a
+ */
+pub yield filter {T of (yield-> U), U} (a: T, f: dg (U)-> bool)-> U {
+    for i in a {
+        if f(i) {
+            yield i;
+        }
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ====================================          FILTER MAP       =====================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Transform every element of a slice, and keep only the transformations that produced a value
+ * @returns: a generator yielding the values produced by the transformation
+ * @params:
+ *    - a: a slice to traverse
+ * @templates:
+ *    - F: the transformation to apply, returning `none` for the elements to drop
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * let r = a.filterMap!{|x| => { if (x % 2 == 0) { (x * 10)? } else { none } }} ();
+ *
+ * assert(r.collect() == [20, 40]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield filterMap {F: fn (U)-> (V)?, T of [U], U, V} (a: T)-> V {
+    for i in a {
+        if let Ok(v) = F(i) {
+            yield v;
+        }
+    }
+}
+
+/**
+ * Transform every element of a slice, and keep only the transformations that produced a value
+ * @returns: a generator yielding the values produced by the transformation
+ * @params:
+ *    - a: a slice to traverse
+ *    - f: the transformation to apply, returning `none` for the elements to drop
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * let z = 2;
+ * let r = a.filterMap(copy |x: i32|-> (i32)? => {
+ *     if (x % z == 0) { (x * 10)? } else { none }
+ * });
+ *
+ * assert(r.collect() == [20, 40]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield filterMap {V, T of [U], U} (a: T, f: dg (U)-> (V)?)-> V {
+    for i in a {
+        if let Ok(v) = f(i) {
+            yield v;
+        }
+    }
+}
+
+/**
+ * Transform every element of an array, and keep only the transformations that produced a value
+ * @returns: a generator yielding the values produced by the transformation
+ * @params:
+ *    - a: an array to traverse
+ * @templates:
+ *    - F: the transformation to apply, returning `none` for the elements to drop
+ * @example:
+ * ```
+ * let a = [1, 2, 3, 4];
+ * let r = a.filterMap!{|x| => { if (x % 2 == 0) { (x * 10)? } else { none } }} ();
+ *
+ * assert(r.collect() == [20, 40]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield if (N > 0) filterMap {F: fn (U)-> (V)?, T of [U ; N], U, V, N: usize} (a: T)-> V {
+    for i in a {
+        if let Ok(v) = F(i) {
+            yield v;
+        }
+    }
+}
+
+/**
+ * Transform every element of an array, and keep only the transformations that produced a value
+ * @returns: a generator yielding the values produced by the transformation
+ * @params:
+ *    - a: an array to traverse
+ *    - f: the transformation to apply, returning `none` for the elements to drop
+ * @example:
+ * ```
+ * let a = [1, 2, 3, 4];
+ * let z = 2;
+ * let r = a.filterMap(copy |x: i32|-> (i32)? => {
+ *     if (x % z == 0) { (x * 10)? } else { none }
+ * });
+ *
+ * assert(r.collect() == [20, 40]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield if (N > 0) filterMap {V, T of [U ; N], U, N: usize} (a: T, f: dg (U)-> (V)?)-> V {
+    for i in a {
+        if let Ok(v) = f(i) {
+            yield v;
+        }
+    }
+}
+
+/**
+ * Transform every value yielded by a generator, and keep only the transformations that produced a value
+ * @returns: a generator yielding the values produced by the transformation
+ * @params:
+ *    - a: a generator to traverse
+ * @templates:
+ *    - F: the transformation to apply, returning `none` for the values to drop
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * let r = a.iter().filterMap!{|x| => { if (x % 2 == 0) { (x * 10)? } else { none } }} ();
+ *
+ * assert(r.collect() == [20, 40]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the number of values yielded by a
+ */
+pub yield filterMap {F: fn (U)-> (V)?, T of (yield-> U), U, V} (a: T)-> V {
+    for i in a {
+        if let Ok(v) = F(i) {
+            yield v;
+        }
+    }
+}
+
+/**
+ * Transform every value yielded by a generator, and keep only the transformations that produced a value
+ * @returns: a generator yielding the values produced by the transformation
+ * @params:
+ *    - a: a generator to traverse
+ *    - f: the transformation to apply, returning `none` for the values to drop
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * let z = 2;
+ * let r = a.iter().filterMap(copy |x: i32|-> (i32)? => {
+ *     if (x % z == 0) { (x * 10)? } else { none }
+ * });
+ *
+ * assert(r.collect() == [20, 40]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the number of values yielded by a
+ */
+pub yield filterMap {V, T of (yield-> U), U} (a: T, f: dg (U)-> (V)?)-> V {
+    for i in a {
+        if let Ok(v) = f(i) {
+            yield v;
+        }
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =================================        FLATTEN / FLAT MAP       ==================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Concatenate the sub slices of a slice of slices
+ * @returns: a generator yielding the elements of every sub slice, in order
+ * @params:
+ *    - a: a slice of slices to traverse
+ * @example:
+ * ```
+ * let a = copy [copy [1, 2], copy [3], copy [4, 5]];
+ * assert(a.flatten().collect() == [1, 2, 3, 4, 5]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the total number of elements
+ */
+pub yield flatten {T of [U], U of [V], V} (a: T)-> V {
+    for i in a {
+        for j in i {
+            yield j;
+        }
+    }
+}
+
+/**
+ * Concatenate the sub slices of an array of slices
+ * @returns: a generator yielding the elements of every sub slice, in order
+ * @params:
+ *    - a: an array of slices to traverse
+ * @example:
+ * ```
+ * let a = [copy [1, 2], copy [3], copy [4, 5]];
+ * assert(a.flatten().collect() == [1, 2, 3, 4, 5]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the total number of elements
+ */
+pub yield if (N > 0) flatten {T of [U ; N], U of [V], V, N: usize} (a: T)-> V {
+    for i in a {
+        for j in i {
+            yield j;
+        }
+    }
+}
+
+/**
+ * Concatenate the slices yielded by a generator
+ * @returns: a generator yielding the elements of every yielded slice, in order
+ * @params:
+ *    - a: a generator of slices to traverse
+ * @example:
+ * ```
+ * let a = copy [copy [1, 2], copy [3], copy [4, 5]];
+ * assert(a.iter().flatten().collect() == [1, 2, 3, 4, 5]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the total number of elements
+ */
+pub yield flatten {T of (yield-> U), U of [V], V} (a: T)-> V {
+    for i in a {
+        for j in i {
+            yield j;
+        }
+    }
+}
+
+/**
+ * Transform every element of a slice into a slice, and concatenate the results
+ * @returns: a generator yielding the elements of every produced slice, in order
+ * @params:
+ *    - a: a slice to traverse
+ * @templates:
+ *    - F: the transformation to apply
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * assert(a.flatMap!{|x| => copy [x, x * 10]} ().collect() == [1, 10, 2, 20, 3, 30]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the total number of produced elements
+ */
+pub yield flatMap {F: fn (U)-> [V], T of [U], U, V} (a: T)-> V {
+    for i in a {
+        for j in F(i) {
+            yield j;
+        }
+    }
+}
+
+/**
+ * Transform every element of a slice into a slice, and concatenate the results
+ * @returns: a generator yielding the elements of every produced slice, in order
+ * @params:
+ *    - a: a slice to traverse
+ *    - f: the transformation to apply
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * let z = 10;
+ *
+ * assert(a.flatMap(copy |x: i32|-> [i32] => copy [x, x * z]).collect() == [1, 10, 2, 20, 3, 30]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the total number of produced elements
+ */
+pub yield flatMap {V, T of [U], U} (a: T, f: dg (U)-> [V])-> V {
+    for i in a {
+        for j in f(i) {
+            yield j;
+        }
+    }
+}
+
+/**
+ * Transform every element of an array into a slice, and concatenate the results
+ * @returns: a generator yielding the elements of every produced slice, in order
+ * @params:
+ *    - a: an array to traverse
+ * @templates:
+ *    - F: the transformation to apply
+ * @example:
+ * ```
+ * let a = [1, 2, 3];
+ * assert(a.flatMap!{|x| => copy [x, x * 10]} ().collect() == [1, 10, 2, 20, 3, 30]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the total number of produced elements
+ */
+pub yield if (N > 0) flatMap {F: fn (U)-> [V], T of [U ; N], U, V, N: usize} (a: T)-> V {
+    for i in a {
+        for j in F(i) {
+            yield j;
+        }
+    }
+}
+
+/**
+ * Transform every element of an array into a slice, and concatenate the results
+ * @returns: a generator yielding the elements of every produced slice, in order
+ * @params:
+ *    - a: an array to traverse
+ *    - f: the transformation to apply
+ * @example:
+ * ```
+ * let a = [1, 2, 3];
+ * let z = 10;
+ *
+ * assert(a.flatMap(copy |x: i32|-> [i32] => copy [x, x * z]).collect() == [1, 10, 2, 20, 3, 30]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the total number of produced elements
+ */
+pub yield if (N > 0) flatMap {V, T of [U ; N], U, N: usize} (a: T, f: dg (U)-> [V])-> V {
+    for i in a {
+        for j in f(i) {
+            yield j;
+        }
+    }
+}
+
+/**
+ * Transform every value yielded by a generator into a slice, and concatenate the results
+ * @returns: a generator yielding the elements of every produced slice, in order
+ * @params:
+ *    - a: a generator to traverse
+ * @templates:
+ *    - F: the transformation to apply
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * assert(a.iter().flatMap!{|x| => copy [x, x * 10]} ().collect() == [1, 10, 2, 20, 3, 30]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the total number of produced elements
+ */
+pub yield flatMap {F: fn (U)-> [V], T of (yield-> U), U, V} (a: T)-> V {
+    for i in a {
+        for j in F(i) {
+            yield j;
+        }
+    }
+}
+
+/**
+ * Transform every value yielded by a generator into a slice, and concatenate the results
+ * @returns: a generator yielding the elements of every produced slice, in order
+ * @params:
+ *    - a: a generator to traverse
+ *    - f: the transformation to apply
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * let z = 10;
+ *
+ * assert(a.iter().flatMap(copy |x: i32|-> [i32] => copy [x, x * z]).collect() == [1, 10, 2, 20, 3, 30]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the total number of produced elements
+ */
+pub yield flatMap {V, T of (yield-> U), U} (a: T, f: dg (U)-> [V])-> V {
+    for i in a {
+        for j in f(i) {
+            yield j;
+        }
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ===================================        UNIQUE / DEDUP       ====================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Remove every duplicated element of a slice
+ * @returns: a generator yielding the first occurrence of each element, in its original order
+ * @params:
+ *    - a: a slice to traverse
+ * @example:
+ * ```
+ * let a = copy [1, 2, 1, 3, 2];
+ * assert(a.unique().collect() == [1, 2, 3]);
+ * ```
+ * @complexity: O(a.len * r.len) to exhaust the generator, with r the yielded elements
+ */
+pub yield if (__pragma!operator("==", U, U)) unique {T of [U], U} (a: T)-> U {
+    let dmut seen: [U] = [];
+    for i in a {
+        let mut found = false;
+        for j in seen {
+            if (j == i) {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            seen ~= [i];
+            yield i;
+        }
+    }
+}
+
+/**
+ * Remove every duplicated element of an array
+ * @returns: a generator yielding the first occurrence of each element, in its original order
+ * @params:
+ *    - a: an array to traverse
+ * @example:
+ * ```
+ * let a = [1, 2, 1, 3, 2];
+ * assert(a.unique().collect() == [1, 2, 3]);
+ * ```
+ * @complexity: O(a.len * r.len) to exhaust the generator, with r the yielded elements
+ */
+pub yield if (N > 0 && __pragma!operator("==", U, U)) unique {T of [U ; N], U, N: usize} (a: T)-> U {
+    let dmut seen: [U] = [];
+    for i in a {
+        let mut found = false;
+        for j in seen {
+            if (j == i) {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            seen ~= [i];
+            yield i;
+        }
+    }
+}
+
+/**
+ * Remove every duplicated value yielded by a generator
+ * @returns: a generator yielding the first occurrence of each value, in its original order
+ * @params:
+ *    - a: a generator to traverse
+ * @example:
+ * ```
+ * let a = copy [1, 2, 1, 3, 2];
+ * assert(a.iter().unique().collect() == [1, 2, 3]);
+ * ```
+ * @complexity: O(n * r.len) to exhaust the generator, with n the number of values yielded by a,
+ * and r the yielded values
+ */
+pub yield if (__pragma!operator("==", U, U)) unique {T of (yield-> U), U} (a: T)-> U {
+    let dmut seen: [U] = [];
+    for i in a {
+        let mut found = false;
+        for j in seen {
+            if (j == i) {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            seen ~= [i];
+            yield i;
+        }
+    }
+}
+
+/**
+ * Collapse the runs of consecutive equal elements of a slice into a single element
+ * @returns: a generator in which no two consecutive yielded elements are equal
+ * @params:
+ *    - a: a slice to traverse
+ * @example:
+ * ```
+ * let a = copy [1, 1, 2, 2, 2, 1];
+ * assert(a.dedup().collect() == [1, 2, 1]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield if (__pragma!operator("==", U, U)) dedup {T of [U], U} (a: T)-> U {
+    for i, j in a {
+        if (i == 0us || !(a[i - 1us] == j)) {
+            yield j;
+        }
+    }
+}
+
+/**
+ * Collapse the runs of consecutive equal elements of an array into a single element
+ * @returns: a generator in which no two consecutive yielded elements are equal
+ * @params:
+ *    - a: an array to traverse
+ * @example:
+ * ```
+ * let a = [1, 1, 2, 2, 2, 1];
+ * assert(a.dedup().collect() == [1, 2, 1]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield if (N > 0 && __pragma!operator("==", U, U)) dedup {T of [U ; N], U, N: usize} (a: T)-> U {
+    for i, j in a {
+        if (i == 0us || !(a[i - 1us] == j)) {
+            yield j;
+        }
+    }
+}
+
+/**
+ * Collapse the runs of consecutive equal values yielded by a generator into a single value
+ * @returns: a generator in which no two consecutive yielded values are equal
+ * @params:
+ *    - a: a generator to traverse
+ * @example:
+ * ```
+ * let a = copy [1, 1, 2, 2, 2, 1];
+ * assert(a.iter().dedup().collect() == [1, 2, 1]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the number of values yielded by a
+ */
+pub yield if (__pragma!operator("==", U, U)) dedup {T of (yield-> U), U} (a: T)-> U {
+    let mut last: (U)? = none;
+    for i in a {
+        if (!(last == (i)?)) {
+            last = (i)?;
+            yield i;
+        }
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =====================================        REVERSE        ========================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Reverse the order of the elements of a slice
+ * @returns: a generator yielding the elements of a, from the last to the first
+ * @params:
+ *    - a: a slice to traverse
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * assert(a.reverse().collect() == [3, 2, 1]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield reverse {T of [U], U} (a: T)-> U {
+    for i in a.len .. 0us {
+        yield a[i - 1us];
+    }
+}
+
+/**
+ * Reverse the order of the elements of an array
+ * @returns: a generator yielding the elements of a, from the last to the first
+ * @params:
+ *    - a: an array to traverse
+ * @example:
+ * ```
+ * let a = [1, 2, 3];
+ * assert(a.reverse().collect() == [3, 2, 1]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield if (N > 0) reverse {T of [U ; N], U, N: usize} (a: T)-> U {
+    for i in N .. 0us {
+        yield a[i - 1us];
+    }
+}
+
+/**
+ * Reverse the order of the values yielded by a generator
+ * @returns: a generator yielding the values of a, from the last to the first
+ * @params:
+ *    - a: a generator to traverse
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * assert(a.iter().reverse().collect() == [3, 2, 1]);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ * @warning: the last value of a comes first, so a is exhausted, and its values kept in memory, as
+ * soon as the first value is pulled
+ */
+pub yield reverse {T of (yield-> U), U} (a: T)-> U {
+    let values = a.collect();
+    for i in values.len .. 0us {
+        yield values[i - 1us];
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ======================================        REDUCE        ========================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Accumulate the elements of a slice into a seed
+ * <br>
+ * Unlike `fold`, the seed is explicit, so an empty slice reduces to a known value, and the
+ * accumulator can have a type other than the element type.
+ * @returns: the accumulation of the slice, starting from the seed
+ * @params:
+ *    - a: a slice to traverse
+ *    - seed: the initial value of the accumulator
+ * @templates:
+ *    - F: the accumulation function
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * assert(a.reduce!{|acc, x| => acc + x} (0) == 10);
+ *
+ * let e = a[0 .. 0];
+ * assert(e.reduce!{|acc, x| => acc + x} (0) == 0);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn reduce {F: fn (V, U)-> V, T of [U], U, V} (a: T, seed: V)-> V {
+    let mut res = seed;
+    for i in a {
+        res = F(res, i);
+    }
+
+    res
+}
+
+/**
+ * Accumulate the elements of a slice into a seed
+ * <br>
+ * Unlike `fold`, the seed is explicit, so an empty slice reduces to a known value, and the
+ * accumulator can have a type other than the element type.
+ * @returns: the accumulation of the slice, starting from the seed
+ * @params:
+ *    - a: a slice to traverse
+ *    - seed: the initial value of the accumulator
+ *    - f: the accumulation function
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * let z = 10;
+ * let r = a.reduce(0, copy |acc, x| => acc + x * z);
+ *
+ * assert(r == 60);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn reduce {V, T of [U], U} (a: T, seed: V, f: dg (V, U)-> V)-> V {
+    let mut res = seed;
+    for i in a {
+        res = f(res, i);
+    }
+
+    res
+}
+
+/**
+ * Accumulate the elements of an array into a seed
+ * @returns: the accumulation of the array, starting from the seed
+ * @params:
+ *    - a: an array to traverse
+ *    - seed: the initial value of the accumulator
+ * @templates:
+ *    - F: the accumulation function
+ * @example:
+ * ```
+ * let a = [1, 2, 3, 4];
+ * assert(a.reduce!{|acc, x| => acc + x} (0) == 10);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn if (N > 0) reduce {F: fn (V, U)-> V, T of [U ; N], U, V, N: usize} (a: T, seed: V)-> V {
+    let mut res = seed;
+    for i in a {
+        res = F(res, i);
+    }
+
+    res
+}
+
+/**
+ * Accumulate the elements of an array into a seed
+ * @returns: the accumulation of the array, starting from the seed
+ * @params:
+ *    - a: an array to traverse
+ *    - seed: the initial value of the accumulator
+ *    - f: the accumulation function
+ * @example:
+ * ```
+ * let a = [1, 2, 3];
+ * let z = 10;
+ * let r = a.reduce(0, copy |acc, x| => acc + x * z);
+ *
+ * assert(r == 60);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn if (N > 0) reduce {V, T of [U ; N], U, N: usize} (a: T, seed: V, f: dg (V, U)-> V)-> V {
+    let mut res = seed;
+    for i in a {
+        res = f(res, i);
+    }
+
+    res
+}
+
+/**
+ * Accumulate the values yielded by a generator into a seed
+ * @returns: the accumulation of the generator, starting from the seed
+ * @params:
+ *    - a: a generator to exhaust
+ *    - seed: the initial value of the accumulator
+ * @templates:
+ *    - F: the accumulation function
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * assert(a.filter(|x| => x % 2 == 0).reduce!{|acc, x| => acc + x} (0) == 6);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ */
+pub fn reduce {F: fn (V, U)-> V, T of (yield-> U), U, V} (a: T, seed: V)-> V {
+    let mut res = seed;
+    for i in a {
+        res = F(res, i);
+    }
+
+    res
+}
+
+/**
+ * Accumulate the values yielded by a generator into a seed
+ * @returns: the accumulation of the generator, starting from the seed
+ * @params:
+ *    - a: a generator to exhaust
+ *    - seed: the initial value of the accumulator
+ *    - f: the accumulation function
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * let z = 10;
+ * let r = a.iter().reduce(0, copy |acc, x| => acc + x * z);
+ *
+ * assert(r == 60);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ */
+pub fn reduce {V, T of (yield-> U), U} (a: T, seed: V, f: dg (V, U)-> V)-> V {
+    let mut res = seed;
+    for i in a {
+        res = f(res, i);
+    }
+
+    res
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ===================================        SUM / PRODUCT        ====================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Add up the elements of a slice
+ * @returns: the sum of the elements of a, 0 if a is empty
+ * @params:
+ *    - a: a slice to traverse
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * assert(a.sum() == 10);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn if (__pragma!compile(cast!U(0) + cast!U(0))) sum {T of [U], U} (a: T)-> U {
+    let mut res = cast!U(0);
+    for i in a {
+        res = res + i;
+    }
+
+    res
+}
+
+/**
+ * Add up the elements of an array
+ * @returns: the sum of the elements of a, 0 if a is empty
+ * @params:
+ *    - a: an array to traverse
+ * @example:
+ * ```
+ * let a = [1, 2, 3, 4];
+ * assert(a.sum() == 10);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn if (N > 0 && __pragma!compile(cast!U(0) + cast!U(0))) sum {T of [U ; N], U, N: usize} (a: T)-> U {
+    let mut res = cast!U(0);
+    for i in a {
+        res = res + i;
+    }
+
+    res
+}
+
+/**
+ * Add up the values yielded by a generator
+ * @returns: the sum of the values yielded by a, 0 if it yields nothing
+ * @params:
+ *    - a: a generator to exhaust
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * assert(a.map!{|x| => x * 2} ().sum() == 20);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ */
+pub fn if (__pragma!compile(cast!U(0) + cast!U(0))) sum {T of (yield-> U), U} (a: T)-> U {
+    let mut res = cast!U(0);
+    for i in a {
+        res = res + i;
+    }
+
+    res
+}
+
+/**
+ * Multiply the elements of a slice
+ * @returns: the product of the elements of a, 1 if a is empty
+ * @params:
+ *    - a: a slice to traverse
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * assert(a.product() == 24);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn if (__pragma!compile(cast!U(1) * cast!U(1))) product {T of [U], U} (a: T)-> U {
+    let mut res = cast!U(1);
+    for i in a {
+        res = res * i;
+    }
+
+    res
+}
+
+/**
+ * Multiply the elements of an array
+ * @returns: the product of the elements of a, 1 if a is empty
+ * @params:
+ *    - a: an array to traverse
+ * @example:
+ * ```
+ * let a = [1, 2, 3, 4];
+ * assert(a.product() == 24);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn if (N > 0 && __pragma!compile(cast!U(1) * cast!U(1))) product {T of [U ; N], U, N: usize} (a: T)-> U {
+    let mut res = cast!U(1);
+    for i in a {
+        res = res * i;
+    }
+
+    res
+}
+
+/**
+ * Multiply the values yielded by a generator
+ * @returns: the product of the values yielded by a, 1 if it yields nothing
+ * @params:
+ *    - a: a generator to exhaust
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * assert(a.map!{|x| => x * 2} ().product() == 384);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ */
+pub fn if (__pragma!compile(cast!U(1) * cast!U(1))) product {T of (yield-> U), U} (a: T)-> U {
+    let mut res = cast!U(1);
+    for i in a {
+        res = res * i;
+    }
+
+    res
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ====================================        MIN / MAX BY        ====================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Find the element of a slice whose key is the smallest
+ * @returns: the first element having the minimal key, none if a is empty
+ * @params:
+ *    - a: a slice to traverse
+ * @templates:
+ *    - F: the key of an element
+ * @example:
+ * ```
+ * let a = copy ["abc"s8, "z"s8, "de"s8];
+ * assert(a.minBy!{|x| => x.len} () == ("z"s8)?);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn minBy {F: fn (U)-> K, T of [U], U, K} (a: T)-> (U)? {
+    if (a.len == 0us) return none;
+
+    let mut best = a[0];
+    let mut bestKey = F(a[0]);
+    for i in a[1 .. $] {
+        let key = F(i);
+        if (key < bestKey) {
+            best = i;
+            bestKey = key;
+        }
+    }
+
+    (best)?
+}
+
+/**
+ * Find the element of a slice whose key is the smallest
+ * @returns: the first element having the minimal key, none if a is empty
+ * @params:
+ *    - a: a slice to traverse
+ *    - f: the key of an element
+ * @example:
+ * ```
+ * let a = copy [1, -7, 3];
+ * let r = a.minBy(|x: i32|-> i32 => { if (x < 0) { -x } else { x } });
+ *
+ * assert(r == (1)?);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn minBy {K, T of [U], U} (a: T, f: dg (U)-> K)-> (U)? {
+    if (a.len == 0us) return none;
+
+    let mut best = a[0];
+    let mut bestKey = f(a[0]);
+    for i in a[1 .. $] {
+        let key = f(i);
+        if (key < bestKey) {
+            best = i;
+            bestKey = key;
+        }
+    }
+
+    (best)?
+}
+
+/**
+ * Find the element of an array whose key is the smallest
+ * @returns: the first element having the minimal key
+ * @params:
+ *    - a: an array to traverse
+ * @templates:
+ *    - F: the key of an element
+ * @example:
+ * ```
+ * let a = ["abc"s8, "z"s8, "de"s8];
+ * assert(a.minBy!{|x| => x.len} () == "z"s8);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn if (N > 0) minBy {F: fn (U)-> K, T of [U ; N], U, K, N: usize} (a: T)-> U {
+    let mut best = a[0];
+    let mut bestKey = F(a[0]);
+    for i in a[1 .. $] {
+        let key = F(i);
+        if (key < bestKey) {
+            best = i;
+            bestKey = key;
+        }
+    }
+
+    best
+}
+
+/**
+ * Find the element of an array whose key is the smallest
+ * @returns: the first element having the minimal key
+ * @params:
+ *    - a: an array to traverse
+ *    - f: the key of an element
+ * @example:
+ * ```
+ * let a = [1, -7, 3];
+ * let r = a.minBy(|x: i32|-> i32 => { if (x < 0) { -x } else { x } });
+ *
+ * assert(r == 1);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn if (N > 0) minBy {K, T of [U ; N], U, N: usize} (a: T, f: dg (U)-> K)-> U {
+    let mut best = a[0];
+    let mut bestKey = f(a[0]);
+    for i in a[1 .. $] {
+        let key = f(i);
+        if (key < bestKey) {
+            best = i;
+            bestKey = key;
+        }
+    }
+
+    best
+}
+
+/**
+ * Find the value yielded by a generator whose key is the smallest
+ * @returns: the first value having the minimal key, none if a yields nothing
+ * @params:
+ *    - a: a generator to exhaust
+ * @templates:
+ *    - F: the key of a value
+ * @example:
+ * ```
+ * let a = copy ["abc"s8, "z"s8, "de"s8];
+ * assert(a.iter().minBy!{|x| => x.len} () == ("z"s8)?);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ */
+pub fn minBy {F: fn (U)-> K, T of (yield-> U), U, K} (a: T)-> (U)? {
+    if let Ok(first) = a.next() {
+        let mut best = first;
+        let mut bestKey = F(first);
+        for i in a {
+            let key = F(i);
+            if (key < bestKey) {
+                best = i;
+                bestKey = key;
+            }
+        }
+
+        (best)?
+    } else {
+        none
+    }
+}
+
+/**
+ * Find the value yielded by a generator whose key is the smallest
+ * @returns: the first value having the minimal key, none if a yields nothing
+ * @params:
+ *    - a: a generator to exhaust
+ *    - f: the key of a value
+ * @example:
+ * ```
+ * let a = copy [1, -7, 3];
+ * let r = a.iter().minBy(|x: i32|-> i32 => { if (x < 0) { -x } else { x } });
+ *
+ * assert(r == (1)?);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ */
+pub fn minBy {K, T of (yield-> U), U} (a: T, f: dg (U)-> K)-> (U)? {
+    if let Ok(first) = a.next() {
+        let mut best = first;
+        let mut bestKey = f(first);
+        for i in a {
+            let key = f(i);
+            if (key < bestKey) {
+                best = i;
+                bestKey = key;
+            }
+        }
+
+        (best)?
+    } else {
+        none
+    }
+}
+
+/**
+ * Find the element of a slice whose key is the largest
+ * @returns: the first element having the maximal key, none if a is empty
+ * @params:
+ *    - a: a slice to traverse
+ * @templates:
+ *    - F: the key of an element
+ * @example:
+ * ```
+ * let a = copy ["abc"s8, "z"s8, "de"s8];
+ * assert(a.maxBy!{|x| => x.len} () == ("abc"s8)?);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn maxBy {F: fn (U)-> K, T of [U], U, K} (a: T)-> (U)? {
+    if (a.len == 0us) return none;
+
+    let mut best = a[0];
+    let mut bestKey = F(a[0]);
+    for i in a[1 .. $] {
+        let key = F(i);
+        if (key > bestKey) {
+            best = i;
+            bestKey = key;
+        }
+    }
+
+    (best)?
+}
+
+/**
+ * Find the element of a slice whose key is the largest
+ * @returns: the first element having the maximal key, none if a is empty
+ * @params:
+ *    - a: a slice to traverse
+ *    - f: the key of an element
+ * @example:
+ * ```
+ * let a = copy [1, -7, 3];
+ * let r = a.maxBy(|x: i32|-> i32 => { if (x < 0) { -x } else { x } });
+ *
+ * assert(r == (-7)?);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn maxBy {K, T of [U], U} (a: T, f: dg (U)-> K)-> (U)? {
+    if (a.len == 0us) return none;
+
+    let mut best = a[0];
+    let mut bestKey = f(a[0]);
+    for i in a[1 .. $] {
+        let key = f(i);
+        if (key > bestKey) {
+            best = i;
+            bestKey = key;
+        }
+    }
+
+    (best)?
+}
+
+/**
+ * Find the element of an array whose key is the largest
+ * @returns: the first element having the maximal key
+ * @params:
+ *    - a: an array to traverse
+ * @templates:
+ *    - F: the key of an element
+ * @example:
+ * ```
+ * let a = ["abc"s8, "z"s8, "de"s8];
+ * assert(a.maxBy!{|x| => x.len} () == "abc"s8);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn if (N > 0) maxBy {F: fn (U)-> K, T of [U ; N], U, K, N: usize} (a: T)-> U {
+    let mut best = a[0];
+    let mut bestKey = F(a[0]);
+    for i in a[1 .. $] {
+        let key = F(i);
+        if (key > bestKey) {
+            best = i;
+            bestKey = key;
+        }
+    }
+
+    best
+}
+
+/**
+ * Find the element of an array whose key is the largest
+ * @returns: the first element having the maximal key
+ * @params:
+ *    - a: an array to traverse
+ *    - f: the key of an element
+ * @example:
+ * ```
+ * let a = [1, -7, 3];
+ * let r = a.maxBy(|x: i32|-> i32 => { if (x < 0) { -x } else { x } });
+ *
+ * assert(r == -7);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn if (N > 0) maxBy {K, T of [U ; N], U, N: usize} (a: T, f: dg (U)-> K)-> U {
+    let mut best = a[0];
+    let mut bestKey = f(a[0]);
+    for i in a[1 .. $] {
+        let key = f(i);
+        if (key > bestKey) {
+            best = i;
+            bestKey = key;
+        }
+    }
+
+    best
+}
+
+/**
+ * Find the value yielded by a generator whose key is the largest
+ * @returns: the first value having the maximal key, none if a yields nothing
+ * @params:
+ *    - a: a generator to exhaust
+ * @templates:
+ *    - F: the key of a value
+ * @example:
+ * ```
+ * let a = copy ["abc"s8, "z"s8, "de"s8];
+ * assert(a.iter().maxBy!{|x| => x.len} () == ("abc"s8)?);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ */
+pub fn maxBy {F: fn (U)-> K, T of (yield-> U), U, K} (a: T)-> (U)? {
+    if let Ok(first) = a.next() {
+        let mut best = first;
+        let mut bestKey = F(first);
+        for i in a {
+            let key = F(i);
+            if (key > bestKey) {
+                best = i;
+                bestKey = key;
+            }
+        }
+
+        (best)?
+    } else {
+        none
+    }
+}
+
+/**
+ * Find the value yielded by a generator whose key is the largest
+ * @returns: the first value having the maximal key, none if a yields nothing
+ * @params:
+ *    - a: a generator to exhaust
+ *    - f: the key of a value
+ * @example:
+ * ```
+ * let a = copy [1, -7, 3];
+ * let r = a.iter().maxBy(|x: i32|-> i32 => { if (x < 0) { -x } else { x } });
+ *
+ * assert(r == (-7)?);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ */
+pub fn maxBy {K, T of (yield-> U), U} (a: T, f: dg (U)-> K)-> (U)? {
+    if let Ok(first) = a.next() {
+        let mut best = first;
+        let mut bestKey = f(first);
+        for i in a {
+            let key = f(i);
+            if (key > bestKey) {
+                best = i;
+                bestKey = key;
+            }
+        }
+
+        (best)?
+    } else {
+        none
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ===================================        ZIP / ENUMERATE       ===================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Pair the elements of two slices, position by position
+ * @returns: a generator yielding the pairs, as many as the elements of the shortest of the two slices
+ * @params:
+ *    - a: the slice giving the first element of each pair
+ *    - b: the slice giving the second element of each pair
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3], b = copy ["x"s8, "y"s8];
+ * let r = a.zip(b).collect();
+ *
+ * assert(r.len == 2us);
+ * assert(r[0] == (1, "x"s8));
+ * ```
+ * @complexity: O(min(a.len, b.len)) to exhaust the generator
+ */
+pub yield zip {T of [U], U, K of [V], V} (a: T, b: K)-> (U, V) {
+    let len = if (a.len < b.len) { a.len } else { b.len };
+    for i in 0us .. len {
+        yield (a[i], b[i]);
+    }
+}
+
+/**
+ * Pair the elements of two arrays, position by position
+ * @returns: a generator yielding the pairs, as many as the elements of the shortest of the two arrays
+ * @params:
+ *    - a: the array giving the first element of each pair
+ *    - b: the array giving the second element of each pair
+ * @example:
+ * ```
+ * let a = [1, 2, 3], b = ["x"s8, "y"s8];
+ * let r = a.zip(b).collect();
+ *
+ * assert(r.len == 2us);
+ * assert(r[0] == (1, "x"s8));
+ * ```
+ * @complexity: O(min(a.len, b.len)) to exhaust the generator
+ */
+pub yield if (N > 0 && M > 0) zip {T of [U ; N], U, K of [V ; M], V, N: usize, M: usize} (a: T, b: K)-> (U, V) {
+    let len = cte if (N < M) { N } else { M };
+    for i in 0us .. len {
+        yield (a[i], b[i]);
+    }
+}
+
+/**
+ * Pair the values yielded by two generators, position by position
+ * <br>
+ * A slice or an array is paired with a generator by traversing it with `iter` first.
+ * @returns: a generator yielding the pairs, stopping as soon as one of the two generators is exhausted
+ * @params:
+ *    - a: the generator giving the first value of each pair
+ *    - b: the generator giving the second value of each pair
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3], b = copy ["x"s8, "y"s8];
+ * let r = a.map!{|x| => x * 10} ().zip(b.iter()).collect();
+ *
+ * assert(r.len == 2us);
+ * assert(r[0] == (10, "x"s8));
+ * ```
+ * @complexity: O(min(n, m)) to exhaust the generator, with n and m the number of values yielded
+ * by a and b
+ */
+pub yield zip {T of (yield-> U), U, K of (yield-> V), V} (a: T, b: K)-> (U, V) {
+    for i in a {
+        if let Ok(j) = b.next() {
+            yield (i, j);
+        } else {
+            return;
+        }
+    }
+}
+
+/**
+ * Pair every element of a slice with its index
+ * @returns: a generator yielding the (index, element) pairs
+ * @params:
+ *    - a: a slice to traverse
+ * @example:
+ * ```
+ * let a = copy ["x"s8, "y"s8];
+ * let r = a.enumerate().collect();
+ *
+ * assert(r[0] == (0us, "x"s8));
+ * assert(r[1] == (1us, "y"s8));
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield enumerate {T of [U], U} (a: T)-> (usize, U) {
+    for i, j in a {
+        yield (i, j);
+    }
+}
+
+/**
+ * Pair every element of an array with its index
+ * @returns: a generator yielding the (index, element) pairs
+ * @params:
+ *    - a: an array to traverse
+ * @example:
+ * ```
+ * let a = ["x"s8, "y"s8];
+ * let r = a.enumerate().collect();
+ *
+ * assert(r[0] == (0us, "x"s8));
+ * assert(r[1] == (1us, "y"s8));
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield if (N > 0) enumerate {T of [U ; N], U, N: usize} (a: T)-> (usize, U) {
+    for i, j in a {
+        yield (i, j);
+    }
+}
+
+/**
+ * Pair every value yielded by a generator with its position
+ * @returns: a generator yielding the (position, value) pairs
+ * @params:
+ *    - a: a generator to traverse
+ * @example:
+ * ```
+ * let a = copy ["x"s8, "y"s8];
+ * let r = a.iter().enumerate().collect();
+ *
+ * assert(r[0] == (0us, "x"s8));
+ * assert(r[1] == (1us, "y"s8));
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the number of values yielded by a
+ */
+pub yield enumerate {T of (yield-> U), U} (a: T)-> (usize, U) {
+    let mut k = 0us;
+    for i in a {
+        yield (k, i);
+        k += 1us;
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =====================================        TAKE / DROP        ====================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Keep the first elements of a slice
+ * @returns: a generator yielding the first n elements of a, or all of them if a is shorter
+ * @params:
+ *    - a: a slice to traverse
+ *    - n: the number of elements to keep
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * assert(a.take(2us).collect() == [1, 2]);
+ * assert(a.take(9us).collect() == [1, 2, 3, 4]);
+ * ```
+ * @complexity: O(min(n, a.len)) to exhaust the generator
+ */
+pub yield take {T of [U], U} (a: T, n: usize)-> U {
+    let len = if (n < a.len) { n } else { a.len };
+    for i in a[0us .. len] {
+        yield i;
+    }
+}
+
+/**
+ * Keep the first elements of an array
+ * @returns: a generator yielding the first n elements of a, or all of them if a is shorter
+ * @params:
+ *    - a: an array to traverse
+ *    - n: the number of elements to keep
+ * @example:
+ * ```
+ * let a = [1, 2, 3, 4];
+ * assert(a.take(2us).collect() == [1, 2]);
+ * assert(a.take(9us).collect() == [1, 2, 3, 4]);
+ * ```
+ * @complexity: O(min(n, a.len)) to exhaust the generator
+ */
+pub yield if (N > 0) take {T of [U ; N], U, N: usize} (a: T, n: usize)-> U {
+    let len = if (n < N) { n } else { N };
+    for i in 0us .. len {
+        yield a[i];
+    }
+}
+
+/**
+ * Keep the first values yielded by a generator
+ * @returns: a generator yielding the first n values of a, or all of them if a yields fewer
+ * @params:
+ *    - a: a generator to traverse
+ *    - n: the number of values to keep
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * assert(a.map!{|x| => x * 10} ().take(2us).collect() == [10, 20]);
+ * ```
+ * @complexity: O(n) to exhaust the generator
+ * @info: a is never resumed past its n-th value, so a transformation on the rest of it is never
+ * computed
+ */
+pub yield take {T of (yield-> U), U} (a: T, n: usize)-> U {
+    if (n == 0us) return;
+
+    let mut k = 0us;
+    for i in a {
+        yield i;
+        k += 1us;
+        if (k == n) return;
+    }
+}
+
+/**
+ * Discard the first elements of a slice
+ * @returns: a generator yielding the elements of a after its first n, nothing if a is shorter
+ * @params:
+ *    - a: a slice to traverse
+ *    - n: the number of elements to discard
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * assert(a.drop(2us).collect() == [3, 4]);
+ * ```
+ * @complexity: O(a.len - n) to exhaust the generator
+ */
+pub yield drop {T of [U], U} (a: T, n: usize)-> U {
+    if (n >= a.len) return;
+
+    for i in a[n .. $] {
+        yield i;
+    }
+}
+
+/**
+ * Discard the first elements of an array
+ * @returns: a generator yielding the elements of a after its first n, nothing if a is shorter
+ * @params:
+ *    - a: an array to traverse
+ *    - n: the number of elements to discard
+ * @example:
+ * ```
+ * let a = [1, 2, 3, 4];
+ * assert(a.drop(2us).collect() == [3, 4]);
+ * ```
+ * @complexity: O(a.len - n) to exhaust the generator
+ */
+pub yield if (N > 0) drop {T of [U ; N], U, N: usize} (a: T, n: usize)-> U {
+    if (n >= N) return;
+
+    for i in n .. N {
+        yield a[i];
+    }
+}
+
+/**
+ * Discard the first values yielded by a generator
+ * @returns: a generator yielding the values of a after its first n, nothing if a yields fewer
+ * @params:
+ *    - a: a generator to traverse
+ *    - n: the number of values to discard
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * assert(a.iter().drop(2us).collect() == [3, 4]);
+ * ```
+ * @complexity: O(m) to exhaust the generator, with m the number of values yielded by a
+ */
+pub yield drop {T of (yield-> U), U} (a: T, n: usize)-> U {
+    let mut k = 0us;
+    for i in a {
+        if (k < n) {
+            k += 1us;
+        } else {
+            yield i;
+        }
+    }
+}
+
+/**
+ * Keep the leading elements of a slice verifying a predicate
+ * @returns: a generator yielding the longest prefix of a whose elements all verify the predicate
+ * @params:
+ *    - a: a slice to traverse
+ *    - f: the predicate to verify
+ * @example:
+ * ```
+ * let a = copy [1, 2, 9, 3];
+ * assert(a.takeWhile(|x| => x < 5).collect() == [1, 2]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield takeWhile {T of [U], U} (a: T, f: dg (U)-> bool)-> U {
+    for i in a {
+        if (!f(i)) return;
+        yield i;
+    }
+}
+
+/**
+ * Keep the leading elements of an array verifying a predicate
+ * @returns: a generator yielding the longest prefix of a whose elements all verify the predicate
+ * @params:
+ *    - a: an array to traverse
+ *    - f: the predicate to verify
+ * @example:
+ * ```
+ * let a = [1, 2, 9, 3];
+ * assert(a.takeWhile(|x| => x < 5).collect() == [1, 2]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield if (N > 0) takeWhile {T of [U ; N], U, N: usize} (a: T, f: dg (U)-> bool)-> U {
+    for i in a {
+        if (!f(i)) return;
+        yield i;
+    }
+}
+
+/**
+ * Keep the leading values yielded by a generator verifying a predicate
+ * @returns: a generator yielding the longest prefix of a whose values all verify the predicate
+ * @params:
+ *    - a: a generator to traverse
+ *    - f: the predicate to verify
+ * @example:
+ * ```
+ * let a = copy [1, 2, 9, 3];
+ * assert(a.iter().takeWhile(|x| => x < 5).collect() == [1, 2]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the number of values yielded by a
+ */
+pub yield takeWhile {T of (yield-> U), U} (a: T, f: dg (U)-> bool)-> U {
+    for i in a {
+        if (!f(i)) return;
+        yield i;
+    }
+}
+
+/**
+ * Discard the leading elements of a slice verifying a predicate
+ * @returns: a generator yielding a without the longest prefix whose elements all verify the predicate
+ * @params:
+ *    - a: a slice to traverse
+ *    - f: the predicate to verify
+ * @example:
+ * ```
+ * let a = copy [1, 2, 9, 3];
+ * assert(a.dropWhile(|x| => x < 5).collect() == [9, 3]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield dropWhile {T of [U], U} (a: T, f: dg (U)-> bool)-> U {
+    let mut dropping = true;
+    for i in a {
+        if (dropping && f(i)) continue;
+        dropping = false;
+        yield i;
+    }
+}
+
+/**
+ * Discard the leading elements of an array verifying a predicate
+ * @returns: a generator yielding a without the longest prefix whose elements all verify the predicate
+ * @params:
+ *    - a: an array to traverse
+ *    - f: the predicate to verify
+ * @example:
+ * ```
+ * let a = [1, 2, 9, 3];
+ * assert(a.dropWhile(|x| => x < 5).collect() == [9, 3]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield if (N > 0) dropWhile {T of [U ; N], U, N: usize} (a: T, f: dg (U)-> bool)-> U {
+    let mut dropping = true;
+    for i in a {
+        if (dropping && f(i)) continue;
+        dropping = false;
+        yield i;
+    }
+}
+
+/**
+ * Discard the leading values yielded by a generator verifying a predicate
+ * @returns: a generator yielding a without the longest prefix whose values all verify the predicate
+ * @params:
+ *    - a: a generator to traverse
+ *    - f: the predicate to verify
+ * @example:
+ * ```
+ * let a = copy [1, 2, 9, 3];
+ * assert(a.iter().dropWhile(|x| => x < 5).collect() == [9, 3]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the number of values yielded by a
+ */
+pub yield dropWhile {T of (yield-> U), U} (a: T, f: dg (U)-> bool)-> U {
+    let mut dropping = true;
+    for i in a {
+        if (dropping && f(i)) continue;
+        dropping = false;
+        yield i;
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ==================================        CHUNKS / WINDOWS       ===================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Cut a slice into consecutive blocks of n elements
+ * @returns: a generator yielding views on the successive blocks of a, the last one being shorter
+ * if a.len is not a multiple of n
+ * @params:
+ *    - a: a slice to traverse
+ *    - n: the number of elements per block
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4, 5];
+ * let r = a.chunks(2us).collect();
+ *
+ * assert(r.len == 3us);
+ * assert(r[0] == [1, 2]);
+ * assert(r[2] == [5]);
+ * ```
+ * @complexity: O(a.len / n) to exhaust the generator
+ * @warning: nothing is yielded if n is 0
+ */
+pub yield chunks {T of [U], U} (a: T, n: usize)-> [U] {
+    if (n == 0us) return;
+
+    let mut i = 0us;
+    while (i < a.len) {
+        let end = if (i + n < a.len) { i + n } else { a.len };
+        yield a[i .. end];
+        i += n;
+    }
+}
+
+/**
+ * Cut an array into consecutive blocks of n elements
+ * @returns: a generator yielding the successive blocks of a, the last one being shorter if N is
+ * not a multiple of n
+ * @params:
+ *    - a: an array to traverse
+ *    - n: the number of elements per block
+ * @example:
+ * ```
+ * let a = [1, 2, 3, 4, 5];
+ * let r = a.chunks(2us).collect();
+ *
+ * assert(r.len == 3us);
+ * assert(r[0] == [1, 2]);
+ * assert(r[2] == [5]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ * @warning: nothing is yielded if n is 0
+ */
+pub yield if (N > 0) chunks {T of [U ; N], U, N: usize} (a: T, n: usize)-> [U] {
+    if (n == 0us) return;
+
+    let mut i = 0us;
+    while (i < N) {
+        let end = if (i + n < N) { i + n } else { N };
+        yield copy a[i .. end];
+        i += n;
+    }
+}
+
+/**
+ * Cut the values yielded by a generator into consecutive blocks of n values
+ * @returns: a generator yielding the successive blocks, the last one being shorter if the number
+ * of values yielded by a is not a multiple of n
+ * @params:
+ *    - a: a generator to traverse
+ *    - n: the number of values per block
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4, 5];
+ * let r = a.iter().chunks(2us).collect();
+ *
+ * assert(r.len == 3us);
+ * assert(r[0] == [1, 2]);
+ * assert(r[2] == [5]);
+ * ```
+ * @complexity: O(m) to exhaust the generator, with m the number of values yielded by a
+ * @warning: nothing is yielded if n is 0
+ */
+pub yield chunks {T of (yield-> U), U} (a: T, n: usize)-> [U] {
+    if (n == 0us) return;
+
+    let dmut current: [U] = [];
+    for i in a {
+        current ~= [i];
+        if (current.len == n) {
+            yield current;
+            current = [];
+        }
+    }
+
+    if (current.len != 0us) {
+        yield current;
+    }
+}
+
+/**
+ * List the overlapping blocks of n consecutive elements of a slice
+ * @returns: a generator yielding views on every block of n consecutive elements of a, nothing if
+ * a is shorter than n
+ * @params:
+ *    - a: a slice to traverse
+ *    - n: the number of elements per block
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * let r = a.windows(2us).collect();
+ *
+ * assert(r.len == 3us);
+ * assert(r[0] == [1, 2]);
+ * assert(r[2] == [3, 4]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ * @warning: nothing is yielded if n is 0
+ */
+pub yield windows {T of [U], U} (a: T, n: usize)-> [U] {
+    if (n == 0us || a.len < n) return;
+
+    for i in 0us .. (a.len - n) + 1us {
+        yield a[i .. i + n];
+    }
+}
+
+/**
+ * List the overlapping blocks of n consecutive elements of an array
+ * @returns: a generator yielding every block of n consecutive elements of a, nothing if a is
+ * shorter than n
+ * @params:
+ *    - a: an array to traverse
+ *    - n: the number of elements per block
+ * @example:
+ * ```
+ * let a = [1, 2, 3, 4];
+ * let r = a.windows(2us).collect();
+ *
+ * assert(r.len == 3us);
+ * assert(r[0] == [1, 2]);
+ * assert(r[2] == [3, 4]);
+ * ```
+ * @complexity: O(a.len * n) to exhaust the generator
+ * @warning: nothing is yielded if n is 0
+ */
+pub yield if (N > 0) windows {T of [U ; N], U, N: usize} (a: T, n: usize)-> [U] {
+    if (n == 0us || N < n) return;
+
+    for i in 0us .. (N - n) + 1us {
+        yield copy a[i .. i + n];
+    }
+}
+
+/**
+ * List the overlapping blocks of n consecutive values yielded by a generator
+ * @returns: a generator yielding every block of n consecutive values of a, nothing if a yields
+ * fewer than n values
+ * @params:
+ *    - a: a generator to traverse
+ *    - n: the number of values per block
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * let r = a.iter().windows(2us).collect();
+ *
+ * assert(r.len == 3us);
+ * assert(r[0] == [1, 2]);
+ * assert(r[2] == [3, 4]);
+ * ```
+ * @complexity: O(m * n) to exhaust the generator, with m the number of values yielded by a
+ * @warning: nothing is yielded if n is 0
+ */
+pub yield windows {T of (yield-> U), U} (a: T, n: usize)-> [U] {
+    if (n == 0us) return;
+
+    let mut current: [U] = [];
+    for i in a {
+        current = if (current.len == n) { current[1us .. $] ~ [i] } else { current ~ [i] };
+        if (current.len == n) {
+            yield current;
+        }
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ======================================        SPLIT        =========================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Cut a slice around every occurrence of a separator
+ * @returns: a generator yielding the views between the separators, the separators themselves
+ * being dropped
+ * @params:
+ *    - a: a slice to traverse
+ *    - sep: the element separating two blocks
+ * @example:
+ * ```
+ * let a = "a,bc,,d"s8;
+ * let r = a.split(',').collect();
+ *
+ * assert(r == ["a"s8, "bc"s8, ""s8, "d"s8]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield if (__pragma!operator("==", U, U)) split {T of [U], U} (a: T, sep: U)-> [U] {
+    let mut start = 0us;
+    for i, j in a {
+        if (j == sep) {
+            yield a[start .. i];
+            start = i + 1us;
+        }
+    }
+
+    yield a[start .. $];
+}
+
+/**
+ * Cut a slice around every element verifying a predicate
+ * @returns: a generator yielding the views between the separators, the separators themselves
+ * being dropped
+ * @params:
+ *    - a: a slice to traverse
+ *    - f: the predicate recognizing a separator
+ * @example:
+ * ```
+ * let a = copy [1, 0, 2, 3, 0];
+ * let r = a.split(|x| => x == 0).collect();
+ *
+ * assert(r.len == 3us);
+ * assert(r[0] == [1]);
+ * assert(r[1] == [2, 3]);
+ * assert(r[2] == []);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield split {T of [U], U} (a: T, f: dg (U)-> bool)-> [U] {
+    let mut start = 0us;
+    for i, j in a {
+        if (f(j)) {
+            yield a[start .. i];
+            start = i + 1us;
+        }
+    }
+
+    yield a[start .. $];
+}
+
+/**
+ * Cut an array around every occurrence of a separator
+ * @returns: a generator yielding the blocks between the separators, the separators themselves
+ * being dropped
+ * @params:
+ *    - a: an array to traverse
+ *    - sep: the element separating two blocks
+ * @example:
+ * ```
+ * let a = [1, 0, 2, 3, 0];
+ * let r = a.split(0).collect();
+ *
+ * assert(r.len == 3us);
+ * assert(r[0] == [1]);
+ * assert(r[1] == [2, 3]);
+ * assert(r[2] == []);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield if (N > 0 && __pragma!operator("==", U, U)) split {T of [U ; N], U, N: usize} (a: T, sep: U)-> [U] {
+    let mut start = 0us;
+    for i, j in a {
+        if (j == sep) {
+            yield copy a[start .. i];
+            start = i + 1us;
+        }
+    }
+
+    yield copy a[start .. N];
+}
+
+/**
+ * Cut an array around every element verifying a predicate
+ * @returns: a generator yielding the blocks between the separators, the separators themselves
+ * being dropped
+ * @params:
+ *    - a: an array to traverse
+ *    - f: the predicate recognizing a separator
+ * @example:
+ * ```
+ * let a = [1, 0, 2, 3, 0];
+ * let r = a.split(|x| => x == 0).collect();
+ *
+ * assert(r.len == 3us);
+ * assert(r[0] == [1]);
+ * assert(r[1] == [2, 3]);
+ * assert(r[2] == []);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield if (N > 0) split {T of [U ; N], U, N: usize} (a: T, f: dg (U)-> bool)-> [U] {
+    let mut start = 0us;
+    for i, j in a {
+        if (f(j)) {
+            yield copy a[start .. i];
+            start = i + 1us;
+        }
+    }
+
+    yield copy a[start .. N];
+}
+
+/**
+ * Cut the values yielded by a generator around every occurrence of a separator
+ * @returns: a generator yielding the blocks between the separators, the separators themselves
+ * being dropped
+ * @params:
+ *    - a: a generator to traverse
+ *    - sep: the value separating two blocks
+ * @example:
+ * ```
+ * let a = copy [1, 0, 2, 3, 0];
+ * let r = a.iter().split(0).collect();
+ *
+ * assert(r.len == 3us);
+ * assert(r[0] == [1]);
+ * assert(r[1] == [2, 3]);
+ * assert(r[2] == []);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the number of values yielded by a
+ */
+pub yield if (__pragma!operator("==", U, U)) split {T of (yield-> U), U} (a: T, sep: U)-> [U] {
+    let dmut current: [U] = [];
+    for i in a {
+        if (i == sep) {
+            yield current;
+            current = [];
+        } else {
+            current ~= [i];
+        }
+    }
+
+    yield current;
+}
+
+/**
+ * Cut the values yielded by a generator around every value verifying a predicate
+ * @returns: a generator yielding the blocks between the separators, the separators themselves
+ * being dropped
+ * @params:
+ *    - a: a generator to traverse
+ *    - f: the predicate recognizing a separator
+ * @example:
+ * ```
+ * let a = copy [1, 0, 2, 3, 0];
+ * let r = a.iter().split(|x| => x == 0).collect();
+ *
+ * assert(r.len == 3us);
+ * assert(r[0] == [1]);
+ * assert(r[1] == [2, 3]);
+ * assert(r[2] == []);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the number of values yielded by a
+ */
+pub yield split {T of (yield-> U), U} (a: T, f: dg (U)-> bool)-> [U] {
+    let dmut current: [U] = [];
+    for i in a {
+        if (f(i)) {
+            yield current;
+            current = [];
+        } else {
+            current ~= [i];
+        }
+    }
+
+    yield current;
 }
