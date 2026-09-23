@@ -185,15 +185,14 @@ Note that it only credits a `use` when a symbol is reached through the *shortene
 
 Two separate versions live at the repo root, and mixing them up is the classic bug here:
 
-- `VERSION` — midgard's own release (also the git tag each release is cut under), and the version
-  `install` derives `MIDGARD_SHORT_VERSION` (major.minor, e.g. `1.2`) from for the install include
-  dir below. It has to be this one: `gyc` resolves `include/ymir/<ver>` from the midgard release
-  *it* was built against. Note `gyllir.toml` also carries its own `version` field, tracking the
-  in-progress release (e.g. `1.3.1` while `VERSION` still reads `1.3.0`) — the two are expected to
-  diverge between a version bump commit and the matching release, not a bug to "fix" on sight.
+- `gyllir.toml`'s top-level `version` — midgard's own release (also the git tag each release is
+  cut under), and the version `install` derives `MIDGARD_SHORT_VERSION` (major.minor, e.g. `1.2`)
+  from for the install include dir below. It has to be this one: `gyc` resolves
+  `include/ymir/<ver>` from the midgard release *it* was built against. It is the only copy (the
+  old root `VERSION` file is gone); read it with `.github/scripts/midgard-version.sh`.
 - `YMIR_VERSION` (`YMIR_BOOTSTRAP_VERSION`/`GYLLIR_VERSION`/`GCC_VERSION`) — the gyc/gyllir release
   this library is *built with*, used to fetch those compilers' `.deb`s in CI/the `Dockerfile`. It
-  runs ahead of `VERSION` and must never leak into an artifact name.
+  runs ahead of midgard's version and must never leak into an artifact name.
 
 - Build: `gyllir build`. Builds every target in `gyllir.toml` in dependency order: `gymidgard_debug`
   and `gymidgard_release` (compile `midgard/__lib__.yr`), `gymidgard_debug_unit` (same, with
@@ -216,7 +215,7 @@ Two separate versions live at the repo root, and mixing them up is the classic b
   nothing while `-f "algorithm::*::*"` or `-f "algorithm::sorting::*"` works. `-l` lists what a
   pattern selects without running it (`test-rt/utils/filters.yr`).
 - `sudo ./install` copies `midgard/**/*.yr` into `/usr/include/ymir/<midgardShortVersion>` and the
-  `gyc` internal include dir (version component from `VERSION`, GCC major from `YMIR_VERSION`).
+  `gyc` internal include dir (version component from `gyllir.toml`, GCC major from `YMIR_VERSION`).
   There is currently no equivalent step for installing the built static libs system-wide (the old
   `sudo make install` rule went away with `CMakeLists.txt`) — copy `libgymidgard_*.a` to
   `/usr/lib/` by hand if you need that, until this is scripted.

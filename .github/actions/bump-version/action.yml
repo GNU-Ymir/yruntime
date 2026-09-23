@@ -1,7 +1,5 @@
-name: Bump VERSION
-description: >-
-  Bumps the major/minor/patch segment of the root VERSION file and of gyllir.toml's 'version'
-  key, commits, and pushes.
+name: Bump version
+description: Bumps the major/minor/patch segment of the `version` key in gyllir.toml, commits, and pushes.
 inputs:
   part:
     description: Which segment to bump - "major", "minor", or "patch".
@@ -15,7 +13,7 @@ runs:
       run: |
         set -euo pipefail
 
-        OLD_VERSION="$(tr -d '[:space:]' < VERSION)"
+        OLD_VERSION="$(bash .github/scripts/midgard-version.sh)"
         IFS='.' read -r MAJOR MINOR PATCH <<< "$OLD_VERSION"
 
         case "${{ inputs.part }}" in
@@ -26,13 +24,9 @@ runs:
         esac
 
         NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
-        echo "$NEW_VERSION" > VERSION
 
-        # VERSION is the source of truth for the release tag/workflows, but gyllir.toml's own
-        # 'version' key is what gyllir(the package manager) reports for this package when it is
-        # resolved as a dependency - left unsynced, it silently drifts behind every bump that
-        # only touches VERSION (only the key above the first [table] header is top-level, so a
-        # 'version' under e.g. [dependencies.foo] is never touched by mistake)
+        # Rewrite only the first top-level `version` key - stop at the first [table] header so a
+        # `version` under e.g. [dependencies.foo] is left alone. Same rule as midgard-version.sh.
         awk -v new="$NEW_VERSION" '
           !done && /^[[:space:]]*\[/ { done = 1 }
           !done && /^[[:space:]]*version[[:space:]]*=/ {
@@ -42,9 +36,16 @@ runs:
         ' gyllir.toml > gyllir.toml.tmp
         mv gyllir.toml.tmp gyllir.toml
 
+        # Guard against a silent no-op rewrite (e.g. a value the sub could not match).
+        WRITTEN="$(bash .github/scripts/midgard-version.sh)"
+        if [ "$WRITTEN" != "$NEW_VERSION" ]; then
+          echo "::error::Failed to write ${NEW_VERSION} into gyllir.toml (still reads ${WRITTEN})"
+          exit 1
+        fi
+
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add VERSION gyllir.toml
+        git add gyllir.toml
         git commit -m "chore: bump version ${OLD_VERSION} -> ${NEW_VERSION}"
         git push
 
