@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -45,6 +46,26 @@ int _yrt_file_size (char * path, uint64_t * size) {
     if (!S_ISREG (st.st_mode)) return 0;
 
     size [0] = st.st_size;
+    return 1;
+}
+
+char _yrt_file_mode (char * path, char followLink, uint32_t * mode) {
+    struct stat st;
+    if (followLink) {
+        if (stat (path, &st) != 0) return 0;
+    } else {
+        if (lstat (path, &st) != 0) return 0;
+    }
+
+    mode [0] = st.st_mode & 07777;
+    return 1;
+}
+
+char _yrt_create_file (char * path, int32_t mode) {
+    int fd = open (path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, mode);
+    if (fd < 0) return 0;
+
+    close (fd);
     return 1;
 }
 

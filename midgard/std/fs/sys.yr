@@ -247,31 +247,88 @@ pub fn tempDirectory(root: Path = Path("/tmp"), prefix: [c8] = "")-> Path
 }
 
 /**
- * Create a new file without openning it
+ * Create a new empty file without openning it, if the file already exists its content is erased.
  * @params:
- *    - name: the absolute path of the file(or relative to the execution)
+ *    - path: the path of the file, absolute or relative to cwd
+ *    - permission: the permission of the created file (default: 0o664), masked by the umask of the process.
+ *                  The permission of a file that already existed is left unchanged.
  * @throws:
  *   - FsError:
- *         + the file already exists
+ *         + the parent directory does not exist
  *         + permission denied
- *         + path is invalid
+ *         + path is a directory
  * @example:
  * ```
  * use std::fs::{sys, path};
  *
  * createFile(Path("./some/dir/file.txt"));
  * assert(isFile(Path("./some/dir/file.txt")));
+ *
+ * // A file only its owner can read and write
+ * createFile(Path("./some/dir/secret.txt"), permission-> 0o600);
  * ```
  */
-pub fn createFile(path: Path)
+pub fn createFile(path: Path, permission: i32 = 0o664)
     throws FsError
 {
-    let dmut f = etc::c::files::fopen(path.toStr().toStringZ(), "w".ptr);
-    if (f == null) {
+    if !_yrt_create_file(path.toStr().toStringZ(), permission) {
         throw copy FsError(errors::to!(FsErrorCode) (errno()), path.toStr());
     }
+}
 
-    etc::c::files::fclose(alias f);
+/**
+ * @returns: the permission bits of an entry of the filesystem (e.g. 0o644), including the setuid, setgid and sticky bits
+ * @params:
+ *    - path: the path of the entry, absolute or relative to cwd
+ *    - followLink: if path is a link, return the permission of the entry it points to instead of the permission of the link itself
+ * @throws:
+ *   - FsError:
+ *      + the entry does not exist
+ *      + permission denied
+ * @example:
+ * ```
+ * use std::fs::{sys, path};
+ *
+ * if permissions(Path("./some/dir/file.txt")) & 0o111 != 0 {
+ *     println("Executable by someone");
+ * }
+ * ```
+ */
+pub fn permissions(path: Path, followLink: bool = true)-> i32
+    throws FsError
+{
+    let mut mode = 0u32;
+    if !_yrt_file_mode(path.toStr().toStringZ(), followLink, &mode) {
+        throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+    }
+
+    cast!i32(mode)
+}
+
+/**
+ * Change the permission of an entry of the filesystem, the entry pointed to if path is a link.
+ * @params:
+ *    - path: the path of the entry, absolute or relative to cwd
+ *    - permission: the new permission bits (e.g. 0o644), the umask of the process does not apply
+ * @throws:
+ *   - FsError:
+ *      + the entry does not exist
+ *      + the current user does not own the entry
+ * @example:
+ * ```
+ * use std::fs::{sys, path};
+ *
+ * let script = Path("./some/dir/script.sh");
+ * setPermissions(script, permissions(script) | 0o100);
+ * assert(isExecutable(script));
+ * ```
+ */
+pub fn setPermissions(path: Path, permission: i32)
+    throws FsError
+{
+    if etc::c::files::chmod(path.toStr().toStringZ(), cast!u32(permission)) == -1 {
+        throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+    }
 }
 
 

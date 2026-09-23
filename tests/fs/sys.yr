@@ -127,3 +127,36 @@ __test links {
 
     removeDir(dir, recursive-> true);
 }
+
+__test permissions {
+    let (dir, f) = fixture("permissions");
+
+    setPermissions(f, 0o640);
+    assert(permissions(f) == 0o640);
+    assert(!isExecutable(f));
+
+    setPermissions(f, permissions(f) | 0o100);
+    assert(permissions(f) == 0o740 && isExecutable(f));
+
+    let secret = dir.push("secret.txt");
+    createFile(secret, permission-> 0o600);
+    assert(permissions(secret) == 0o600);
+
+    writeFile(secret, "content");
+    createFile(secret, permission-> 0o644);
+    assert(permissions(secret) == 0o600 && fileSize(secret) == MemorySize::B(0us));
+
+    let sub = dir.push("sub");
+    createDir(sub, permission-> 0o700);
+    assert(permissions(sub) == 0o700);
+
+    let lnk = dir.push("file.lnk");
+    symlink(Path("file.txt"), lnk);
+    assert(permissions(lnk) == 0o740 && permissions(lnk, followLink-> false) == 0o777);
+
+    assert({ permissions(dir.push("missing")); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_FOUND });
+    assert({ setPermissions(dir.push("missing"), 0o644); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_FOUND });
+    assert({ createFile(dir.push("missing").push("file.txt")); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_FOUND });
+
+    removeDir(dir, recursive-> true);
+}
