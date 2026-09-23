@@ -1071,3 +1071,678 @@ pub yield reverse {T of (yield-> U), U} (a: T)-> U {
         yield values[i - 1us];
     }
 }
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ======================================        REDUCE        ========================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Accumulate the elements of a slice into a seed
+ * <br>
+ * Unlike `fold`, the seed is explicit, so an empty slice reduces to a known value, and the
+ * accumulator can have a type other than the element type.
+ * @returns: the accumulation of the slice, starting from the seed
+ * @params:
+ *    - a: a slice to traverse
+ *    - seed: the initial value of the accumulator
+ * @templates:
+ *    - F: the accumulation function
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * assert(a.reduce!{|acc, x| => acc + x} (0) == 10);
+ *
+ * let e = a[0 .. 0];
+ * assert(e.reduce!{|acc, x| => acc + x} (0) == 0);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn reduce {F: fn (V, U)-> V, T of [U], U, V} (a: T, seed: V)-> V {
+    let mut res = seed;
+    for i in a {
+        res = F(res, i);
+    }
+
+    res
+}
+
+/**
+ * Accumulate the elements of a slice into a seed
+ * <br>
+ * Unlike `fold`, the seed is explicit, so an empty slice reduces to a known value, and the
+ * accumulator can have a type other than the element type.
+ * @returns: the accumulation of the slice, starting from the seed
+ * @params:
+ *    - a: a slice to traverse
+ *    - seed: the initial value of the accumulator
+ *    - f: the accumulation function
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * let z = 10;
+ * let r = a.reduce(0, copy |acc, x| => acc + x * z);
+ *
+ * assert(r == 60);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn reduce {V, T of [U], U} (a: T, seed: V, f: dg (V, U)-> V)-> V {
+    let mut res = seed;
+    for i in a {
+        res = f(res, i);
+    }
+
+    res
+}
+
+/**
+ * Accumulate the elements of an array into a seed
+ * @returns: the accumulation of the array, starting from the seed
+ * @params:
+ *    - a: an array to traverse
+ *    - seed: the initial value of the accumulator
+ * @templates:
+ *    - F: the accumulation function
+ * @example:
+ * ```
+ * let a = [1, 2, 3, 4];
+ * assert(a.reduce!{|acc, x| => acc + x} (0) == 10);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn if (N > 0) reduce {F: fn (V, U)-> V, T of [U ; N], U, V, N: usize} (a: T, seed: V)-> V {
+    let mut res = seed;
+    for i in a {
+        res = F(res, i);
+    }
+
+    res
+}
+
+/**
+ * Accumulate the elements of an array into a seed
+ * @returns: the accumulation of the array, starting from the seed
+ * @params:
+ *    - a: an array to traverse
+ *    - seed: the initial value of the accumulator
+ *    - f: the accumulation function
+ * @example:
+ * ```
+ * let a = [1, 2, 3];
+ * let z = 10;
+ * let r = a.reduce(0, copy |acc, x| => acc + x * z);
+ *
+ * assert(r == 60);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn if (N > 0) reduce {V, T of [U ; N], U, N: usize} (a: T, seed: V, f: dg (V, U)-> V)-> V {
+    let mut res = seed;
+    for i in a {
+        res = f(res, i);
+    }
+
+    res
+}
+
+/**
+ * Accumulate the values yielded by a generator into a seed
+ * @returns: the accumulation of the generator, starting from the seed
+ * @params:
+ *    - a: a generator to exhaust
+ *    - seed: the initial value of the accumulator
+ * @templates:
+ *    - F: the accumulation function
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * assert(a.filter(|x| => x % 2 == 0).reduce!{|acc, x| => acc + x} (0) == 6);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ */
+pub fn reduce {F: fn (V, U)-> V, T of (yield-> U), U, V} (a: T, seed: V)-> V {
+    let mut res = seed;
+    for i in a {
+        res = F(res, i);
+    }
+
+    res
+}
+
+/**
+ * Accumulate the values yielded by a generator into a seed
+ * @returns: the accumulation of the generator, starting from the seed
+ * @params:
+ *    - a: a generator to exhaust
+ *    - seed: the initial value of the accumulator
+ *    - f: the accumulation function
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * let z = 10;
+ * let r = a.iter().reduce(0, copy |acc, x| => acc + x * z);
+ *
+ * assert(r == 60);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ */
+pub fn reduce {V, T of (yield-> U), U} (a: T, seed: V, f: dg (V, U)-> V)-> V {
+    let mut res = seed;
+    for i in a {
+        res = f(res, i);
+    }
+
+    res
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ===================================        SUM / PRODUCT        ====================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Add up the elements of a slice
+ * @returns: the sum of the elements of a, 0 if a is empty
+ * @params:
+ *    - a: a slice to traverse
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * assert(a.sum() == 10);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn if (__pragma!compile(cast!U(0) + cast!U(0))) sum {T of [U], U} (a: T)-> U {
+    let mut res = cast!U(0);
+    for i in a {
+        res = res + i;
+    }
+
+    res
+}
+
+/**
+ * Add up the elements of an array
+ * @returns: the sum of the elements of a, 0 if a is empty
+ * @params:
+ *    - a: an array to traverse
+ * @example:
+ * ```
+ * let a = [1, 2, 3, 4];
+ * assert(a.sum() == 10);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn if (N > 0 && __pragma!compile(cast!U(0) + cast!U(0))) sum {T of [U ; N], U, N: usize} (a: T)-> U {
+    let mut res = cast!U(0);
+    for i in a {
+        res = res + i;
+    }
+
+    res
+}
+
+/**
+ * Add up the values yielded by a generator
+ * @returns: the sum of the values yielded by a, 0 if it yields nothing
+ * @params:
+ *    - a: a generator to exhaust
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * assert(a.map!{|x| => x * 2} ().sum() == 20);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ */
+pub fn if (__pragma!compile(cast!U(0) + cast!U(0))) sum {T of (yield-> U), U} (a: T)-> U {
+    let mut res = cast!U(0);
+    for i in a {
+        res = res + i;
+    }
+
+    res
+}
+
+/**
+ * Multiply the elements of a slice
+ * @returns: the product of the elements of a, 1 if a is empty
+ * @params:
+ *    - a: a slice to traverse
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * assert(a.product() == 24);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn if (__pragma!compile(cast!U(1) * cast!U(1))) product {T of [U], U} (a: T)-> U {
+    let mut res = cast!U(1);
+    for i in a {
+        res = res * i;
+    }
+
+    res
+}
+
+/**
+ * Multiply the elements of an array
+ * @returns: the product of the elements of a, 1 if a is empty
+ * @params:
+ *    - a: an array to traverse
+ * @example:
+ * ```
+ * let a = [1, 2, 3, 4];
+ * assert(a.product() == 24);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn if (N > 0 && __pragma!compile(cast!U(1) * cast!U(1))) product {T of [U ; N], U, N: usize} (a: T)-> U {
+    let mut res = cast!U(1);
+    for i in a {
+        res = res * i;
+    }
+
+    res
+}
+
+/**
+ * Multiply the values yielded by a generator
+ * @returns: the product of the values yielded by a, 1 if it yields nothing
+ * @params:
+ *    - a: a generator to exhaust
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * assert(a.map!{|x| => x * 2} ().product() == 384);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ */
+pub fn if (__pragma!compile(cast!U(1) * cast!U(1))) product {T of (yield-> U), U} (a: T)-> U {
+    let mut res = cast!U(1);
+    for i in a {
+        res = res * i;
+    }
+
+    res
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ====================================        MIN / MAX BY        ====================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Find the element of a slice whose key is the smallest
+ * @returns: the first element having the minimal key, none if a is empty
+ * @params:
+ *    - a: a slice to traverse
+ * @templates:
+ *    - F: the key of an element
+ * @example:
+ * ```
+ * let a = copy ["abc"s8, "z"s8, "de"s8];
+ * assert(a.minBy!{|x| => x.len} () == ("z"s8)?);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn minBy {F: fn (U)-> K, T of [U], U, K} (a: T)-> (U)? {
+    if (a.len == 0us) return none;
+
+    let mut best = a[0];
+    let mut bestKey = F(a[0]);
+    for i in a[1 .. $] {
+        let key = F(i);
+        if (key < bestKey) {
+            best = i;
+            bestKey = key;
+        }
+    }
+
+    (best)?
+}
+
+/**
+ * Find the element of a slice whose key is the smallest
+ * @returns: the first element having the minimal key, none if a is empty
+ * @params:
+ *    - a: a slice to traverse
+ *    - f: the key of an element
+ * @example:
+ * ```
+ * let a = copy [1, -7, 3];
+ * let r = a.minBy(|x: i32|-> i32 => { if (x < 0) { -x } else { x } });
+ *
+ * assert(r == (1)?);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn minBy {K, T of [U], U} (a: T, f: dg (U)-> K)-> (U)? {
+    if (a.len == 0us) return none;
+
+    let mut best = a[0];
+    let mut bestKey = f(a[0]);
+    for i in a[1 .. $] {
+        let key = f(i);
+        if (key < bestKey) {
+            best = i;
+            bestKey = key;
+        }
+    }
+
+    (best)?
+}
+
+/**
+ * Find the element of an array whose key is the smallest
+ * @returns: the first element having the minimal key
+ * @params:
+ *    - a: an array to traverse
+ * @templates:
+ *    - F: the key of an element
+ * @example:
+ * ```
+ * let a = ["abc"s8, "z"s8, "de"s8];
+ * assert(a.minBy!{|x| => x.len} () == "z"s8);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn if (N > 0) minBy {F: fn (U)-> K, T of [U ; N], U, K, N: usize} (a: T)-> U {
+    let mut best = a[0];
+    let mut bestKey = F(a[0]);
+    for i in a[1 .. $] {
+        let key = F(i);
+        if (key < bestKey) {
+            best = i;
+            bestKey = key;
+        }
+    }
+
+    best
+}
+
+/**
+ * Find the element of an array whose key is the smallest
+ * @returns: the first element having the minimal key
+ * @params:
+ *    - a: an array to traverse
+ *    - f: the key of an element
+ * @example:
+ * ```
+ * let a = [1, -7, 3];
+ * let r = a.minBy(|x: i32|-> i32 => { if (x < 0) { -x } else { x } });
+ *
+ * assert(r == 1);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn if (N > 0) minBy {K, T of [U ; N], U, N: usize} (a: T, f: dg (U)-> K)-> U {
+    let mut best = a[0];
+    let mut bestKey = f(a[0]);
+    for i in a[1 .. $] {
+        let key = f(i);
+        if (key < bestKey) {
+            best = i;
+            bestKey = key;
+        }
+    }
+
+    best
+}
+
+/**
+ * Find the value yielded by a generator whose key is the smallest
+ * @returns: the first value having the minimal key, none if a yields nothing
+ * @params:
+ *    - a: a generator to exhaust
+ * @templates:
+ *    - F: the key of a value
+ * @example:
+ * ```
+ * let a = copy ["abc"s8, "z"s8, "de"s8];
+ * assert(a.iter().minBy!{|x| => x.len} () == ("z"s8)?);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ */
+pub fn minBy {F: fn (U)-> K, T of (yield-> U), U, K} (a: T)-> (U)? {
+    if let Ok(first) = a.next() {
+        let mut best = first;
+        let mut bestKey = F(first);
+        for i in a {
+            let key = F(i);
+            if (key < bestKey) {
+                best = i;
+                bestKey = key;
+            }
+        }
+
+        (best)?
+    } else {
+        none
+    }
+}
+
+/**
+ * Find the value yielded by a generator whose key is the smallest
+ * @returns: the first value having the minimal key, none if a yields nothing
+ * @params:
+ *    - a: a generator to exhaust
+ *    - f: the key of a value
+ * @example:
+ * ```
+ * let a = copy [1, -7, 3];
+ * let r = a.iter().minBy(|x: i32|-> i32 => { if (x < 0) { -x } else { x } });
+ *
+ * assert(r == (1)?);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ */
+pub fn minBy {K, T of (yield-> U), U} (a: T, f: dg (U)-> K)-> (U)? {
+    if let Ok(first) = a.next() {
+        let mut best = first;
+        let mut bestKey = f(first);
+        for i in a {
+            let key = f(i);
+            if (key < bestKey) {
+                best = i;
+                bestKey = key;
+            }
+        }
+
+        (best)?
+    } else {
+        none
+    }
+}
+
+/**
+ * Find the element of a slice whose key is the largest
+ * @returns: the first element having the maximal key, none if a is empty
+ * @params:
+ *    - a: a slice to traverse
+ * @templates:
+ *    - F: the key of an element
+ * @example:
+ * ```
+ * let a = copy ["abc"s8, "z"s8, "de"s8];
+ * assert(a.maxBy!{|x| => x.len} () == ("abc"s8)?);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn maxBy {F: fn (U)-> K, T of [U], U, K} (a: T)-> (U)? {
+    if (a.len == 0us) return none;
+
+    let mut best = a[0];
+    let mut bestKey = F(a[0]);
+    for i in a[1 .. $] {
+        let key = F(i);
+        if (key > bestKey) {
+            best = i;
+            bestKey = key;
+        }
+    }
+
+    (best)?
+}
+
+/**
+ * Find the element of a slice whose key is the largest
+ * @returns: the first element having the maximal key, none if a is empty
+ * @params:
+ *    - a: a slice to traverse
+ *    - f: the key of an element
+ * @example:
+ * ```
+ * let a = copy [1, -7, 3];
+ * let r = a.maxBy(|x: i32|-> i32 => { if (x < 0) { -x } else { x } });
+ *
+ * assert(r == (-7)?);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn maxBy {K, T of [U], U} (a: T, f: dg (U)-> K)-> (U)? {
+    if (a.len == 0us) return none;
+
+    let mut best = a[0];
+    let mut bestKey = f(a[0]);
+    for i in a[1 .. $] {
+        let key = f(i);
+        if (key > bestKey) {
+            best = i;
+            bestKey = key;
+        }
+    }
+
+    (best)?
+}
+
+/**
+ * Find the element of an array whose key is the largest
+ * @returns: the first element having the maximal key
+ * @params:
+ *    - a: an array to traverse
+ * @templates:
+ *    - F: the key of an element
+ * @example:
+ * ```
+ * let a = ["abc"s8, "z"s8, "de"s8];
+ * assert(a.maxBy!{|x| => x.len} () == "abc"s8);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn if (N > 0) maxBy {F: fn (U)-> K, T of [U ; N], U, K, N: usize} (a: T)-> U {
+    let mut best = a[0];
+    let mut bestKey = F(a[0]);
+    for i in a[1 .. $] {
+        let key = F(i);
+        if (key > bestKey) {
+            best = i;
+            bestKey = key;
+        }
+    }
+
+    best
+}
+
+/**
+ * Find the element of an array whose key is the largest
+ * @returns: the first element having the maximal key
+ * @params:
+ *    - a: an array to traverse
+ *    - f: the key of an element
+ * @example:
+ * ```
+ * let a = [1, -7, 3];
+ * let r = a.maxBy(|x: i32|-> i32 => { if (x < 0) { -x } else { x } });
+ *
+ * assert(r == -7);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn if (N > 0) maxBy {K, T of [U ; N], U, N: usize} (a: T, f: dg (U)-> K)-> U {
+    let mut best = a[0];
+    let mut bestKey = f(a[0]);
+    for i in a[1 .. $] {
+        let key = f(i);
+        if (key > bestKey) {
+            best = i;
+            bestKey = key;
+        }
+    }
+
+    best
+}
+
+/**
+ * Find the value yielded by a generator whose key is the largest
+ * @returns: the first value having the maximal key, none if a yields nothing
+ * @params:
+ *    - a: a generator to exhaust
+ * @templates:
+ *    - F: the key of a value
+ * @example:
+ * ```
+ * let a = copy ["abc"s8, "z"s8, "de"s8];
+ * assert(a.iter().maxBy!{|x| => x.len} () == ("abc"s8)?);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ */
+pub fn maxBy {F: fn (U)-> K, T of (yield-> U), U, K} (a: T)-> (U)? {
+    if let Ok(first) = a.next() {
+        let mut best = first;
+        let mut bestKey = F(first);
+        for i in a {
+            let key = F(i);
+            if (key > bestKey) {
+                best = i;
+                bestKey = key;
+            }
+        }
+
+        (best)?
+    } else {
+        none
+    }
+}
+
+/**
+ * Find the value yielded by a generator whose key is the largest
+ * @returns: the first value having the maximal key, none if a yields nothing
+ * @params:
+ *    - a: a generator to exhaust
+ *    - f: the key of a value
+ * @example:
+ * ```
+ * let a = copy [1, -7, 3];
+ * let r = a.iter().maxBy(|x: i32|-> i32 => { if (x < 0) { -x } else { x } });
+ *
+ * assert(r == (-7)?);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ */
+pub fn maxBy {K, T of (yield-> U), U} (a: T, f: dg (U)-> K)-> (U)? {
+    if let Ok(first) = a.next() {
+        let mut best = first;
+        let mut bestKey = f(first);
+        for i in a {
+            let key = f(i);
+            if (key > bestKey) {
+                best = i;
+                bestKey = key;
+            }
+        }
+
+        (best)?
+    } else {
+        none
+    }
+}

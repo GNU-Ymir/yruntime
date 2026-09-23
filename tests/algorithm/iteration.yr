@@ -331,3 +331,104 @@ __test reverseGenerator {
     let e = a[0 .. 0];
     assert(e.iter().reverse().collect().len == 0us, "b");
 }
+
+__test reduceSlice {
+    let a = copy [1, 2, 3, 4];
+    assert(a.reduce!{|acc, x| => acc + x} (0) == 10, "a");
+    assert(a.reduce(0, |acc, x| => acc + x) == 10, "b");
+
+    // unlike fold, an empty slice reduces to the seed
+    let e = a[0 .. 0];
+    assert(e.reduce!{|acc, x| => acc + x} (7) == 7, "c");
+
+    // and the accumulator does not have to be the element type
+    let s = a.reduce!{|acc, x| => acc ~ std::conv::to!{[c8]} (x)} (""s8);
+    assert(s == "1234"s8, "d");
+
+    let z = 10;
+    assert(a.reduce(0, copy |acc, x| => acc + x * z) == 100, "e");
+}
+
+__test reduceArray {
+    let a = [1, 2, 3, 4];
+    assert(a.reduce!{|acc, x| => acc + x} (0) == 10, "a");
+    assert(a.reduce(0, |acc, x| => acc + x) == 10, "b");
+}
+
+__test reduceGenerator {
+    let a = copy [1, 2, 3, 4];
+    assert(a.iter().reduce!{|acc, x| => acc + x} (0) == 10, "a");
+    assert(a.iter().reduce(0, |acc, x| => acc + x) == 10, "b");
+    assert(a.filter(|x| => x > 9).reduce!{|acc, x| => acc + x} (7) == 7, "c");
+}
+
+__test sumProductSlice {
+    let a = copy [1, 2, 3, 4];
+    assert(a.sum() == 10, "a");
+    assert(a.product() == 24, "b");
+
+    let e = a[0 .. 0];
+    assert(e.sum() == 0, "c");
+    assert(e.product() == 1, "d");
+
+    let f = copy [1.5, 2.5];
+    assert(f.sum() == 4.0, "e");
+}
+
+__test sumProductArray {
+    let a = [1, 2, 3, 4];
+    assert(a.sum() == 10, "a");
+    assert(a.product() == 24, "b");
+}
+
+__test sumProductGenerator {
+    let a = copy [1, 2, 3, 4];
+    assert(a.iter().sum() == 10, "a");
+    assert(a.iter().product() == 24, "b");
+
+    let e = a[0 .. 0];
+    assert(e.iter().sum() == 0, "c");
+    assert(e.iter().product() == 1, "d");
+}
+
+__test minMaxBySlice {
+    let a = copy ["abc"s8, "z"s8, "de"s8];
+    assert(a.minBy!{|x| => x.len} () == ("z"s8)?, "a");
+    assert(a.maxBy!{|x| => x.len} () == ("abc"s8)?, "b");
+    assert(a.minBy(|x: [c8]|-> usize => x.len) == ("z"s8)?, "c");
+    assert(a.maxBy(|x: [c8]|-> usize => x.len) == ("abc"s8)?, "d");
+
+    let e = a[0 .. 0];
+    assert(e.minBy!{|x| => x.len} () == none, "e");
+    assert(e.maxBy!{|x| => x.len} () == none, "f");
+
+    // ties keep the first element
+    let t = copy ["ab"s8, "cd"s8];
+    assert(t.minBy!{|x| => x.len} () == ("ab"s8)?, "g");
+    assert(t.maxBy!{|x| => x.len} () == ("ab"s8)?, "h");
+}
+
+__test minMaxByArray {
+    let a = ["abc"s8, "z"s8, "de"s8];
+    assert(a.minBy!{|x| => x.len} () == "z"s8, "a");
+    assert(a.maxBy!{|x| => x.len} () == "abc"s8, "b");
+    assert(a.minBy(|x: [c8]|-> usize => x.len) == "z"s8, "c");
+    assert(a.maxBy(|x: [c8]|-> usize => x.len) == "abc"s8, "d");
+}
+
+__test minMaxByGenerator {
+    let a = copy ["abc"s8, "z"s8, "de"s8];
+    assert(a.iter().minBy!{|x| => x.len} () == ("z"s8)?, "a");
+    assert(a.iter().maxBy!{|x| => x.len} () == ("abc"s8)?, "b");
+    assert(a.iter().minBy(|x: [c8]|-> usize => x.len) == ("z"s8)?, "c");
+    assert(a.iter().maxBy(|x: [c8]|-> usize => x.len) == ("abc"s8)?, "d");
+
+    let e = a[0 .. 0];
+    assert(e.iter().minBy!{|x| => x.len} () == none, "e");
+    assert(e.iter().maxBy!{|x| => x.len} () == none, "f");
+
+    // ties keep the first value
+    let t = copy ["ab"s8, "cd"s8];
+    assert(t.iter().minBy!{|x| => x.len} () == ("ab"s8)?, "g");
+    assert(t.iter().maxBy!{|x| => x.len} () == ("ab"s8)?, "h");
+}
