@@ -112,9 +112,14 @@ pub record Path {
      *
      * // Or using a custom separator '!'
      * assert(path.toStr(sep-> "!") == "!foo!test.txt");
+     *
+     * // The root directory is written as the separator alone, an empty path as an empty string
+     * assert(Path("/").toStr() == "/" && Path("").toStr() == "");
      * ```
      */
     pub fn toStr(self, sep: [c8] = "/")-> [c8] {
+        if self._parts.len == 1us && self._parts[0us] == "" { return sep; }
+
         let dmut stream = copy std::stream::StringStream();
         if (self._parts.len != 0us) {
             stream:.write(self._parts[0]);
@@ -313,11 +318,7 @@ pub record Path {
      * ```
      */
     pub fn isAbsolute(self)-> bool {
-        if (self._parts.len > 0us) {
-            self._parts[0us] == ""
-        } else {
-            true
-        }
+        self._parts.len > 0us && self._parts[0us] == ""
     }
 
     /**
@@ -331,12 +332,11 @@ pub record Path {
      * let root = Path("/");
      * let cwd = Path(".");
      *
-     * // There is no way to create an empty path from a constructor
-     * // But we can get one using a function that returns an empty path(for example parent, or commonPrefix)
+     * // An empty path is built from an empty string, or returned by a function like parent or commonPrefix
      * let empty1 = root.parent();
      * let empty2 = cwd.parent();
      *
-     * assert(empty1.isEmpty() && empty2.isEmpty());
+     * assert(empty1.isEmpty() && empty2.isEmpty() && Path("").isEmpty());
      *
      * // root is not empty, it contains one empty component
      * assert(!cwd.isEmpty() && !root.isEmpty());
@@ -656,12 +656,15 @@ pub record Path {
      * assert(root.commonPrefix(cwd).isEmpty());
      *
      * // In that case it is still a prefix to root nor cwd
-     *  assert(root.commonPrefix(cwd).isPrefix(root));
+     * assert(root.commonPrefix(cwd).isPrefix(root));
+     *
+     * // A path that is a prefix of the other is their common prefix
+     * assert(Path("/some").commonPrefix(abs1) == Path("/some"));
      * ```
      */
     pub fn commonPrefix(self, other: Path)-> Path {
         let min = std::algorithm::comparison::min(self._parts.len, other._parts.len);
-        let mut len = 0us;
+        let mut len = min;
         for i in 0us .. min {
             if self._parts[i] != other._parts[i] {
                 len = i;
@@ -702,6 +705,46 @@ pub record Path {
         }
     }
 
+    /**
+     * Resolve the `.` and `..` components of the path, and drop its empty components, without accessing the filesystem.
+     * @info:
+     *    - a `..` at the root of an absolute path is dropped, since the parent of the root directory is the root directory.
+     *    - the leading `..` of a relative path are kept, and a relative path resolving to nothing is `.`.
+     *    - the result of `..` following a symbolic link may differ from the one resolved by the filesystem, cf. std::fs::sys::canonicalize.
+     * @complexity: O(k), where k is the number of parts in the self path
+     * @example:
+     * ```
+     * use std::fs::path;
+     *
+     * assert(Path("/foo/./bar//../baz").normalize().toStr() == "/foo/baz");
+     * assert(Path("/../foo").normalize().toStr() == "/foo");
+     *
+     * assert(Path("./foo/../../bar").normalize().toStr() == "../bar");
+     * assert(Path("foo/..").normalize().toStr() == ".");
+     * ```
+     */
+    pub fn normalize(self)-> Path {
+        let abs = self.isAbsolute();
+        let mut parts: [[c8]] = if abs { copy [""] } else { [] };
+        let start = if abs { 1us } else { 0us };
+        for i in self._parts[start .. $] {
+            if i == "" || i == "." { continue; }
+            if i == ".." {
+                if parts.len > start && parts[$ - 1us] != ".." {
+                    parts = parts[0us .. $ - 1us];
+                    continue;
+                } else if abs {
+                    continue;
+                }
+            }
+
+            parts ~= copy [i];
+        }
+
+        if parts.len == 0us { return Path(copy ["."]); }
+        Path(parts)
+    }
+
 
     /*!
      * ====================================================================================================
@@ -714,7 +757,9 @@ pub record Path {
     impl Streamable {
         pub over toStream(self, dmut stream: &StringStream) {
             stream:.write("Path (");
-            if (self._parts.len != 0us) {
+            if self._parts.len == 1us && self._parts[0us] == "" {
+                stream:.write('/');
+            } else if (self._parts.len != 0us) {
                 stream:.write(self._parts[0]);
                 for i in self._parts[1 .. $] {
                     stream:.write('/', i);

@@ -24,7 +24,9 @@ pub enum FsErrorCode: u8
 | LINK_LOOP         = 9u8
 | PATH_TOO_LONG     = 10u8
 | DIR_NOT_EMPTY     = 11u8
-| NOT_A_FILE        = 12u8;
+| NOT_A_FILE        = 12u8
+| CROSS_DEVICE      = 13u8
+| NOT_A_LINK        = 14u8;
 
 
 /**
@@ -68,6 +70,7 @@ pub class FsError over core::exception::io::IOError {
 pub fn if template!{T}{X of FsErrorCode} to {T} (err: ErrnoValue)-> FsErrorCode {
     match err {
         ErrnoValue::EACCES => { FsErrorCode::PERMISSION_DENIED }
+        ErrnoValue::EPERM => { FsErrorCode::PERMISSION_DENIED }
         ErrnoValue::ENOTDIR => { FsErrorCode::PARENT_DONT_EXIST }
         ErrnoValue::ENOENT => { FsErrorCode::NOT_FOUND }
         ErrnoValue::EBADF => { FsErrorCode::FILE_CLOSED }
@@ -75,6 +78,8 @@ pub fn if template!{T}{X of FsErrorCode} to {T} (err: ErrnoValue)-> FsErrorCode 
         ErrnoValue::EEXIST => { FsErrorCode::ALREADY_EXISTS }
         ErrnoValue::ENAMETOOLONG => { FsErrorCode::PATH_TOO_LONG }
         ErrnoValue::ENOTEMPTY => { FsErrorCode::DIR_NOT_EMPTY }
+        ErrnoValue::EISDIR => { FsErrorCode::NOT_A_FILE }
+        ErrnoValue::EXDEV => { FsErrorCode::CROSS_DEVICE }
         _ => { FsErrorCode::IO_ERROR }
     }
 }
@@ -99,5 +104,7 @@ pub fn if template!{U}{X of c8} to {C of [U], U, T of FsErrorCode} (err: T)-> [c
         FsErrorCode::PATH_TOO_LONG => { "PATH_TOO_LONG" }
         FsErrorCode::DIR_NOT_EMPTY => { "DIR_NOT_EMPTY" }
         FsErrorCode::NOT_A_FILE => { "NOT_A_FILE" }
+        FsErrorCode::CROSS_DEVICE => { "CROSS_DEVICE" }
+        FsErrorCode::NOT_A_LINK => { "NOT_A_LINK" }
     }
 }

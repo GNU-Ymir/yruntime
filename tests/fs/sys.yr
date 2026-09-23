@@ -1,0 +1,242 @@
+in sys;
+
+use std::fs::{sys, path, file, errors, iteration};
+use std::unit;
+
+fn fixture(prefix: [c8], content: [c8] = "Hello World!")-> (Path, Path)
+    throws FsError
+{
+    let dir = tempDirectory(prefix-> "midgard_fs_" ~ prefix ~ "_");
+    let f = dir.push("file.txt");
+    {
+        let dmut file = File::create(f, write-> true);
+        file:.write(content);
+    }
+
+    (dir, f)
+}
+
+fn index(l: [[c8]], v: [c8])-> usize {
+    for i, x in l { if x == v { return i; } }
+    l.len
+}
+
+__test exists {
+    let (dir, f) = fixture("exists");
+    assert(exists(dir) && exists(f));
+    assert(exists(dir, followLink-> false) && exists(f, followLink-> false));
+    assert(!exists(dir.push("missing")));
+    assert(!exists(f.push("below_a_file")));
+
+    removeDir(dir, recursive-> true);
+    assert(!exists(dir));
+}
+
+__test fileSize {
+    let (dir, f) = fixture("size");
+    assert(fileSize(f) == MemorySize::B(12us) && fileSize(f) != MemorySize::B(13us));
+    assert(fileSize(f).bytes == 12us);
+
+    createFile(dir.push("empty"));
+    assert(fileSize(dir.push("empty")) == MemorySize::B(0us));
+
+    assert({ fileSize(dir); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_A_FILE });
+    assert({ fileSize(dir.push("missing")); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_FOUND });
+
+    removeDir(dir, recursive-> true);
+}
+
+__test rename {
+    let (dir, f) = fixture("rename");
+    let g = dir.push("renamed.txt");
+
+    rename(f, g);
+    assert(!exists(f) && isFile(g));
+    assert(fileSize(g) == MemorySize::B(12us));
+
+    createFile(f);
+    rename(f, g);
+    assert(!exists(f) && fileSize(g) == MemorySize::B(0us));
+
+    let sub = dir.push("sub");
+    createDir(sub);
+    rename(g, sub.push("moved.txt"));
+    assert(isFile(sub.push("moved.txt")));
+
+    rename(sub, dir.push("other"));
+    assert(!exists(sub) && isFile(dir.push("other").push("moved.txt")));
+
+    createDir(sub);
+    assert({ rename(sub, dir.push("other")); false } catch { FsError(code-> c) => c == FsErrorCode::DIR_NOT_EMPTY || c == FsErrorCode::ALREADY_EXISTS });
+    assert({ rename(dir.push("missing"), g); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_FOUND });
+
+    removeDir(dir, recursive-> true);
+}
+
+__test readWriteFile {
+    let (dir, f) = fixture("readwrite");
+    assert(readFile(f) == "Hello World!");
+
+    writeFile(f, "Hello");
+    assert(readFile(f) == "Hello");
+
+    writeFile(f, " World!", append-> true);
+    assert(readFile(f) == "Hello World!");
+
+    let g = dir.push("created.txt");
+    writeFile(g, "", append-> true);
+    assert(isFile(g) && readFile(g) == "");
+
+    writeFile(g, "new");
+    assert(readFile(g) == "new");
+
+    assert({ readFile(dir.push("missing")); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_FOUND });
+    assert({ readFile(dir); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_A_FILE });
+    assert({ writeFile(dir, "x"); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_A_FILE });
+    assert({ writeFile(dir.push("missing").push("file.txt"), "x"); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_FOUND });
+
+    removeDir(dir, recursive-> true);
+}
+
+__test links {
+    let (dir, f) = fixture("links");
+    let lnk = dir.push("file.lnk");
+
+    symlink(Path("file.txt"), lnk);
+    assert(isLink(lnk) && isFile(lnk) && !isFile(lnk, followLink-> false));
+    assert(readLink(lnk) == Path("file.txt"));
+    assert(FsEntry(lnk, FsEntryKind::LINK).follow() == Path("file.txt"));
+    assert(readFile(lnk) == "Hello World!");
+
+    let dangling = dir.push("dangling.lnk");
+    symlink(Path("missing"), dangling);
+    assert(exists(dangling, followLink-> false) && !exists(dangling));
+
+    let long = Path(copy ['a' ; 300us]);
+    symlink(long, dir.push("long.lnk"));
+    assert(readLink(dir.push("long.lnk")) == long);
+
+    let copied = dir.push("copied.lnk");
+    copyFsEntry(lnk, copied);
+    assert(readLink(copied) == Path("file.txt") && readLink(lnk) == Path("file.txt"));
+
+    assert({ symlink(Path("file.txt"), lnk); false } catch { FsError(code-> c) => c == FsErrorCode::ALREADY_EXISTS });
+    assert({ readLink(f); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_A_LINK });
+    assert({ readLink(dir.push("missing")); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_FOUND });
+
+    let hard = dir.push("hard.txt");
+    hardLink(f, hard);
+    removeFile(f);
+    assert(readFile(hard) == "Hello World!");
+    assert({ hardLink(dir.push("missing"), dir.push("x")); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_FOUND });
+
+    removeDir(dir, recursive-> true);
+}
+
+__test permissions {
+    let (dir, f) = fixture("permissions");
+
+    setPermissions(f, 0o640);
+    assert(permissions(f) == 0o640);
+    assert(!isExecutable(f));
+
+    setPermissions(f, permissions(f) | 0o100);
+    assert(permissions(f) == 0o740 && isExecutable(f));
+
+    let secret = dir.push("secret.txt");
+    createFile(secret, permission-> 0o600);
+    assert(permissions(secret) == 0o600);
+
+    writeFile(secret, "content");
+    createFile(secret, permission-> 0o644);
+    assert(permissions(secret) == 0o600 && fileSize(secret) == MemorySize::B(0us));
+
+    let sub = dir.push("sub");
+    createDir(sub, permission-> 0o700);
+    assert(permissions(sub) == 0o700);
+
+    let lnk = dir.push("file.lnk");
+    symlink(Path("file.txt"), lnk);
+    assert(permissions(lnk) == 0o740 && permissions(lnk, followLink-> false) == 0o777);
+
+    assert({ permissions(dir.push("missing")); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_FOUND });
+    assert({ setPermissions(dir.push("missing"), 0o644); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_FOUND });
+    assert({ createFile(dir.push("missing").push("file.txt")); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_FOUND });
+
+    removeDir(dir, recursive-> true);
+}
+
+__test absolute {
+    let cwd = canonicalize(Path("."));
+    assert(cwd.isAbsolute());
+    assert(Path("foo/./bar/..").absolute() == cwd.push("foo"));
+    assert(Path("").absolute() == cwd);
+    assert(Path("/usr/./lib/../bin").absolute() == Path("/usr/bin"));
+    assert(Path("/").absolute() == Path("/"));
+}
+
+__test canonicalize {
+    let (dir, f) = fixture("canonicalize");
+    let root = canonicalize(dir);
+    assert(root.isAbsolute() && root.file() == dir.file());
+
+    let sub = dir.push("sub");
+    createDir(sub);
+    symlink(Path("sub"), dir.push("link"));
+    symlink(Path("../file.txt"), sub.push("file.lnk"));
+
+    assert(canonicalize(f) == root.push("file.txt"));
+    assert(canonicalize(dir.push("link").push("..").push("file.txt")) == root.push("file.txt"));
+    assert(canonicalize(dir.push("link").push("file.lnk")) == root.push("file.txt"));
+    assert(canonicalize(dir.push(".").push("sub").push("..")) == root);
+    assert(canonicalize(Path("/")) == Path("/"));
+
+    assert({ canonicalize(dir.push("missing")); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_FOUND });
+
+    symlink(Path("loop2"), dir.push("loop1"));
+    symlink(Path("loop1"), dir.push("loop2"));
+    assert({ canonicalize(dir.push("loop1")); false } catch { FsError(code-> c) => c == FsErrorCode::LINK_LOOP });
+
+    removeDir(dir, recursive-> true);
+}
+
+__test walkDir {
+    let (dir, _) = fixture("walk");
+    createDir(dir.push("a").push("b"), recursive-> true);
+    writeFile(dir.push("a").push("x.txt"), "x");
+    writeFile(dir.push("a").push("b").push("y.txt"), "y");
+    createDir(dir.push("empty"));
+    symlink(Path(".."), dir.push("a").push("up.lnk"));
+
+    let mut pre: [[c8]] = [];
+    for e in walkDir(dir) {
+        pre ~= [e.path.removePrefix(dir).toStr()];
+    }
+
+    let mut post: [[c8]] = [];
+    for e in walkDir(dir, contentFirst-> true) {
+        post ~= [e.path.removePrefix(dir).toStr()];
+    }
+
+    let expected = ["file.txt", "a", "a/x.txt", "a/b", "a/b/y.txt", "a/up.lnk", "empty"];
+    assert(pre.len == expected.len && post.len == expected.len);
+    for p in expected {
+        assert(index(pre, p) < pre.len && index(post, p) < post.len);
+    }
+
+    assert(index(pre, "a") < index(pre, "a/x.txt") && index(pre, "a/b") < index(pre, "a/b/y.txt"));
+    assert(index(post, "a") > index(post, "a/x.txt") && index(post, "a/b") > index(post, "a/b/y.txt"));
+    assert(index(post, "a") > index(post, "a/b"));
+
+    for e in walkDir(dir, contentFirst-> true) {
+        match e.kind {
+            FsEntryKind::DIR => { removeDir(e.path); }
+            _ => { removeFsEntry(e.path); }
+        }
+    }
+
+    assert(isDir(dir) && !exists(dir.push("a")) && !exists(dir.push("file.txt")));
+
+    assert({ walkDir(dir.push("missing")); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_FOUND });
+    removeDir(dir);
+}

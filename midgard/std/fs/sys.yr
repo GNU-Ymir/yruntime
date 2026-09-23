@@ -7,9 +7,10 @@
 in sys;
 
 use etc::c::dirent;
-use etc::runtime::{errno, files};
+use etc::runtime::{env, errno, files};
 
 use std::conv;
+use std::unit;
 use std::fs::{errors, iteration, path};
 use std::time::instant;
 
@@ -62,6 +63,32 @@ pub fn createDir(path: Path, recursive: bool = false, permission: i32 = 0o775)
     }
 }
 
+
+/**
+ * Check for the existence of an entry of the filesystem, whatever its kind.
+ * @params:
+ *    - path: the path of the entry, absolute or relative to cwd
+ *    - followLink: if path is a link, check the existence of the entry it points to instead of the link itself
+ * @returns:
+ *    - true if the entry exists
+ *    - false if it does not exist, or the current user does not have permission to access it
+ * @example:
+ * ```
+ * use std::fs::{sys, path};
+ *
+ * if exists(Path("./some/dir/file.txt")) {
+ *     println("Entry exists");
+ * }
+ *
+ * // A dangling link exists, but the entry it points to does not
+ * if exists(Path("./some/dir/file.lnk"), followLink-> false) && !exists(Path("./some/dir/file.lnk")) {
+ *     println("Dangling link");
+ * }
+ * ```
+ */
+pub fn exists(path: Path, followLink: bool = true)-> bool {
+    _yrt_exists(path.toStr().toStringZ(), followLink)
+}
 
 /**
  * Check for the existence of a directory
@@ -201,6 +228,68 @@ pub fn readDir(path: Path)-> FsEntry
 }
 
 /**
+ * Iterate over the entries of a directory and of all its sub directories.
+ * @params:
+ *    - path: the path of the directory to walk, absolute or relative to cwd
+ *    - contentFirst: if true, the entries of a sub directory are yielded before the sub directory itself, otherwise after it
+ * @returns: a generator yielding every entry below path (path itself excluded)
+ * @info:
+ *    - links are yielded, but never followed, so a link to one of its parent directories does not make the walk loop.
+ *    - a sub directory that cannot be read is yielded, but its content is skipped.
+ *    - the entries of a directory are read when the walk enters it, the ones created or removed after that may or may not be yielded.
+ * @throws:
+ *   - FsError: if path is not a directory
+ * @example:
+ * ```
+ * use std::fs::{sys, path, iteration};
+ *
+ * // List every file of a tree
+ * for entry in walkDir(Path("./some/dir")) {
+ *     if entry.kind == FsEntryKind::FILE {
+ *         println(entry.path);
+ *     }
+ * }
+ *
+ * // Remove every file older than a date, then every directory left empty
+ * let date = fileDate(Path("./some/dir/file.txt"));
+ * for entry in walkDir(Path("./some/dir"), contentFirst-> true) {
+ *     match entry.kind {
+ *         FsEntryKind::FILE => { if fileDate(entry.path) < date { removeFile(entry.path); } }
+ *         FsEntryKind::DIR => { removeDir(entry.path)?; } // fails if the directory is not empty
+ *         _ => {}
+ *     }
+ * }
+ * ```
+ */
+pub fn walkDir(path: Path, contentFirst: bool = false)-> (yield-> FsEntry)
+    throws FsError
+{
+    readDir(path);
+    walk(path, contentFirst-> contentFirst)
+}
+
+/**
+ * Generator of walkDir, reading the entries of each directory up front, so a single directory is open at a time.
+ */
+yield walk(path: Path, contentFirst: bool)-> FsEntry {
+    for e in entries(path) {
+        if !contentFirst { yield e; }
+        if e.kind == FsEntryKind::DIR {
+            for sub in walk(e.path, contentFirst-> contentFirst) { yield sub; }
+        }
+
+        if contentFirst { yield e; }
+    }
+}
+
+/**
+ * @returns: the entries of a directory, none if it cannot be read
+ */
+fn entries(path: Path)-> [FsEntry] {
+    copy [e for e in FsEntry(path, FsEntryKind::DIR)]
+}
+
+/**
  * Create a temporary directory, and return its path
  * @params:
  *    - root: the path of the parent temporary directory in which the directory will be created
@@ -220,33 +309,216 @@ pub fn tempDirectory(root: Path = Path("/tmp"), prefix: [c8] = "")-> Path
 }
 
 /**
- * Create a new file without openning it
+ * Make a path absolute, by resolving it against the current working directory.
  * @params:
- *    - name: the absolute path of the file(or relative to the execution)
+ *    - path: the path to make absolute
+ * @returns: the absolute path, normalized (cf. Path::normalize)
+ * @info: the filesystem is not accessed, the path does not have to exist, and `..` components are resolved lexically,
+ *        so the result may differ from the one resolved by the filesystem when a link is followed by `..` (cf. canonicalize).
+ * @throws:
+ *   - FsError: if the path is relative and the current working directory cannot be resolved (it was removed, or permission denied)
+ * @example:
+ * ```
+ * use std::fs::{sys, path};
+ * use std::env;
+ *
+ * setCurrentDir(Path("/tmp"));
+ * assert(Path("./some/../dir").absolute() == Path("/tmp/dir"));
+ * assert(Path("/usr/./lib").absolute() == Path("/usr/lib"));
+ * ```
+ */
+pub fn absolute(path: Path)-> Path
+    throws FsError
+{
+    if path.isAbsolute() { return path.normalize(); }
+
+    let cwd = _yrt_get_current_dir();
+    if cwd.len == 0us {
+        throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+    }
+
+    Path(cwd).push(path).normalize()
+}
+
+/**
+ * Resolve a path to the canonical absolute path of the entry it designates, following every symbolic link.
+ * @params:
+ *    - path: the path of an existing entry, absolute or relative to cwd
+ * @returns: an absolute path without `.`, `..` or link components
  * @throws:
  *   - FsError:
- *         + the file already exists
+ *      + the entry, or one of the directories of the path, does not exist
+ *      + permission denied
+ *      + links form a loop
+ * @example:
+ * ```
+ * use std::fs::{sys, path};
+ *
+ * symlink(Path("dir"), Path("./some/link"));
+ *
+ * // Both paths designate the same entry
+ * assert(Path("./some/link/file.txt").canonicalize() == Path("./some/dir/file.txt").canonicalize());
+ * ```
+ */
+pub fn canonicalize(path: Path)-> Path
+    throws FsError
+{
+    let resolved = _yrt_real_path(path.toStr().toStringZ());
+    if resolved.len == 0us {
+        throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+    }
+
+    Path(resolved)
+}
+
+/**
+ * Create a new empty file without openning it, if the file already exists its content is erased.
+ * @params:
+ *    - path: the path of the file, absolute or relative to cwd
+ *    - permission: the permission of the created file (default: 0o664), masked by the umask of the process.
+ *                  The permission of a file that already existed is left unchanged.
+ * @throws:
+ *   - FsError:
+ *         + the parent directory does not exist
  *         + permission denied
- *         + path is invalid
+ *         + path is a directory
  * @example:
  * ```
  * use std::fs::{sys, path};
  *
  * createFile(Path("./some/dir/file.txt"));
  * assert(isFile(Path("./some/dir/file.txt")));
+ *
+ * // A file only its owner can read and write
+ * createFile(Path("./some/dir/secret.txt"), permission-> 0o600);
  * ```
  */
-pub fn createFile(path: Path)
+pub fn createFile(path: Path, permission: i32 = 0o664)
     throws FsError
 {
-    let dmut f = etc::c::files::fopen(path.toStr().toStringZ(), "w".ptr);
-    if (f == null) {
+    if !_yrt_create_file(path.toStr().toStringZ(), permission) {
         throw copy FsError(errors::to!(FsErrorCode) (errno()), path.toStr());
     }
-
-    etc::c::files::fclose(alias f);
 }
 
+/**
+ * @returns: the permission bits of an entry of the filesystem (e.g. 0o644), including the setuid, setgid and sticky bits
+ * @params:
+ *    - path: the path of the entry, absolute or relative to cwd
+ *    - followLink: if path is a link, return the permission of the entry it points to instead of the permission of the link itself
+ * @throws:
+ *   - FsError:
+ *      + the entry does not exist
+ *      + permission denied
+ * @example:
+ * ```
+ * use std::fs::{sys, path};
+ *
+ * if permissions(Path("./some/dir/file.txt")) & 0o111 != 0 {
+ *     println("Executable by someone");
+ * }
+ * ```
+ */
+pub fn permissions(path: Path, followLink: bool = true)-> i32
+    throws FsError
+{
+    let mut mode = 0u32;
+    if !_yrt_file_mode(path.toStr().toStringZ(), followLink, &mode) {
+        throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+    }
+
+    cast!i32(mode)
+}
+
+/**
+ * Change the permission of an entry of the filesystem, the entry pointed to if path is a link.
+ * @params:
+ *    - path: the path of the entry, absolute or relative to cwd
+ *    - permission: the new permission bits (e.g. 0o644), the umask of the process does not apply
+ * @throws:
+ *   - FsError:
+ *      + the entry does not exist
+ *      + the current user does not own the entry
+ * @example:
+ * ```
+ * use std::fs::{sys, path};
+ *
+ * let script = Path("./some/dir/script.sh");
+ * setPermissions(script, permissions(script) | 0o100);
+ * assert(isExecutable(script));
+ * ```
+ */
+pub fn setPermissions(path: Path, permission: i32)
+    throws FsError
+{
+    if etc::c::files::chmod(path.toStr().toStringZ(), cast!u32(permission)) == -1 {
+        throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+    }
+}
+
+
+/**
+ * Read the whole content of a file.
+ * @params:
+ *    - path: the path of the file, absolute or relative to cwd
+ * @returns: the content of the file
+ * @throws:
+ *   - FsError:
+ *       + the file does not exist
+ *       + permission denied
+ *       + this is not a file
+ * @example:
+ * ```
+ * use std::fs::{sys, path};
+ *
+ * let content = readFile(Path("./some/dir/file.txt"));
+ * println(content);
+ * ```
+ */
+pub fn readFile(path: Path)-> dmut [c8]
+    throws FsError
+{
+    let dmut file = fs::file::File::open(path);
+    return file:.readAll();
+}
+
+/**
+ * Write a whole content to a file, the file is created if it does not exist.
+ * @params:
+ *    - path: the path of the file, absolute or relative to cwd
+ *    - content: the content to write
+ *    - append: if true, content is written at the end of the file, otherwise it replaces the content of the file
+ * @throws:
+ *   - FsError:
+ *       + the parent directory does not exist
+ *       + permission denied
+ *       + this is not a file
+ *       + the content could not be entirely written (e.g. the device is full)
+ * @example:
+ * ```
+ * use std::fs::{sys, path};
+ *
+ * writeFile(Path("./some/dir/file.txt"), "Hello");
+ * writeFile(Path("./some/dir/file.txt"), " World!", append-> true);
+ *
+ * assert(readFile(Path("./some/dir/file.txt")) == "Hello World!");
+ * ```
+ */
+pub fn writeFile(path: Path, content: [c8], append: bool = false)
+    throws FsError
+{
+    let mode = if append { "a" } else { "w" };
+    let dmut handle = etc::c::files::fopen(path.toStr().toStringZ(), mode.ptr);
+    if handle == null {
+        throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+    }
+
+    let written = etc::c::files::fwrite(cast!{*void} (content.ptr), 1us, content.len, alias handle);
+    let closed = etc::c::files::fclose(alias handle);
+    if written != content.len || closed != 0 {
+        throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+    }
+}
 
 /**
  * @returns: the instant of last modification of a file
@@ -272,6 +544,40 @@ pub fn fileDate(path: Path)-> std::time::instant::Instant
     }
 
     Instant(cast!u64(sec), nsec)
+}
+
+/**
+ * @returns: the size of a file, the file being the one pointed to if path is a link
+ * @throws:
+ *   - FsError:
+ *       + the file does not exist
+ *       + permission denied
+ *       + this is not a file
+ * @example:
+ * ```
+ * use std::fs::{sys, path};
+ * use std::unit;
+ *
+ * let size = fileSize(Path("./some/dir/file.txt"));
+ * println("The file is ", size, " long, ", size.bytes, " bytes");
+ *
+ * if size > MemorySize::MB(10us) {
+ *     println("That's a big file");
+ * }
+ * ```
+ */
+pub fn fileSize(path: Path)-> MemorySize
+    throws FsError
+{
+    let mut size = 0u64;
+    let res = _yrt_file_size(path.toStr().toStringZ(), &size);
+    if res == -1 {
+        throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+    } else if res == 0 {
+        throw copy FsError(FsErrorCode::NOT_A_FILE, path.toStr());
+    }
+
+    MemorySize::B(cast!usize(size))
 }
 
 /**
@@ -422,6 +728,42 @@ pub fn copyFile(src: Path, dst: Path)
 }
 
 /**
+ * Rename an entry of the filesystem, or move it to another directory of the same filesystem.
+ * @params:
+ *    - src: the path of the entry to rename
+ *    - dst: the new path of the entry (path of the entry, not of its new parent directory)
+ * @info:
+ *    - the renaming is atomic, if dst exists it is replaced, and there is no instant at which dst does not exist.
+ *      Writing a file under a temporary name and renaming it is thus the way to publish a whole file at once.
+ *    - a file can replace a file, and a directory an empty directory. If src is a link, the link is renamed, not the entry it points to.
+ * @throws:
+ *   - FsError:
+ *      + the src entry does not exist, or the parent directory of dst does not exist
+ *      + permission denied
+ *      + dst is a non empty directory, or src and dst are not both directories
+ *      + src and dst are on different filesystems (CROSS_DEVICE), use a copy followed by a removal in that case
+ *      + other reasons
+ * @example:
+ * ```
+ * use std::fs::{sys, path};
+ *
+ * let tmp = Path("./some/dir/.file.txt.tmp");
+ * writeFile(tmp, "new content");
+ *
+ * // Readers of file.txt see either the old content or the new one, never a partially written file
+ * rename(tmp, Path("./some/dir/file.txt"));
+ * assert(!exists(tmp));
+ * ```
+ */
+pub fn rename(src: Path, dst: Path)
+    throws FsError
+{
+    if etc::c::files::rename(src.toStr().toStringZ(), dst.toStr().toStringZ()) == -1 {
+        throw copy FsError(errors::to!{FsErrorCode} (errno()), src.toStr());
+    }
+}
+
+/**
  * Remove an entry from the file system that is neither a directory nor a file(e.g. a symbolic link).
  * @params:
  *    - path: the path of the fs entry to remove
@@ -456,15 +798,105 @@ pub fn removeFsEntry(path: Path)
 pub fn copyFsEntry(src: Path, dst: Path)
     throws FsError
 {
-    if isReadable(dst) { throw copy FsError(FsErrorCode::ALREADY_EXISTS, dst.toStr()); }
-    if !isDir(src) && !isFile(src) {
-        let dmut buf = ['\u{0}' ; 255us];
-        if readlink(src.toStr().toStringZ(), alias buf.ptr, 255) == -1 {
-            throw copy FsError(errors::to!{FsErrorCode} (errno()), src.toStr());
+    if exists(dst, followLink-> false) { throw copy FsError(FsErrorCode::ALREADY_EXISTS, dst.toStr()); }
+    if isLink(src) {
+        symlink(readLink(src), dst);
+    }
+}
+
+/**
+ * Create a symbolic link.
+ * @params:
+ *    - target: the path the link points to, if relative it is resolved from the directory of the link, not from cwd
+ *    - link: the path of the link to create
+ * @info: target does not have to exist, the link is dangling until it does.
+ * @throws:
+ *   - FsError:
+ *      + link already exists
+ *      + the parent directory of link does not exist
+ *      + permission denied
+ *      + other reasons
+ * @example:
+ * ```
+ * use std::fs::{sys, path};
+ *
+ * symlink(Path("file.txt"), Path("./some/dir/file.lnk"));
+ * assert(isLink(Path("./some/dir/file.lnk")));
+ * assert(readLink(Path("./some/dir/file.lnk")) == Path("file.txt"));
+ * ```
+ */
+pub fn symlink(target: Path, link: Path)
+    throws FsError
+{
+    if etc::c::dirent::symlink(target.toStr().toStringZ(), link.toStr().toStringZ()) == -1 {
+        throw copy FsError(errors::to!{FsErrorCode} (errno()), link.toStr());
+    }
+}
+
+/**
+ * Create a hard link, a new name for an existing file, both names sharing the same content.
+ * @params:
+ *    - target: the path of the existing file
+ *    - link: the new path of the file
+ * @info: the content of the file is kept until every name of the file is removed.
+ * @throws:
+ *   - FsError:
+ *      + target does not exist, or is a directory
+ *      + link already exists
+ *      + target and link are on different filesystems (CROSS_DEVICE)
+ *      + permission denied
+ *      + other reasons
+ * @example:
+ * ```
+ * use std::fs::{sys, path};
+ *
+ * hardLink(Path("./some/dir/file.txt"), Path("./some/dir/other.txt"));
+ * removeFile(Path("./some/dir/file.txt"));
+ * assert(isFile(Path("./some/dir/other.txt")));
+ * ```
+ */
+pub fn hardLink(target: Path, link: Path)
+    throws FsError
+{
+    if etc::c::dirent::link(target.toStr().toStringZ(), link.toStr().toStringZ()) == -1 {
+        throw copy FsError(errors::to!{FsErrorCode} (errno()), link.toStr());
+    }
+}
+
+/**
+ * Read the path a symbolic link points to.
+ * @params:
+ *    - path: the path of the link
+ * @returns: the target of the link, as it was given when the link was created (a relative target is relative to the directory of the link)
+ * @throws:
+ *   - FsError:
+ *      + the link does not exist
+ *      + this is not a link
+ *      + permission denied
+ * @example:
+ * ```
+ * use std::fs::{sys, path};
+ *
+ * let link = Path("./some/dir/file.lnk");
+ * let target = readLink(link);
+ *
+ * // The file pointed by the link, relative to cwd
+ * let file = if target.isAbsolute() { target } else { link.parent().push(target) };
+ * println(file);
+ * ```
+ */
+pub fn readLink(path: Path)-> Path
+    throws FsError
+{
+    let target = _yrt_read_link(path.toStr().toStringZ());
+    if target.len == 0us {
+        let code = errors::to!{FsErrorCode} (errno());
+        if exists(path, followLink-> false) && !isLink(path) {
+            throw copy FsError(FsErrorCode::NOT_A_LINK, path.toStr());
         }
 
-        if symlink(dst.toStr().toStringZ(), buf.ptr) == -1 {
-            throw copy FsError(errors::to!{FsErrorCode} (errno()), src.toStr());
-        }
+        throw copy FsError(code, path.toStr());
     }
+
+    Path(target)
 }

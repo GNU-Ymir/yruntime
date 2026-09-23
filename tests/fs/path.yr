@@ -55,6 +55,11 @@ __test toStr {
 
     // Or using a custom separator '!'
     assert(path.toStr(sep-> "!") == "!foo!test.txt");
+
+    assert(Path("/").toStr() == "/" && Path("/").toStr(sep-> "!") == "!");
+    assert(Path("").toStr() == "");
+    assert(Path("/").push("tmp").toStr() == "/tmp");
+    assert(Path("/tmp").parent().toStr() == "/");
 }
 
 
@@ -112,6 +117,8 @@ __test isAbsolute {
     let rel = Path("./some/relative/dir");
 
     assert(abs.isAbsolute() && !rel.isAbsolute());
+    assert(Path("/").isAbsolute());
+    assert(!Path("").isAbsolute() && !Path("/").parent().isAbsolute());
 
     // One can create an absolute path from a relative path using std::env::currentDir()
     let absFromRel = env::currentDir().push(rel);
@@ -277,6 +284,11 @@ __test commonPrefix {
 
     // In that case it is still a prefix to root nor cwd
     assert(root.commonPrefix(cwd).isPrefix(root), "f");
+
+    assert(Path("/some").commonPrefix(abs1) == Path("/some"), "g");
+    assert(abs1.commonPrefix(Path("/some")) == Path("/some"), "h");
+    assert(abs1.commonPrefix(abs1) == abs1, "i");
+    assert(root.commonPrefix(abs1) == root, "j");
 }
 
 
@@ -286,4 +298,17 @@ __test removeRoot {
 
     assert(p.removeRoot().toStr() == "path/to/somewhere");
     assert(d.removeRoot().toStr() == "to/somewhere");
+}
+
+__test normalize {
+    assert(Path("/foo/./bar//../baz").normalize().toStr() == "/foo/baz");
+    assert(Path("/../foo").normalize().toStr() == "/foo");
+    assert(Path("/foo/..").normalize().toStr() == "/");
+    assert(Path("/").normalize() == Path("/"));
+
+    assert(Path("./foo/../../bar").normalize().toStr() == "../bar");
+    assert(Path("../../foo/..").normalize().toStr() == "../..");
+    assert(Path("foo/..").normalize().toStr() == ".");
+    assert(Path("").normalize().toStr() == ".");
+    assert(Path("foo/bar/").normalize().parts() == ["foo", "bar"]);
 }
