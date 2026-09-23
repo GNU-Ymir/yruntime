@@ -228,6 +228,68 @@ pub fn readDir(path: Path)-> FsEntry
 }
 
 /**
+ * Iterate over the entries of a directory and of all its sub directories.
+ * @params:
+ *    - path: the path of the directory to walk, absolute or relative to cwd
+ *    - contentFirst: if true, the entries of a sub directory are yielded before the sub directory itself, otherwise after it
+ * @returns: a generator yielding every entry below path (path itself excluded)
+ * @info:
+ *    - links are yielded, but never followed, so a link to one of its parent directories does not make the walk loop.
+ *    - a sub directory that cannot be read is yielded, but its content is skipped.
+ *    - the entries of a directory are read when the walk enters it, the ones created or removed after that may or may not be yielded.
+ * @throws:
+ *   - FsError: if path is not a directory
+ * @example:
+ * ```
+ * use std::fs::{sys, path, iteration};
+ *
+ * // List every file of a tree
+ * for entry in walkDir(Path("./some/dir")) {
+ *     if entry.kind == FsEntryKind::FILE {
+ *         println(entry.path);
+ *     }
+ * }
+ *
+ * // Remove every file older than a date, then every directory left empty
+ * let date = fileDate(Path("./some/dir/file.txt"));
+ * for entry in walkDir(Path("./some/dir"), contentFirst-> true) {
+ *     match entry.kind {
+ *         FsEntryKind::FILE => { if fileDate(entry.path) < date { removeFile(entry.path); } }
+ *         FsEntryKind::DIR => { removeDir(entry.path)?; } // fails if the directory is not empty
+ *         _ => {}
+ *     }
+ * }
+ * ```
+ */
+pub fn walkDir(path: Path, contentFirst: bool = false)-> (yield-> FsEntry)
+    throws FsError
+{
+    readDir(path);
+    walk(path, contentFirst-> contentFirst)
+}
+
+/**
+ * Generator of walkDir, reading the entries of each directory up front, so a single directory is open at a time.
+ */
+yield walk(path: Path, contentFirst: bool)-> FsEntry {
+    for e in entries(path) {
+        if !contentFirst { yield e; }
+        if e.kind == FsEntryKind::DIR {
+            for sub in walk(e.path, contentFirst-> contentFirst) { yield sub; }
+        }
+
+        if contentFirst { yield e; }
+    }
+}
+
+/**
+ * @returns: the entries of a directory, none if it cannot be read
+ */
+fn entries(path: Path)-> [FsEntry] {
+    copy [e for e in FsEntry(path, FsEntryKind::DIR)]
+}
+
+/**
  * Create a temporary directory, and return its path
  * @params:
  *    - root: the path of the parent temporary directory in which the directory will be created

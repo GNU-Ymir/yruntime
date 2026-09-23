@@ -16,6 +16,11 @@ fn fixture(prefix: [c8], content: [c8] = "Hello World!")-> (Path, Path)
     (dir, f)
 }
 
+fn index(l: [[c8]], v: [c8])-> usize {
+    for i, x in l { if x == v { return i; } }
+    l.len
+}
+
 __test exists {
     let (dir, f) = fixture("exists");
     assert(exists(dir) && exists(f));
@@ -193,4 +198,45 @@ __test canonicalize {
     assert({ canonicalize(dir.push("loop1")); false } catch { FsError(code-> c) => c == FsErrorCode::LINK_LOOP });
 
     removeDir(dir, recursive-> true);
+}
+
+__test walkDir {
+    let (dir, _) = fixture("walk");
+    createDir(dir.push("a").push("b"), recursive-> true);
+    writeFile(dir.push("a").push("x.txt"), "x");
+    writeFile(dir.push("a").push("b").push("y.txt"), "y");
+    createDir(dir.push("empty"));
+    symlink(Path(".."), dir.push("a").push("up.lnk"));
+
+    let mut pre: [[c8]] = [];
+    for e in walkDir(dir) {
+        pre ~= [e.path.removePrefix(dir).toStr()];
+    }
+
+    let mut post: [[c8]] = [];
+    for e in walkDir(dir, contentFirst-> true) {
+        post ~= [e.path.removePrefix(dir).toStr()];
+    }
+
+    let expected = ["file.txt", "a", "a/x.txt", "a/b", "a/b/y.txt", "a/up.lnk", "empty"];
+    assert(pre.len == expected.len && post.len == expected.len);
+    for p in expected {
+        assert(index(pre, p) < pre.len && index(post, p) < post.len);
+    }
+
+    assert(index(pre, "a") < index(pre, "a/x.txt") && index(pre, "a/b") < index(pre, "a/b/y.txt"));
+    assert(index(post, "a") > index(post, "a/x.txt") && index(post, "a/b") > index(post, "a/b/y.txt"));
+    assert(index(post, "a") > index(post, "a/b"));
+
+    for e in walkDir(dir, contentFirst-> true) {
+        match e.kind {
+            FsEntryKind::DIR => { removeDir(e.path); }
+            _ => { removeFsEntry(e.path); }
+        }
+    }
+
+    assert(isDir(dir) && !exists(dir.push("a")) && !exists(dir.push("file.txt")));
+
+    assert({ walkDir(dir.push("missing")); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_FOUND });
+    removeDir(dir);
 }
