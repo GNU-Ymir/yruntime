@@ -41,6 +41,33 @@ __test fileSize {
     removeDir(dir, recursive-> true);
 }
 
+__test rename {
+    let (dir, f) = fixture("rename");
+    let g = dir.push("renamed.txt");
+
+    rename(f, g);
+    assert(!exists(f) && isFile(g));
+    assert(fileSize(g) == MemorySize::B(12us));
+
+    createFile(f);
+    rename(f, g);
+    assert(!exists(f) && fileSize(g) == MemorySize::B(0us));
+
+    let sub = dir.push("sub");
+    createDir(sub);
+    rename(g, sub.push("moved.txt"));
+    assert(isFile(sub.push("moved.txt")));
+
+    rename(sub, dir.push("other"));
+    assert(!exists(sub) && isFile(dir.push("other").push("moved.txt")));
+
+    createDir(sub);
+    assert({ rename(sub, dir.push("other")); false } catch { FsError(code-> c) => c == FsErrorCode::DIR_NOT_EMPTY || c == FsErrorCode::ALREADY_EXISTS });
+    assert({ rename(dir.push("missing"), g); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_FOUND });
+
+    removeDir(dir, recursive-> true);
+}
+
 __test readWriteFile {
     let (dir, f) = fixture("readwrite");
     assert(readFile(f) == "Hello World!");

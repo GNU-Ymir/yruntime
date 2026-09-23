@@ -546,6 +546,42 @@ pub fn copyFile(src: Path, dst: Path)
 }
 
 /**
+ * Rename an entry of the filesystem, or move it to another directory of the same filesystem.
+ * @params:
+ *    - src: the path of the entry to rename
+ *    - dst: the new path of the entry (path of the entry, not of its new parent directory)
+ * @info:
+ *    - the renaming is atomic, if dst exists it is replaced, and there is no instant at which dst does not exist.
+ *      Writing a file under a temporary name and renaming it is thus the way to publish a whole file at once.
+ *    - a file can replace a file, and a directory an empty directory. If src is a link, the link is renamed, not the entry it points to.
+ * @throws:
+ *   - FsError:
+ *      + the src entry does not exist, or the parent directory of dst does not exist
+ *      + permission denied
+ *      + dst is a non empty directory, or src and dst are not both directories
+ *      + src and dst are on different filesystems (CROSS_DEVICE), use a copy followed by a removal in that case
+ *      + other reasons
+ * @example:
+ * ```
+ * use std::fs::{sys, path};
+ *
+ * let tmp = Path("./some/dir/.file.txt.tmp");
+ * writeFile(tmp, "new content");
+ *
+ * // Readers of file.txt see either the old content or the new one, never a partially written file
+ * rename(tmp, Path("./some/dir/file.txt"));
+ * assert(!exists(tmp));
+ * ```
+ */
+pub fn rename(src: Path, dst: Path)
+    throws FsError
+{
+    if etc::c::files::rename(src.toStr().toStringZ(), dst.toStr().toStringZ()) == -1 {
+        throw copy FsError(errors::to!{FsErrorCode} (errno()), src.toStr());
+    }
+}
+
+/**
  * Remove an entry from the file system that is neither a directory nor a file(e.g. a symbolic link).
  * @params:
  *    - path: the path of the fs entry to remove
