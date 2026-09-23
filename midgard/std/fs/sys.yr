@@ -276,6 +276,69 @@ pub fn createFile(path: Path)
 
 
 /**
+ * Read the whole content of a file.
+ * @params:
+ *    - path: the path of the file, absolute or relative to cwd
+ * @returns: the content of the file
+ * @throws:
+ *   - FsError:
+ *       + the file does not exist
+ *       + permission denied
+ *       + this is not a file
+ * @example:
+ * ```
+ * use std::fs::{sys, path};
+ *
+ * let content = readFile(Path("./some/dir/file.txt"));
+ * println(content);
+ * ```
+ */
+pub fn readFile(path: Path)-> dmut [c8]
+    throws FsError
+{
+    let dmut file = fs::file::File::open(path);
+    return file:.readAll();
+}
+
+/**
+ * Write a whole content to a file, the file is created if it does not exist.
+ * @params:
+ *    - path: the path of the file, absolute or relative to cwd
+ *    - content: the content to write
+ *    - append: if true, content is written at the end of the file, otherwise it replaces the content of the file
+ * @throws:
+ *   - FsError:
+ *       + the parent directory does not exist
+ *       + permission denied
+ *       + this is not a file
+ *       + the content could not be entirely written (e.g. the device is full)
+ * @example:
+ * ```
+ * use std::fs::{sys, path};
+ *
+ * writeFile(Path("./some/dir/file.txt"), "Hello");
+ * writeFile(Path("./some/dir/file.txt"), " World!", append-> true);
+ *
+ * assert(readFile(Path("./some/dir/file.txt")) == "Hello World!");
+ * ```
+ */
+pub fn writeFile(path: Path, content: [c8], append: bool = false)
+    throws FsError
+{
+    let mode = if append { "a" } else { "w" };
+    let dmut handle = etc::c::files::fopen(path.toStr().toStringZ(), mode.ptr);
+    if handle == null {
+        throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+    }
+
+    let written = etc::c::files::fwrite(cast!{*void} (content.ptr), 1us, content.len, alias handle);
+    let closed = etc::c::files::fclose(alias handle);
+    if written != content.len || closed != 0 {
+        throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+    }
+}
+
+/**
  * @returns: the instant of last modification of a file
  * @throws: FsError, if the path does not refer to a file
  * @example:

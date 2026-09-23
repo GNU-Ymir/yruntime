@@ -40,3 +40,28 @@ __test fileSize {
 
     removeDir(dir, recursive-> true);
 }
+
+__test readWriteFile {
+    let (dir, f) = fixture("readwrite");
+    assert(readFile(f) == "Hello World!");
+
+    writeFile(f, "Hello");
+    assert(readFile(f) == "Hello");
+
+    writeFile(f, " World!", append-> true);
+    assert(readFile(f) == "Hello World!");
+
+    let g = dir.push("created.txt");
+    writeFile(g, "", append-> true);
+    assert(isFile(g) && readFile(g) == "");
+
+    writeFile(g, "new");
+    assert(readFile(g) == "new");
+
+    assert({ readFile(dir.push("missing")); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_FOUND });
+    assert({ readFile(dir); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_A_FILE });
+    assert({ writeFile(dir, "x"); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_A_FILE });
+    assert({ writeFile(dir.push("missing").push("file.txt"), "x"); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_FOUND });
+
+    removeDir(dir, recursive-> true);
+}
