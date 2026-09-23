@@ -85,6 +85,35 @@ __test foldClosureArray {
     }));
 }
 
+__test foldTemplateGenerator {
+    let i = copy [1, 2, 3, 4];
+    assert(i.iter().fold!{|x,y| => x + y} () == 10?, "a");
+    assert(i.map!{|x| => x * 2} ().fold!{|x,y| => x * y} () == 384?, "b");
+
+    let j = i[0 .. 0];
+    assert(j.iter().fold!{|x,y| => x + y} () == none, "c");
+}
+
+__test foldLambdaGenerator {
+    let i = copy [1, 2, 3, 4];
+    assert(i.iter().fold(|x,y| => x + y) == 10?, "a");
+    assert(i.iter().fold(|x,y| => x * y) == 24?, "b");
+
+    let j = i[0 .. 0];
+    assert(j.iter().fold(|x,y| => x + y) == none, "c");
+}
+
+__test foldClosureGenerator {
+    let i = copy [1, 2, 3, 4];
+    let z = 2;
+
+    let a = i.iter().fold(copy |x, y| => x + y + z); // 1 + (2 + 2) + (3 + 2) + (4 + 2)
+    assert(a == 16?, "a");
+
+    let j = i[0 .. 0];
+    assert(j.iter().fold(copy |x, y| => x + y + z) == none, "b");
+}
+
 __test iterCollect {
     let a = copy [1, 2, 3];
     assert(a.iter().collect() == [1, 2, 3], "a");

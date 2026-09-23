@@ -154,6 +154,80 @@ pub fn if (N > 0) fold {T of [U ; N], U, N: usize} (a: T, func: dg (U, U)-> U)->
     res
 }
 
+/**
+ * Implement the homonym function fold
+ * @returns: the accumulation of the values yielded by the generator, none if it yields nothing
+ * @example:
+ * ```
+ * let i = copy [1, 2, 3, 4];
+ * assert(i.map!{|x| => x * 2} ().fold!{|x,y| => x + y} () == 20?);
+ * assert(i.filter(|x| => x > 9).fold!{|x,y| => x + y} () == none);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ */
+pub fn fold {F: fn (U, U)-> U, T of (yield-> U), U} (a: T)-> U? {
+    if let Ok(first) = a.next() {
+        let mut res = first;
+        for i in a {
+            res = F(res, i);
+        }
+
+        res?
+    } else {
+        none
+    }
+}
+
+/**
+ * Implement the homonym function fold
+ * @returns: the accumulation of the values yielded by the generator, none if it yields nothing
+ * @example:
+ * ```
+ * let i = copy [1, 2, 3, 4];
+ * assert(i.map!{|x| => x * 2} ().fold(|x,y| => x + y) == (20)?);
+ * assert(i.iter().fold(|x,y| => x * y) == (24)?);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ */
+pub fn fold {T of (yield-> U), U} (a: T, func: fn (U, U)-> U)-> U? {
+    if let Ok(first) = a.next() {
+        let mut res = first;
+        for i in a {
+            res = func(res, i);
+        }
+
+        res?
+    } else {
+        none
+    }
+}
+
+/**
+ * Implement the homonym function fold
+ * @returns: the accumulation of the values yielded by the generator, none if it yields nothing
+ * @example:
+ * ```
+ * let i = copy [1, 2, 3, 4];
+ * let z = 2;
+ *
+ * let a = i.iter().fold(copy |x,y| => x + y + z); // 1 + (2 + 2) + (3 + 2) + (4 + 2)
+ * assert(a == 16?);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ */
+pub fn fold {T of (yield-> U), U} (a: T, func: dg (U, U)-> U)-> U? {
+    if let Ok(first) = a.next() {
+        let mut res = first;
+        for i in a {
+            res = func(res, i);
+        }
+
+        res?
+    } else {
+        none
+    }
+}
+
 /*!
  * ====================================================================================================
  * ====================================================================================================
