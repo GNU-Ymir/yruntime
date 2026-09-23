@@ -84,3 +84,186 @@ __test foldClosureArray {
         j.fold(copy |x,y| => x + y + z);
     }));
 }
+
+__test iterCollect {
+    let a = copy [1, 2, 3];
+    assert(a.iter().collect() == [1, 2, 3], "a");
+
+    let b = [1, 2, 3];
+    assert(b.iter().collect() == [1, 2, 3], "b");
+
+    let e = a[0 .. 0];
+    assert(e.iter().collect().len == 0us, "c");
+}
+
+__test generatorIsSinglePass {
+    let a = copy [1, 2, 3];
+    let g = a.iter();
+
+    assert(g.collect() == [1, 2, 3], "a");
+    assert(g.collect().len == 0us, "b");
+}
+
+__test eachSlice {
+    let a = copy [1, 2, 3];
+    let dmut acc = copy [0, 0];
+    a.each(copy |x| => { acc[0] += x; acc[1] += 1; });
+
+    assert(acc == [6, 3], "a");
+
+    let e = a[0 .. 0];
+    let dmut none_ = copy [0];
+    e.each(copy |x| => { none_[0] += x; });
+    assert(none_[0] == 0, "b");
+}
+
+__test eachArray {
+    let a = [1, 2, 3];
+    let dmut acc = copy [0, 0];
+    a.each(copy |x| => { acc[0] += x; acc[1] += 1; });
+
+    assert(acc == [6, 3], "a");
+}
+
+__test eachGenerator {
+    let a = copy [1, 2, 3];
+    let dmut acc = copy [0, 0];
+    a.iter().each(copy |x| => { acc[0] += x; acc[1] += 1; });
+
+    assert(acc == [6, 3], "a");
+}
+
+__test mapSlice {
+    let a = copy [1, 2, 3];
+    assert(a.map!{|x| => x * 2} ().collect() == [2, 4, 6], "a");
+    assert(a.map(|x: i32|-> i32 => x * 2).collect() == [2, 4, 6], "b");
+    assert(a.map!{i32} (|x| => x * 2).collect() == [2, 4, 6], "c");
+
+    let z = 10;
+    assert(a.map(copy |x: i32|-> i32 => x * z).collect() == [10, 20, 30], "d");
+
+    let e = a[0 .. 0];
+    assert(e.map!{|x| => x * 2} ().collect().len == 0us, "e");
+
+    // the result type does not have to be the element type
+    assert(a.map!{|x| => cast!f64(x)} ().collect() == [1.0, 2.0, 3.0], "f");
+}
+
+__test mapArray {
+    let a = [1, 2, 3];
+    assert(a.map!{|x| => x * 2} ().collect() == [2, 4, 6], "a");
+    assert(a.map(|x: i32|-> i32 => x * 2).collect() == [2, 4, 6], "b");
+}
+
+__test mapGenerator {
+    let a = copy [1, 2, 3];
+    assert(a.iter().map!{|x| => x * 2} ().collect() == [2, 4, 6], "a");
+    assert(a.iter().map(|x: i32|-> i32 => x * 2).collect() == [2, 4, 6], "b");
+    assert(a.map!{|x| => x * 2} ().map!{|x| => x + 1} ().collect() == [3, 5, 7], "c");
+
+    let e = a[0 .. 0];
+    assert(e.iter().map!{|x| => x * 2} ().collect().len == 0us, "d");
+}
+
+__test mapIsLazy {
+    let a = copy [1, 2, 3];
+    let dmut calls = copy [0];
+    let g = a.map(copy |x: i32|-> i32 => { calls[0] += 1; x * 2 });
+
+    assert(calls[0] == 0, "a");
+    assert(g.next() == (2)?, "b");
+    assert(calls[0] == 1, "c");
+}
+
+__test filterSlice {
+    let a = copy [1, 2, 3, 4];
+    assert(a.filter(|x| => x % 2 == 0).collect() == [2, 4], "a");
+    assert(a.filter(|x| => x > 9).collect().len == 0us, "b");
+    assert(a.filter(|x| => x > 0).collect() == [1, 2, 3, 4], "c");
+
+    let z = 2;
+    assert(a.filter(copy |x| => x > z).collect() == [3, 4], "d");
+}
+
+__test filterArray {
+    let a = [1, 2, 3, 4];
+    assert(a.filter(|x| => x % 2 == 0).collect() == [2, 4], "a");
+}
+
+__test filterGenerator {
+    let a = copy [1, 2, 3, 4];
+    assert(a.iter().filter(|x| => x % 2 == 0).collect() == [2, 4], "a");
+    assert(a.filter(|x| => x > 1).filter(|x| => x < 4).collect() == [2, 3], "b");
+}
+
+__test filterMapSlice {
+    let a = copy [1, 2, 3, 4];
+    let r = a.filterMap!{|x| => { if (x % 2 == 0) { (x * 10)? } else { none } }} ();
+    assert(r.collect() == [20, 40], "a");
+
+    let z = 2;
+    let r2 = a.filterMap(copy |x: i32|-> (i32)? => {
+        if (x % z == 0) { (x * 10)? } else { none }
+    });
+    assert(r2.collect() == [20, 40], "b");
+
+    let r3 = a.filterMap!{|x| => { if (x > 9) { (x)? } else { none } }} ();
+    assert(r3.collect().len == 0us, "c");
+}
+
+__test filterMapArray {
+    let a = [1, 2, 3, 4];
+    let r = a.filterMap!{|x| => { if (x % 2 == 0) { (x * 10)? } else { none } }} ();
+    assert(r.collect() == [20, 40], "a");
+
+    let r2 = a.filterMap(|x: i32|-> (i32)? => { if (x % 2 == 0) { (x * 10)? } else { none } });
+    assert(r2.collect() == [20, 40], "b");
+}
+
+__test filterMapGenerator {
+    let a = copy [1, 2, 3, 4];
+    let r = a.iter().filterMap!{|x| => { if (x % 2 == 0) { (x * 10)? } else { none } }} ();
+    assert(r.collect() == [20, 40], "a");
+
+    let r2 = a.iter().filterMap(|x: i32|-> (i32)? => { if (x % 2 == 0) { (x * 10)? } else { none } });
+    assert(r2.collect() == [20, 40], "b");
+}
+
+__test flattenSlice {
+    let a = copy [copy [1, 2], copy [3], copy [4, 5]];
+    assert(a.flatten().collect() == [1, 2, 3, 4, 5], "a");
+
+    let b = copy [copy [1], (copy [1])[0 .. 0], copy [2]];
+    assert(b.flatten().collect() == [1, 2], "b");
+}
+
+__test flattenArray {
+    let a = [copy [1, 2], copy [3]];
+    assert(a.flatten().collect() == [1, 2, 3], "a");
+}
+
+__test flattenGenerator {
+    let a = copy [copy [1, 2], copy [3], copy [4, 5]];
+    assert(a.iter().flatten().collect() == [1, 2, 3, 4, 5], "a");
+}
+
+__test flatMapSlice {
+    let a = copy [1, 2, 3];
+    assert(a.flatMap!{|x| => copy [x, x * 10]} ().collect() == [1, 10, 2, 20, 3, 30], "a");
+
+    let z = 10;
+    assert(a.flatMap(copy |x: i32|-> [i32] => copy [x, x * z]).collect() == [1, 10, 2, 20, 3, 30], "b");
+    assert(a.flatMap!{|x| => { let _ = x; copy [0 ; 0us] }} ().collect().len == 0us, "c");
+}
+
+__test flatMapArray {
+    let a = [1, 2, 3];
+    assert(a.flatMap!{|x| => copy [x, x * 10]} ().collect() == [1, 10, 2, 20, 3, 30], "a");
+    assert(a.flatMap(|x: i32|-> [i32] => copy [x, x * 10]).collect() == [1, 10, 2, 20, 3, 30], "b");
+}
+
+__test flatMapGenerator {
+    let a = copy [1, 2, 3];
+    assert(a.iter().flatMap!{|x| => copy [x, x * 10]} ().collect() == [1, 10, 2, 20, 3, 30], "a");
+    assert(a.iter().flatMap(|x: i32|-> [i32] => copy [x, x * 10]).collect() == [1, 10, 2, 20, 3, 30], "b");
+}

@@ -1,5 +1,8 @@
 /**
  * Module containing generic iteration algorithms.
+ * <br>
+ * The algorithms producing a sequence are lazy: they return a generator computing each value only
+ * when it is pulled, and `collect` gathers the values of a generator into a slice.
  * @authors: Emile Cadorel
  * @license: GPLv3
  */
@@ -149,4 +152,696 @@ pub fn if (N > 0) fold {T of [U ; N], U, N: usize} (a: T, func: dg (U, U)-> U)->
     }
 
     res
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ====================================          ITER / COLLECT       =================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Traverse a slice lazily
+ * @returns: a generator yielding the elements of a, in order
+ * @params:
+ *    - a: a slice to traverse
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * for i in a.iter() {
+ *     println(i);
+ * }
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield iter {T of [U], U} (a: T)-> U {
+    for i in a {
+        yield i;
+    }
+}
+
+/**
+ * Traverse an array lazily
+ * @returns: a generator yielding the elements of a, in order
+ * @params:
+ *    - a: an array to traverse
+ * @example:
+ * ```
+ * let a = [1, 2, 3];
+ * for i in a.iter() {
+ *     println(i);
+ * }
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield if (N > 0) iter {T of [U ; N], U, N: usize} (a: T)-> U {
+    for i in a {
+        yield i;
+    }
+}
+
+/**
+ * Exhaust a generator into a slice
+ * @returns: a new slice containing every value yielded by a, in order
+ * @params:
+ *    - a: a generator to exhaust
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * assert(a.map!{|x| => x * 2} ().collect() == [2, 4, 6]);
+ * ```
+ * @complexity: O(n), with n the number of yielded values
+ */
+pub fn collect {T of (yield-> U), U} (a: T)-> mut [mut U] {
+    copy [i for i in a]
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ======================================          EACH         =======================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Call a function on every element of a slice
+ * @params:
+ *    - a: a slice to traverse
+ *    - f: the function to call on each element
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * a.each(|x| => { println(x); });
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn each {T of [U], U} (a: T, f: dg (U)-> void) {
+    for i in a {
+        f(i);
+    }
+}
+
+/**
+ * Call a function on every element of an array
+ * @params:
+ *    - a: an array to traverse
+ *    - f: the function to call on each element
+ * @example:
+ * ```
+ * let a = [1, 2, 3];
+ * a.each(|x| => { println(x); });
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn if (N > 0) each {T of [U ; N], U, N: usize} (a: T, f: dg (U)-> void) {
+    for i in a {
+        f(i);
+    }
+}
+
+/**
+ * Call a function on every value yielded by a generator
+ * @params:
+ *    - a: a generator to exhaust
+ *    - f: the function to call on each value
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * a.map!{|x| => x * 2} ().each(|x| => { println(x); });
+ * ```
+ * @complexity: O(n), with n the number of yielded values
+ */
+pub fn each {T of (yield-> U), U} (a: T, f: dg (U)-> void) {
+    for i in a {
+        f(i);
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =======================================          MAP         =======================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Apply a transformation to every element of a slice
+ * @returns: a generator yielding the transformed elements
+ * @params:
+ *    - a: a slice to traverse
+ * @templates:
+ *    - F: the transformation to apply
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * assert(a.map!{|x| => x * 2} ().collect() == [2, 4, 6]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield map {F: fn (U)-> V, T of [U], U, V} (a: T)-> V {
+    for i in a {
+        yield F(i);
+    }
+}
+
+/**
+ * Apply a transformation to every element of a slice
+ * @returns: a generator yielding the transformed elements
+ * @params:
+ *    - a: a slice to traverse
+ *    - f: the transformation to apply
+ * @info: the result type cannot be guessed from an untyped lambda, so either the lambda is typed
+ * as in the example below, or the result type is passed explicitly (`a.map!{f64} (f)`), or the
+ * template form `a.map!{f} ()` is used instead
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * let z = 2;
+ *
+ * assert(a.map(copy |x: i32|-> i32 => x * z).collect() == [2, 4, 6]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield map {V, T of [U], U} (a: T, f: dg (U)-> V)-> V {
+    for i in a {
+        yield f(i);
+    }
+}
+
+/**
+ * Apply a transformation to every element of an array
+ * @returns: a generator yielding the transformed elements
+ * @params:
+ *    - a: an array to traverse
+ * @templates:
+ *    - F: the transformation to apply
+ * @example:
+ * ```
+ * let a = [1, 2, 3];
+ * assert(a.map!{|x| => x * 2} ().collect() == [2, 4, 6]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield if (N > 0) map {F: fn (U)-> V, T of [U ; N], U, V, N: usize} (a: T)-> V {
+    for i in a {
+        yield F(i);
+    }
+}
+
+/**
+ * Apply a transformation to every element of an array
+ * @returns: a generator yielding the transformed elements
+ * @params:
+ *    - a: an array to traverse
+ *    - f: the transformation to apply
+ * @example:
+ * ```
+ * let a = [1, 2, 3];
+ * let z = 2;
+ *
+ * assert(a.map(copy |x: i32|-> i32 => x * z).collect() == [2, 4, 6]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield if (N > 0) map {V, T of [U ; N], U, N: usize} (a: T, f: dg (U)-> V)-> V {
+    for i in a {
+        yield f(i);
+    }
+}
+
+/**
+ * Apply a transformation to every value yielded by a generator
+ * @returns: a generator yielding the transformed values
+ * @params:
+ *    - a: a generator to traverse
+ * @templates:
+ *    - F: the transformation to apply
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * assert(a.iter().map!{|x| => x * 2} ().collect() == [2, 4, 6]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the number of values yielded by a
+ */
+pub yield map {F: fn (U)-> V, T of (yield-> U), U, V} (a: T)-> V {
+    for i in a {
+        yield F(i);
+    }
+}
+
+/**
+ * Apply a transformation to every value yielded by a generator
+ * @returns: a generator yielding the transformed values
+ * @params:
+ *    - a: a generator to traverse
+ *    - f: the transformation to apply
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * let z = 2;
+ *
+ * assert(a.iter().map(copy |x: i32|-> i32 => x * z).collect() == [2, 4, 6]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the number of values yielded by a
+ */
+pub yield map {V, T of (yield-> U), U} (a: T, f: dg (U)-> V)-> V {
+    for i in a {
+        yield f(i);
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =====================================          FILTER        =======================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Keep only the elements of a slice verifying a predicate
+ * @returns: a generator yielding the elements verifying the predicate, in their original order
+ * @params:
+ *    - a: a slice to traverse
+ *    - f: the predicate to verify
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * assert(a.filter(|x| => x % 2 == 0).collect() == [2, 4]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield filter {T of [U], U} (a: T, f: dg (U)-> bool)-> U {
+    for i in a {
+        if f(i) {
+            yield i;
+        }
+    }
+}
+
+/**
+ * Keep only the elements of an array verifying a predicate
+ * @returns: a generator yielding the elements verifying the predicate, in their original order
+ * @params:
+ *    - a: an array to traverse
+ *    - f: the predicate to verify
+ * @example:
+ * ```
+ * let a = [1, 2, 3, 4];
+ * assert(a.filter(|x| => x % 2 == 0).collect() == [2, 4]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield if (N > 0) filter {T of [U ; N], U, N: usize} (a: T, f: dg (U)-> bool)-> U {
+    for i in a {
+        if f(i) {
+            yield i;
+        }
+    }
+}
+
+/**
+ * Keep only the values yielded by a generator verifying a predicate
+ * @returns: a generator yielding the values verifying the predicate, in their original order
+ * @params:
+ *    - a: a generator to traverse
+ *    - f: the predicate to verify
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * assert(a.iter().filter(|x| => x % 2 == 0).collect() == [2, 4]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the number of values yielded by a
+ */
+pub yield filter {T of (yield-> U), U} (a: T, f: dg (U)-> bool)-> U {
+    for i in a {
+        if f(i) {
+            yield i;
+        }
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ====================================          FILTER MAP       =====================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Transform every element of a slice, and keep only the transformations that produced a value
+ * @returns: a generator yielding the values produced by the transformation
+ * @params:
+ *    - a: a slice to traverse
+ * @templates:
+ *    - F: the transformation to apply, returning `none` for the elements to drop
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * let r = a.filterMap!{|x| => { if (x % 2 == 0) { (x * 10)? } else { none } }} ();
+ *
+ * assert(r.collect() == [20, 40]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield filterMap {F: fn (U)-> (V)?, T of [U], U, V} (a: T)-> V {
+    for i in a {
+        if let Ok(v) = F(i) {
+            yield v;
+        }
+    }
+}
+
+/**
+ * Transform every element of a slice, and keep only the transformations that produced a value
+ * @returns: a generator yielding the values produced by the transformation
+ * @params:
+ *    - a: a slice to traverse
+ *    - f: the transformation to apply, returning `none` for the elements to drop
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * let z = 2;
+ * let r = a.filterMap(copy |x: i32|-> (i32)? => {
+ *     if (x % z == 0) { (x * 10)? } else { none }
+ * });
+ *
+ * assert(r.collect() == [20, 40]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield filterMap {V, T of [U], U} (a: T, f: dg (U)-> (V)?)-> V {
+    for i in a {
+        if let Ok(v) = f(i) {
+            yield v;
+        }
+    }
+}
+
+/**
+ * Transform every element of an array, and keep only the transformations that produced a value
+ * @returns: a generator yielding the values produced by the transformation
+ * @params:
+ *    - a: an array to traverse
+ * @templates:
+ *    - F: the transformation to apply, returning `none` for the elements to drop
+ * @example:
+ * ```
+ * let a = [1, 2, 3, 4];
+ * let r = a.filterMap!{|x| => { if (x % 2 == 0) { (x * 10)? } else { none } }} ();
+ *
+ * assert(r.collect() == [20, 40]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield if (N > 0) filterMap {F: fn (U)-> (V)?, T of [U ; N], U, V, N: usize} (a: T)-> V {
+    for i in a {
+        if let Ok(v) = F(i) {
+            yield v;
+        }
+    }
+}
+
+/**
+ * Transform every element of an array, and keep only the transformations that produced a value
+ * @returns: a generator yielding the values produced by the transformation
+ * @params:
+ *    - a: an array to traverse
+ *    - f: the transformation to apply, returning `none` for the elements to drop
+ * @example:
+ * ```
+ * let a = [1, 2, 3, 4];
+ * let z = 2;
+ * let r = a.filterMap(copy |x: i32|-> (i32)? => {
+ *     if (x % z == 0) { (x * 10)? } else { none }
+ * });
+ *
+ * assert(r.collect() == [20, 40]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield if (N > 0) filterMap {V, T of [U ; N], U, N: usize} (a: T, f: dg (U)-> (V)?)-> V {
+    for i in a {
+        if let Ok(v) = f(i) {
+            yield v;
+        }
+    }
+}
+
+/**
+ * Transform every value yielded by a generator, and keep only the transformations that produced a value
+ * @returns: a generator yielding the values produced by the transformation
+ * @params:
+ *    - a: a generator to traverse
+ * @templates:
+ *    - F: the transformation to apply, returning `none` for the values to drop
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * let r = a.iter().filterMap!{|x| => { if (x % 2 == 0) { (x * 10)? } else { none } }} ();
+ *
+ * assert(r.collect() == [20, 40]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the number of values yielded by a
+ */
+pub yield filterMap {F: fn (U)-> (V)?, T of (yield-> U), U, V} (a: T)-> V {
+    for i in a {
+        if let Ok(v) = F(i) {
+            yield v;
+        }
+    }
+}
+
+/**
+ * Transform every value yielded by a generator, and keep only the transformations that produced a value
+ * @returns: a generator yielding the values produced by the transformation
+ * @params:
+ *    - a: a generator to traverse
+ *    - f: the transformation to apply, returning `none` for the values to drop
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3, 4];
+ * let z = 2;
+ * let r = a.iter().filterMap(copy |x: i32|-> (i32)? => {
+ *     if (x % z == 0) { (x * 10)? } else { none }
+ * });
+ *
+ * assert(r.collect() == [20, 40]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the number of values yielded by a
+ */
+pub yield filterMap {V, T of (yield-> U), U} (a: T, f: dg (U)-> (V)?)-> V {
+    for i in a {
+        if let Ok(v) = f(i) {
+            yield v;
+        }
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =================================        FLATTEN / FLAT MAP       ==================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Concatenate the sub slices of a slice of slices
+ * @returns: a generator yielding the elements of every sub slice, in order
+ * @params:
+ *    - a: a slice of slices to traverse
+ * @example:
+ * ```
+ * let a = copy [copy [1, 2], copy [3], copy [4, 5]];
+ * assert(a.flatten().collect() == [1, 2, 3, 4, 5]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the total number of elements
+ */
+pub yield flatten {T of [U], U of [V], V} (a: T)-> V {
+    for i in a {
+        for j in i {
+            yield j;
+        }
+    }
+}
+
+/**
+ * Concatenate the sub slices of an array of slices
+ * @returns: a generator yielding the elements of every sub slice, in order
+ * @params:
+ *    - a: an array of slices to traverse
+ * @example:
+ * ```
+ * let a = [copy [1, 2], copy [3], copy [4, 5]];
+ * assert(a.flatten().collect() == [1, 2, 3, 4, 5]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the total number of elements
+ */
+pub yield if (N > 0) flatten {T of [U ; N], U of [V], V, N: usize} (a: T)-> V {
+    for i in a {
+        for j in i {
+            yield j;
+        }
+    }
+}
+
+/**
+ * Concatenate the slices yielded by a generator
+ * @returns: a generator yielding the elements of every yielded slice, in order
+ * @params:
+ *    - a: a generator of slices to traverse
+ * @example:
+ * ```
+ * let a = copy [copy [1, 2], copy [3], copy [4, 5]];
+ * assert(a.iter().flatten().collect() == [1, 2, 3, 4, 5]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the total number of elements
+ */
+pub yield flatten {T of (yield-> U), U of [V], V} (a: T)-> V {
+    for i in a {
+        for j in i {
+            yield j;
+        }
+    }
+}
+
+/**
+ * Transform every element of a slice into a slice, and concatenate the results
+ * @returns: a generator yielding the elements of every produced slice, in order
+ * @params:
+ *    - a: a slice to traverse
+ * @templates:
+ *    - F: the transformation to apply
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * assert(a.flatMap!{|x| => copy [x, x * 10]} ().collect() == [1, 10, 2, 20, 3, 30]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the total number of produced elements
+ */
+pub yield flatMap {F: fn (U)-> [V], T of [U], U, V} (a: T)-> V {
+    for i in a {
+        for j in F(i) {
+            yield j;
+        }
+    }
+}
+
+/**
+ * Transform every element of a slice into a slice, and concatenate the results
+ * @returns: a generator yielding the elements of every produced slice, in order
+ * @params:
+ *    - a: a slice to traverse
+ *    - f: the transformation to apply
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * let z = 10;
+ *
+ * assert(a.flatMap(copy |x: i32|-> [i32] => copy [x, x * z]).collect() == [1, 10, 2, 20, 3, 30]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the total number of produced elements
+ */
+pub yield flatMap {V, T of [U], U} (a: T, f: dg (U)-> [V])-> V {
+    for i in a {
+        for j in f(i) {
+            yield j;
+        }
+    }
+}
+
+/**
+ * Transform every element of an array into a slice, and concatenate the results
+ * @returns: a generator yielding the elements of every produced slice, in order
+ * @params:
+ *    - a: an array to traverse
+ * @templates:
+ *    - F: the transformation to apply
+ * @example:
+ * ```
+ * let a = [1, 2, 3];
+ * assert(a.flatMap!{|x| => copy [x, x * 10]} ().collect() == [1, 10, 2, 20, 3, 30]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the total number of produced elements
+ */
+pub yield if (N > 0) flatMap {F: fn (U)-> [V], T of [U ; N], U, V, N: usize} (a: T)-> V {
+    for i in a {
+        for j in F(i) {
+            yield j;
+        }
+    }
+}
+
+/**
+ * Transform every element of an array into a slice, and concatenate the results
+ * @returns: a generator yielding the elements of every produced slice, in order
+ * @params:
+ *    - a: an array to traverse
+ *    - f: the transformation to apply
+ * @example:
+ * ```
+ * let a = [1, 2, 3];
+ * let z = 10;
+ *
+ * assert(a.flatMap(copy |x: i32|-> [i32] => copy [x, x * z]).collect() == [1, 10, 2, 20, 3, 30]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the total number of produced elements
+ */
+pub yield if (N > 0) flatMap {V, T of [U ; N], U, N: usize} (a: T, f: dg (U)-> [V])-> V {
+    for i in a {
+        for j in f(i) {
+            yield j;
+        }
+    }
+}
+
+/**
+ * Transform every value yielded by a generator into a slice, and concatenate the results
+ * @returns: a generator yielding the elements of every produced slice, in order
+ * @params:
+ *    - a: a generator to traverse
+ * @templates:
+ *    - F: the transformation to apply
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * assert(a.iter().flatMap!{|x| => copy [x, x * 10]} ().collect() == [1, 10, 2, 20, 3, 30]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the total number of produced elements
+ */
+pub yield flatMap {F: fn (U)-> [V], T of (yield-> U), U, V} (a: T)-> V {
+    for i in a {
+        for j in F(i) {
+            yield j;
+        }
+    }
+}
+
+/**
+ * Transform every value yielded by a generator into a slice, and concatenate the results
+ * @returns: a generator yielding the elements of every produced slice, in order
+ * @params:
+ *    - a: a generator to traverse
+ *    - f: the transformation to apply
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * let z = 10;
+ *
+ * assert(a.iter().flatMap(copy |x: i32|-> [i32] => copy [x, x * z]).collect() == [1, 10, 2, 20, 3, 30]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the total number of produced elements
+ */
+pub yield flatMap {V, T of (yield-> U), U} (a: T, f: dg (U)-> [V])-> V {
+    for i in a {
+        for j in f(i) {
+            yield j;
+        }
+    }
 }
