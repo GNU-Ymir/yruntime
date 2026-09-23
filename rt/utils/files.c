@@ -128,3 +128,17 @@ _yrt_slice_t _yrt_read_link (char * path) {
         if (len < 0 || (size_t) len < size) return result;
     }
 }
+
+_yrt_slice_t _yrt_real_path (char * path) {
+    _yrt_slice_t result;
+    memset (&result, 0, sizeof (_yrt_slice_t));
+
+    char * resolved = realpath (path, NULL);
+    if (resolved == NULL) return result;
+
+    _yrt_alloc_slice_no_set (&result, strlen (resolved), 1);
+    memcpy (result.data, resolved, result.len);
+    free (resolved);
+
+    return result;
+}

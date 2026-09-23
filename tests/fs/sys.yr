@@ -160,3 +160,37 @@ __test permissions {
 
     removeDir(dir, recursive-> true);
 }
+
+__test absolute {
+    let cwd = canonicalize(Path("."));
+    assert(cwd.isAbsolute());
+    assert(Path("foo/./bar/..").absolute() == cwd.push("foo"));
+    assert(Path("").absolute() == cwd);
+    assert(Path("/usr/./lib/../bin").absolute() == Path("/usr/bin"));
+    assert(Path("/").absolute() == Path("/"));
+}
+
+__test canonicalize {
+    let (dir, f) = fixture("canonicalize");
+    let root = canonicalize(dir);
+    assert(root.isAbsolute() && root.file() == dir.file());
+
+    let sub = dir.push("sub");
+    createDir(sub);
+    symlink(Path("sub"), dir.push("link"));
+    symlink(Path("../file.txt"), sub.push("file.lnk"));
+
+    assert(canonicalize(f) == root.push("file.txt"));
+    assert(canonicalize(dir.push("link").push("..").push("file.txt")) == root.push("file.txt"));
+    assert(canonicalize(dir.push("link").push("file.lnk")) == root.push("file.txt"));
+    assert(canonicalize(dir.push(".").push("sub").push("..")) == root);
+    assert(canonicalize(Path("/")) == Path("/"));
+
+    assert({ canonicalize(dir.push("missing")); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_FOUND });
+
+    symlink(Path("loop2"), dir.push("loop1"));
+    symlink(Path("loop1"), dir.push("loop2"));
+    assert({ canonicalize(dir.push("loop1")); false } catch { FsError(code-> c) => c == FsErrorCode::LINK_LOOP });
+
+    removeDir(dir, recursive-> true);
+}

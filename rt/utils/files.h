@@ -24,5 +24,6 @@ char _yrt_is_writable (char * path);
 char _yrt_is_readable (char * path);
 
 _yrt_slice_t _yrt_read_link (char * path);
+_yrt_slice_t _yrt_real_path (char * path);
 
 #endif // FILES_H_

@@ -7,7 +7,7 @@
 in sys;
 
 use etc::c::dirent;
-use etc::runtime::{errno, files};
+use etc::runtime::{env, errno, files};
 
 use std::conv;
 use std::unit;
@@ -244,6 +244,69 @@ pub fn tempDirectory(root: Path = Path("/tmp"), prefix: [c8] = "")-> Path
             Path(res.fromStringZ())
         }
     } else throw copy FsError(errors::to!{FsErrorCode} (errno()), root.toStr());
+}
+
+/**
+ * Make a path absolute, by resolving it against the current working directory.
+ * @params:
+ *    - path: the path to make absolute
+ * @returns: the absolute path, normalized (cf. Path::normalize)
+ * @info: the filesystem is not accessed, the path does not have to exist, and `..` components are resolved lexically,
+ *        so the result may differ from the one resolved by the filesystem when a link is followed by `..` (cf. canonicalize).
+ * @throws:
+ *   - FsError: if the path is relative and the current working directory cannot be resolved (it was removed, or permission denied)
+ * @example:
+ * ```
+ * use std::fs::{sys, path};
+ * use std::env;
+ *
+ * setCurrentDir(Path("/tmp"));
+ * assert(Path("./some/../dir").absolute() == Path("/tmp/dir"));
+ * assert(Path("/usr/./lib").absolute() == Path("/usr/lib"));
+ * ```
+ */
+pub fn absolute(path: Path)-> Path
+    throws FsError
+{
+    if path.isAbsolute() { return path.normalize(); }
+
+    let cwd = _yrt_get_current_dir();
+    if cwd.len == 0us {
+        throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+    }
+
+    Path(cwd).push(path).normalize()
+}
+
+/**
+ * Resolve a path to the canonical absolute path of the entry it designates, following every symbolic link.
+ * @params:
+ *    - path: the path of an existing entry, absolute or relative to cwd
+ * @returns: an absolute path without `.`, `..` or link components
+ * @throws:
+ *   - FsError:
+ *      + the entry, or one of the directories of the path, does not exist
+ *      + permission denied
+ *      + links form a loop
+ * @example:
+ * ```
+ * use std::fs::{sys, path};
+ *
+ * symlink(Path("dir"), Path("./some/link"));
+ *
+ * // Both paths designate the same entry
+ * assert(Path("./some/link/file.txt").canonicalize() == Path("./some/dir/file.txt").canonicalize());
+ * ```
+ */
+pub fn canonicalize(path: Path)-> Path
+    throws FsError
+{
+    let resolved = _yrt_real_path(path.toStr().toStringZ());
+    if resolved.len == 0us {
+        throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+    }
+
+    Path(resolved)
 }
 
 /**
