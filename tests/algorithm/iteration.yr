@@ -267,3 +267,67 @@ __test flatMapGenerator {
     assert(a.iter().flatMap!{|x| => copy [x, x * 10]} ().collect() == [1, 10, 2, 20, 3, 30], "a");
     assert(a.iter().flatMap(|x: i32|-> [i32] => copy [x, x * 10]).collect() == [1, 10, 2, 20, 3, 30], "b");
 }
+
+__test uniqueSlice {
+    let a = copy [1, 2, 1, 3, 2];
+    assert(a.unique().collect() == [1, 2, 3], "a");
+
+    let e = a[0 .. 0];
+    assert(e.unique().collect().len == 0us, "b");
+    assert((copy [1, 1, 1]).unique().collect() == [1], "c");
+}
+
+__test uniqueArray {
+    let a = [1, 2, 1, 3, 2];
+    assert(a.unique().collect() == [1, 2, 3], "a");
+}
+
+__test uniqueGenerator {
+    let a = copy [1, 2, 1, 3, 2];
+    assert(a.iter().unique().collect() == [1, 2, 3], "a");
+    assert(a.map!{|x| => x % 2} ().unique().collect() == [1, 0], "b");
+}
+
+__test dedupSlice {
+    let a = copy [1, 1, 2, 2, 2, 1];
+    assert(a.dedup().collect() == [1, 2, 1], "a");
+
+    let e = a[0 .. 0];
+    assert(e.dedup().collect().len == 0us, "b");
+    assert((copy [1, 2, 3]).dedup().collect() == [1, 2, 3], "c");
+}
+
+__test dedupArray {
+    let a = [1, 1, 2, 2, 2, 1];
+    assert(a.dedup().collect() == [1, 2, 1], "a");
+}
+
+__test dedupGenerator {
+    let a = copy [1, 1, 2, 2, 2, 1];
+    assert(a.iter().dedup().collect() == [1, 2, 1], "a");
+
+    let e = a[0 .. 0];
+    assert(e.iter().dedup().collect().len == 0us, "b");
+}
+
+__test reverseSlice {
+    let a = copy [1, 2, 3];
+    assert(a.reverse().collect() == [3, 2, 1], "a");
+
+    let e = a[0 .. 0];
+    assert(e.reverse().collect().len == 0us, "b");
+    assert(a.reverse().reverse().collect() == [1, 2, 3], "c");
+}
+
+__test reverseArray {
+    let a = [1, 2, 3];
+    assert(a.reverse().collect() == [3, 2, 1], "a");
+}
+
+__test reverseGenerator {
+    let a = copy [1, 2, 3];
+    assert(a.map!{|x| => x * 2} ().reverse().collect() == [6, 4, 2], "a");
+
+    let e = a[0 .. 0];
+    assert(e.iter().reverse().collect().len == 0us, "b");
+}

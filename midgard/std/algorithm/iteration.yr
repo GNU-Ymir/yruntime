@@ -845,3 +845,229 @@ pub yield flatMap {V, T of (yield-> U), U} (a: T, f: dg (U)-> [V])-> V {
         }
     }
 }
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ===================================        UNIQUE / DEDUP       ====================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Remove every duplicated element of a slice
+ * @returns: a generator yielding the first occurrence of each element, in its original order
+ * @params:
+ *    - a: a slice to traverse
+ * @example:
+ * ```
+ * let a = copy [1, 2, 1, 3, 2];
+ * assert(a.unique().collect() == [1, 2, 3]);
+ * ```
+ * @complexity: O(a.len * r.len) to exhaust the generator, with r the yielded elements
+ */
+pub yield if (__pragma!operator("==", U, U)) unique {T of [U], U} (a: T)-> U {
+    let dmut seen: [U] = [];
+    for i in a {
+        let mut found = false;
+        for j in seen {
+            if (j == i) {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            seen ~= [i];
+            yield i;
+        }
+    }
+}
+
+/**
+ * Remove every duplicated element of an array
+ * @returns: a generator yielding the first occurrence of each element, in its original order
+ * @params:
+ *    - a: an array to traverse
+ * @example:
+ * ```
+ * let a = [1, 2, 1, 3, 2];
+ * assert(a.unique().collect() == [1, 2, 3]);
+ * ```
+ * @complexity: O(a.len * r.len) to exhaust the generator, with r the yielded elements
+ */
+pub yield if (N > 0 && __pragma!operator("==", U, U)) unique {T of [U ; N], U, N: usize} (a: T)-> U {
+    let dmut seen: [U] = [];
+    for i in a {
+        let mut found = false;
+        for j in seen {
+            if (j == i) {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            seen ~= [i];
+            yield i;
+        }
+    }
+}
+
+/**
+ * Remove every duplicated value yielded by a generator
+ * @returns: a generator yielding the first occurrence of each value, in its original order
+ * @params:
+ *    - a: a generator to traverse
+ * @example:
+ * ```
+ * let a = copy [1, 2, 1, 3, 2];
+ * assert(a.iter().unique().collect() == [1, 2, 3]);
+ * ```
+ * @complexity: O(n * r.len) to exhaust the generator, with n the number of values yielded by a,
+ * and r the yielded values
+ */
+pub yield if (__pragma!operator("==", U, U)) unique {T of (yield-> U), U} (a: T)-> U {
+    let dmut seen: [U] = [];
+    for i in a {
+        let mut found = false;
+        for j in seen {
+            if (j == i) {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            seen ~= [i];
+            yield i;
+        }
+    }
+}
+
+/**
+ * Collapse the runs of consecutive equal elements of a slice into a single element
+ * @returns: a generator in which no two consecutive yielded elements are equal
+ * @params:
+ *    - a: a slice to traverse
+ * @example:
+ * ```
+ * let a = copy [1, 1, 2, 2, 2, 1];
+ * assert(a.dedup().collect() == [1, 2, 1]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield if (__pragma!operator("==", U, U)) dedup {T of [U], U} (a: T)-> U {
+    for i, j in a {
+        if (i == 0us || !(a[i - 1us] == j)) {
+            yield j;
+        }
+    }
+}
+
+/**
+ * Collapse the runs of consecutive equal elements of an array into a single element
+ * @returns: a generator in which no two consecutive yielded elements are equal
+ * @params:
+ *    - a: an array to traverse
+ * @example:
+ * ```
+ * let a = [1, 1, 2, 2, 2, 1];
+ * assert(a.dedup().collect() == [1, 2, 1]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield if (N > 0 && __pragma!operator("==", U, U)) dedup {T of [U ; N], U, N: usize} (a: T)-> U {
+    for i, j in a {
+        if (i == 0us || !(a[i - 1us] == j)) {
+            yield j;
+        }
+    }
+}
+
+/**
+ * Collapse the runs of consecutive equal values yielded by a generator into a single value
+ * @returns: a generator in which no two consecutive yielded values are equal
+ * @params:
+ *    - a: a generator to traverse
+ * @example:
+ * ```
+ * let a = copy [1, 1, 2, 2, 2, 1];
+ * assert(a.iter().dedup().collect() == [1, 2, 1]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the number of values yielded by a
+ */
+pub yield if (__pragma!operator("==", U, U)) dedup {T of (yield-> U), U} (a: T)-> U {
+    let mut last: (U)? = none;
+    for i in a {
+        if (!(last == (i)?)) {
+            last = (i)?;
+            yield i;
+        }
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =====================================        REVERSE        ========================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Reverse the order of the elements of a slice
+ * @returns: a generator yielding the elements of a, from the last to the first
+ * @params:
+ *    - a: a slice to traverse
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * assert(a.reverse().collect() == [3, 2, 1]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield reverse {T of [U], U} (a: T)-> U {
+    for i in a.len .. 0us {
+        yield a[i - 1us];
+    }
+}
+
+/**
+ * Reverse the order of the elements of an array
+ * @returns: a generator yielding the elements of a, from the last to the first
+ * @params:
+ *    - a: an array to traverse
+ * @example:
+ * ```
+ * let a = [1, 2, 3];
+ * assert(a.reverse().collect() == [3, 2, 1]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield if (N > 0) reverse {T of [U ; N], U, N: usize} (a: T)-> U {
+    for i in N .. 0us {
+        yield a[i - 1us];
+    }
+}
+
+/**
+ * Reverse the order of the values yielded by a generator
+ * @returns: a generator yielding the values of a, from the last to the first
+ * @params:
+ *    - a: a generator to traverse
+ * @example:
+ * ```
+ * let a = copy [1, 2, 3];
+ * assert(a.iter().reverse().collect() == [3, 2, 1]);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ * @warning: the last value of a comes first, so a is exhausted, and its values kept in memory, as
+ * soon as the first value is pulled
+ */
+pub yield reverse {T of (yield-> U), U} (a: T)-> U {
+    let values = a.collect();
+    for i in values.len .. 0us {
+        yield values[i - 1us];
+    }
+}
