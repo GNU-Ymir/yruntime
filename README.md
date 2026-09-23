@@ -55,8 +55,7 @@ Requires a working `gyc` toolchain (looked up as `gyc` on `PATH`, `compiler = "g
 gyllir build
 ```
 
-Midgard's own version lives in `VERSION` (also mirrored, and occasionally ahead of it while a
-release is in flight, in `gyllir.toml`'s own `version` field); the ymir bootstrap version this
+Midgard's own version lives in `gyllir.toml`'s `version` field; the ymir bootstrap version this
 library is *compiled with* is a separate value, in `YMIR_VERSION` at the repo root (neither is
 hardcoded). Intermediate objects land under `.target/`; this produces at the repo root:
 
@@ -73,7 +72,7 @@ sudo ./install          # installs the .yr sources as system Ymir includes
 ```
 
 `install` copies `midgard/**/*.yr` into `/usr/include/ymir/<midgardShortVersion>` and the `gyc`
-internal include path (the version component from `VERSION`, GCC major from `YMIR_VERSION`), so
+internal include path (the version component from `gyllir.toml`, GCC major from `YMIR_VERSION`), so
 other Ymir projects can `use std::...` / `use core::...` against this library. There is currently
 no equivalent step for installing the built static libraries system-wide — copy
 `libgymidgard_*.a` to `/usr/lib/` by hand if you need that.
