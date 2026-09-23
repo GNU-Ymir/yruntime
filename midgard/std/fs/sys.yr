@@ -10,6 +10,7 @@ use etc::c::dirent;
 use etc::runtime::{errno, files};
 
 use std::conv;
+use std::unit;
 use std::fs::{errors, iteration, path};
 use std::time::instant;
 
@@ -62,6 +63,32 @@ pub fn createDir(path: Path, recursive: bool = false, permission: i32 = 0o775)
     }
 }
 
+
+/**
+ * Check for the existence of an entry of the filesystem, whatever its kind.
+ * @params:
+ *    - path: the path of the entry, absolute or relative to cwd
+ *    - followLink: if path is a link, check the existence of the entry it points to instead of the link itself
+ * @returns:
+ *    - true if the entry exists
+ *    - false if it does not exist, or the current user does not have permission to access it
+ * @example:
+ * ```
+ * use std::fs::{sys, path};
+ *
+ * if exists(Path("./some/dir/file.txt")) {
+ *     println("Entry exists");
+ * }
+ *
+ * // A dangling link exists, but the entry it points to does not
+ * if exists(Path("./some/dir/file.lnk"), followLink-> false) && !exists(Path("./some/dir/file.lnk")) {
+ *     println("Dangling link");
+ * }
+ * ```
+ */
+pub fn exists(path: Path, followLink: bool = true)-> bool {
+    _yrt_exists(path.toStr().toStringZ(), followLink)
+}
 
 /**
  * Check for the existence of a directory
@@ -272,6 +299,40 @@ pub fn fileDate(path: Path)-> std::time::instant::Instant
     }
 
     Instant(cast!u64(sec), nsec)
+}
+
+/**
+ * @returns: the size of a file, the file being the one pointed to if path is a link
+ * @throws:
+ *   - FsError:
+ *       + the file does not exist
+ *       + permission denied
+ *       + this is not a file
+ * @example:
+ * ```
+ * use std::fs::{sys, path};
+ * use std::unit;
+ *
+ * let size = fileSize(Path("./some/dir/file.txt"));
+ * println("The file is ", size, " long, ", size.bytes, " bytes");
+ *
+ * if size > MemorySize::MB(10us) {
+ *     println("That's a big file");
+ * }
+ * ```
+ */
+pub fn fileSize(path: Path)-> MemorySize
+    throws FsError
+{
+    let mut size = 0u64;
+    let res = _yrt_file_size(path.toStr().toStringZ(), &size);
+    if res == -1 {
+        throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+    } else if res == 0 {
+        throw copy FsError(FsErrorCode::NOT_A_FILE, path.toStr());
+    }
+
+    MemorySize::B(cast!usize(size))
 }
 
 /**

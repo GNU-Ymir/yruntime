@@ -1,0 +1,42 @@
+in sys;
+
+use std::fs::{sys, path, file, errors};
+use std::unit;
+
+fn fixture(prefix: [c8], content: [c8] = "Hello World!")-> (Path, Path)
+    throws FsError
+{
+    let dir = tempDirectory(prefix-> "midgard_fs_" ~ prefix ~ "_");
+    let f = dir.push("file.txt");
+    {
+        let dmut file = File::create(f, write-> true);
+        file:.write(content);
+    }
+
+    (dir, f)
+}
+
+__test exists {
+    let (dir, f) = fixture("exists");
+    assert(exists(dir) && exists(f));
+    assert(exists(dir, followLink-> false) && exists(f, followLink-> false));
+    assert(!exists(dir.push("missing")));
+    assert(!exists(f.push("below_a_file")));
+
+    removeDir(dir, recursive-> true);
+    assert(!exists(dir));
+}
+
+__test fileSize {
+    let (dir, f) = fixture("size");
+    assert(fileSize(f) == MemorySize::B(12us) && fileSize(f) != MemorySize::B(13us));
+    assert(fileSize(f).bytes == 12us);
+
+    createFile(dir.push("empty"));
+    assert(fileSize(dir.push("empty")) == MemorySize::B(0us));
+
+    assert({ fileSize(dir); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_A_FILE });
+    assert({ fileSize(dir.push("missing")); false } catch { FsError(code-> c) => c == FsErrorCode::NOT_FOUND });
+
+    removeDir(dir, recursive-> true);
+}

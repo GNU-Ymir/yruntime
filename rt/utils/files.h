@@ -10,6 +10,8 @@ int _yrt_fd_isset (int fd, fd_set * set);
 
 
 char _yrt_file_date (char * path, int64_t * sec, uint64_t * nsec);
+char _yrt_exists (char * path, char followLink);
+int _yrt_file_size (char * path, uint64_t * size);
 char _yrt_is_file (char * path, char followLink);
 char _yrt_is_link (char * path);
 char _yrt_is_dir (char * path, char followLink);

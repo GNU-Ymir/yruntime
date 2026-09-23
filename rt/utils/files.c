@@ -29,6 +29,21 @@ char _yrt_file_date (char * path, int64_t * sec, uint64_t * nsec) {
     return 1;
 }
 
+char _yrt_exists (char * path, char followLink) {
+    struct stat st;
+    if (followLink) return stat (path, &st) == 0;
+    return lstat (path, &st) == 0;
+}
+
+int _yrt_file_size (char * path, uint64_t * size) {
+    struct stat st;
+    if (stat (path, &st) != 0) return -1;
+    if (!S_ISREG (st.st_mode)) return 0;
+
+    size [0] = st.st_size;
+    return 1;
+}
+
 char _yrt_is_file (char * path, char followLink) {
     struct stat st;
     if (followLink) {
