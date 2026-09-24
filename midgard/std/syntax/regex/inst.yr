@@ -1,0 +1,45 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in inst;
+
+pub enum Op: u8
+| CHAR     = 0u8
+| ANY      = 1u8
+| ANY_NL   = 2u8
+| CLASS    = 3u8
+| SPLIT    = 4u8
+| JMP      = 5u8
+| SAVE     = 6u8
+| ASSERT   = 7u8
+| LOOK     = 8u8
+| LOOK_END = 9u8
+| BACKREF  = 10u8
+| MARK     = 11u8
+| CHECK    = 12u8
+| MATCH    = 13u8;
+
+/**
+ * An instruction of a compiled regular expression, whose operands depend on the operation:
+ * - CHAR: x the code point
+ * - CLASS: x the index of the class, y 1 if it is negated
+ * - SPLIT: x the preferred branch, y the alternative one
+ * - JMP: x the target
+ * - SAVE: x the capture slot receiving the position
+ * - ASSERT: x the AssertKind
+ * - LOOK: x the instruction following the looked program, y its `utils::LOOK_*` flags, z and w the min and max
+ *   number of code points a look behind consumes
+ * - BACKREF: x the group, y 1 if the ASCII case is ignored
+ * - MARK/CHECK: x the register storing the position a loop iteration started at
+ */
+@data
+pub record Inst {
+
+    let op: Op;
+    let mut x: usize = 0us;
+    let mut y: usize = 0us;
+    let z: usize = 0us;
+    let w: usize = 0us;
+}

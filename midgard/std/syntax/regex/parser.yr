@@ -1,0 +1,728 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in parser;
+
+use std::conv::utf;
+use std::syntax::errors;
+use std::syntax::regex::node;
+
+/**
+ * Parser of the syntax of a regular expression, building its syntax tree
+ */
+@final
+pub class Parser {
+
+    let _pattern: [c8];
+
+    // The byte offset of the cursor in `_pattern`
+    let mut _pos: usize = 0us;
+
+    // The number of capturing groups opened so far
+    let mut _nbGroups: usize = 0us;
+
+    // The name and index of each named group
+    let dmut _names: [([c8], usize)] = [];
+
+    let mut _icase: bool;
+    let mut _multiline: bool;
+    let mut _dotall: bool;
+    let mut _extended: bool;
+
+    /**
+     * @params:
+     *    - pattern: the regular expression to parse
+     *    - flags: a combination of `RegexFlag`
+     */
+    pub self (pattern: [c8], flags: u32)
+        with _pattern = pattern
+        , _icase = (flags & RegexFlag::ICASE) != 0u32
+        , _multiline = (flags & RegexFlag::MULTILINE) != 0u32
+        , _dotall = (flags & RegexFlag::DOTALL) != 0u32
+        , _extended = (flags & RegexFlag::EXTENDED) != 0u32
+    {}
+
+    /**
+     * @returns: the number of capturing groups of the parsed pattern
+     */
+    @field
+    pub fn nbGroups(self)-> usize {
+        self._nbGroups
+    }
+
+    /**
+     * @returns: the name and index of each named group of the parsed pattern
+     */
+    @field
+    pub fn names(self)-> [([c8], usize)] {
+        self._names
+    }
+
+    /**
+     * Parse the whole pattern
+     * @throws:
+     *    - SyntaxError: if the pattern is malformed
+     */
+    pub fn parse(mut self)-> Node
+        throws SyntaxError
+    {
+        let root = self:.parseAlter();
+        if self._pos < self._pattern.len {
+            throw self.fail("unmatched ')'");
+        }
+
+        root
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          PRIVATE          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Parse a sequence of alternatives separated by `|`, up to the closing `)` or the end of the pattern
+     */
+    fn parseAlter(mut self)-> Node
+        throws SyntaxError
+    {
+        let dmut branches: [Node] = [];
+        branches ~= [self:.parseConcat()];
+        while self.peek() == '|' {
+            self._pos += 1us;
+            branches ~= [self:.parseConcat()];
+        }
+
+        if branches.len == 1us {
+            return branches[0];
+        }
+
+        Node(NodeKind::ALTER, children-> branches)
+    }
+
+    /**
+     * Parse a sequence of quantified atoms, up to the next `|`, the closing `)` or the end of the pattern
+     */
+    fn parseConcat(mut self)-> Node
+        throws SyntaxError
+    {
+        let dmut items: [Node] = [];
+        loop {
+            self:.skipExtended();
+            let c = self.peek();
+            if self._pos >= self._pattern.len || c == '|' || c == ')' {
+                break;
+            }
+
+            if c == '*' || c == '+' || c == '?' || (c == '{' && self.braces() != none) {
+                throw self.fail("nothing to repeat");
+            }
+
+            if let Ok(atom) = self:.parseAtom() {
+                items ~= [self:.parseQuantifier(atom)];
+            }
+        }
+
+        if items.len == 0us {
+            return Node(NodeKind::EMPTY);
+        } else if items.len == 1us {
+            return items[0];
+        }
+
+        Node(NodeKind::CONCAT, children-> items)
+    }
+
+    /**
+     * Parse the quantifier following `atom`, if any
+     * @returns: `atom` repeated by the quantifier, or `atom` itself if there is none
+     */
+    fn parseQuantifier(mut self, ref atom: Node)-> Node
+        throws SyntaxError
+    {
+        self:.skipExtended();
+
+        let c = self.peek();
+        let mut min = 0us, mut max = usize::max;
+        if c == '*' {
+            self._pos += 1us;
+        } else if c == '+' {
+            min = 1us;
+            self._pos += 1us;
+        } else if c == '?' {
+            max = 1us;
+            self._pos += 1us;
+        } else if c == '{' {
+            if let Ok(b) = self.braces() {
+                min = b._0;
+                max = b._1;
+                self._pos = b._2;
+            } else {
+                return atom;
+            }
+        } else {
+            return atom;
+        }
+
+        let greedy = if self.peek() == '?' {
+            self._pos += 1us;
+            false
+        } else {
+            true
+        };
+
+        if (max != usize::max && min > max) {
+            throw self.fail("the minimum of a repetition is greater than its maximum");
+        }
+
+        if (min > utils::MAX_REPEAT || (max != usize::max && max > utils::MAX_REPEAT)) {
+            throw self.fail("a repetition count is greater than 1000");
+        }
+
+        self:.skipExtended();
+        let n = self.peek();
+        if n == '*' || n == '+' || n == '?' || (n == '{' && self.braces() != none) {
+            throw self.fail("multiple repeat");
+        }
+
+        Node(NodeKind::REPEAT, children-> copy [atom], min-> min, max-> max, greedy-> greedy)
+    }
+
+    /**
+     * @returns: the bounds of the counted repetition starting at the cursor, and the offset following
+     * it, none if the `{` does not start a valid one(it is then a literal char)
+     */
+    fn braces(self)-> ((usize, usize, usize))? {
+        let mut i = self._pos + 1us;
+        let (lo, hasLo, afterLo) = self.number(i);
+        i = afterLo;
+
+        if i < self._pattern.len && self._pattern[i] == '}' {
+            if !hasLo { return none; }
+            return (lo, lo, i + 1us)?;
+        }
+
+        if i >= self._pattern.len || self._pattern[i] != ',' { return none; }
+        i += 1us;
+
+        let (hi, hasHi, afterHi) = self.number(i);
+        i = afterHi;
+        if i >= self._pattern.len || self._pattern[i] != '}' || (!hasLo && !hasHi) {
+            return none;
+        }
+
+        (lo, if hasHi { hi } else { usize::max }, i + 1us)?
+    }
+
+    /**
+     * @returns: the decimal number read at offset `i`, capped above `MAX_REPEAT`, whether a digit
+     * was read, and the offset following it
+     */
+    fn number(self, i: usize)-> (usize, bool, usize) {
+        let mut j = i, mut n = 0us;
+        while j < self._pattern.len && self._pattern[j] >= '0' && self._pattern[j] <= '9' {
+            if n <= utils::MAX_REPEAT {
+                n = n * 10us + cast!usize(cast!u8(self._pattern[j]) - cast!u8('0'));
+            }
+            j += 1us;
+        }
+
+        (n, j != i, j)
+    }
+
+    /**
+     * Parse the atom at the cursor: a group, a class, an escape sequence, an anchor or a char
+     * @returns: none if the atom is a group setting flags, which matches nothing
+     */
+    fn parseAtom(mut self)-> (Node)?
+        throws SyntaxError
+    {
+        let c = self.peek();
+        if c == '(' {
+            return self:.parseGroup();
+        } else if c == '[' {
+            let cls = self:.parseClass();
+            return (cls)?;
+        } else if c == '\\' {
+            let esc = self:.parseEscape();
+            return (esc)?;
+        }
+
+        self._pos += 1us;
+        if c == '.' {
+            return (Node(if self._dotall { NodeKind::ANY_NL } else { NodeKind::ANY }))?;
+        } else if c == '^' {
+            return (self.anchor(if self._multiline { AssertKind::LINE_START } else { AssertKind::TEXT_START }))?;
+        } else if c == '$' {
+            return (self.anchor(if self._multiline { AssertKind::LINE_END } else { AssertKind::TEXT_END }))?;
+        }
+
+        self._pos -= 1us;
+        (self.charNode(self:.nextCode()))?
+    }
+
+    /**
+     * Parse the group whose `(` is at the cursor, capturing, non capturing, named, lookaround, or setting flags
+     * @returns: none for a `(?flags)` group, which only changes the flags of the rest of the enclosing group
+     */
+    fn parseGroup(mut self)-> (Node)?
+        throws SyntaxError
+    {
+        let open = self._pos;
+        self._pos += 1us;
+
+        let icase = self._icase, multiline = self._multiline, dotall = self._dotall, extended = self._extended;
+        let mut capture = false;
+        let mut look = false, mut behind = false, mut negate = false;
+
+        if self.peek() == '?' {
+            self._pos += 1us;
+            let c = self.peek();
+            if c == ':' {
+                self._pos += 1us;
+            } else if c == '=' || c == '!' {
+                look = true;
+                negate = c == '!';
+                self._pos += 1us;
+            } else if c == '<' && (self.peekAt(1us) == '=' || self.peekAt(1us) == '!') {
+                look = true;
+                behind = true;
+                negate = self.peekAt(1us) == '!';
+                self._pos += 2us;
+            } else if c == '<' || (c == 'P' && self.peekAt(1us) == '<') {
+                self._pos += if c == 'P' { 2us } else { 1us };
+                let nameStart = self._pos;
+                let name = self:.parseName('>');
+                for n in self._names {
+                    if n._0 == name {
+                        self._pos = nameStart;
+                        throw self.fail("the group name '" ~ name ~ "' is already used");
+                    }
+                }
+
+                capture = true;
+                self._names ~= [(name, self._nbGroups + 1us)];
+            } else if !self:.parseFlags() {
+                self._pos = open;
+                throw self.fail("unknown group syntax");
+            } else if self.peek() == ')' {
+                self._pos += 1us;
+                return none;
+            } else {
+                self._pos += 1us;
+            }
+        } else {
+            capture = true;
+        }
+
+        let index = if capture {
+            self._nbGroups += 1us;
+            self._nbGroups
+        } else {
+            0us
+        };
+
+        let inner = self:.parseAlter();
+        if self.peek() != ')' {
+            self._pos = open;
+            throw self.fail("missing ')'");
+        }
+
+        self._pos += 1us;
+        self._icase = icase;
+        self._multiline = multiline;
+        self._dotall = dotall;
+        self._extended = extended;
+
+        if capture {
+            return (Node(NodeKind::GROUP, children-> copy [inner], index-> index))?;
+        } else if look {
+            return (Node(NodeKind::LOOK, children-> copy [inner], negate-> negate, flag-> behind))?;
+        }
+
+        (inner)?
+    }
+
+    /**
+     * Read the flags of a `(?flags)` or `(?flags:...)` group, up to the closing `)` or `:`
+     * @returns: false if they are not valid
+     */
+    fn parseFlags(mut self)-> bool {
+        let mut on = true, mut any = false;
+        loop {
+            let c = self.peek();
+            if c == ')' || c == ':' {
+                break any;
+            }
+
+            if c == '-' && on {
+                on = false;
+            } else if c == 'i' {
+                self._icase = on;
+            } else if c == 'm' {
+                self._multiline = on;
+            } else if c == 's' {
+                self._dotall = on;
+            } else if c == 'x' {
+                self._extended = on;
+            } else {
+                break false;
+            }
+
+            any = true;
+            self._pos += 1us;
+        }
+    }
+
+    /**
+     * Read a group name, up to the char `end`
+     */
+    fn parseName(mut self, end: c8)-> [c8]
+        throws SyntaxError
+    {
+        let start = self._pos;
+        while self._pos < self._pattern.len && utils::isWordByte(self._pattern[self._pos]) {
+            self._pos += 1us;
+        }
+
+        let name = self._pattern[start .. self._pos];
+        if name.len == 0us || (name[0] >= '0' && name[0] <= '9') || self.peek() != end {
+            self._pos = start;
+            throw self.fail("invalid group name");
+        }
+
+        self._pos += 1us;
+        name
+    }
+
+    /**
+     * Parse the escape sequence whose `\` is at the cursor, outside of a class
+     */
+    fn parseEscape(mut self)-> Node
+        throws SyntaxError
+    {
+        let start = self._pos;
+        self._pos += 1us;
+        if self._pos >= self._pattern.len {
+            self._pos = start;
+            throw self.fail("trailing backslash");
+        }
+
+        let c = self._pattern[self._pos];
+        if c == 'b' || c == 'B' || c == 'A' || c == 'z' {
+            self._pos += 1us;
+            let kind = match c {
+                'b' => { AssertKind::WORD }
+                'B' => { AssertKind::NOT_WORD }
+                'A' => { AssertKind::TEXT_START }
+                _   => { AssertKind::TEXT_END }
+            };
+            return self.anchor(kind);
+        }
+
+        if c >= '1' && c <= '9' {
+            let (index, _, after) = self.number(self._pos);
+            if index > self._nbGroups {
+                self._pos = start;
+                throw self.fail("reference to an undefined group");
+            }
+
+            self._pos = after;
+            return Node(NodeKind::BACKREF, index-> index, flag-> self._icase);
+        }
+
+        if c == 'k' {
+            self._pos += 1us;
+            if self.peek() != '<' {
+                self._pos = start;
+                throw self.fail("invalid group name");
+            }
+
+            self._pos += 1us;
+            let name = self:.parseName('>');
+            for n in self._names {
+                if n._0 == name {
+                    return Node(NodeKind::BACKREF, index-> n._1, flag-> self._icase);
+                }
+            }
+
+            self._pos = start;
+            throw self.fail("reference to an undefined group");
+        }
+
+        let (code, ranges, negate) = self:.escapeAtom(start, inClass-> false);
+        if let Ok(cp) = code {
+            return self.charNode(cp);
+        }
+
+        Node(NodeKind::CLASS, ranges-> ranges, negate-> negate)
+    }
+
+    /**
+     * Read the escape sequence whose `\` is at offset `start`, the cursor being on the following char
+     * @returns: the code point it denotes, or the ranges of the shorthand class it denotes and
+     * whether they are negated
+     */
+    fn escapeAtom(mut self, start: usize, inClass: bool)-> ((u32)?, [(u32, u32)], bool)
+        throws SyntaxError
+    {
+        let c = self._pattern[self._pos];
+        if let Ok(ranges) = utils::shorthand(c) {
+            self._pos += 1us;
+            return (none, ranges, c == 'D' || c == 'W' || c == 'S');
+        }
+
+        self._pos += 1us;
+        let code = match c {
+            'n' => { 0x0Au32 }
+            't' => { 0x09u32 }
+            'r' => { 0x0Du32 }
+            'f' => { 0x0Cu32 }
+            'v' => { 0x0Bu32 }
+            'e' => { 0x1Bu32 }
+            '0' => { 0u32 }
+            'x' => { self:.parseHex(start) }
+            _ => {
+                if inClass && c == 'b' {
+                    0x08u32
+                } else if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
+                    self._pos = start;
+                    throw self.fail("unknown escape sequence '" ~ self._pattern[start .. start + 2us] ~ "'");
+                } else {
+                    self._pos -= 1us;
+                    self:.nextCode()
+                }
+            }
+        };
+
+        ((code)?, [], false)
+    }
+
+    /**
+     * Read the hexadecimal code point of a `\xHH` or `\x{H...}` escape, the cursor being after the `x`
+     */
+    fn parseHex(mut self, start: usize)-> u32
+        throws SyntaxError
+    {
+        let braced = self.peek() == '{';
+        if braced { self._pos += 1us; }
+
+        let mut code = 0u32, mut nb = 0us;
+        while self._pos < self._pattern.len && (!braced || nb < 8us) && (braced || nb < 2us) {
+            let d = utils::hexDigit(self._pattern[self._pos]);
+            if d == u32::max { break; }
+
+            code = code * 16u32 + d;
+            nb += 1us;
+            self._pos += 1us;
+        }
+
+        if nb == 0us || (braced && self.peek() != '}') || code > 0x10FFFFu32 {
+            self._pos = start;
+            throw self.fail("invalid hexadecimal escape sequence");
+        }
+
+        if braced { self._pos += 1us; }
+        code
+    }
+
+    /**
+     * Parse the class whose `[` is at the cursor
+     */
+    fn parseClass(mut self)-> Node
+        throws SyntaxError
+    {
+        let open = self._pos;
+        self._pos += 1us;
+
+        let negate = if self.peek() == '^' {
+            self._pos += 1us;
+            true
+        } else {
+            false
+        };
+
+        let dmut ranges: [(u32, u32)] = [];
+        let mut first = true;
+        loop {
+            if self._pos >= self._pattern.len {
+                self._pos = open;
+                throw self.fail("missing ']'");
+            }
+
+            let c = self.peek();
+            if c == ']' && !first {
+                self._pos += 1us;
+                break;
+            }
+
+            first = false;
+            if c == '[' && self.peekAt(1us) == ':' {
+                let posix = self:.parsePosixClass();
+                if let Ok(named) = posix {
+                    ranges ~= named;
+                    continue;
+                }
+            }
+
+            let (lo, loRanges) = self:.classAtom();
+            if let Ok(l) = lo {
+                if self.peek() == '-' && self.peekAt(1us) != ']' && self._pos + 1us < self._pattern.len {
+                    let dash = self._pos;
+                    self._pos += 1us;
+                    let (hi, _) = self:.classAtom();
+                    if let Ok(h) = hi {
+                        if h < l {
+                            self._pos = dash;
+                            throw self.fail("invalid class range");
+                        }
+
+                        ranges ~= [(l, h)];
+                    } else {
+                        self._pos = dash;
+                        throw self.fail("invalid class range");
+                    }
+                } else {
+                    ranges ~= [(l, l)];
+                }
+            } else {
+                ranges ~= loRanges;
+            }
+        }
+
+        let all = if self._icase { utils::foldCase(ranges) } else { ranges };
+        Node(NodeKind::CLASS, ranges-> all, negate-> negate)
+    }
+
+    /**
+     * Read one element of a class
+     * @returns: the code point it denotes, or the ranges it denotes
+     */
+    fn classAtom(mut self)-> ((u32)?, [(u32, u32)])
+        throws SyntaxError
+    {
+        if self.peek() != '\\' {
+            return ((self:.nextCode())?, []);
+        }
+
+        let start = self._pos;
+        self._pos += 1us;
+        if self._pos >= self._pattern.len {
+            self._pos = start;
+            throw self.fail("trailing backslash");
+        }
+
+        let (code, ranges, negate) = self:.escapeAtom(start, inClass-> true);
+        if negate {
+            return (code, utils::complement(ranges));
+        }
+
+        (code, ranges)
+    }
+
+    /**
+     * Read a `[:name:]` class
+     * @returns: its ranges, none if the cursor is not on one(the `[` is then a literal char)
+     * @throws:
+     *    - SyntaxError: if the class name is unknown
+     */
+    fn parsePosixClass(mut self)-> ([(u32, u32)])?
+        throws SyntaxError
+    {
+        let start = self._pos + 2us;
+        let mut i = start;
+        while i + 1us < self._pattern.len && !(self._pattern[i] == ':' && self._pattern[i + 1us] == ']') {
+            i += 1us;
+        }
+
+        if i + 1us >= self._pattern.len {
+            return none;
+        }
+
+        if let Ok(ranges) = utils::posixClass(self._pattern[start .. i]) {
+            self._pos = i + 2us;
+            return (ranges)?;
+        }
+
+        self._pos = start - 2us;
+        throw self.fail("unknown POSIX class '" ~ self._pattern[start .. i] ~ "'");
+    }
+
+    /**
+     * @returns: the node matching the code point `code`, and its other cases if the case is ignored
+     */
+    fn charNode(self, code: u32)-> Node {
+        if self._icase {
+            let folded = utils::foldCase(copy [(code, code)]);
+            if folded.len > 1us {
+                return Node(NodeKind::CLASS, ranges-> folded);
+            }
+        }
+
+        Node(NodeKind::CHAR, code-> code)
+    }
+
+    /**
+     * @returns: the node asserting `kind` at the position
+     */
+    fn anchor(self, kind: AssertKind)-> Node {
+        Node(NodeKind::ASSERT, index-> cast!usize(cast!u8(kind)))
+    }
+
+    /**
+     * Skip the whitespaces and the `#` comments at the cursor, if the extended syntax is enabled
+     */
+    fn skipExtended(mut self) {
+        if !self._extended { return; }
+        while self._pos < self._pattern.len {
+            let c = self._pattern[self._pos];
+            if c == '#' {
+                while self._pos < self._pattern.len && self._pattern[self._pos] != '\n' {
+                    self._pos += 1us;
+                }
+            } else if c != ' ' && c != '\t' && c != '\n' && c != '\r' && c != '\v' && c != '\f' {
+                break;
+            } else {
+                self._pos += 1us;
+            }
+        }
+    }
+
+    /**
+     * Read the UTF-8 encoded code point at the cursor
+     */
+    fn nextCode(mut self)-> u32 {
+        let (c, n) = toUtf32(self._pattern[self._pos .. $]);
+        self._pos += cast!usize(n);
+        cast!u32(c)
+    }
+
+    /**
+     * @returns: the char at the cursor, `\u{0}` at the end of the pattern
+     */
+    fn peek(self)-> c8 {
+        self.peekAt(0us)
+    }
+
+    /**
+     * @returns: the char `off` bytes after the cursor, `\u{0}` past the end of the pattern
+     */
+    fn peekAt(self, off: usize)-> c8 {
+        if self._pos + off < self._pattern.len {
+            self._pattern[self._pos + off]
+        } else {
+            '\u{0}'
+        }
+    }
+
+    /**
+     * @returns: the error `msg`, located at the cursor
+     */
+    fn fail(self, msg: [c8])-> &SyntaxError {
+        copy SyntaxError(msg, 1us, self._pos + 1us)
+    }
+
+}

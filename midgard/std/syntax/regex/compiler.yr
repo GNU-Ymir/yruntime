@@ -1,0 +1,215 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in compiler;
+
+use std::syntax::errors;
+use std::syntax::regex::{inst, node, program};
+
+/**
+ * Compiler of the syntax tree of a regular expression into the program run by a `Matcher`
+ */
+@final
+pub class Compiler {
+
+    let dmut _code: [Inst] = [];
+    let dmut _classes: [[(u32, u32)]] = [];
+    let mut _nbRegs: usize = 0us;
+    let mut _nbSaves: usize = 0us;
+
+    pub self () {}
+
+    /**
+     * @params:
+     *    - root: the syntax tree of the pattern
+     *    - nbGroups: the number of capturing groups of the pattern
+     *    - names: the name and index of each named group of the pattern
+     * @throws:
+     *    - SyntaxError: if the compiled pattern is too large
+     */
+    pub fn compile(mut self, ref root: Node, nbGroups: usize, names: [([c8], usize)])-> Program
+        throws SyntaxError
+    {
+        self:.emit(Op::SAVE, x-> 0us);
+        self:.node(root);
+        self:.emit(Op::SAVE, x-> 1us);
+        self:.emit(Op::MATCH);
+
+        if self._code.len > utils::MAX_PROGRAM {
+            throw copy SyntaxError("the pattern is too large", 1us, 1us);
+        }
+
+        Program(self._code, self._classes, (nbGroups + 1us) * 2us, self._nbRegs, names, isAnchored(root))
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          PRIVATE          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Emit the instructions matching `n`
+     */
+    fn node(mut self, ref n: Node)
+        throws SyntaxError
+    {
+        if self._code.len > utils::MAX_PROGRAM {
+            throw copy SyntaxError("the pattern is too large", 1us, 1us);
+        }
+
+        match n.kind {
+            NodeKind::EMPTY => {}
+            NodeKind::CHAR => { self:.emit(Op::CHAR, x-> cast!usize(n.code)); }
+            NodeKind::ANY => { self:.emit(Op::ANY); }
+            NodeKind::ANY_NL => { self:.emit(Op::ANY_NL); }
+            NodeKind::CLASS => {
+                self._classes ~= [n.ranges];
+                self:.emit(Op::CLASS, x-> self._classes.len - 1us, y-> if n.negate { 1us } else { 0us });
+            }
+            NodeKind::CONCAT => {
+                for c in n.children {
+                    self:.node(c);
+                }
+            }
+            NodeKind::ALTER => { self:.alter(n); }
+            NodeKind::REPEAT => { self:.repeat(n); }
+            NodeKind::GROUP => {
+                self._nbSaves += 1us;
+                self:.emit(Op::SAVE, x-> n.index * 2us);
+                self:.node(n.children[0]);
+                self:.emit(Op::SAVE, x-> n.index * 2us + 1us);
+            }
+            NodeKind::ASSERT => { self:.emit(Op::ASSERT, x-> n.index); }
+            NodeKind::LOOK => { self:.look(n); }
+            NodeKind::BACKREF => { self:.emit(Op::BACKREF, x-> n.index, y-> if n.flag { 1us } else { 0us }); }
+        }
+    }
+
+    /**
+     * Emit the instructions of an ALTER, trying each of its branches in order
+     */
+    fn alter(mut self, ref n: Node)
+        throws SyntaxError
+    {
+        let dmut jumps: [usize] = [];
+        for i in 0us .. n.children.len - 1us {
+            let split = self:.emit(Op::SPLIT, x-> self._code.len + 1us);
+            self:.node(n.children[i]);
+            jumps ~= [self:.emit(Op::JMP)];
+            self._code[split].y = self._code.len;
+        }
+
+        self:.node(n.children[n.children.len - 1us]);
+        for j in jumps {
+            self._code[j].x = self._code.len;
+        }
+    }
+
+    /**
+     * Emit the instructions of a REPEAT, its body unrolled `min` times followed by the optional iterations
+     */
+    fn repeat(mut self, ref n: Node)
+        throws SyntaxError
+    {
+        let body = n.children[0];
+        for _ in 0us .. n.min {
+            self:.node(body);
+        }
+
+        if n.max == usize::max {
+            let nullable = body.isNullable();
+            let loop_ = self:.emit(Op::SPLIT);
+            let reg = self._nbRegs;
+            if nullable {
+                self._nbRegs += 1us;
+                self:.emit(Op::MARK, x-> reg);
+            }
+
+            self:.node(body);
+            if nullable {
+                self:.emit(Op::CHECK, x-> reg);
+            }
+
+            self:.emit(Op::JMP, x-> loop_);
+            self:.branch(loop_, n.greedy);
+        } else {
+            let dmut splits: [usize] = [];
+            for _ in n.min .. n.max {
+                splits ~= [self:.emit(Op::SPLIT)];
+                self:.node(body);
+            }
+
+            for s in splits {
+                self:.branch(s, n.greedy);
+            }
+        }
+    }
+
+    /**
+     * Set the branches of the SPLIT at `at`, between the instruction following it and the end of the code
+     */
+    fn branch(mut self, at: usize, greedy: bool) {
+        if greedy {
+            self._code[at].x = at + 1us;
+            self._code[at].y = self._code.len;
+        } else {
+            self._code[at].x = self._code.len;
+            self._code[at].y = at + 1us;
+        }
+    }
+
+    /**
+     * Emit the instructions of a LOOK, its looked program enclosed between a LOOK and a LOOK_END
+     */
+    fn look(mut self, ref n: Node)
+        throws SyntaxError
+    {
+        let (min, max) = n.children[0].width();
+        let saves = self._nbSaves;
+        let at = self._code.len;
+        self._code ~= [Inst(Op::LOOK, z-> min, w-> max)];
+
+        self:.node(n.children[0]);
+        self:.emit(Op::LOOK_END);
+
+        let mut flags = 0us;
+        if n.flag { flags = flags | utils::LOOK_BEHIND; }
+        if n.negate { flags = flags | utils::LOOK_NEGATE; }
+        if self._nbSaves != saves { flags = flags | utils::LOOK_GROUPS; }
+
+        self._code[at].x = self._code.len;
+        self._code[at].y = flags;
+    }
+
+    /**
+     * Append an instruction to the code
+     * @returns: its index
+     */
+    fn emit(mut self, op: Op, x: usize = 0us, y: usize = 0us)-> usize {
+        self._code ~= [Inst(op, x-> x, y-> y)];
+        self._code.len - 1us
+    }
+}
+
+/**
+ * @returns: true if every match of `n` starts at the beginning of the text
+ */
+fn isAnchored(ref n: Node)-> bool {
+    match n.kind {
+        NodeKind::ASSERT => { n.index == cast!usize(cast!u8(AssertKind::TEXT_START)) }
+        NodeKind::CONCAT => { n.children.len != 0us && isAnchored(n.children[0]) }
+        NodeKind::GROUP => { isAnchored(n.children[0]) }
+        NodeKind::ALTER => {
+            for c in n.children {
+                if !isAnchored(c) { return false; }
+            }
+            true
+        }
+        _ => { false }
+    }
+}

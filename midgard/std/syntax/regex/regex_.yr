@@ -1,0 +1,329 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in regex_;
+
+use std::syntax::errors;
+use std::syntax::regex::{matcher, program};
+
+/**
+ * A compiled regular expression. The syntax it accepts is described in the documentation of the
+ * module `std::syntax::regex`.
+ * @example:
+ * ```
+ * use std::syntax::regex;
+ *
+ * let r = copy Regex("(\\w+)@(\\w+)\\.com");
+ * assert(r.isMatch("mail alice@example.com"));
+ * assert(r.replaceAll("alice@example.com, bob@test.com", "$2:$1") == "example:alice, test:bob");
+ * ```
+ */
+@final
+pub class Regex {
+
+    // The pattern the regex was compiled from
+    pub let pattern: [c8];
+
+    // The RegexFlag combination the regex was compiled with
+    pub let flags: u32;
+
+    let _prog: Program;
+
+    /**
+     * Compile a regular expression
+     * @params:
+     *    - pattern: the regular expression
+     *    - flags: a combination of `RegexFlag`
+     * @throws:
+     *    - SyntaxError: if the pattern is malformed, its column is the byte offset of the error in
+     *      the pattern(from 1)
+     * @example:
+     * ```
+     * use std::syntax::{errors, regex};
+     *
+     * let r = copy Regex("[a-z]+", flags-> RegexFlag::ICASE);
+     * assert(r.isMatch("ABC"));
+     *
+     * let mut col = 0us;
+     * {
+     *     let _ = copy Regex("(ab");
+     * } catch {
+     *     err: &SyntaxError => { col = err.col; }
+     * }
+     *
+     * assert(col == 1us);
+     * ```
+     */
+    pub self (pattern: [c8], flags: u32 = 0u32)
+        with pattern = pattern
+        , flags = flags
+        , _prog = utils::compile(pattern, flags)
+        throws SyntaxError
+    {}
+
+    /**
+     * @returns: the number of capturing groups of the regex
+     */
+    @field
+    pub fn groupCount(self)-> usize {
+        self._prog.nbSlots / 2us - 1us
+    }
+
+    /**
+     * @returns: the index of the group declared with `(?<name>...)`, none if there is none
+     * @example:
+     * ```
+     * use std::syntax::regex;
+     *
+     * let r = copy Regex("(a)(?<second>b)");
+     * assert(r.groupIndex("second") == (2us)?);
+     * ```
+     */
+    pub fn groupIndex(self, name: [c8])-> (usize)? {
+        for n in self._prog.names {
+            if n._0 == name { return (n._1)?; }
+        }
+
+        none
+    }
+
+    /**
+     * @returns: true if the regex matches somewhere in `text`
+     * @example:
+     * ```
+     * use std::syntax::regex;
+     *
+     * let r = copy Regex("\\bfoo\\b");
+     * assert(r.isMatch("a foo b"));
+     * assert(!r.isMatch("food"));
+     * ```
+     */
+    pub fn isMatch(self, text: [c8])-> bool {
+        let dmut m = copy Matcher(self._prog, text);
+        m:.search(0us)
+    }
+
+    /**
+     * Search the first match of the regex in `text`
+     * @params:
+     *    - text: the text to search
+     *    - from: the byte offset the search starts at, the text before it is still seen by `^`, `\b`
+     *      and the look behinds
+     * @returns: the first match, none if there is none
+     * @example:
+     * ```
+     * use std::syntax::regex;
+     *
+     * let r = copy Regex("\\d+");
+     * if let Ok(m) = r.find("a1 b22 c333", from-> 3us) {
+     *     assert(m.text == "22" && m.start == 4us);
+     * }
+     * ```
+     */
+    pub fn find(self, text: [c8], from: usize = 0us)-> (Match)? {
+        let dmut m = copy Matcher(self._prog, text);
+        if from <= text.len && m:.search(from) {
+            return (Match(text, copy m.slots, self._prog.names))?;
+        }
+
+        none
+    }
+
+    /**
+     * @returns: true if the regex matches the whole text
+     * @example:
+     * ```
+     * use std::syntax::regex;
+     *
+     * let r = copy Regex("(\\d+)|(\\d+[a-z])");
+     * assert(r.isFullMatch("12"));
+     * assert(r.isFullMatch("12b"));
+     * assert(!r.isFullMatch("12b3"));
+     * ```
+     */
+    pub fn isFullMatch(self, text: [c8])-> bool {
+        let dmut m = copy Matcher(self._prog, text);
+        m:.matchAt(0us, toEnd-> true)
+    }
+
+    /**
+     * Match the regex against the whole text
+     * @returns: the match, none if the regex does not match the whole text
+     * @example:
+     * ```
+     * use std::syntax::regex;
+     *
+     * let r = copy Regex("(\\w+?)(\\d*)");
+     * if let Ok(m) = r.fullMatch("abc123") {
+     *     assert(m.group(1us) == ("abc")? && m.group(2us) == ("123")?);
+     * }
+     * ```
+     */
+    pub fn fullMatch(self, text: [c8])-> (Match)? {
+        let dmut m = copy Matcher(self._prog, text);
+        if m:.matchAt(0us, toEnd-> true) {
+            return (Match(text, copy m.slots, self._prog.names))?;
+        }
+
+        none
+    }
+
+    /**
+     * Iterate over the non overlapping matches of the regex in `text`, from left to right. After an
+     * empty match, the search resumes one code point further.
+     * @example:
+     * ```
+     * use std::syntax::regex;
+     *
+     * let r = copy Regex("(\\w)(\\d)");
+     * let dmut found: [[c8]] = [];
+     * for m in r.findAll("a1 b2 cc d4") {
+     *     found ~= [m.group(1us) ?? ""];
+     * }
+     *
+     * assert(found == ["a", "b", "d"]);
+     * ```
+     */
+    pub fn findAll(self, text: [c8])-> yield-> Match {
+        utils::matches(self._prog, text)
+    }
+
+    /**
+     * Find every match of the regex in `text`
+     * @returns: the offset and text of each match, as `findAll` iterates them
+     * @example:
+     * ```
+     * use std::syntax::regex;
+     *
+     * let r = copy Regex("@[a-zA-Z0-9_]+");
+     * let lst = r.apply("@alice, @bob");
+     * assert(lst.len == 2us);
+     * assert(lst[0]._0 == 0us && lst[0]._1 == "@alice");
+     * assert(lst[1]._0 == 8us && lst[1]._1 == "@bob");
+     * ```
+     */
+    pub fn apply(self, text: [c8])-> [(usize, [c8])] {
+        let dmut res: [(usize, [c8])] = [];
+        for m in utils::matches(self._prog, text) {
+            res ~= [(m.start, m.text)];
+        }
+
+        res
+    }
+
+    /**
+     * Replace the first match of the regex in `text`
+     * @params:
+     *    - text: the text to search
+     *    - by: the replacement, where `$n` and `${n}` stand for the text of the group `n` (`$0` for
+     *      the whole match), `${name}` for the text of a named group, and `$$` for `$`. A group that
+     *      did not participate in the match, or does not exist, is replaced by nothing.
+     * @returns: a copy of `text` with the match replaced, `text` itself if there is no match
+     * @example:
+     * ```
+     * use std::syntax::regex;
+     *
+     * let r = copy Regex("(?<first>\\w+) (?<last>\\w+)");
+     * assert(r.replace("John Smith, Jane Doe", "${last} $1") == "Smith John, Jane Doe");
+     * ```
+     */
+    pub fn replace(self, text: [c8], by: [c8])-> [c8] {
+        if let Ok(m) = self.find(text) {
+            return text[0us .. m.start] ~ utils::substitute(by, m) ~ text[m.end .. $];
+        }
+
+        text
+    }
+
+    /**
+     * Replace the first match of the regex in `text` by the result of a function
+     * @params:
+     *    - text: the text to search
+     *    - by: the function returning the replacement of a match
+     * @returns: a copy of `text` with the match replaced, `text` itself if there is no match
+     * @example:
+     * ```
+     * use std::syntax::regex;
+     *
+     * let r = copy Regex("[a-z]+");
+     * assert(r.replace("12 abc de", |m| => m.text ~ m.text) == "12 abcabc de");
+     * ```
+     */
+    pub fn replace(self, text: [c8], by: dg (Match)-> [c8])-> [c8] {
+        if let Ok(m) = self.find(text) {
+            return text[0us .. m.start] ~ by(m) ~ text[m.end .. $];
+        }
+
+        text
+    }
+
+    /**
+     * Replace every match of the regex in `text`, as `findAll` iterates them
+     * @params:
+     *    - text: the text to search
+     *    - by: the replacement, with the syntax of `replace`
+     * @returns: a copy of `text` with the matches replaced
+     * @example:
+     * ```
+     * use std::syntax::regex;
+     *
+     * let r = copy Regex("(\\d+)-(\\d+)");
+     * assert(r.replaceAll("1-2, 30-40", "$2-$1") == "2-1, 40-30");
+     * ```
+     */
+    pub fn replaceAll(self, text: [c8], by: [c8])-> [c8] {
+        let dmut res: [c8] = [];
+        let mut last = 0us;
+        for m in utils::matches(self._prog, text) {
+            res ~= text[last .. m.start] ~ utils::substitute(by, m);
+            last = m.end;
+        }
+
+        res ~= text[last .. $];
+        res
+    }
+
+    /**
+     * Replace every match of the regex in `text` by the result of a function, as `findAll` iterates them
+     * @params:
+     *    - text: the text to search
+     *    - by: the function returning the replacement of a match
+     * @returns: a copy of `text` with the matches replaced
+     * @example:
+     * ```
+     * use std::syntax::regex;
+     *
+     * let r = copy Regex("[aeiou]");
+     * assert(r.replaceAll("banana", |m| => "<" ~ m.text ~ ">") == "b<a>n<a>n<a>");
+     * ```
+     */
+    pub fn replaceAll(self, text: [c8], by: dg (Match)-> [c8])-> [c8] {
+        let dmut res: [c8] = [];
+        let mut last = 0us;
+        for m in utils::matches(self._prog, text) {
+            res ~= text[last .. m.start] ~ by(m);
+            last = m.end;
+        }
+
+        res ~= text[last .. $];
+        res
+    }
+
+    /**
+     * Iterate over the parts of `text` between the matches of the regex, as `findAll` iterates them
+     * @info: the text of the groups is not included
+     * @example:
+     * ```
+     * use std::algorithm::iteration;
+     * use std::syntax::regex;
+     *
+     * let r = copy Regex("\\s*,\\s*");
+     * assert(r.split("a , b,c ,").collect() == ["a", "b", "c", ""]);
+     * ```
+     */
+    pub fn split(self, text: [c8])-> yield-> [c8] {
+        utils::split(self._prog, text)
+    }
+}

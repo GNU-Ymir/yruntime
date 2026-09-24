@@ -1,0 +1,176 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in match_;
+
+/**
+ * A match of a `Regex` in a text, with the parts of it its capturing groups matched
+ * @example:
+ * ```
+ * use std::syntax::regex;
+ *
+ * let r = copy Regex("(?<key>\\w+)=(\\d+)?");
+ * if let Ok(m) = r.find("x: size=, len=12") {
+ *     assert(m.start == 3us && m.end == 8us && m.text == "size=");
+ *     assert(m.group(1us) == ("size")?);
+ *     assert(m.group("key") == ("size")?);
+ *     assert(m.group(2us) == none);
+ * }
+ * ```
+ */
+pub record Match {
+
+    // The whole text the match was searched in
+    let _text: [c8];
+
+    // The start and end offset of each group, `usize::max` for a group that did not participate
+    let _slots: [usize];
+
+    // The name and index of each named group
+    let _names: [([c8], usize)];
+
+    /**
+     * @params:
+     *    - text: the text the match was searched in
+     *    - slots: the byte offsets of the start and end of the match, then of each group
+     *    - names: the name and index of each named group
+     */
+    pub self (text: [c8], slots: [usize], names: [([c8], usize)])
+        with _text = text, _slots = slots, _names = names
+    {}
+
+    /**
+     * @returns: the byte offset of the first char of the match
+     */
+    @field
+    pub fn start(self)-> usize {
+        self._slots[0]
+    }
+
+    /**
+     * @returns: the byte offset following the last char of the match
+     */
+    @field
+    pub fn end(self)-> usize {
+        self._slots[1]
+    }
+
+    /**
+     * @returns: the matched text
+     */
+    @field
+    pub fn text(self)-> [c8] {
+        self._text[self._slots[0] .. self._slots[1]]
+    }
+
+    /**
+     * @returns: the number of capturing groups of the regex, the whole match not included
+     */
+    @field
+    pub fn groupCount(self)-> usize {
+        self._slots.len / 2us - 1us
+    }
+
+    /**
+     * @params:
+     *    - index: the index of a capturing group, from 1 in the order of their opening parenthesis, 0 being the whole match
+     * @returns: the text the group matched, none if it did not participate in the match or does not exist
+     * @example:
+     * ```
+     * use std::syntax::regex;
+     *
+     * let r = copy Regex("(\\d+)-(\\d+)");
+     * if let Ok(m) = r.find("from 12-34") {
+     *     assert(m.group(0us) == ("12-34")?);
+     *     assert(m.group(2us) == ("34")?);
+     *     assert(m.group(3us) == none);
+     * }
+     * ```
+     */
+    pub fn group(self, index: usize)-> ([c8])? {
+        if let Ok(s) = self.span(index) {
+            return (self._text[s._0 .. s._1])?;
+        }
+
+        none
+    }
+
+    /**
+     * @params:
+     *    - name: the name of a group, declared with `(?<name>...)`
+     * @returns: the text the group matched, none if it did not participate in the match or does not exist
+     * @example:
+     * ```
+     * use std::syntax::regex;
+     *
+     * let r = copy Regex("(?<year>\\d{4})-(?<month>\\d{2})");
+     * if let Ok(m) = r.find("2026-09") {
+     *     assert(m.group("month") == ("09")?);
+     *     assert(m.group("day") == none);
+     * }
+     * ```
+     */
+    pub fn group(self, name: [c8])-> ([c8])? {
+        for n in self._names {
+            if n._0 == name {
+                return self.group(n._1);
+            }
+        }
+
+        none
+    }
+
+    /**
+     * @params:
+     *    - index: the index of a capturing group, 0 being the whole match
+     * @returns: the byte offsets of the start and end of the text the group matched, none if it did
+     * not participate in the match or does not exist
+     * @example:
+     * ```
+     * use std::syntax::regex;
+     *
+     * let r = copy Regex("a(b+)");
+     * if let Ok(m) = r.find("xabbc") {
+     *     assert(m.span(1us) == ((2us, 4us))?);
+     * }
+     * ```
+     */
+    pub fn span(self, index: usize)-> ((usize, usize))? {
+        if index >= self._slots.len / 2us {
+            return none;
+        }
+
+        let s = self._slots[index * 2us], e = self._slots[index * 2us + 1us];
+        if s == usize::max || e == usize::max {
+            return none;
+        }
+
+        (s, e)?
+    }
+
+    /**
+     * @returns: the text matched by each capturing group, from the group 1, none for the groups that
+     * did not participate in the match
+     * @example:
+     * ```
+     * use std::syntax::regex;
+     *
+     * let r = copy Regex("(a)|(b)");
+     * if let Ok(m) = r.find("b") {
+     *     let groups = m.groups();
+     *     assert(groups.len == 2us);
+     *     assert(groups[0] == none && groups[1] == ("b")?);
+     * }
+     * ```
+     */
+    pub fn groups(self)-> [([c8])?] {
+        let dmut res: [([c8])?] = [];
+        for i in 1us .. self._slots.len / 2us {
+            res ~= [self.group(i)];
+        }
+
+        res
+    }
+}
