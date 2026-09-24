@@ -7,7 +7,7 @@ in utils;
 
 use std::conv::utf;
 use std::syntax::errors;
-use std::syntax::regex::{compiler, node, parser, program};
+use std::syntax::regex::{compiler, matcher, node, parser, program};
 
 pub def MAX_REPEAT = 1000us;
 pub def MAX_PROGRAM = 100000us;
@@ -36,6 +36,100 @@ pub fn compile(pattern: [c8], flags: u32)-> Program
 
     let dmut c = copy Compiler();
     c:.compile(root, p.nbGroups, p.names)
+}
+
+/**
+ * @returns: every non overlapping match of `prog` in `text`, the search resuming one code point
+ * further after an empty match
+ */
+pub yield matches(prog: Program, text: [c8])-> Match {
+    let dmut m = copy Matcher(prog, text);
+    let mut from = 0us;
+    while from <= text.len && m:.search(from) {
+        let slots = copy m.slots;
+        yield Match(text, slots, prog.names);
+
+        if slots[1] == slots[0] {
+            if slots[1] >= text.len { break; }
+            from = slots[1] + codeSize(text, slots[1]);
+        } else {
+            from = slots[1];
+        }
+    }
+}
+
+/**
+ * @returns: the parts of `text` between the matches of `prog`, as `matches` iterates them
+ */
+pub yield split(prog: Program, text: [c8])-> [c8] {
+    let mut last = 0us;
+    for m in matches(prog, text) {
+        yield text[last .. m.start];
+        last = m.end;
+    }
+
+    yield text[last .. $];
+}
+
+/**
+ * @returns: the replacement template `by` expanded for the match `m`
+ */
+pub fn substitute(by: [c8], m: Match)-> [c8] {
+    let dmut res: [c8] = [];
+    let mut i = 0us;
+    while i < by.len {
+        if by[i] != '$' || i + 1us >= by.len {
+            res ~= [by[i]];
+            i += 1us;
+            continue;
+        }
+
+        let c = by[i + 1us];
+        if c == '$' {
+            res ~= ['$'];
+            i += 2us;
+        } else if c >= '0' && c <= '9' {
+            let mut j = i + 1us;
+            while j < by.len && by[j] >= '0' && by[j] <= '9' { j += 1us; }
+
+            res ~= m.group(toIndex(by[i + 1us .. j])) ?? "";
+            i = j;
+        } else if c == '{' {
+            let mut j = i + 2us;
+            while j < by.len && by[j] != '}' { j += 1us; }
+
+            if j >= by.len {
+                res ~= ['$'];
+                i += 1us;
+            } else {
+                let name = by[i + 2us .. j];
+                if name.len != 0us && name[0] >= '0' && name[0] <= '9' {
+                    res ~= m.group(toIndex(name)) ?? "";
+                } else {
+                    res ~= m.group(name) ?? "";
+                }
+                i = j + 1us;
+            }
+        } else {
+            res ~= ['$'];
+            i += 1us;
+        }
+    }
+
+    res
+}
+
+/**
+ * @returns: the group index written in `digits`, `usize::max` if it is not a number or too large
+ */
+fn toIndex(digits: [c8])-> usize {
+    let mut n = 0us;
+    for d in digits {
+        if d < '0' || d > '9' || n > MAX_PROGRAM { return usize::max; }
+        n = n * 10us + cast!usize(cast!u8(d) - cast!u8('0'));
+    }
+
+    n
 }
 
 /**
