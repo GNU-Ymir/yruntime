@@ -1,0 +1,539 @@
+in regex;
+
+use std::algorithm::iteration;
+use std::syntax::{errors, regex};
+
+/**
+ * @returns: the text of every match of `pattern` in `text`
+ */
+fn texts(pattern: [c8], text: [c8])-> [[c8]]
+    throws SyntaxError
+{
+    let r = copy Regex(pattern);
+    let dmut res: [[c8]] = [];
+    for m in r.findAll(text) {
+        res ~= [m.text];
+    }
+
+    res
+}
+
+/**
+ * @returns: the text of the first match of `pattern` in `text`, none if there is none
+ */
+fn first(pattern: [c8], text: [c8])-> ([c8])?
+    throws SyntaxError
+{
+    if let Ok(m) = (copy Regex(pattern)).find(text) {
+        return (m.text)?;
+    }
+
+    none
+}
+
+fn found(m: (Match)?)-> bool {
+    if let Ok(_) = m { true } else { false }
+}
+
+/**
+ * @returns: the column of the error compiling `pattern` reports, 0 if it compiles
+ */
+fn errorCol(pattern: [c8])-> usize {
+    {
+        let _ = copy Regex(pattern);
+    } catch {
+        err: &SyntaxError => { return err.col; }
+    }
+
+    0us
+}
+
+__test regexMatches {
+    let r = copy Regex("@[a-zA-Z0-9_]+");
+
+    let lst = r.apply("@alice, @bob");
+    assert(lst.len == 2us);
+    assert(lst[0]._0 == 0us && lst[0]._1 == "@alice");
+    assert(lst[1]._0 == 8us && lst[1]._1 == "@bob");
+
+    let lst2 = r.apply("@charlie");
+    assert(lst2.len == 1us);
+    assert(lst2[0]._0 == 0us && lst2[0]._1 == "@charlie");
+}
+
+__test regexDigits {
+    let r = copy Regex("[0-9]+");
+    let lst = r.apply("a12b345");
+
+    assert(lst.len == 2us);
+    assert(lst[0]._0 == 1us && lst[0]._1 == "12");
+    assert(lst[1]._0 == 4us && lst[1]._1 == "345");
+}
+
+__test regexEmptyMatch {
+    // one empty match is reported per position, and the scan then steps over one char
+    let r = copy Regex("[0-9]*");
+    let lst = r.apply("abc");
+
+    assert(lst.len == 4us);
+    for i in 0us .. lst.len {
+        assert(lst[i]._0 == i && lst[i]._1 == "");
+    }
+}
+
+__test regexStarEmptyMatches {
+    let r = copy Regex("a*");
+    let lst = r.apply("baaac");
+
+    assert(lst.len == 4us);
+    assert(lst[0]._0 == 0us && lst[0]._1 == "");
+    assert(lst[1]._0 == 1us && lst[1]._1 == "aaa");
+    assert(lst[2]._0 == 4us && lst[2]._1 == "");
+    assert(lst[3]._0 == 5us && lst[3]._1 == "");
+}
+
+__test regexEmptyText {
+    let r = copy Regex("x?");
+    let lst = r.apply("");
+
+    assert(lst.len == 1us);
+    assert(lst[0]._0 == 0us && lst[0]._1 == "");
+}
+
+__test regexEmptyMatchUtf8 {
+    // stepping over an empty match must skip a whole utf8 code point, never land
+    // in the middle of one ('é' is encoded on two c8)
+    let r = copy Regex("x?");
+    let lst = r.apply("éb");
+
+    assert(lst.len == 3us);
+    assert(lst[0]._0 == 0us);
+    assert(lst[1]._0 == 2us);
+    assert(lst[2]._0 == 3us);
+}
+
+__test regexCaretAnchorsText {
+    // '^' anchors the beginning of the text, not the offset the scan resumes from
+    let r = copy Regex("^a");
+    let lst = r.apply("aaa");
+
+    assert(lst.len == 1us);
+    assert(lst[0]._0 == 0us && lst[0]._1 == "a");
+}
+
+__test regexCaretOnly {
+    let r = copy Regex("^");
+    let lst = r.apply("ab");
+
+    assert(lst.len == 1us);
+    assert(lst[0]._0 == 0us && lst[0]._1 == "");
+}
+
+__test regexUnclosedClass {
+    let mut failed = false;
+    {
+        let _ = copy Regex("[unclosed");
+    } catch {
+        SyntaxError() => { failed = true; }
+    }
+
+    assert(failed);
+}
+
+__test regexLiterals {
+    assert(texts("abc", "xabcyabc") == ["abc", "abc"], "a");
+    assert(texts("a\\.b", "a.b axb") == ["a.b"], "b");
+    assert(texts("\\(\\)\\[\\]\\{\\}\\*\\+\\?\\|\\^\\$\\\\", "()[]{}*+?|^$\\") == ["()[]{}*+?|^$\\"], "c");
+    assert(texts("a{b", "a{b") == ["a{b"], "d");
+    assert(texts("a{,}", "a{,}") == ["a{,}"], "e");
+    assert(texts("\\x41\\x{42}\\x{e9}", "ABé") == ["ABé"], "f");
+    assert(texts("\\t\\n", "a\t\nb") == ["\t\n"], "g");
+    assert(texts("é+", "aééb") == ["éé"], "h");
+    assert(texts("]", "a]") == ["]"], "i");
+}
+
+__test regexDot {
+    assert(texts(".", "aé\nb") == ["a", "é", "b"], "a");
+    assert(texts("a.c", "a\nc").len == 0us, "b");
+    assert((copy Regex("a.c", flags-> RegexFlag::DOTALL)).isMatch("a\nc"), "c");
+    assert((copy Regex("(?s)a.c")).isMatch("a\nc"), "d");
+}
+
+__test regexClasses {
+    assert(texts("[abc]+", "xxbcaxx") == ["bca"], "a");
+    assert(texts("[^abc]+", "abxyc") == ["xy"], "b");
+    assert(texts("[a-cx-z]+", "dabwyzq") == ["ab", "yz"], "c");
+    assert(texts("[-a]+", "b-a-b") == ["-a-"], "d");
+    assert(texts("[a-]+", "b-a-b") == ["-a-"], "e");
+    assert(texts("[]a]+", "b]a]b") == ["]a]"], "f");
+    assert(texts("[^]a]+", "]a]bc") == ["bc"], "g");
+    assert(texts("[\\]\\\\]+", "a]\\b") == ["]\\"], "h");
+    assert(texts("[é-ë]+", "aéêëb") == ["éêë"], "i");
+    assert(texts("[\\d.]+", "v1.2.3!") == ["1.2.3"], "j");
+    assert(texts("[\\D]+", "12ab34") == ["ab"], "k");
+    assert(texts("[^\\s]+", "a b\tc") == ["a", "b", "c"], "l");
+    assert(texts("[\\x41-\\x43]+", "ZABCD") == ["ABC"], "m");
+    assert(texts("[[:digit:][:upper:]]+", "abC12d") == ["C12"], "n");
+    assert(texts("[^[:alnum:]]+", "ab, cd") == [", "], "o");
+    assert(texts("[[:punct:]]", "a!b") == ["!"], "p");
+}
+
+__test regexShorthands {
+    assert(texts("\\d+", "a12b3") == ["12", "3"], "a");
+    assert(texts("\\D+", "a12b3") == ["a", "b"], "b");
+    assert(texts("\\w+", "hi, there_1 é") == ["hi", "there_1"], "c");
+    assert(texts("\\W+", "hi, there") == [", "], "d");
+    assert(texts("\\s+", "a \t\nb") == [" \t\n"], "e");
+    assert(texts("\\S+", "a \t\nbc") == ["a", "bc"], "f");
+}
+
+__test regexAnchors {
+    assert(texts("^a", "aaa") == ["a"], "a");
+    assert(texts("a$", "aaa") == ["a"], "b");
+    assert(texts("^a$", "a\na").len == 0us, "c");
+    assert(texts("(?m)^a$", "a\nb\na") == ["a", "a"], "d");
+    assert(texts("\\Aa", "aaa") == ["a"], "e");
+    assert(texts("(?m)\\Aa", "a\na") == ["a"], "f");
+    assert(texts("(?m)a\\z", "a\na") == ["a"], "g");
+    assert(texts("^$", "") == [""], "h");
+    assert((copy Regex("^b", flags-> RegexFlag::MULTILINE)).isMatch("a\nb"), "i");
+}
+
+__test regexWordBoundary {
+    assert(texts("\\bis\\b", "this is it") == ["is"], "a");
+    assert(texts("\\Bis\\b", "this is it") == ["is"], "b");
+    assert(texts("\\b", "ab cd") == ["", "", "", ""], "c");
+    assert(first("\\bis\\b", "this isn't") == none, "d");
+}
+
+__test regexAlternation {
+    assert(texts("cat|dog", "a cat, a dog") == ["cat", "dog"], "a");
+    // the first alternative that matches wins, not the longest one
+    assert(first("a|ab", "ab") == ("a")?, "b");
+    assert(first("ab|a", "ab") == ("ab")?, "c");
+    assert(texts("a|", "ba") == ["", "a", ""], "d");
+    assert(texts("(?:x|y|z)+", "axyzb") == ["xyz"], "e");
+}
+
+__test regexQuantifiers {
+    assert(first("ab*", "abbbc") == ("abbb")?, "a");
+    assert(first("ab+", "ac") == none, "b");
+    assert(first("ab?c", "abc ac") == ("abc")?, "c");
+    assert(texts("a{2}", "aaaaa") == ["aa", "aa"], "d");
+    assert(texts("a{2,}", "a aa aaaa") == ["aa", "aaaa"], "e");
+    assert(texts("a{1,2}", "aaa") == ["aa", "a"], "f");
+    assert(texts("a{,2}b", "aaab") == ["aab"], "g");
+    assert(texts("a{0}b", "ab") == ["b"], "h");
+    assert(texts("(?:ab){2}", "abababab") == ["abab", "abab"], "i");
+    assert(first("a{1000}", "a") == none, "j");
+}
+
+__test regexLazyQuantifiers {
+    assert(first("<.+>", "<a><b>") == ("<a><b>")?, "a");
+    assert(first("<.+?>", "<a><b>") == ("<a>")?, "b");
+    assert(first("a*?", "aaa") == ("")?, "c");
+    assert(first("a+?", "aaa") == ("a")?, "d");
+    assert(first("a??b", "ab") == ("ab")?, "e");
+    assert(first("a{2,4}?", "aaaa") == ("aa")?, "f");
+    assert(first("a{2,}?", "aaaa") == ("aa")?, "g");
+    assert(first("\".*?\"", "say \"hi\" and \"bye\"") == ("\"hi\"")?, "h");
+}
+
+__test regexBacktracking {
+    assert(first("a.*b", "axxbyyb z") == ("axxbyyb")?, "a");
+    assert(first("(a|ab)(c|bcd)(d*)", "abcd") == ("abcd")?, "b");
+    assert(first("^(\\w+)\\s+\\1$", "hello hello") == ("hello hello")?, "c");
+    assert(first("x*y*z", "xxyyq xz") == ("xz")?, "d");
+}
+
+__test regexNullableLoops {
+    // a repetition of an expression that can match nothing must neither loop forever nor fail
+    assert(first("(a*)*b", "aab") == ("aab")?, "a");
+    assert(first("(a|)*b", "aab") == ("aab")?, "b");
+    assert(first("(?:)*x", "x") == ("x")?, "c");
+    assert(first("(a*)+$", "aa") == ("aa")?, "d");
+    assert(first("(a?)*?b", "ab") == ("ab")?, "e");
+    assert(first("(\\b)*a", "a") == ("a")?, "f");
+    assert(first("(a*)*c", "aaab") == none, "g");
+}
+
+__test regexGroups {
+    let r = copy Regex("(\\d+)-(\\d+)(?:-(\\d+))?");
+    assert(r.groupCount == 3us, "a");
+
+    if let Ok(m) = r.find("x 12-345 y") {
+        assert(m.start == 2us && m.end == 8us && m.text == "12-345", "b");
+        assert(m.groupCount == 3us, "c");
+        assert(m.group(0us) == ("12-345")?, "d");
+        assert(m.group(1us) == ("12")?, "e");
+        assert(m.group(2us) == ("345")?, "f");
+        assert(m.group(3us) == none, "g");
+        assert(m.group(4us) == none, "h");
+        assert(m.span(2us) == ((5us, 8us))?, "i");
+        assert(m.span(3us) == none, "j");
+
+        let groups = m.groups();
+        assert(groups.len == 3us && groups[0] == ("12")? && groups[2] == none, "k");
+    } else {
+        assert(false, "l");
+    }
+}
+
+__test regexNestedGroups {
+    if let Ok(m) = (copy Regex("((a)(b(c)))")).find("abc") {
+        assert(m.group(1us) == ("abc")?, "a");
+        assert(m.group(2us) == ("a")?, "b");
+        assert(m.group(3us) == ("bc")?, "c");
+        assert(m.group(4us) == ("c")?, "d");
+    } else {
+        assert(false, "e");
+    }
+
+    // a repeated group keeps the text of its last iteration
+    if let Ok(m) = (copy Regex("(\\w)+")).find("abc") {
+        assert(m.group(1us) == ("c")?, "f");
+    } else {
+        assert(false, "g");
+    }
+
+    // a group of an alternative abandoned by backtracking is reset
+    if let Ok(m) = (copy Regex("(?:(a)x|ab)")).find("ab") {
+        assert(m.text == "ab" && m.group(1us) == none, "h");
+    } else {
+        assert(false, "i");
+    }
+}
+
+__test regexNamedGroups {
+    let r = copy Regex("(?<year>\\d{4})-(?P<month>\\d{2})(-(?<day>\\d{2}))?");
+    assert(r.groupCount == 4us, "a");
+    assert(r.groupIndex("year") == (1us)?, "b");
+    assert(r.groupIndex("month") == (2us)?, "c");
+    assert(r.groupIndex("day") == (4us)?, "d");
+    assert(r.groupIndex("hour") == none, "e");
+
+    if let Ok(m) = r.find("on 2026-09.") {
+        assert(m.group("year") == ("2026")?, "f");
+        assert(m.group("month") == ("09")?, "g");
+        assert(m.group("day") == none, "h");
+        assert(m.group("hour") == none, "i");
+        assert(m.group(2us) == ("09")?, "j");
+    } else {
+        assert(false, "k");
+    }
+}
+
+__test regexBackReferences {
+    assert(texts("(\\w)\\1", "abccdeef") == ["cc", "ee"], "a");
+    assert(texts("(?<q>['\"]).*?\\k<q>", "'a\"b' \"c\"") == ["'a\"b'", "\"c\""], "b");
+    assert(first("(a)|\\1b", "b") == none, "c");
+    assert(first("(?i)(a)\\1", "aA") == ("aA")?, "d");
+    assert(first("(a)\\1", "aA") == none, "e");
+    assert(first("(\\d+)x\\1", "12x12") == ("12x12")?, "f");
+}
+
+__test regexLookahead {
+    assert(texts("\\w+(?=!)", "hey! you") == ["hey"], "a");
+    assert(texts("\\b\\w+\\b(?!!)", "hey! you") == ["you"], "b");
+    assert(texts("(?=\\d{3})\\d", "12345") == ["1", "2", "3"], "c");
+    assert(first("a(?=b)", "ac") == none, "d");
+
+    // the groups of a positive lookahead are kept, those of a negative one never are
+    if let Ok(m) = (copy Regex("(?=(\\w+))\\w")).find("abc") {
+        assert(m.text == "a" && m.group(1us) == ("abc")?, "e");
+    } else {
+        assert(false, "f");
+    }
+
+    if let Ok(m) = (copy Regex("(?!(b))\\w")).find("abc") {
+        assert(m.text == "a" && m.group(1us) == none, "g");
+    } else {
+        assert(false, "h");
+    }
+}
+
+__test regexLookbehind {
+    assert(texts("(?<=\\$)\\d+", "$12 34 $5") == ["12", "5"], "a");
+    assert(texts("(?<!\\$)\\b\\d+", "$12 34 $5") == ["34"], "b");
+    assert(texts("(?<=ab|b)c", "abc bc ac") == ["c", "c"], "c");
+    assert(texts("(?<=a+)b", "aab b") == ["b"], "d");
+    assert(texts("(?<=é)x", "éx ex") == ["x"], "e");
+    assert(texts("(?<=^|,)\\w", "a,b c") == ["a", "b"], "f");
+
+    // the look behind sees the text before the offset the search starts at
+    if let Ok(m) = (copy Regex("(?<=a)b")).find("ab", from-> 1us) {
+        assert(m.start == 1us, "g");
+    } else {
+        assert(false, "h");
+    }
+}
+
+__test regexCaseInsensitive {
+    assert(texts("abc", "ABC aBc").len == 0us, "a");
+    assert((copy Regex("abc", flags-> RegexFlag::ICASE)).apply("ABC aBc").len == 2us, "b");
+    assert(texts("(?i)[a-c]+", "xAbCx") == ["AbC"], "c");
+    assert(texts("(?i)[^a]", "Aab") == ["b"], "d");
+    assert(texts("(?i:a)b", "Ab AB") == ["Ab"], "e");
+    assert(texts("a(?i)b", "aB AB") == ["aB"], "f");
+    assert(texts("(?i)a(?-i)b", "Ab AB") == ["Ab"], "g");
+    assert(texts("((?i)a)b", "Ab AB") == ["Ab"], "h");
+    assert(texts("(?i)é", "é") == ["é"], "i");
+    assert(texts("(?i)[[:lower:]]+", "aBc") == ["aBc"], "j");
+}
+
+__test regexExtended {
+    let r = copy Regex("(\\d+) \\s* - \\s* (\\d+)   # a range\n  \\ x", flags-> RegexFlag::EXTENDED);
+    if let Ok(m) = r.find("1 - 2 x") {
+        assert(m.text == "1 - 2 x" && m.group(2us) == ("2")?, "a");
+    } else {
+        assert(false, "b");
+    }
+
+    assert(texts("(?x) a [ ] b", "a b ab") == ["a b"], "c");
+}
+
+__test regexFullMatch {
+    let r = copy Regex("a|ab|abc");
+    assert(r.isFullMatch("abc"), "a");
+    assert(r.isFullMatch("ab"), "b");
+    assert(!r.isFullMatch("abcd"), "c");
+    assert(!r.isFullMatch("xabc"), "d");
+
+    if let Ok(m) = (copy Regex("(\\w+?)(\\d*)")).fullMatch("abc123") {
+        assert(m.group(1us) == ("abc")? && m.group(2us) == ("123")?, "e");
+    } else {
+        assert(false, "f");
+    }
+
+    assert((copy Regex("x*")).isFullMatch(""), "g");
+}
+
+__test regexIsMatch {
+    let r = copy Regex("\\d{3}");
+    assert(r.isMatch("ab123"), "a");
+    assert(!r.isMatch("ab12"), "b");
+    assert((copy Regex("")).isMatch(""), "c");
+}
+
+__test regexFindFrom {
+    let r = copy Regex("\\d+");
+    if let Ok(m) = r.find("1 22 333", from-> 1us) {
+        assert(m.text == "22" && m.start == 2us, "a");
+    } else {
+        assert(false, "b");
+    }
+
+    assert(!found(r.find("1 22 333", from-> 8us)), "c");
+    assert(!found(r.find("1 22 333", from-> 9us)), "d");
+    assert(!found((copy Regex("^1")).find("11", from-> 1us)), "e");
+}
+
+__test regexReplace {
+    let r = copy Regex("(\\w+)@(\\w+)");
+    assert(r.replace("a@b c@d", "$2@$1") == "b@a c@d", "a");
+    assert(r.replaceAll("a@b c@d", "$2@$1") == "b@a d@c", "b");
+    assert(r.replaceAll("a@b c@d", "<$0>") == "<a@b> <c@d>", "c");
+    assert(r.replaceAll("a@b", "${1}x") == "ax", "d");
+    assert(r.replaceAll("a@b", "$1x") == "ax", "e");
+    assert(r.replaceAll("a@b", "$$1 $") == "$1 $", "f");
+    assert(r.replaceAll("a@b", "$9|${9}|$") == "||$", "g");
+    assert(r.replaceAll("a@b", "${1") == "${1", "h");
+    assert(r.replace("none here", "x") == "none here", "i");
+
+    let n = copy Regex("(?<k>\\w+)=(?<v>\\w+)");
+    assert(n.replaceAll("a=1, b=2", "${v}=${k}") == "1=a, 2=b", "j");
+    assert(n.replaceAll("a=1", "${nope}") == "", "k");
+}
+
+__test regexReplaceEmptyMatches {
+    assert((copy Regex("x*")).replaceAll("abc", "-") == "-a-b-c-", "a");
+    assert((copy Regex("b*")).replaceAll("abc", "-") == "-a--c-", "b");
+    assert((copy Regex("")).replaceAll("é", "-") == "-é-", "c");
+}
+
+__test regexReplaceWithFunction {
+    let r = copy Regex("\\d+");
+    assert(r.replaceAll("a1b22", |m| => "<" ~ m.text ~ ">") == "a<1>b<22>", "a");
+    assert(r.replace("a1b22", |m| => m.text ~ m.text) == "a11b22", "b");
+
+    let heads = (copy Regex("\\w+")).replaceAll("ab cde", |m| => m.text[0us .. 1us]);
+    assert(heads == "a c", "c");
+}
+
+__test regexSplit {
+    let r = copy Regex("\\s*,\\s*");
+    assert(r.split("a , b,c").collect() == ["a", "b", "c"], "a");
+    assert(r.split(",a,").collect() == ["", "a", ""], "b");
+    assert(r.split("abc").collect() == ["abc"], "c");
+    assert(r.split("").collect() == [""], "d");
+    assert((copy Regex("")).split("abc").collect() == ["", "a", "b", "c", ""], "e");
+    assert((copy Regex("(-)")).split("a-b").collect() == ["a", "b"], "f");
+}
+
+__test regexSplitIsLazy {
+    let mut nb = 0us;
+    for part in (copy Regex(",")).split("a,b,c") {
+        nb += 1us;
+        if part == "b" { break; }
+    }
+
+    assert(nb == 2us);
+}
+
+__test regexFindAllIsLazy {
+    let r = copy Regex("\\d");
+    let mut nb = 0us;
+    for m in r.findAll("1a2b3") {
+        nb += 1us;
+        if m.text == "2" { break; }
+    }
+
+    assert(nb == 2us);
+}
+
+__test regexUtf8Offsets {
+    // offsets are byte offsets, and a match never splits a code point
+    if let Ok(m) = (copy Regex("b")).find("éb") {
+        assert(m.start == 2us && m.end == 3us, "a");
+    } else {
+        assert(false, "b");
+    }
+
+    assert(texts("[^a]", "éa€") == ["é", "€"], "c");
+    assert(texts("\\W", "é") == ["é"], "d");
+}
+
+__test regexInvalidUtf8 {
+    // an invalid byte is matched as a single code point
+    let bad = copy [cast!c8(0xFFu8), 'a'];
+    let r = copy Regex(".a");
+    if let Ok(m) = r.find(bad) {
+        assert(m.start == 0us && m.end == 2us, "a");
+    } else {
+        assert(false, "b");
+    }
+}
+
+@parameters ((yield (c._0, c._1) for c in [
+    ("(ab", 1us), ("ab)", 3us), ("a)b(", 2us), ("[ab", 1us), ("[b-a]", 3us), ("[a-\\d]", 3us),
+    ("*a", 1us), ("a|+", 3us), ("(?:+)", 4us), ("a**", 3us), ("a{2}{3}", 5us), ("a{3,2}", 7us),
+    ("a{1001}", 8us), ("\\", 1us), ("[a\\", 3us), ("\\q", 1us), ("\\1(a)", 1us), ("(a)\\2", 4us),
+    ("\\k<x>", 1us), ("\\k<1>", 4us), ("(?<>a)", 4us), ("(?<a>x)(?<a>y)", 11us), ("(?<a", 4us),
+    ("(?y)", 1us), ("(?i", 1us), ("\\x{110000}", 1us), ("\\xg", 1us), ("\\x{41", 1us), ("[[:foo:]]", 2us)
+]))
+__test regexSyntaxErrors (pattern: [c8], col: usize) {
+    assert(errorCol(pattern) == col);
+}
+
+__test regexPatternTooLarge {
+    assert(errorCol("(((a{1000}){1000}){1000})") == 1us, "a");
+    assert(errorCol("(a{1000}){50}") == 0us, "b");
+}
+
+__test regexAccessors {
+    let r = copy Regex("a(b)", flags-> RegexFlag::ICASE | RegexFlag::DOTALL);
+    assert(r.pattern == "a(b)", "a");
+    assert(r.flags == 5u32, "b");
+    assert(r.groupCount == 1us, "c");
+    assert((copy Regex("a")).groupCount == 0us, "d");
+}
