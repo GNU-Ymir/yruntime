@@ -1,0 +1,104 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in utils;
+
+pub def MAX_REPEAT = 1000us;
+
+def MAX_CODE = 0x10FFFFu32;
+
+/**
+ * @returns: true if `c` is an ASCII letter, digit or underscore
+ */
+pub fn isWordByte(c: c8)-> bool {
+    (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
+}
+
+/**
+ * @returns: the value of the hexadecimal digit `c`, `u32::max` if it is not one
+ */
+pub fn hexDigit(c: c8)-> u32 {
+    if c >= '0' && c <= '9' { cast!u32(cast!u8(c) - cast!u8('0')) }
+    else if c >= 'a' && c <= 'f' { cast!u32(cast!u8(c) - cast!u8('a')) + 10u32 }
+    else if c >= 'A' && c <= 'F' { cast!u32(cast!u8(c) - cast!u8('A')) + 10u32 }
+    else { u32::max }
+}
+
+/**
+ * @returns: true if `code` is in one of the inclusive `ranges`
+ */
+pub fn inRanges(ranges: [(u32, u32)], code: u32)-> bool {
+    for r in ranges {
+        if code >= r._0 && code <= r._1 { return true; }
+    }
+
+    false
+}
+
+/**
+ * @returns: the ranges of the shorthand class `\c`, none if `c` does not name one
+ */
+pub fn shorthand(c: c8)-> ([(u32, u32)])? {
+    match c {
+        'd' | 'D' => { (copy [(0x30u32, 0x39u32)])? }
+        'w' | 'W' => { (copy [(0x30u32, 0x39u32), (0x41u32, 0x5Au32), (0x5Fu32, 0x5Fu32), (0x61u32, 0x7Au32)])? }
+        's' | 'S' => { (copy [(0x09u32, 0x0Du32), (0x20u32, 0x20u32)])? }
+        _ => { none }
+    }
+}
+
+/**
+ * @returns: the ranges of the POSIX class `[:name:]`, none if `name` does not name one
+ */
+pub fn posixClass(name: [c8])-> ([(u32, u32)])? {
+    if name == "alpha" { return (copy [(0x41u32, 0x5Au32), (0x61u32, 0x7Au32)])?; }
+    if name == "digit" { return (copy [(0x30u32, 0x39u32)])?; }
+    if name == "alnum" { return (copy [(0x30u32, 0x39u32), (0x41u32, 0x5Au32), (0x61u32, 0x7Au32)])?; }
+    if name == "upper" { return (copy [(0x41u32, 0x5Au32)])?; }
+    if name == "lower" { return (copy [(0x61u32, 0x7Au32)])?; }
+    if name == "space" { return (copy [(0x09u32, 0x0Du32), (0x20u32, 0x20u32)])?; }
+    if name == "blank" { return (copy [(0x09u32, 0x09u32), (0x20u32, 0x20u32)])?; }
+    if name == "punct" { return (copy [(0x21u32, 0x2Fu32), (0x3Au32, 0x40u32), (0x5Bu32, 0x60u32), (0x7Bu32, 0x7Eu32)])?; }
+    if name == "xdigit" { return (copy [(0x30u32, 0x39u32), (0x41u32, 0x46u32), (0x61u32, 0x66u32)])?; }
+    if name == "cntrl" { return (copy [(0x00u32, 0x1Fu32), (0x7Fu32, 0x7Fu32)])?; }
+    if name == "print" { return (copy [(0x20u32, 0x7Eu32)])?; }
+    if name == "graph" { return (copy [(0x21u32, 0x7Eu32)])?; }
+    if name == "word" { return shorthand('w'); }
+
+    none
+}
+
+/**
+ * @returns: the code points outside of the sorted, disjoint `ranges`
+ */
+pub fn complement(ranges: [(u32, u32)])-> [(u32, u32)] {
+    let dmut res: [(u32, u32)] = [];
+    let mut next = 0u32;
+    for r in ranges {
+        if r._0 > next { res ~= [(next, r._0 - 1u32)]; }
+        next = r._1 + 1u32;
+    }
+
+    if next <= MAX_CODE { res ~= [(next, MAX_CODE)]; }
+    res
+}
+
+/**
+ * @returns: `ranges` extended with the other case of the ASCII letters they contain
+ */
+pub fn foldCase(ranges: [(u32, u32)])-> [(u32, u32)] {
+    let dmut res: [(u32, u32)] = copy ranges;
+    for r in ranges {
+        let ulo = if r._0 > 0x41u32 { r._0 } else { 0x41u32 };
+        let uhi = if r._1 < 0x5Au32 { r._1 } else { 0x5Au32 };
+        if ulo <= uhi { res ~= [(ulo + 32u32, uhi + 32u32)]; }
+
+        let llo = if r._0 > 0x61u32 { r._0 } else { 0x61u32 };
+        let lhi = if r._1 < 0x7Au32 { r._1 } else { 0x7Au32 };
+        if llo <= lhi { res ~= [(llo - 32u32, lhi - 32u32)]; }
+    }
+
+    res
+}

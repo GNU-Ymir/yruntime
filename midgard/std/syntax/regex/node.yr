@@ -1,0 +1,124 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in node;
+
+pub enum NodeKind: u8
+| EMPTY    = 0u8
+| CHAR     = 1u8
+| ANY      = 2u8
+| ANY_NL   = 3u8
+| CLASS    = 4u8
+| CONCAT   = 5u8
+| ALTER    = 6u8
+| REPEAT   = 7u8
+| GROUP    = 8u8
+| ASSERT   = 9u8
+| LOOK     = 10u8
+| BACKREF  = 11u8;
+
+pub enum AssertKind: u8
+| TEXT_START = 0u8
+| TEXT_END   = 1u8
+| LINE_START = 2u8
+| LINE_END   = 3u8
+| WORD       = 4u8
+| NOT_WORD   = 5u8;
+
+/**
+ * A node of the syntax tree of a regular expression
+ */
+@data
+pub record Node {
+
+    let kind: NodeKind;
+
+    // The sub expressions of CONCAT/ALTER, the repeated/grouped/looked expression otherwise
+    let children: [Node] = [];
+
+    // The code point of CHAR
+    let code: u32 = 0u32;
+
+    // The inclusive code point ranges of CLASS
+    let ranges: [(u32, u32)] = [];
+
+    // CLASS matches the code points outside of its ranges, LOOK succeeds when its child fails
+    let negate: bool = false;
+
+    // The bounds of REPEAT, `usize::max` for an unbounded max
+    let min: usize = 0us;
+    let max: usize = 0us;
+
+    let greedy: bool = true;
+
+    // The group of GROUP/BACKREF, the AssertKind of ASSERT
+    let index: usize = 0us;
+
+    // LOOK looks behind the position instead of ahead, BACKREF ignores the ASCII case
+    let flag: bool = false;
+
+    /**
+     * @returns: true if the node can match without consuming any char
+     */
+    pub fn isNullable(self)-> bool {
+        match self.kind {
+            NodeKind::CHAR | NodeKind::ANY | NodeKind::ANY_NL | NodeKind::CLASS => { false }
+            NodeKind::CONCAT => {
+                for c in self.children {
+                    if !c.isNullable() { return false; }
+                }
+                true
+            }
+            NodeKind::ALTER => {
+                for c in self.children {
+                    if c.isNullable() { return true; }
+                }
+                false
+            }
+            NodeKind::REPEAT => { self.min == 0us || self.children[0].isNullable() }
+            NodeKind::GROUP => { self.children[0].isNullable() }
+            _ => { true }
+        }
+    }
+
+    /**
+     * @returns: the minimal and maximal number of code points the node consumes, `usize::max` when unbounded
+     */
+    pub fn width(self)-> (usize, usize) {
+        match self.kind {
+            NodeKind::CHAR | NodeKind::ANY | NodeKind::ANY_NL | NodeKind::CLASS => { (1us, 1us) }
+            NodeKind::CONCAT => {
+                let mut lo = 0us, mut hi = 0us;
+                for c in self.children {
+                    let w = c.width();
+                    lo = lo + w._0;
+                    hi = if hi == usize::max || w._1 == usize::max { usize::max } else { hi + w._1 };
+                }
+                (lo, hi)
+            }
+            NodeKind::ALTER => {
+                let mut lo = usize::max, mut hi = 0us;
+                for c in self.children {
+                    let w = c.width();
+                    if w._0 < lo { lo = w._0; }
+                    if w._1 > hi { hi = w._1; }
+                }
+                (lo, hi)
+            }
+            NodeKind::REPEAT => {
+                let w = self.children[0].width();
+                let hi = if self.max == usize::max || w._1 == usize::max {
+                    if self.max == 0us || w._1 == 0us { 0us } else { usize::max }
+                } else {
+                    self.max * w._1
+                };
+                (self.min * w._0, hi)
+            }
+            NodeKind::GROUP => { self.children[0].width() }
+            NodeKind::BACKREF => { (0us, usize::max) }
+            _ => { (0us, 0us) }
+        }
+    }
+}
