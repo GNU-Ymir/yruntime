@@ -5,9 +5,113 @@
 
 in utils;
 
+use std::conv::utf;
+use std::syntax::errors;
+use std::syntax::regex::{compiler, node, parser, program};
+
 pub def MAX_REPEAT = 1000us;
+pub def MAX_PROGRAM = 100000us;
+
+pub def LOOK_BEHIND = 1us;
+pub def LOOK_NEGATE = 2us;
+pub def LOOK_GROUPS = 4us;
+
+pub def FRAME_BRANCH = 0us;
+pub def FRAME_SLOT = 1us;
+pub def FRAME_REG = 2us;
+pub def FRAME_SAVED = 3us;
 
 def MAX_CODE = 0x10FFFFu32;
+
+/**
+ * Parse and compile a regular expression
+ * @throws:
+ *    - SyntaxError: if the pattern is malformed
+ */
+pub fn compile(pattern: [c8], flags: u32)-> Program
+    throws SyntaxError
+{
+    let dmut p = copy Parser(pattern, flags);
+    let root = p:.parse();
+
+    let dmut c = copy Compiler();
+    c:.compile(root, p.nbGroups, p.names)
+}
+
+/**
+ * @returns: the number of bytes of the code point at the byte offset `pos`, 1 for an invalid sequence
+ */
+pub fn codeSize(text: [c8], pos: usize)-> usize {
+    let (_, n) = toUtf32(text[pos .. $]);
+    if n == 0u32 { 1us } else { cast!usize(n) }
+}
+
+/**
+ * @returns: the byte offset of the code point preceding the byte offset `pos`
+ */
+pub fn prevCode(text: [c8], pos: usize)-> usize {
+    let mut i = pos - 1us;
+    while i > 0us && pos - i < 4us && (cast!u8(text[i]) & 0xC0u8) == 0x80u8 {
+        i -= 1us;
+    }
+
+    if codeSize(text, i) == pos - i { i } else { pos - 1us }
+}
+
+/**
+ * @returns: the byte offset `nb` code points before `pos`, none if the text starts before
+ */
+pub fn stepBack(text: [c8], pos: usize, nb: usize)-> (usize)? {
+    let mut i = pos;
+    for _ in 0us .. nb {
+        if i == 0us { return none; }
+        i = prevCode(text, i);
+    }
+
+    (i)?
+}
+
+/**
+ * @returns: true if the bytes [s, e) of `text` are found again at the byte offset `pos`
+ */
+pub fn sameText(text: [c8], s: usize, e: usize, pos: usize, icase: bool)-> bool {
+    if pos + (e - s) > text.len { return false; }
+    for i in 0us .. e - s {
+        let a = text[s + i], b = text[pos + i];
+        if a != b && (!icase || lowerAscii(a) != lowerAscii(b)) {
+            return false;
+        }
+    }
+
+    true
+}
+
+/**
+ * @returns: the lowercase of the ASCII letter `c`, `c` itself if it is not one
+ */
+fn lowerAscii(c: c8)-> c8 {
+    if c >= 'A' && c <= 'Z' { cast!c8(cast!u8(c) + 32u8) } else { c }
+}
+
+/**
+ * @returns: true if the assertion `kind`(an AssertKind) holds at the byte offset `pos`
+ */
+pub fn checkAssert(text: [c8], pos: usize, kind: usize)-> bool {
+    let k = cast!u8(kind);
+    if k == cast!u8(AssertKind::TEXT_START) {
+        pos == 0us
+    } else if k == cast!u8(AssertKind::TEXT_END) {
+        pos == text.len
+    } else if k == cast!u8(AssertKind::LINE_START) {
+        pos == 0us || text[pos - 1us] == '\n'
+    } else if k == cast!u8(AssertKind::LINE_END) {
+        pos == text.len || text[pos] == '\n'
+    } else {
+        let before = pos > 0us && isWordByte(text[pos - 1us]);
+        let after = pos < text.len && isWordByte(text[pos]);
+        (before != after) == (k == cast!u8(AssertKind::WORD))
+    }
+}
 
 /**
  * @returns: true if `c` is an ASCII letter, digit or underscore

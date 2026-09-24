@@ -1,0 +1,316 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in matcher;
+
+use std::conv::utf;
+use std::syntax::regex::{inst, program};
+
+/**
+ * Backtracking executor of a `Program` on a text
+ */
+@final
+pub class Matcher {
+
+    let _prog: Program;
+    let _text: [c8];
+
+    let dmut _slots: [usize];
+    let dmut _regs: [usize];
+
+    // The backtracking frames, three words each: the frame kind, and two operands
+    let dmut _stack: [usize] = [];
+    let mut _top: usize = 0us;
+
+    // The capture slots saved by the positive lookarounds that contain groups
+    let dmut _saved: [[usize]] = [];
+    let mut _savedTop: usize = 0us;
+
+    // A match has to end at the end of the text
+    let mut _requireEnd: bool = false;
+
+    /**
+     * @params:
+     *    - prog: the program to execute
+     *    - text: the text it is executed on
+     */
+    pub self (prog: Program, text: [c8])
+        with _prog = prog
+        , _text = text
+        , _slots = core::types::array::allocArray!{usize} (prog.nbSlots)
+        , _regs = core::types::array::allocArray!{usize} (prog.nbRegs)
+    {}
+
+    /**
+     * @returns: the capture slots of the last successful match, `usize::max` for a group that did not participate
+     */
+    @field
+    pub fn slots(self)-> [usize] {
+        self._slots
+    }
+
+    /**
+     * Search the first match starting at or after the byte offset `from`
+     * @returns: true if a match was found, its bounds are then in `slots`
+     */
+    pub fn search(mut self, from: usize)-> bool {
+        self:.reset(false);
+
+        let mut start = from;
+        loop {
+            if self:.run(0us, start, usize::max) {
+                break true;
+            }
+
+            if self._prog.anchored || start >= self._text.len {
+                break false;
+            }
+
+            start += utils::codeSize(self._text, start);
+        }
+    }
+
+    /**
+     * Try to match at the byte offset `at` only
+     * @params:
+     *    - at: the offset the match has to start at
+     *    - toEnd: the match has to end at the end of the text
+     * @returns: true if a match was found, its bounds are then in `slots`
+     */
+    pub fn matchAt(mut self, at: usize, toEnd: bool)-> bool {
+        self:.reset(toEnd);
+        self:.run(0us, at, usize::max)
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ====================================          PRIVATE          =====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Clear the capture slots and the stacks before a match attempt
+     * @params:
+     *    - toEnd: the match has to end at the end of the text
+     */
+    fn reset(mut self, toEnd: bool) {
+        for i in 0us .. self._slots.len {
+            self._slots[i] = usize::max;
+        }
+
+        self._top = 0us;
+        self._savedTop = 0us;
+        self._requireEnd = toEnd;
+    }
+
+    /**
+     * Run the program from the instruction `start` at the byte offset `at`
+     * @params:
+     *    - target: the offset a look behind has to end at, `usize::max` outside of a look behind
+     * @returns: true if a MATCH or LOOK_END instruction was reached, every frame pushed since the
+     * call is left on the stack in that case, and popped otherwise
+     */
+    fn run(mut self, start: usize, at: usize, target: usize)-> bool {
+        let base = self._top;
+        let mut pc = start, mut pos = at;
+        loop {
+            let inst = self._prog.code[pc];
+            let ok = match inst.op {
+                Op::CHAR => {
+                    if pos < self._text.len {
+                        let (c, n) = toUtf32(self._text[pos .. $]);
+                        if cast!usize(cast!u32(c)) == inst.x {
+                            pos += cast!usize(n);
+                            pc += 1us;
+                            true
+                        } else { false }
+                    } else { false }
+                }
+                Op::ANY | Op::ANY_NL => {
+                    if pos < self._text.len && (inst.op == Op::ANY_NL || self._text[pos] != '\n') {
+                        pos += utils::codeSize(self._text, pos);
+                        pc += 1us;
+                        true
+                    } else { false }
+                }
+                Op::CLASS => {
+                    if pos < self._text.len {
+                        let (c, n) = toUtf32(self._text[pos .. $]);
+                        if utils::inRanges(self._prog.classes[inst.x], cast!u32(c)) != (inst.y == 1us) {
+                            pos += cast!usize(n);
+                            pc += 1us;
+                            true
+                        } else { false }
+                    } else { false }
+                }
+                Op::SPLIT => {
+                    self:.push(utils::FRAME_BRANCH, inst.y, pos);
+                    pc = inst.x;
+                    true
+                }
+                Op::JMP => {
+                    pc = inst.x;
+                    true
+                }
+                Op::SAVE => {
+                    self:.push(utils::FRAME_SLOT, inst.x, self._slots[inst.x]);
+                    self._slots[inst.x] = pos;
+                    pc += 1us;
+                    true
+                }
+                Op::ASSERT => {
+                    if utils::checkAssert(self._text, pos, inst.x) {
+                        pc += 1us;
+                        true
+                    } else { false }
+                }
+                Op::LOOK => {
+                    if self:.look(inst, pc, pos) {
+                        pc = inst.x;
+                        true
+                    } else { false }
+                }
+                Op::BACKREF => {
+                    let s = self._slots[inst.x * 2us], e = self._slots[inst.x * 2us + 1us];
+                    if s != usize::max && e != usize::max && s <= e
+                        && utils::sameText(self._text, s, e, pos, inst.y == 1us)
+                    {
+                        pos += e - s;
+                        pc += 1us;
+                        true
+                    } else { false }
+                }
+                Op::MARK => {
+                    self:.push(utils::FRAME_REG, inst.x, self._regs[inst.x]);
+                    self._regs[inst.x] = pos;
+                    pc += 1us;
+                    true
+                }
+                Op::CHECK => {
+                    if self._regs[inst.x] != pos {
+                        pc += 1us;
+                        true
+                    } else { false }
+                }
+                Op::LOOK_END => {
+                    if target == usize::max || pos == target {
+                        return true;
+                    }
+                    false
+                }
+                Op::MATCH => {
+                    if !self._requireEnd || pos == self._text.len {
+                        return true;
+                    }
+                    false
+                }
+            };
+
+            if !ok {
+                if let Ok(resume) = self:.backtrack(base) {
+                    pc = resume._0;
+                    pos = resume._1;
+                } else {
+                    break false;
+                }
+            }
+        }
+    }
+
+    /**
+     * Pop the frames down to the next branch, restoring the slots and registers on the way
+     * @returns: the instruction and offset of the branch, none if the frames were exhausted down to `base`
+     */
+    fn backtrack(mut self, base: usize)-> ((usize, usize))? {
+        while self._top > base {
+            self._top -= 3us;
+            let kind = self._stack[self._top], a = self._stack[self._top + 1us], b = self._stack[self._top + 2us];
+            if kind == utils::FRAME_BRANCH {
+                return (a, b)?;
+            } else if kind == utils::FRAME_SLOT {
+                self._slots[a] = b;
+            } else if kind == utils::FRAME_REG {
+                self._regs[a] = b;
+            } else {
+                let saved = self._saved[a];
+                for i in 0us .. saved.len {
+                    self._slots[i] = saved[i];
+                }
+                self._savedTop = a;
+            }
+        }
+
+        none
+    }
+
+    /**
+     * Run the looked program of the LOOK instruction `inst` at `pc`, at the byte offset `pos`
+     * @returns: true if the lookaround succeeds, the slots captured by a positive lookaround are then kept
+     */
+    fn look(mut self, ref inst: Inst, pc: usize, pos: usize)-> bool {
+        let behind = (inst.y & utils::LOOK_BEHIND) != 0us;
+        let negate = (inst.y & utils::LOOK_NEGATE) != 0us;
+        let groups = (inst.y & utils::LOOK_GROUPS) != 0us;
+
+        let top = self._top, savedTop = self._savedTop;
+        let dmut snapshot: [usize] = if groups { copy self._slots } else { [] };
+
+        let mut found = false;
+        if !behind {
+            found = self:.run(pc + 1us, pos, usize::max);
+        } else if let Ok(first) = utils::stepBack(self._text, pos, inst.z) {
+            let mut start = first, mut width = inst.z;
+            loop {
+                if self:.run(pc + 1us, start, pos) {
+                    found = true;
+                    break;
+                }
+
+                if width >= inst.w || start == 0us { break; }
+                start = utils::prevCode(self._text, start);
+                width += 1us;
+            }
+        }
+
+        self._top = top;
+        self._savedTop = savedTop;
+
+        if found && groups {
+            if negate {
+                for i in 0us .. snapshot.len {
+                    self._slots[i] = snapshot[i];
+                }
+            } else {
+                if self._savedTop == self._saved.len {
+                    self._saved ~= [alias snapshot];
+                } else {
+                    self._saved[self._savedTop] = alias snapshot;
+                }
+
+                self:.push(utils::FRAME_SAVED, self._savedTop, 0us);
+                self._savedTop += 1us;
+            }
+        }
+
+        found != negate
+    }
+
+    /**
+     * Push a backtracking frame, reusing the storage of the frames popped before
+     */
+    fn push(mut self, kind: usize, a: usize, b: usize) {
+        if self._top == self._stack.len {
+            self._stack ~= [kind, a, b];
+        } else {
+            self._stack[self._top] = kind;
+            self._stack[self._top + 1us] = a;
+            self._stack[self._top + 2us] = b;
+        }
+
+        self._top += 3us;
+    }
+}
