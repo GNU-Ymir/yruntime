@@ -1,0 +1,26 @@
+in typeinfo;
+
+use core::types::info;
+
+record A {}
+record B {}
+
+class C {
+    pub self () {}
+}
+
+__test unionEquals {
+    let (u, v) = ("U", "V");
+    let (members, classes) = (copy [A::typeinfo, B::typeinfo], copy [C::typeinfo]);
+
+    let ur = TypeInfo(TypeIDs::UNION_RECORD, 16us, members, u);
+    assert(ur == TypeInfo(TypeIDs::UNION_RECORD, 16us, members, u), "a");
+    assert(ur != TypeInfo(TypeIDs::UNION_RECORD, 16us, members, v), "b");
+    assert(ur != TypeInfo(TypeIDs::UNION_CLASS, 8us, members, u), "c");
+    assert(ur != A::typeinfo && A::typeinfo != ur, "d");
+
+    let uc = TypeInfo(TypeIDs::UNION_CLASS, 8us, classes, u);
+    assert(uc == TypeInfo(TypeIDs::UNION_CLASS, 8us, classes, u), "e");
+    assert(uc != TypeInfo(TypeIDs::UNION_CLASS, 8us, classes, v), "f");
+    assert(uc != C::typeinfo && C::typeinfo != uc, "g");
+}

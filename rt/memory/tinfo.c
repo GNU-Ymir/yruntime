@@ -13,20 +13,20 @@ char _yrt_type_equals (_yrt_type_info a, _yrt_type_info b) {
             a.id == SIGNED_INT ||
             a.id == UNSIGNED_INT) {
             return a.size == b.size;
-	} else if (a.inner.len == b.inner.len && (a.id != STRUCT && a.id != OBJECT)) {
-	    for (unsigned long i = 0 ; i < a.inner.len ; i++) {
-		if (!_yrt_type_equals (((_yrt_type_info*) a.inner.data) [i], ((_yrt_type_info*) b.inner.data) [i]))
-		    return 0;
-	    }
-	    return 1;
+	} else if (a.id == STRUCT || a.id == UNION_RECORD || a.id == UNION_CLASS) {
+	    return a.name.data == b.name.data;
 	} else if (a.id == OBJECT) {
 	    if (a.name.data != b.name.data) {
 		if (a.inner.len != 0) {
 		    return _yrt_type_equals (*((_yrt_type_info*) a.inner.data), b);
 		} else return 0;
 	    } else return 1;
-	} else if (a.id == STRUCT) {
-	    return a.name.data == b.name.data;
+	} else if (a.inner.len == b.inner.len) {
+	    for (unsigned long i = 0 ; i < a.inner.len ; i++) {
+		if (!_yrt_type_equals (((_yrt_type_info*) a.inner.data) [i], ((_yrt_type_info*) b.inner.data) [i]))
+		    return 0;
+	    }
+	    return 1;
 	}
     }
     return 0;
