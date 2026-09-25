@@ -754,3 +754,26 @@ __test appendFloatMatchesAllocatingConversion {
     to!{typeof(wide)} (0.5, ref wide, prec-> 60u32);
     assert(wide == (0.5).to!{[c8]} (prec-> 60u32), "wide");
 }
+
+record StreamedRecord {
+    let x: i32;
+    pub self (x: i32) with x = x {}
+    impl std::stream::Streamable;
+}
+
+record OtherStreamedRecord {
+    pub self () {}
+    impl std::stream::Streamable;
+}
+
+union StreamedUnion
+| StreamedRecord
+| OtherStreamedRecord;
+
+__test unionToString {
+    let r: StreamedUnion = StreamedRecord(12);
+    let o: StreamedUnion = OtherStreamedRecord();
+
+    assert(r.to![c8] () == "conv::StreamedRecord(12)", r.to![c8] ());
+    assert(o.to![c32] () == "conv::OtherStreamedRecord()"s32);
+}

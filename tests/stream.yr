@@ -293,3 +293,71 @@ __test entabingAroundNumbers { // switching entabing on and off around an in pla
 
     assert(str[] == "a\n\t1\n2\n\t3", str[]);
 }
+
+record Tagged {
+    let x: i32;
+    pub self (x: i32)
+        with x = x
+    {}
+
+    impl Streamable {
+        pub over toStream(self, dmut stream: &StringStream) {
+            stream:.write("Tagged<", self.x, ">");
+        }
+    }
+}
+
+union RecordUnion
+| B
+| Tagged;
+
+class H {
+    pub self () {}
+    impl Streamable;
+}
+
+union ClassUnion
+| A
+| H;
+
+__test streamableUnionOfRecords {
+    let b: RecordUnion = B(23);
+    let g: RecordUnion = Tagged(4);
+
+    let dmut str = copy StringStream();
+    str:.write(b, " ", g);
+    assert(str[] == "stream::B(23) Tagged<4>", str[]);
+
+    str:.clear();
+    str:.write([b, g]);
+    str:.write((g, 1));
+    assert(str[] == "[stream::B(23), Tagged<4>](Tagged<4>,1)", str[]);
+}
+
+__test streamableUnionOfClasses {
+    let a: &ClassUnion = copy A(78);
+    let h: &ClassUnion = copy H();
+
+    let dmut str = copy StringStream();
+    str:.write(a, " ", h);
+    assert(str[] == "stream::A(78) stream::H()", str[]);
+}
+
+union PlainRecordUnion
+| B
+| D;
+
+union PlainClassUnion
+| A
+| C;
+
+__test plainUnionWritesTheMemberName { // D and C are not Streamable, so neither union is
+    let b: PlainRecordUnion = B(23);
+    let d: PlainRecordUnion = D(1, 2);
+    let a: &PlainClassUnion = copy A(78);
+    let c: &PlainClassUnion = copy C(1, 2);
+
+    let dmut str = copy StringStream();
+    str:.write(b, " ", d, " ", a, " ", c);
+    assert(str[] == "stream::B() stream::D() stream::A() stream::C()", str[]);
+}

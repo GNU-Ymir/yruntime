@@ -272,3 +272,62 @@ __test printVariadics {
     println(1, ' ', (2, 't'), " ", 4, [1, 2]);
     eprintln(1, ' ', (2, 't'), " ", 4, [1, 2]);
 }
+
+record E {
+    pub self () {}
+
+    impl std::stream::Streamable {
+        pub over toStream(self, dmut stream: &StringStream) {
+            stream:.write("E");
+        }
+    }
+}
+
+class Z {
+    pub self () {}
+
+    impl std::stream::Streamable {
+        pub over toStream(self, dmut stream: &StringStream) {
+            stream:.write("Z");
+        }
+    }
+}
+
+union RecordUnion
+| B
+| E;
+
+union ClassUnion
+| Y
+| Z;
+
+union PlainUnion
+| A
+| E;
+
+__test printUnions {
+    println("Unions");
+    let a: RecordUnion = B();
+    let b: &ClassUnion = copy Y();
+    let c: RecordUnion = E();
+    let d: &ClassUnion = copy Z();
+
+    print(a);
+    print(b);
+
+    eprint(a);
+    eprint(b);
+
+    println(a, " ", b);
+    eprintln(a, " ", b);
+
+    assert(toStr(a) == "io::B(9, 12)", toStr(a));
+    assert(toStr(b) == "io::Y(9, 12)", toStr(b));
+    assert(toStr(c) == "E", toStr(c));
+    assert(toStr(d) == "Z", toStr(d));
+
+    let p: PlainUnion = A();
+    print(p);
+    eprint(p);
+    assert(toStr(p) == "io::A()", toStr(p));
+}
