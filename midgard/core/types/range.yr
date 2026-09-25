@@ -6,52 +6,44 @@
 in range;
 
 /**
- * Create a range with a different step
+ * Create a range with a different step. The step is kept as it is given, so a range whose
+ * bounds go against the sign of the step is empty, e.g. `(10 .. 0).stepBy(2)`.
  * @example:
  * ```
  * for i in (0 .. 10).stepBy(2) {
- *     println(i); // 0 2 4 8
+ *     println(i); // 0 2 4 6 8
+ * }
+ *
+ * for i in (10 .. 0).stepBy(-3) {
+ *     println(i); // 10 7 4 1
  * }
  * ```
  */
 pub fn stepBy {T, U} (x: ..T, s: U)-> ..T {
     let mut z = x;
-    let step: (typeof x.step) = cast!{typeof x.step} (s);
-    let zero: (typeof x.step) = cast!{typeof x.step} (0);
-    if ((z.fst > z.scd && step > zero) || (z.fst < z.scd && step < zero)) {
-        z.step = -step;
-    } else {
-        z.step = step;
-    }
-
-    return z;
+    z.step = cast!{typeof x.step} (s);
+    z
 }
 
 /**
- * Check if a value is within the range
+ * Check if a value is one of the elements the range iterates over, ignoring the step: the
+ * range goes up from its first bound when its step is positive, and down from it otherwise.
  * @example:
  * ```
- * // the bounds of a range are not necessarily ordered
- * println(8 in 0 .. 10);       // true
- * println(3 in 10 .. 4);       // true
+ * println(8 in 0 .. 10);                   // true
+ * println(10 !in 0 .. 10);                 // true, the second bound is excluded
+ * println(10 in 0 ... 10);                 // true, unless the range is inclusive ('...')
  *
- * // the second bound is excluded, unless the range is inclusive('...')
- * println(10 !in 0 .. 10);     // true
- * println(10 in 0 ... 10);     // true
+ * println(3 in (10 .. 0).stepBy(-1));      // true
+ * println(0 in (10 .. 0).stepBy(-1));      // false
+ * println(3 in (0 .. 10).stepBy(-1));      // false, the range is empty
  * ```
  */
 pub fn opContains {T} (range: ..T, x: T)-> bool {
-    if (range.contains) {
-        if range.fst < range.scd {
-            x >= range.fst && x <= range.scd
-        } else {
-            x >= range.scd && x <= range.fst
-        }
+    let zero: (typeof range.step) = cast!{typeof range.step} (0);
+    if range.step < zero {
+        x <= range.fst && (x > range.scd || (range.contains && x == range.scd))
     } else {
-        if range.fst < range.scd {
-            x >= range.fst && x < range.scd
-        } else {
-            x >= range.scd && x < range.fst
-        }
+        x >= range.fst && (x < range.scd || (range.contains && x == range.scd))
     }
 }
