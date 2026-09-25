@@ -125,7 +125,10 @@ enum _yrt_type_ids {
     STRUCT       = 11,
     TUPLE        = 12,
     OBJECT       = 13,
-    VOID_         = 14,
+    VOID_        = 14,
+    MAP          = 15,
+    UNION_RECORD = 16,
+    UNION_CLASS  = 17,
 };
 
 /*!
