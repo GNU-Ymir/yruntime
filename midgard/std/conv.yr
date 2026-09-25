@@ -855,6 +855,41 @@ pub fn if (isChar!{U} && (template!{F}{record R} || template!{F}{entity E})) to 
     }
 }
 
+/**
+ * Transform a union into a string, as `std::stream::StringStream` writes it.
+ * @example:
+ * ```
+ * use std::{conv, io, stream};
+ *
+ * record A {
+ *     let i: i32;
+ *     pub self (i: i32) with i = i {}
+ *     impl Streamable;
+ * }
+ *
+ * record B {
+ *     impl Streamable;
+ * }
+ *
+ * union U
+ * | A
+ * | B;
+ *
+ * let u: U = A(789);
+ * println(u.to![c8] ()); // main::A(789)
+ * ```
+ */
+pub fn if (isChar!{U} && template!{F}{union V}) to {T of [U], U, F} (a: F)-> dmut T {
+    let dmut stream = copy StringStream();
+    stream:.write(a);
+
+    cte if template!{U}{X of c8} {
+        return stream:[];
+    } else {
+        return std::conv::to!{T} (stream[]);
+    }
+}
+
 /*!
  * ====================================================================================================
  * ====================================================================================================
