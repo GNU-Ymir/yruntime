@@ -48,3 +48,43 @@ __test concatDoesNotAliasSource { // ~ leaves its operands alone
 
     assert(c == "abcd" && a == "ab" && b == "cd", c);
 }
+
+mod ConcatN {T} {
+    pub extern (C) fn _yrt_concat_slices_n(ref dmut res: [T], parts: *[T], nb: usize, size: usize);
+}
+
+fn concatN {T} (parts: [[T]])-> dmut [T] {
+    let dmut res: [T] = [];
+    ConcatN!{T}::_yrt_concat_slices_n(ref res, parts.ptr, parts.len, T::size);
+    return alias res;
+}
+
+__test concatN { // N slices joined in one allocation, in order
+    let a = copy [1, 2];
+    let b = copy [3];
+    let c = copy [4, 5, 6];
+    let r = concatN(copy [a, b, c]);
+
+    assert(r == copy [1, 2, 3, 4, 5, 6], "content");
+    assert(a == [1, 2] && b == [3] && c == [4, 5, 6], "operands");
+}
+
+__test concatNEmptyParts { // empty operands, or none at all, add nothing
+    let e: [c8] = [];
+    let r = concatN(copy [e, copy "ab"s8, e, copy "c"s8, e]);
+    assert(r == "abc", r);
+
+    let n: [c8] = concatN(copy [e, e]);
+    assert(n.len == 0us, "empty");
+
+    let nothing: [[c8]] = [];
+    assert(concatN(nothing).len == 0us, "nothing");
+}
+
+__test concatNDoesNotAlias { // the result owns its own storage
+    let dmut a = copy "ab"s8;
+    let dmut r = concatN(copy [a, a]);
+    r[0] = 'x'c8;
+
+    assert(r == "xbab" && a == "ab", r);
+}

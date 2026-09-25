@@ -43,6 +43,11 @@ uint8_t* _yrt_alloc_block (uint64_t size);
 void _yrt_concat_slices (_yrt_slice_t * result, _yrt_slice_t * left, _yrt_slice_t * right, uint64_t size);
 
 /**
+ * Concatenate the 'nb' slices of 'parts', in order, into a single allocation
+ *  */
+void _yrt_concat_slices_n (_yrt_slice_t * result, _yrt_slice_t * parts, uint64_t nb, uint64_t size);
+
+/**
  * Append elements at the end of a slice
  *  */
 void _yrt_append_slice (_yrt_slice_t * result, _yrt_slice_t * right, uint64_t size);

@@ -72,6 +72,26 @@ void _yrt_concat_slices (_yrt_slice_t * result, _yrt_slice_t * left, _yrt_slice_
 	memcpy (result-> data + (left-> len * size), right-> data, right-> len * size);
 }
 
+void _yrt_concat_slices_n (_yrt_slice_t * result, _yrt_slice_t * parts, uint64_t nb, uint64_t size) {
+	uint64_t len = 0;
+	for (uint64_t i = 0 ; i < nb ; i++) {
+		len += parts [i].len;
+	}
+
+	// filled aside: 'result' may be one of the parts
+	_yrt_slice_t res;
+	_yrt_alloc_slice_no_set (&res, len, size);
+
+	uint8_t * out = (uint8_t*) res.data;
+	for (uint64_t i = 0 ; i < nb ; i++) {
+		if (parts [i].len == 0) continue;
+		memcpy (out, parts [i].data, parts [i].len * size);
+		out += parts [i].len * size;
+	}
+
+	*result = res;
+}
+
 void _yrt_append_slice (_yrt_slice_t * result, _yrt_slice_t * right, uint64_t size) {
 	// read before growing: 'right' may be 'result' itself
 	uint64_t rlen = right-> len;
