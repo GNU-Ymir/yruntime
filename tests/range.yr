@@ -1,0 +1,39 @@
+in range;
+
+fn collect (r: ..i32)-> [i32] {
+    let mut res: [i32] = [];
+    for i in r { res ~= [i]; }
+    res
+}
+
+__test stepBy {
+    let a = (0 .. 10).stepBy(2);
+    assert(a.step == 2 && a.fst == 0 && a.scd == 10, "a");
+    assert(collect(a) == [0, 2, 4, 6, 8], "b");
+
+    let b = (10 .. 0).stepBy(-3);
+    assert(b.step == -3, "c");
+    assert(collect(b) == [10, 7, 4, 1], "d");
+
+    let c = (0 .. 10).stepBy(-2);
+    assert(c.step == -2, "e");
+}
+
+__test opContains {
+    let a = (0 .. 10).stepBy(2);
+    assert(0 in a && 5 in a && 9 in a, "a");
+    assert(-1 !in a && 10 !in a, "b");
+
+    let b = (0 ... 10).stepBy(2);
+    assert(10 in b && 11 !in b, "c");
+
+    let c = (10 .. 4).stepBy(-1);
+    assert(10 in c && 5 in c, "d");
+    assert(4 !in c && 11 !in c && 3 !in c, "e");
+
+    let d = (10 ... 4).stepBy(-1);
+    assert(4 in d && 3 !in d, "f");
+
+    assert(5 !in (0 .. 10).stepBy(-1), "g");
+    assert(5 !in (10 .. 0).stepBy(1), "h");
+}
