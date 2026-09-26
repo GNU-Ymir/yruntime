@@ -227,6 +227,28 @@ Two separate versions live at the repo root, and mixing them up is the classic b
   `-v` for the full compiler output of a failure). It runs as its own CI job — see "Doc example
   checking" below.
 
+### The ymir-dev workspace (`../..`)
+
+This checkout is `repos/midgard` of the ymir-dev workspace (`/home/emile/ymir/ymir-dev`, a git
+repository of its own, see its `README.md`). It clones gymir, bootstrap, midgard and gcc under
+`repos/` and builds a preview gyc from them into `target/`, midgard included:
+
+- `uv run preview` (from `../..`) rebuilds the preview from whatever the repos have checked out,
+  uncommitted changes included. It is incremental, but still minutes long.
+- `ymirc` (`~/.local/bin/ymirc`) is that preview gyc (`target/bin/gyc -iprefix target`), so it
+  sees the midgard of the last `preview`, not the working tree. To compile against the working tree
+  without a new preview, pass `-nostdinc -I <this repo>/midgard` (enough for template code, which
+  is compiled into the user's program; a change to non-template code needs the rebuilt lib).
+- To build this repo with it, set `compiler = "/home/emile/.local/bin/ymirc"` in `gyllir.toml`
+  after a `gyllir clean`, and restore it before committing. `GYC=ymirc dev/check-examples.sh`
+  checks the doc examples with it.
+- `../../tests/<suite>/<name>.yr` are execution tests of the preview gyc, compiled and run by
+  `uv run tests [filter] [--update]` against `<name>.out` (and `.status`, `.stderr`, `.in`,
+  `.flags`). A midgard feature visible to user programs gets its case there too, committed in
+  ymir-dev, after a `preview` that includes it.
+- `../bootstrap/test_resources/<topic>/` (the compiler's test cases, each opening with a comment on
+  what it checks) is the quickest reference on what a language feature allows, e.g. `type_union/`.
+
 ## Architecture
 
 ### `midgard/` — the library itself

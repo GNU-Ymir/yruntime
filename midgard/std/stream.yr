@@ -186,7 +186,7 @@ pub class StringStream {
      * @params:
      *   - c: the value to write
      * */
-    pub fn if (!(template!{T}{class C}) && !(template!{T}{record C}) && !(template!{T}{entity E})) write {T} (mut self, c: T)-> dmut &StringStream {
+    pub fn if (!(template!{T}{class C}) && !(template!{T}{record C}) && !(template!{T}{entity E}) && !(template!{T}{union U})) write {T} (mut self, c: T)-> dmut &StringStream {
         cte if (__pragma!compile({std::conv::to!{typeof(self._content)} (c, ref self._content);})) {
             // entabing inserts text between the chars, so it cannot be written in place
             if (self._entabingLen != 0us) {
@@ -290,6 +290,43 @@ pub class StringStream {
                 self:.write(j);
             }
             self:.write(')');
+        }
+
+        alias self
+    }
+
+    /**
+     * Write a union into the stream, through the `toStream` of the member it holds.
+     * A union whose members do not all implement `Streamable` writes the name of the member it holds.
+     * @params:
+     *   - c: the union to write
+     * @returns: the stream
+     * @example:
+     * ```
+     * record A {
+     *     pub let a: i32;
+     *     pub self (a: i32) with a = a {}
+     *     impl Streamable;
+     * }
+     *
+     * record B {
+     *     impl Streamable;
+     * }
+     *
+     * union U
+     * | A
+     * | B;
+     *
+     * let u: U = A(1);
+     * let dmut stream = copy StringStream();
+     * stream:.write(u); // main::A(1)
+     * ```
+     * */
+    pub fn if (template!{T}{union U}) write {T} (mut self, c: T)-> dmut &StringStream {
+        cte if template!{T}{X impl std::stream::Streamable} {
+            c.toStream(alias self);
+        } else {
+            self:.write(c.__typeid, "()");
         }
 
         alias self
