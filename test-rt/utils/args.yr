@@ -67,6 +67,9 @@ pub record TestRunnerArgument {
     // True iff the tests are listed instead of run
     pub let mut hasList: bool = false;
 
+    // True iff what the tests print goes straight to stdout, instead of being shown for failed tests only
+    pub let mut hasNoCapture: bool = false;
+
     // The number of worker threads to run tests in parallel(1 = sequential)
     pub let mut jobs: i64 = 1;
 
@@ -85,6 +88,7 @@ pub record TestRunnerArgument {
             :.flag("resume", comments-> "re-run only failed tests")
             :.flag("durations", short-> "d", comments-> "list the slowest tests once the run is over")
             :.flag("list", short-> "l", comments-> "list the tests(after filtering) without running them")
+            :.flag("no-capture", short-> "s", comments-> "print the output of the tests as they run, and log each test that runs, passes or fails")
             :.option!{i64} ("jobs", default-> 1, short-> "j", comments-> "number of worker threads to run tests in parallel (1 = sequential)")
             :.defaultHelp();
 
@@ -101,6 +105,7 @@ pub record TestRunnerArgument {
             self.hasResume = ret["resume"].to!{bool} () ?? false;
             self.hasDurations = ret["durations"].to!{bool} () ?? false;
             self.hasList = ret["list"].to!{bool} () ?? false;
+            self.hasNoCapture = ret["no-capture"].to!{bool} () ?? false;
 
             // listing the uncovered lines is only meaningful within a coverage report
             if self.hasMissing { self.hasCoverage = true; }

@@ -18,14 +18,14 @@ use std::io::utils;
  * Print a char to stdout.
  */
 pub fn print(c: c8)  {
-    putchar(c)
+    putc(c, utils::_yrt_stdout())
 }
 
 /**
  * Print an utf8 char to stderr.
  */
 pub fn eprint(c: c8) {
-    putc(c, utils::stderr);
+    putc(c, utils::_yrt_stderr());
 }
 
 /**
@@ -35,7 +35,7 @@ pub fn print(c: c32)  {
     let dmut rets: [c8 ; 4] = ['\u{0}' ; 4];
 
     let nbProduced = std::conv::utf::toUtf8(c, ref rets);
-    utils::fwrite(rets.ptr, 1us, cast!usize(nbProduced), utils::stdout);
+    utils::fwrite(rets.ptr, 1us, cast!usize(nbProduced), utils::_yrt_stdout());
 }
 
 /**
@@ -45,7 +45,7 @@ pub fn eprint(c: c32) {
     let dmut rets: [c8 ; 4] = ['\u{0}' ; 4];
 
     let nbProduced = std::conv::utf::toUtf8(c, ref rets);
-    utils::fwrite(rets.ptr, 1us, cast!usize(nbProduced), utils::stderr);
+    utils::fwrite(rets.ptr, 1us, cast!usize(nbProduced), utils::_yrt_stderr());
 }
 
 /**
@@ -55,7 +55,7 @@ pub fn print(c: c16) {
     let dmut rets: [c8 ; 4] = ['\u{0}' ; 4];
 
     let nbProduced = std::conv::utf::toUtf8(c, ref rets);
-    utils::fwrite(rets.ptr, 1us, cast!usize(nbProduced), utils::stdout);
+    utils::fwrite(rets.ptr, 1us, cast!usize(nbProduced), utils::_yrt_stdout());
 }
 
 /**
@@ -65,7 +65,7 @@ pub fn eprint(c: c16) {
     let dmut rets: [c8 ; 4] = ['\u{0}' ; 4];
 
     let nbProduced = std::conv::utf::toUtf8(c, ref rets);
-    utils::fwrite(rets.ptr, 1us, cast!usize(nbProduced), utils::stderr);
+    utils::fwrite(rets.ptr, 1us, cast!usize(nbProduced), utils::_yrt_stderr());
 }
 
 /*!
@@ -81,22 +81,22 @@ pub fn eprint(c: c16) {
  * Print an utf32 string to stdout.
  */
 pub fn print(s: [c32]) {
-    utils::flockfile(utils::stdout);
+    utils::flockfile(utils::_yrt_stdout());
     for c in s {
         print(c);
     }
-    utils::funlockfile(utils::stdout);
+    utils::funlockfile(utils::_yrt_stdout());
 }
 
 /**
  * Print an utf32 string to stderr.
  */
 pub fn eprint(s:  [c32]) {
-    utils::flockfile(utils::stderr);
+    utils::flockfile(utils::_yrt_stderr());
     for c in s {
         eprint(c);
     }
-    utils::funlockfile(utils::stderr);
+    utils::funlockfile(utils::_yrt_stderr());
 }
 
 /**
@@ -104,14 +104,14 @@ pub fn eprint(s:  [c32]) {
  */
 pub fn print(s: [c16]) {
     if s.len == 0 { return; }
-    utils::flockfile(utils::stdout);
+    utils::flockfile(utils::_yrt_stdout());
 
     let dmut codes = ['\u{0}'c8 ; 4];
     let mut i = 0us;
     while i < s.len - 1 {
         let (nbConsumed, nbProduced) = std::conv::utf::toUtf8((s[i], s[i + 1]), ref codes);
         for z in 0 .. nbProduced {
-            putchar(codes[z]);
+            putc(codes[z], utils::_yrt_stdout());
         }
 
         i += cast!usize(nbConsumed);
@@ -120,7 +120,7 @@ pub fn print(s: [c16]) {
     if i == s.len - 1 {
         print(s[$ - 1]);
     }
-    utils::funlockfile(utils::stdout);
+    utils::funlockfile(utils::_yrt_stdout());
 }
 
 /**
@@ -128,14 +128,14 @@ pub fn print(s: [c16]) {
  */
 pub fn eprint(s: [c16]) {
     if s.len == 0 { return; }
-    utils::flockfile(utils::stderr);
+    utils::flockfile(utils::_yrt_stderr());
 
     let dmut codes = ['\u{0}'c8 ; 4];
     let mut i = 0us;
     while i < s.len - 1 {
         let (nbConsumed, nbProduced) = std::conv::utf::toUtf8((s[i], s[i + 1]), ref codes);
         for z in 0 .. nbProduced {
-            putc(codes[z], utils::stderr);
+            putc(codes[z], utils::_yrt_stderr());
         }
 
         i += cast!usize(nbConsumed);
@@ -144,21 +144,21 @@ pub fn eprint(s: [c16]) {
     if i == s.len - 1 {
         eprint(s[$ - 1]);
     }
-    utils::funlockfile(utils::stderr);
+    utils::funlockfile(utils::_yrt_stderr());
 }
 
 /**
  * Print an utf8 string to stdout.
  */
 pub fn print(s: [c8]) {
-    utils::fwrite(s.ptr, 1us, s.len, utils::stdout);
+    utils::fwrite(s.ptr, 1us, s.len, utils::_yrt_stdout());
 }
 
 /**
  * Print an utf8 string to stderr.
  */
 pub fn eprint(s: [c8]) {
-    utils::fwrite(s.ptr, 1us, s.len, utils::stderr);
+    utils::fwrite(s.ptr, 1us, s.len, utils::_yrt_stderr());
 }
 
 /*!
@@ -173,126 +173,126 @@ pub fn eprint(s: [c8]) {
  * Print a isize to stdout.
  */
 pub fn print(i: isize)  {
-    printf("%lld".ptr, i);
+    fprintf(utils::_yrt_stdout(), "%lld".ptr, i);
 }
 
 /**
  * Print a isize to stderr.
  */
 pub fn eprint(i: isize) {
-    fprintf(utils::stderr, "%lld".ptr, i);
+    fprintf(utils::_yrt_stderr(), "%lld".ptr, i);
 }
 
 /**
  * Print a usize to stdout.
  */
 pub fn print(i: usize)  {
-    printf("%llu".ptr, i);
+    fprintf(utils::_yrt_stdout(), "%llu".ptr, i);
 }
 
 /**
  * Print a usize to stderr.
  */
 pub fn eprint(i: usize)  {
-    fprintf(utils::stderr, "%llu".ptr, i);
+    fprintf(utils::_yrt_stderr(), "%llu".ptr, i);
 }
 
 /**
  * Print a i64 to stdout.
  */
 pub fn print(i: i64)  {
-    printf("%lld".ptr, i);
+    fprintf(utils::_yrt_stdout(), "%lld".ptr, i);
 }
 
 /**
  * Print a i64 to stdout.
  */
 pub fn eprint(i: i64)  {
-    fprintf(utils::stderr, "%lld".ptr, i);
+    fprintf(utils::_yrt_stderr(), "%lld".ptr, i);
 }
 
 /**
  * Print a i32 to stdout.
  */
 pub fn print(i: i32)  {
-    printf("%d".ptr, i);
+    fprintf(utils::_yrt_stdout(), "%d".ptr, i);
 }
 
 /**
  * Print a i32 to stderr.
  */
 pub fn eprint(i: i32)  {
-    fprintf(utils::stderr, "%d".ptr, i);
+    fprintf(utils::_yrt_stderr(), "%d".ptr, i);
 }
 
 /**
  * Print a i16 to stdout.
  */
 pub fn print(i: i16)  {
-    printf("%hd".ptr, i);
+    fprintf(utils::_yrt_stdout(), "%hd".ptr, i);
 }
 
 /**
  * Print a i16 to stderr.
  */
 pub fn eprint(i: i16)  {
-    fprintf(utils::stderr, "%hd".ptr, i);
+    fprintf(utils::_yrt_stderr(), "%hd".ptr, i);
 }
 
 /**
  * Print a i8 to stdout.
  */
 pub fn print(i: i8)  {
-    printf("%hhx".ptr, i);
+    fprintf(utils::_yrt_stdout(), "%hhx".ptr, i);
 }
 
 /**
  * Print a i8 to stderr.
  */
 pub fn eprint(i: i8)  {
-    fprintf(utils::stderr, "%hhx".ptr, i);
+    fprintf(utils::_yrt_stderr(), "%hhx".ptr, i);
 }
 
 /**
  * Print a u64 to stdout.
  */
 pub fn print(i: u64)  {
-    printf("%llu".ptr, i);
+    fprintf(utils::_yrt_stdout(), "%llu".ptr, i);
 }
 
 /**
  * Print a u64 to stderr.
  */
 pub fn eprint(i: u64)  {
-    fprintf(utils::stderr, "%llu".ptr, i);
+    fprintf(utils::_yrt_stderr(), "%llu".ptr, i);
 }
 
 /**
  * Print a u32 to stdout.
  */
 pub fn print(i: u32)  {
-    printf("%u".ptr, i);
+    fprintf(utils::_yrt_stdout(), "%u".ptr, i);
 }
 
 /**
  * Print a u32 to stderr.
  */
 pub fn eprint(i: u32)  {
-    fprintf(utils::stderr, "%u".ptr, i);
+    fprintf(utils::_yrt_stderr(), "%u".ptr, i);
 }
 
 /**
  * Print a u16 to stdout.
  */
 pub fn print(i: u16)  {
-    printf("%hu".ptr, i);
+    fprintf(utils::_yrt_stdout(), "%hu".ptr, i);
 }
 
 /**
  * Print a u16 to stderr.
  */
 pub fn eprint(i: u16)  {
-    fprintf(utils::stderr, "%hu".ptr, i);
+    fprintf(utils::_yrt_stderr(), "%hu".ptr, i);
 }
 
 /**
@@ -301,7 +301,7 @@ pub fn eprint(i: u16)  {
  *    - i: the int to print
  */
 pub fn print(i: u8) {
-    printf("%hhx".ptr, i)
+    fprintf(utils::_yrt_stdout(), "%hhx".ptr, i)
 }
 
 /**
@@ -310,7 +310,7 @@ pub fn print(i: u8) {
  *    - i: the int to print
  */
 pub fn eprint(i: u8) {
-    fprintf(utils::stderr, "%hhx".ptr, i)
+    fprintf(utils::_yrt_stderr(), "%hhx".ptr, i)
 }
 
 /*!
@@ -326,102 +326,102 @@ pub fn eprint(i: u8) {
  * Print an address to stdout.
  */
 pub fn print {T} (i: *T) {
-    printf("%x".ptr, i);
+    fprintf(utils::_yrt_stdout(), "%x".ptr, i);
 }
 
 /**
  * Print an address to stderr.
  */
 pub fn eprint {T} (i: *T) {
-    fprintf(utils::stderr, "%x".ptr, i);
+    fprintf(utils::_yrt_stderr(), "%x".ptr, i);
 }
 
 /**
  * Print a fptr address to stdout
  * */
 pub fn print {T} (a: fn ()-> T) {
-    utils::flockfile(utils::stdout);
+    utils::flockfile(utils::_yrt_stdout());
     print(typeof(a)::typeid);
-    printf("{%x}".ptr, a);
-    utils::funlockfile(utils::stdout);
+    fprintf(utils::_yrt_stdout(), "{%x}".ptr, a);
+    utils::funlockfile(utils::_yrt_stdout());
 }
 
 /**
  * Print a fptr address to stderr
  * */
 pub fn eprint {T} (a: fn ()-> T) {
-    utils::flockfile(utils::stderr);
+    utils::flockfile(utils::_yrt_stderr());
     eprint(typeof(a)::typeid);
-    fprintf(utils::stderr, "{%x}".ptr, a);
-    utils::funlockfile(utils::stderr);
+    fprintf(utils::_yrt_stderr(), "{%x}".ptr, a);
+    utils::funlockfile(utils::_yrt_stderr());
 }
 
 /**
  * Print a fptr address to stdout
  * */
 pub fn print {T, P...} (a: fn (P)-> T) {
-    utils::flockfile(utils::stdout);
+    utils::flockfile(utils::_yrt_stdout());
     print(typeof(a)::typeid);
-    printf("{%x}".ptr, a);
-    utils::funlockfile(utils::stdout);
+    fprintf(utils::_yrt_stdout(), "{%x}".ptr, a);
+    utils::funlockfile(utils::_yrt_stdout());
 }
 
 /**
  * Print a fptr address to stderr
  * */
 pub fn eprint {T, P...} (a: fn (P)-> T) {
-    utils::flockfile(utils::stderr);
+    utils::flockfile(utils::_yrt_stderr());
     eprint(typeof(a)::typeid);
-    fprintf(utils::stderr, "{%x}".ptr, a);
-    utils::funlockfile(utils::stderr);
+    fprintf(utils::_yrt_stderr(), "{%x}".ptr, a);
+    utils::funlockfile(utils::_yrt_stderr());
 }
 
 /**
  * Print a dg address to stdout
  * */
 pub fn print {T} (a: dg ()-> T) {
-    utils::flockfile(utils::stdout);
+    utils::flockfile(utils::_yrt_stdout());
     print(typeof(a)::typeid);
-    printf(" {%x,%x}".ptr,
+    fprintf(utils::_yrt_stdout(), " {%x,%x}".ptr,
            __pragma!field(a, "closure"),
            __pragma!field(a, "func"));
-    utils::funlockfile(utils::stdout);
+    utils::funlockfile(utils::_yrt_stdout());
 }
 
 /**
  * Print a dg address to stdout
  * */
 pub fn eprint {T} (a: dg ()-> T) {
-    utils::flockfile(utils::stderr);
+    utils::flockfile(utils::_yrt_stderr());
     eprint(typeof(a)::typeid);
-    fprintf(utils::stderr, " {%x,%x}".ptr,
+    fprintf(utils::_yrt_stderr(), " {%x,%x}".ptr,
             __pragma!field(a, "closure"),
             __pragma!field(a, "func"));
-    utils::funlockfile(utils::stderr);
+    utils::funlockfile(utils::_yrt_stderr());
 }
 
 /**
  * Print a dg address to stdout
  * */
 pub fn print {T, P...} (a: dg (P)-> T) {
-    utils::flockfile(utils::stdout);
+    utils::flockfile(utils::_yrt_stdout());
     print(typeof(a)::typeid);
-    printf(" {%x,%x}".ptr,
+    fprintf(utils::_yrt_stdout(), " {%x,%x}".ptr,
            __pragma!field(a, "closure"),
            __pragma!field(a, "func"));
-    utils::funlockfile(utils::stdout);
+    utils::funlockfile(utils::_yrt_stdout());
 }
 
 /**
  * Print a dg address to stdout
  * */
 pub fn eprint {T, P...} (a: dg (P)-> T) {
-    utils::flockfile(utils::stderr);
+    utils::flockfile(utils::_yrt_stderr());
     eprint(typeof(a)::typeid);
-    fprintf(utils::stderr, " {%x,%x}".ptr,
+    fprintf(utils::_yrt_stderr(), " {%x,%x}".ptr,
             __pragma!field(a, "closure"),
             __pragma!field(a, "func"));
-    utils::funlockfile(utils::stderr);
+    utils::funlockfile(utils::_yrt_stderr());
 }
 
 /*!
@@ -521,9 +521,9 @@ pub fn eprint(f: fsize)  {
  */
 pub fn print(b: bool)  {
     if (b)
-        printf("true".ptr);
+        fprintf(utils::_yrt_stdout(), "true".ptr);
     else
-        printf("false".ptr);
+        fprintf(utils::_yrt_stdout(), "false".ptr);
 }
 
 /**
@@ -531,9 +531,9 @@ pub fn print(b: bool)  {
  */
 pub fn eprint(b: bool)  {
     if (b)
-        fprintf(utils::stderr, "true".ptr);
+        fprintf(utils::_yrt_stderr(), "true".ptr);
     else
-        fprintf(utils::stderr, "false".ptr);
+        fprintf(utils::_yrt_stderr(), "false".ptr);
 }
 
 /*!
@@ -554,19 +554,19 @@ pub fn eprint(b: bool)  {
  *    - U: any
  */
 pub fn print {T of [U], U} (s: T)  {
-    utils::flockfile(utils::stdout);
-    putchar('[');
+    utils::flockfile(utils::_yrt_stdout());
+    putc('[', utils::_yrt_stdout());
     if s.len > 0 {
         print(s[0]);
         for i in s[1 .. $] {
-            putchar(',');
-            putchar(' ');
+            putc(',', utils::_yrt_stdout());
+            putc(' ', utils::_yrt_stdout());
             print(i);
         }
     }
 
-    putchar(']');
-    utils::funlockfile(utils::stdout);
+    putc(']', utils::_yrt_stdout());
+    utils::funlockfile(utils::_yrt_stdout());
 }
 
 /**
@@ -578,18 +578,18 @@ pub fn print {T of [U], U} (s: T)  {
  *    - U: any
  */
 pub fn eprint {T of [U], U} (s: T)  {
-    utils::flockfile(utils::stderr);
+    utils::flockfile(utils::_yrt_stderr());
     eprint('[');
     if s.len > 0 {
         eprint(s[0]);
         for i in s[1 .. $] {
-            fprintf(utils::stderr, ", ".ptr);
+            fprintf(utils::_yrt_stderr(), ", ".ptr);
             eprint(i);
         }
     }
 
     eprint(']');
-    utils::funlockfile(utils::stderr);
+    utils::funlockfile(utils::_yrt_stderr());
 }
 
 /*!
@@ -607,21 +607,21 @@ pub fn eprint {T of [U], U} (s: T)  {
  *    - m: the map to print
  * */
 pub fn print {M of [K => V], K, V} (m: M) {
-    utils::flockfile(utils::stdout);
-    putchar('[');
+    utils::flockfile(utils::_yrt_stdout());
+    putc('[', utils::_yrt_stdout());
     let mut fst = true;
     for k, v in m {
         if (!fst) {
-            putchar(',');
-            putchar(' ');
+            putc(',', utils::_yrt_stdout());
+            putc(' ', utils::_yrt_stdout());
         } else fst = false;
 
         print(k);
         print(" => ");
         print(v);
     }
-    putchar(']');
-    utils::funlockfile(utils::stdout);
+    putc(']', utils::_yrt_stdout());
+    utils::funlockfile(utils::_yrt_stdout());
 }
 
 /**
@@ -630,7 +630,7 @@ pub fn print {M of [K => V], K, V} (m: M) {
  *    - m: the map to print
  * */
 pub fn eprint {M of [K => V], K, V} (m: M) {
-    utils::flockfile(utils::stderr);
+    utils::flockfile(utils::_yrt_stderr());
     eprint('[');
     let mut fst = true;
     for k, v in m {
@@ -644,7 +644,7 @@ pub fn eprint {M of [K => V], K, V} (m: M) {
         eprint(v);
     }
     eprint(']');
-    utils::funlockfile(utils::stderr);
+    utils::funlockfile(utils::_yrt_stderr());
 }
 
 /*!
@@ -666,18 +666,18 @@ pub fn eprint {M of [K => V], K, V} (m: M) {
  *    - N: the static size
  */
 pub fn print {T of [U;N], U, N: usize} (a: T)  {
-    utils::flockfile(utils::stdout);
-    putchar('[');
+    utils::flockfile(utils::_yrt_stdout());
+    putc('[', utils::_yrt_stdout());
     cte if N > 0 {
         print(a[0]);
         for i in a[1 .. $] {
-            putchar(',');
-            putchar(' ');
+            putc(',', utils::_yrt_stdout());
+            putc(' ', utils::_yrt_stdout());
             print(i);
         }
     }
-    putchar(']');
-    utils::funlockfile(utils::stdout);
+    putc(']', utils::_yrt_stdout());
+    utils::funlockfile(utils::_yrt_stdout());
 }
 
 /**
@@ -690,17 +690,17 @@ pub fn print {T of [U;N], U, N: usize} (a: T)  {
  *    - N: the static size
  */
 pub fn eprint {T of [U;N], U, N: usize} (a: T)  {
-    utils::flockfile(utils::stderr);
+    utils::flockfile(utils::_yrt_stderr());
     eprint('[');
     cte if N > 0 {
         eprint(a[0]);
         for i in a[1 .. $] {
-            fprintf(utils::stderr, ", ".ptr);
+            fprintf(utils::_yrt_stderr(), ", ".ptr);
             eprint(i);
         }
     }
     eprint(']');
-    utils::funlockfile(utils::stderr);
+    utils::funlockfile(utils::_yrt_stderr());
 }
 
 /*!
@@ -802,20 +802,20 @@ pub fn eprint {T} (a: T?)  {
  *    - a: a tuple of arbitrary arity
  */
 pub fn print {T of (U,), U...} (a: T) {
-    utils::flockfile(utils::stdout);
+    utils::flockfile(utils::_yrt_stdout());
     print('(');
     cte if T::arity > 0 {
         print(a.0);
         cte for i in 1 .. T::arity {
-            putchar(',');
-            putchar(' ');
+            putc(',', utils::_yrt_stdout());
+            putc(' ', utils::_yrt_stdout());
             print(a.i);
         }
     }
 
-    cte if (T::arity == 1) putchar(',');
-    putchar(')');
-    utils::funlockfile(utils::stdout);
+    cte if (T::arity == 1) putc(',', utils::_yrt_stdout());
+    putc(')', utils::_yrt_stdout());
+    utils::funlockfile(utils::_yrt_stdout());
 }
 
 
@@ -825,38 +825,38 @@ pub fn print {T of (U,), U...} (a: T) {
  *    - a: a tuple of arbitrary arity
  */
 pub fn eprint {T of (U,), U...} (a: T) {
-    utils::flockfile(utils::stderr);
+    utils::flockfile(utils::_yrt_stderr());
     eprint('(');
     cte if T::arity > 0 {
         eprint(a.0);
         cte for i in 1 .. T::arity {
-            fprintf(utils::stderr, ", ".ptr);
+            fprintf(utils::_yrt_stderr(), ", ".ptr);
             eprint(a.i);
         }
     }
 
-    cte if (T::arity == 1) fprintf(utils::stderr, ",)".ptr);
+    cte if (T::arity == 1) fprintf(utils::_yrt_stderr(), ",)".ptr);
     else {
-        fprintf(utils::stderr, ")".ptr);
+        fprintf(utils::_yrt_stderr(), ")".ptr);
     }
-    utils::funlockfile(utils::stderr);
+    utils::funlockfile(utils::_yrt_stderr());
 }
 
 /**
  * Print an empty tuple to stdout
  * */
 pub fn print(_: ()) {
-    utils::flockfile(utils::stdout);
-    putchar('(');
-    putchar(')');
-    utils::funlockfile(utils::stdout);
+    utils::flockfile(utils::_yrt_stdout());
+    putc('(', utils::_yrt_stdout());
+    putc(')', utils::_yrt_stdout());
+    utils::funlockfile(utils::_yrt_stdout());
 }
 
 /**
  * Print an empty tuple to stderr
  * */
 pub fn eprint(_: ()) {
-    fprintf(utils::stderr, "()".ptr);
+    fprintf(utils::_yrt_stderr(), "()".ptr);
 }
 
 
@@ -926,7 +926,7 @@ pub fn if (template!{T}{record R} || template!{T}{entity E}) eprint {T} (ref a: 
  * Print multiple elements to stdout
  * */
 pub fn print  {F, T...} (a: F, b: T) {
-    utils::flockfile(utils::stdout);
+    utils::flockfile(utils::_yrt_stdout());
     print(a);
     cte if ((T,)::arity >= 2us) {
         cte for i in b {
@@ -935,14 +935,14 @@ pub fn print  {F, T...} (a: F, b: T) {
     } else {
         print(b);
     }
-    utils::funlockfile(utils::stdout);
+    utils::funlockfile(utils::_yrt_stdout());
 }
 
 /**
  * Print multiple elements to stderr
  * */
 pub fn eprint  {F, T...} (a: F, b: T) {
-    utils::flockfile(utils::stderr);
+    utils::flockfile(utils::_yrt_stderr());
     eprint(a);
     cte if ((T,)::arity >= 2us) {
         cte for i in b {
@@ -951,7 +951,7 @@ pub fn eprint  {F, T...} (a: F, b: T) {
     } else {
         eprint(b);
     }
-    utils::funlockfile(utils::stderr);
+    utils::funlockfile(utils::_yrt_stderr());
 }
 
 
@@ -959,7 +959,7 @@ pub fn eprint  {F, T...} (a: F, b: T) {
  * Print variadic elements to stdout, and end the writing by a line return
  * */
 pub fn println {F, T...} (a: F, b: T) {
-    utils::flockfile(utils::stdout);
+    utils::flockfile(utils::_yrt_stdout());
     print(a);
     cte if ((T,)::arity >= 2us) {
         cte for i in b {
@@ -968,32 +968,32 @@ pub fn println {F, T...} (a: F, b: T) {
     } else {
         print(b);
     }
-    putchar('\n');
-    utils::funlockfile(utils::stdout);
+    putc('\n', utils::_yrt_stdout());
+    utils::funlockfile(utils::_yrt_stdout());
 }
 
 /**
  * Print an element to stdout, and end the writing by a line return
  * */
 pub fn println {T} (a: T) {
-    utils::flockfile(utils::stdout);
+    utils::flockfile(utils::_yrt_stdout());
     print(a);
-    putchar('\n');
-    utils::funlockfile(utils::stdout);
+    putc('\n', utils::_yrt_stdout());
+    utils::funlockfile(utils::_yrt_stdout());
 }
 
 /**
  * Print a line return to stdout.
  */
 pub fn println() {
-    putchar('\n');
+    putc('\n', utils::_yrt_stdout());
 }
 
 /**
  * Print variadic elements to stderr, and end the writing by a line return
  * */
 pub fn eprintln {F, T...} (a: F, b: T) {
-    utils::flockfile(utils::stderr);
+    utils::flockfile(utils::_yrt_stderr());
     eprint(a);
     cte if ((T,)::arity >= 2us) {
         cte for i in b {
@@ -1002,25 +1002,25 @@ pub fn eprintln {F, T...} (a: F, b: T) {
     } else {
         eprint(b);
     }
-    fprintf(utils::stderr, "\n".ptr);
-    utils::funlockfile(utils::stderr);
+    fprintf(utils::_yrt_stderr(), "\n".ptr);
+    utils::funlockfile(utils::_yrt_stderr());
 }
 
 /**
  * Print an element to stdout, and end the writing by a line return
  * */
 pub fn eprintln {T} (a: T) {
-    utils::flockfile(utils::stderr);
+    utils::flockfile(utils::_yrt_stderr());
     eprint(a);
-    fprintf(utils::stderr, "\n".ptr);
-    utils::funlockfile(utils::stderr);
+    fprintf(utils::_yrt_stderr(), "\n".ptr);
+    utils::funlockfile(utils::_yrt_stderr());
 }
 
 /**
  * Print a line return to stdout.
  */
 pub fn eprintln() {
-    fprintf(utils::stderr, "\n".ptr);
+    fprintf(utils::_yrt_stderr(), "\n".ptr);
 }
 
 /**
