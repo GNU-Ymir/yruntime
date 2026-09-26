@@ -92,6 +92,9 @@ Useful flags (see `test-rt/utils/args.yr`):
 - `-ct, --call-tree` — print a call-tree report after the run.
 - `-m, --missing` — list the uncovered lines (and half taken branches) of each file, as line
   ranges, under its entry of the coverage report (implies `-cov`).
+- `-s, --no-capture` — print what the tests print as they run, and log each test that runs,
+  passes or fails. By default a test's stdout/stderr is captured and only shown, with its error,
+  once the run is over if it failed.
 
 ## Contributing
 

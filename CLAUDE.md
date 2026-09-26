@@ -207,7 +207,8 @@ Two separate versions live at the repo root, and mixing them up is the classic b
   `--resume` to re-run only previously-failed tests, `-cov` for a coverage report, `-ct` for a
   call-tree report, `-m` to list each file's uncovered lines under the coverage report, `-d` to
   list the slowest tests once the run is over, `-l` to list the tests `-f`/`--resume`
-  select without running them, `-j N` to run on N worker threads — see
+  select without running them, `-j N` to run on N worker threads, `-s` to print the tests'
+  output as they run instead of capturing it — see
   `test-rt/utils/args.yr`). `-f` is **not** a substring match: the pattern is a `::`-separated
   path of glob segments (`*` the only wildcard, matched within one segment), and it must have
   exactly as many segments as the test name. So `-f rand` selects nothing, `-f "rand::*"` runs
@@ -392,10 +393,11 @@ hits/call-counts across files, and that generated/compiler-synthesized functions
 
 - The master walks the tests (`forEachCase`, resuming parameterized generators as it goes) and
   submits one task per case, closing over its name and delegate. A worker never touches the registry: `runOne(name, dg)` runs the test on the
-  calling thread and returns `(ok, micros)`, and the task sends `(name, ok, micros)` to a
-  `std::concurrency::mail::MailBox`.
+  calling thread and returns a `TestOutcome`, which the task sends to a
+  `std::concurrency::mail::MailBox` and reports to the shared `utils::progress::Progress`.
 - Once `pool:.join()` returns (every task has finished), the master drains that mailbox into
-  `already`/`durations`, and everything downstream (success file, `-d`, coverage) is unchanged.
+  `already`/`durations` (`collect`, the sequential path goes through the same mailbox), and
+  everything downstream (success file, `-d`, coverage) is unchanged.
   Coverage needs no special handling: each thread fills its own `CoverageTree`, and
   `tree::mergedTree` folds them all together when the run stores its coverage.
 - `--stop-first` is a shared flag: a failing task sets it, tasks not started yet skip their test,
@@ -416,7 +418,16 @@ Things that will bite you here:
   under coverage hooks, and costs seconds. The tests formatting exceptions (`errors::*`,
   `config::args::errorsToStream`, ...) queue on that lock and dominate a `-j 8` run's tail.
 
-Known, accepted simplification: every worker prints to the same stdout, so the `run`/`passed`
-log lines of concurrent tests interleave (each record stays whole). The runner logs through
-`std::log` as `test-rt::runner`, and `run` points the process's sinks at stdout — a test that
-wants to capture logs adds a `StringSink` and removes it, it never replaces the sinks.
+What a test prints is captured, unless `-s` is passed: `runOne` wraps it in
+`_yrt_capture_begin`/`_yrt_capture_end` (`rt/memory/capture.c`), which swap the stream
+`_yrt_stdout()`/`_yrt_stderr()` return *for the calling thread* — `std::io` and `rt/memory/print.c`
+write through those, never through `stdout`/`stderr` directly. A thread created while a capture is
+active inherits it (`rt/concurrency/thread.c`), so a test's `spawn`/`TaskPool`/actors are captured
+with it. Not captured: child processes (they inherit fd 1/2) and raw C writes to `stdout`. The
+output of a passing test is dropped; failures, with their error and output, are only printed once
+every test completed (`reportFailures`), under the progress bar. During the run, stdout carries
+`utils::progress` alone: on a terminal a line per worker (its test and how long it has been running)
+above the bar, redrawn every 100ms by a thread of its own, a line every 10% otherwise. The runner logs through
+`std::log` as `test-rt::runner` (`run`/`passed`/`failed` at `DEBUG`, shown with `-s`), and `run`
+points the process's sinks at stdout — a test that wants to capture logs adds a `StringSink` and
+removes it, it never replaces the sinks.
