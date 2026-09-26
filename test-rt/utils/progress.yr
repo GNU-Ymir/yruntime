@@ -1,0 +1,327 @@
+/*
+ *
+ * <hr>
+ *
+ * @Package: ymirc
+ * @Module: utils::progress
+ * @File: utils/progress.yr
+ * @Author(s):
+ *   - Emile Cadorel <ecadorel@gmail.com>
+ *
+ * @Created(YYYY-MM-DD): 2026-09-26
+ * @Copyright(C) 2021–2026 GNU-Ymir
+ * @License
+ *   ```text
+ *   This file is part of the Ymir language project.
+ *
+ *   Ymir is free software: you can redistribute it and/or modify it
+ *   under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation, either version 3 of the License, or
+ *   (at your option) any later version.
+ *
+ *   Ymir is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with Ymir.  If not, see <https://www.gnu.org/licenses/>.
+ *   ```
+ */
+
+
+in progress;
+
+use etc::c::files;
+
+use std::io;
+use std::time::{dur, instant};
+
+use utils::colors;
+
+// The largest number of cells of the bar
+def WIDTH = 40us;
+
+// The percentage between two lines of the report when stdout is not a terminal
+def STEP = 10us;
+
+// The delay between two redraws of the terminal, in milliseconds
+def REFRESH = 100u64;
+
+// The number of columns assumed for a terminal whose size is unknown
+def COLUMNS = 80us;
+
+// The largest number of columns a test name is given on the line of its worker
+def NAME_WIDTH = 70us;
+
+extern (C) fn _yrt_test_terminal_width()-> u32;
+
+/**
+ * The progress of a run. On a terminal: a line per worker, with the test it runs and for how long,
+ * above a bar whose cells turn red where a test failed, redrawn every `REFRESH` milliseconds.
+ * Otherwise: a line every `STEP` percents.
+ *
+ * @info: the cases of a parameterized test are only known as its generator yields them, so the
+ *        total is followed by a '+' while a generator may still yield
+ * */
+@final
+pub class Progress {
+
+    // True iff stdout is a terminal
+    let _interactive: bool;
+
+    // The number of tests known to be run
+    let mut _total: usize;
+
+    // The number of parameterized tests whose generator may still yield
+    let mut _open: usize;
+
+    // The number of tests that completed
+    let mut _done: usize = 0us;
+
+    // The rank of completion of each failed test
+    let mut _failures: [usize] = [];
+
+    // The last percentage reported when stdout is not a terminal
+    let mut _reported: usize = 0us;
+
+    // When the run started
+    let _start: Instant;
+
+    // The test each worker runs, empty while it is idle
+    let mut _running: [mut [c8]] = [];
+
+    // When each worker started its test
+    let mut _since: [mut Instant] = [];
+
+    // The number of lines above the cursor the last redraw printed
+    let mut _above: usize = 0us;
+
+    // Set once the run is over
+    let mut _stopped: bool = false;
+
+    // The thread redrawing the terminal
+    let mut _redraw: [mut future-> void] = [];
+
+    /**
+     * @params:
+     *    - total: the number of plain tests to run
+     *    - open: the number of parameterized tests to run, their cases are counted as they come
+     *    - workers: the number of tests that may run at the same time
+     *    - bar: false to report the progress as lines even when stdout is a terminal
+     * */
+    pub self (total: usize, open: usize, workers: usize = 1us, bar: bool = true)
+        with _interactive = bar && isatty(cast!i32(cast!u32(StdFileNumbers::STDOUT))) != 0
+        , _total = total
+        , _open = open
+        , _start = Instant::now()
+    {
+        self._running = copy ["" for _ in 0us .. workers];
+        self._since = copy [self._start for _ in 0us .. workers];
+        if self._interactive {
+            self._redraw = copy [spawn { self:.redrawLoop(); }];
+        }
+    }
+
+    /**
+     * Account for a case yielded by the generator of a parameterized test
+     * */
+    pub fn found(mut self) {
+        atomic self {
+            self._total += 1us;
+        }
+    }
+
+    /**
+     * Account for a parameterized test whose generator is exhausted
+     * */
+    pub fn exhausted(mut self) {
+        atomic self {
+            if self._open > 0us { self._open -= 1us; }
+            self:.report();
+        }
+    }
+
+    /**
+     * Account for a test that started
+     * @params:
+     *    - name: the name of the test
+     * @returns: the worker the test is shown on, to pass to `completed`
+     * */
+    pub fn started(mut self, name: [c8])-> usize {
+        atomic self {
+            for i in 0us .. self._running.len {
+                if self._running[i].len == 0us {
+                    self._running[i] = name;
+                    self._since[i] = Instant::now();
+                    return i;
+                }
+            }
+
+            return self._running.len;
+        }
+    }
+
+    /**
+     * Account for a test that completed
+     * @params:
+     *    - worker: the worker it was shown on(see `started`)
+     *    - ok: true iff it passed
+     * */
+    pub fn completed(mut self, worker: usize, ok: bool) {
+        atomic self {
+            if worker < self._running.len { self._running[worker] = ""; }
+            self._done += 1us;
+            if !ok { self._failures ~= [self._done]; }
+            self:.report();
+        }
+    }
+
+    /**
+     * Stop redrawing, and leave the bar alone in its final state, the next line printed goes
+     * under it
+     * */
+    pub fn finish(mut self) {
+        atomic self {
+            self._stopped = true;
+        }
+
+        for i in 0us .. self._redraw.len {
+            self._redraw[i].value;
+        }
+
+        if self._interactive {
+            self:.draw(workers-> false);
+            println();
+        }
+    }
+
+    /**
+     * Print the number of tests that passed and failed, and how long the run took
+     * */
+    pub fn summary(self) {
+        let failed = self._failures.len;
+        let color = if failed == 0us { Colors::GREEN } else { Colors::RED };
+
+        println(color, self._done, " tests", Colors::RESET, ": ",
+                Colors::GREEN, self._done - failed, " passed", Colors::RESET, ", ",
+                if failed == 0us { Colors::RESET } else { Colors::RED }, failed, " failed", Colors::RESET,
+                " in ", Instant::now() - self._start);
+    }
+
+    /**
+     * Print a line when stdout is not a terminal and the run went `STEP` percents further
+     * */
+    fn report(mut self) {
+        if self._interactive || self._total == 0us return;
+
+        let percent = self._done * 100us / self._total;
+        if percent >= self._reported + STEP {
+            self._reported = percent - (percent % STEP);
+            println("[", percent, "%] ", self._done, "/", self._total, if self._open != 0us { "+" } else { "" },
+                    ", ", self._failures.len, " failed");
+        }
+    }
+
+    fn redrawLoop(mut self) {
+        loop {
+            sleep(dur::millis(REFRESH));
+            atomic self {
+                if self._stopped return;
+                self:.draw(workers-> true);
+            }
+        }
+    }
+
+    /**
+     * Replace what the previous call printed with the line of each worker if `workers`, and the bar
+     * */
+    fn draw(mut self, workers: bool) {
+        let width = _yrt_test_terminal_width();
+        let columns = if width == 0u32 { COLUMNS } else { cast!usize(width) };
+
+        print("\r");
+        if self._above != 0us {
+            print("\u{0x001B}[", self._above, "A");
+        }
+
+        print("\u{0x001B}[J");
+        self._above = 0us;
+
+        if workers {
+            let now = Instant::now();
+            for i in 0us .. self._running.len {
+                self.drawWorker(self._running[i], (now - self._since[i]).allMicros, columns);
+                println();
+                self._above += 1us;
+            }
+        }
+
+        self.drawBar(columns);
+        flush();
+    }
+
+    /**
+     * Print the line of a worker running `name` for `micros` microseconds, within `columns` columns
+     * */
+    fn drawWorker(self, name: [c8], micros: u64, columns: usize) {
+        if name.len == 0us {
+            print("  · idle");
+            return;
+        }
+
+        // "  ▸ " before the name, the elapsed time after it takes up to 8 columns
+        let room = if columns > 13us { columns - 13us } else { 0us };
+        let width = if room < NAME_WIDTH { room } else { NAME_WIDTH };
+
+        print("  ", Colors::BLUE, "▸ "s8, Colors::RESET);
+        if name.len <= width {
+            print(name);
+            for _ in name.len .. width { print(' '); }
+        } else if width > 1us {
+            print("…"s8, name[name.len - width + 1us .. $]);
+        }
+
+        let secs = micros / 1_000_000u64;
+        let color = if secs >= 10u64 { Colors::RED } else if secs >= 1u64 { Colors::YELLOW } else { Colors::RESET };
+        let mut digits = 1us;
+        let mut rest = secs / 10u64;
+        while rest != 0u64 {
+            digits += 1us;
+            rest /= 10u64;
+        }
+
+        for _ in digits .. 4us { print(' '); }
+        print(' ', color, secs, '.', (micros / 100_000u64) % 10u64, 's', Colors::RESET);
+    }
+
+    /**
+     * Print the bar, within `columns` columns
+     * */
+    fn drawBar(self, columns: usize) {
+        let cells = if columns < 50us { 10us } else if columns - 30us < WIDTH { columns - 30us } else { WIDTH };
+        let filled = if self._total == 0us { 0us } else { self._done * cells / self._total };
+        let percent = if self._total == 0us { 100us } else { self._done * 100us / self._total };
+
+        for i in 0us .. cells {
+            let color = if i >= filled { Colors::DIM } else if self.failedIn(i, cells) { Colors::RED } else { Colors::GREEN };
+            print(color, "━"s8, Colors::RESET);
+        }
+
+        print("  ", percent, "% ", self._done, "/", self._total, if self._open != 0us { "+" } else { "" });
+        if self._failures.len != 0us {
+            print(" ", Colors::RED, self._failures.len, " failed", Colors::RESET);
+        }
+    }
+
+    /**
+     * @returns: true iff a test failed while the cell `i` of a bar of `cells` cells was filling
+     * */
+    fn failedIn(self, i: usize, cells: usize)-> bool {
+        for rank in self._failures {
+            if (rank - 1us) * cells / self._total == i return true;
+        }
+
+        false
+    }
+}

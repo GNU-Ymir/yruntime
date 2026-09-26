@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <sys/ioctl.h>
 
 #include <gc/gc.h>
 #include "../rt/memory/types.h"
@@ -63,4 +64,10 @@ int _yrt_run_unittests (int argc, char ** argv) {
   return _yrt_run_unittests_impl (_yrt_create_args_slice (argc, argv));
 }
 
+// The number of columns of the terminal stdout is, 0 if it is not a terminal
+uint32_t _yrt_test_terminal_width () {
+  struct winsize w;
+  if (ioctl (STDOUT_FILENO, TIOCGWINSZ, &w) != 0) return 0;
 
+  return w.ws_col;
+}
