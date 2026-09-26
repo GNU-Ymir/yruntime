@@ -33,7 +33,7 @@ in runner;
 
 use core::exception::assertion;
 
-use utils::{args, colors, filters};
+use utils::{args, colors, filters, progress};
 use utils::coverage::{conv, format, load, store, tree};
 
 use std::io;
@@ -78,6 +78,35 @@ record TestDuration {
     pub self (name: [c8] = "", micros: u64 = 0u64)
         with name = name
         , micros = micros
+    {}
+}
+
+/**
+ * What running a test produced
+ * */
+record TestOutcome {
+
+    // The name of the test
+    pub let name: [c8];
+
+    // True iff it passed
+    pub let ok: bool;
+
+    // How long it took, in microseconds
+    pub let micros: u64;
+
+    // What it printed to stdout and stderr, only kept when it failed
+    pub let output: [c8];
+
+    // Why it failed
+    pub let error: (&Exception)?;
+
+    pub self (name: [c8], micros: u64, output: [c8] = "", error: (&Exception)? = none)
+        with name = name
+        , ok = !error.hasValue
+        , micros = micros
+        , output = output
+        , error = error
     {}
 }
 
@@ -127,6 +156,8 @@ fn stripNul(name: [c8])-> [c8] {
 
 extern (C) fn _yrt_force_debug()-> void;
 extern (C) fn _yrt_next_parameter_set(closure: *void, func: *void, ref mut out: *void)-> bool;
+extern (C) fn _yrt_capture_begin()-> void;
+extern (C) fn _yrt_capture_end()-> [c8];
 
 @{final}
 pub class UnittestLauncher {
@@ -139,6 +170,9 @@ pub class UnittestLauncher {
 
     // The parameterized tests, by name, their cases are produced while the run goes on
     let dmut _paramTests: [[c8] => ParameterizedTest] = copy [];
+
+    // True iff what a test prints is captured, and only shown if it fails
+    let mut _capture: bool = true;
 
     /*!
      * ====================================================================================================
@@ -207,7 +241,8 @@ pub class UnittestLauncher {
 
         _yrt_force_debug();
         setSink(copy StreamSink::stdout());
-        setLevel("test-rt", Level::INFO);
+        setLevel("test-rt", if testArgs.hasNoCapture { Level::DEBUG } else { Level::INFO });
+        self._capture = !testArgs.hasNoCapture;
 
         let dmut already: [[c8] => bool] = copy [];
         let dmut durations: [[c8] => u64] = copy [];
@@ -221,11 +256,24 @@ pub class UnittestLauncher {
 
         self.resetCoverageUnlessResuming(testArgs.hasResume);
 
-        let failed = if testArgs.jobs <= 1 || self.caseBound(toLaunch) <= 1us {
-            self.runList(toLaunch, testArgs, ref already, ref durations)
+        let parallel = testArgs.jobs > 1 && self.caseBound(toLaunch) > 1us;
+        let workers = if parallel { normalizeJobs(testArgs.jobs, self.caseBound(toLaunch)) } else { 1us };
+        let open = self.countParameterized(toLaunch);
+        let dmut progress = copy Progress(total-> toLaunch.len - open, open-> open, workers-> workers, bar-> self._capture);
+        let dmut outcomes = copy MailBox!{TestOutcome} ();
+
+        if parallel {
+            self.runParallel(toLaunch, testArgs, workers, alias progress, alias outcomes, ref already);
         } else {
-            self.runParallel(toLaunch, testArgs, ref already, ref durations)
-        };
+            self.runList(toLaunch, testArgs, alias progress, alias outcomes, ref already);
+        }
+
+        progress:.finish();
+        let failures = self.collect(alias outcomes, ref already, ref durations);
+        let failed = failures.len != 0us;
+
+        self.reportFailures(failures);
+        progress.summary();
 
         TestFilters::dumpSuccessFile(already);
         self.storeCoverage();
@@ -283,6 +331,20 @@ pub class UnittestLauncher {
     }
 
     /**
+     * @returns: the number of parameterized tests among `tests`
+     * */
+    fn countParameterized(self, tests: [[c8]])-> usize {
+        let mut count = 0us;
+        for test in tests {
+            if test in self._paramTests {
+                count += 1us;
+            }
+        }
+
+        return count;
+    }
+
+    /**
      * Print the name of every test of `tests`, one per line, as `-f` accepts it(see `displayName`),
      * a parameterized test as `<test>[*]` -- its cases are not known before it runs
      *
@@ -312,10 +374,11 @@ pub class UnittestLauncher {
      * @params:
      *    - tests: the names of the tests to run(see `selectTests`)
      *    - testArgs: the parsed arguments of this run
+     *    - progress: told about each case of a parameterized test, and when its generator is exhausted
      *    - already: the success/failure of the tests, a selected case marked as not passed yet
      *    - launch: called with the name and body of each case
      * */
-    fn forEachCase(self, tests: [[c8]], testArgs: TestRunnerArgument, ref dmut already: [[c8] => bool], launch: dg ([c8], dg ()-> void)-> bool) {
+    fn forEachCase(self, tests: [[c8]], testArgs: TestRunnerArgument, dmut progress: &Progress, ref dmut already: [[c8] => bool], launch: dg ([c8], dg ()-> void)-> bool) {
         for test in tests {
             if let Ok(p) = self._paramTests[test] {
                 let (closure, func) = p.provider();
@@ -330,9 +393,12 @@ pub class UnittestLauncher {
 
                     if TestFilters::select(name, hasFilters-> testArgs.hasFilter, filter-> testArgs.filter,
                                            resume-> testArgs.hasResume, already-> ref already) {
+                        progress:.found();
                         if !launch(name, copy || => { body(s); }) return;
                     }
                 }
+
+                progress:.exhausted();
             } else if let Ok(f) = self._tests[test] {
                 if !launch(test, f) return;
             }
@@ -340,34 +406,27 @@ pub class UnittestLauncher {
     }
 
     /**
-     * Run every case of `tests` sequentially, in this thread, recording each one's outcome
-     * into `already` and how long it took into `durations`
+     * Run every case of `tests` sequentially, in this thread, sending the outcome of each one to
+     * `outcomes`
      *
      * @params:
      *    - tests: the names of the tests to run
      *    - testArgs: the parsed arguments of this run
-     *    - already: the map to record each test's success/failure into
-     *    - durations: the map to record each test's execution time(in microseconds) into
-     *
-     * @returns: true iff at least one test of `tests` failed
+     *    - progress: told about each test that starts and completes
+     *    - outcomes: receives the outcome of each test
+     *    - already: the success/failure of the tests of the previous run
      * */
-    fn runList(self, tests: [[c8]], testArgs: TestRunnerArgument, ref dmut already: [[c8] => bool], ref dmut durations: [[c8] => u64])-> bool {
-        let dmut outcomes = alias already;
-        let dmut times = alias durations;
-        let dmut failed = copy [false];
+    fn runList(self, tests: [[c8]], testArgs: TestRunnerArgument, dmut progress: &Progress, dmut outcomes: &MailBox!{TestOutcome}, ref dmut already: [[c8] => bool]) {
         let hasStopFirst = testArgs.hasStopFirst;
 
-        self.forEachCase(tests, testArgs, ref already, copy |test: [c8], f: dg ()-> void|-> bool => {
-            let (ok, micros) = self.runOne(test, f);
+        self.forEachCase(tests, testArgs, alias progress, ref already, copy |test: [c8], f: dg ()-> void|-> bool => {
+            let worker = progress:.started(displayName(test));
+            let outcome = self.runOne(test, f);
+            outcomes:.send(outcome);
+            progress:.completed(worker, outcome.ok);
 
-            times[test] = micros;
-            outcomes[test] = ok;
-            if (!ok) failed[0] = true;
-
-            ok || !hasStopFirst
+            outcome.ok || !hasStopFirst
         });
-
-        return failed[0];
     }
 
     /**
@@ -380,27 +439,38 @@ pub class UnittestLauncher {
      *    - test: the name of the test
      *    - func: the body of the test
      *
-     * @returns: true iff the test passed, and how long it took, in microseconds
+     * @returns: the outcome of the test, what it printed being kept if it failed
      * */
-    fn runOne(self, test: [c8], func: dg ()-> void)-> (bool, u64) {
+    fn runOne(self, test: [c8], func: dg ()-> void)-> TestOutcome {
         let name = displayName(test);
         let start = Instant::now();
-        let mut ok = true;
+        let mut error: (&Exception)? = none;
+
+        __LOG__.debug("run ", name);
+        if self._capture { _yrt_capture_begin(); }
 
         {
-            self.runTest(name, func);
+            self.runTest(func);
         } catch {
             err: &Exception => {
-                self.exposeError(name, err);
-                ok = false;
+                error = err?;
             }
         }
 
-        return (ok, (Instant::now() - start).allMicros);
+        let output = if self._capture { _yrt_capture_end() } else { "" };
+        let micros = (Instant::now() - start).allMicros;
+
+        if !error.hasValue {
+            __LOG__.debug("passed ", name);
+            return TestOutcome(test, micros);
+        }
+
+        __LOG__.debug("failed ", name);
+        return TestOutcome(test, micros, output-> output, error-> error);
     }
 
     /**
-     * Run the cases of `toLaunch` on a `TaskPool` of `testArgs.jobs` threads, one task per case,
+     * Run the cases of `toLaunch` on a `TaskPool` of `workers` threads, one task per case,
      * the generators of the parameterized tests being resumed on this thread as they are submitted
      *
      * @info: a test that crashes the process(e.g. a segfault) takes the whole run down with it,
@@ -409,33 +479,23 @@ pub class UnittestLauncher {
      * @params:
      *    - toLaunch: the names of the tests to run
      *    - testArgs: the parsed arguments of this run
-     *    - already: the map to record each test's success/failure into
-     *    - durations: the map to record each test's execution time(in microseconds) into
-     *
-     * @returns: true iff at least one test failed
+     *    - workers: the number of threads running the tests(see `normalizeJobs`)
+     *    - progress: told about each test that starts and completes
+     *    - outcomes: receives the outcome of each test
+     *    - already: the success/failure of the tests of the previous run
      * */
-    fn runParallel(self, toLaunch: [[c8]], testArgs: TestRunnerArgument, ref dmut already: [[c8] => bool], ref dmut durations: [[c8] => u64])-> bool {
-        let dmut pool = copy TaskPool(nbThreads-> cast!u32(normalizeJobs(testArgs.jobs, self.caseBound(toLaunch))));
-        let dmut outcomes = copy MailBox!{([c8], bool, u64)} ();
+    fn runParallel(self, toLaunch: [[c8]], testArgs: TestRunnerArgument, workers: usize, dmut progress: &Progress, dmut outcomes: &MailBox!{TestOutcome}, ref dmut already: [[c8] => bool]) {
+        let dmut pool = copy TaskPool(nbThreads-> cast!u32(workers));
         let dmut stopped = copy [false];
         let hasStopFirst = testArgs.hasStopFirst;
 
-        self.forEachCase(toLaunch, testArgs, ref already, copy |test: [c8], f: dg ()-> void|-> bool => {
-            self.submitOne(alias pool, alias outcomes, alias stopped, hasStopFirst, test, f);
+        self.forEachCase(toLaunch, testArgs, alias progress, ref already, copy |test: [c8], f: dg ()-> void|-> bool => {
+            self.submitOne(alias pool, alias progress, alias outcomes, alias stopped, hasStopFirst, test, f);
             !stopped[0]
         });
 
         pool:.join();
         pool:.dispose();
-
-        let mut failed = false;
-        while let Ok((test, ok, micros)) = outcomes:.receive() {
-            already[test] = ok;
-            durations[test] = micros;
-            if (!ok) failed = true;
-        }
-
-        return failed;
     }
 
     /**
@@ -444,20 +504,67 @@ pub class UnittestLauncher {
      *
      * @params:
      *    - pool: the pool running the tests
-     *    - outcomes: receives the name, success and duration(in microseconds) of the test
+     *    - progress: told about the test when it starts and completes
+     *    - outcomes: receives the outcome of the test
      *    - stopped: set once a test failed if `hasStopFirst`
      *    - hasStopFirst: true iff execution must stop at the first failure
      *    - test: the name of the test
      *    - func: the body of the test
      * */
-    fn submitOne(self, dmut pool: &TaskPool, dmut outcomes: &MailBox!{([c8], bool, u64)}, dmut stopped: [bool], hasStopFirst: bool, test: [c8], func: dg ()-> void) {
+    fn submitOne(self, dmut pool: &TaskPool, dmut progress: &Progress, dmut outcomes: &MailBox!{TestOutcome}, dmut stopped: [bool], hasStopFirst: bool, test: [c8], func: dg ()-> void) {
         pool:.submit(copy || => {
             if (stopped[0]) return;
 
-            let (ok, micros) = self.runOne(test, func);
-            outcomes:.send((test, ok, micros));
-            if (!ok && hasStopFirst) stopped[0] = true;
+            let worker = progress:.started(displayName(test));
+            let outcome = self.runOne(test, func);
+            outcomes:.send(outcome);
+            progress:.completed(worker, outcome.ok);
+            if (!outcome.ok && hasStopFirst) stopped[0] = true;
         });
+    }
+
+    /**
+     * Record the outcomes received by `outcomes` into `already` and `durations`
+     *
+     * @params:
+     *    - outcomes: the outcome of each test that ran
+     *    - already: the map to record each test's success/failure into
+     *    - durations: the map to record each test's execution time(in microseconds) into
+     *
+     * @returns: the outcomes of the tests that failed, sorted by name
+     * */
+    fn collect(self, dmut outcomes: &MailBox!{TestOutcome}, ref dmut already: [[c8] => bool], ref dmut durations: [[c8] => u64])-> [TestOutcome] {
+        let dmut failures: [TestOutcome] = [];
+        while let Ok(outcome) = outcomes:.receive() {
+            already[outcome.name] = outcome.ok;
+            durations[outcome.name] = outcome.micros;
+            if !outcome.ok {
+                failures ~= [outcome];
+            }
+        }
+
+        return sort(alias failures, |a, b| => { a.name < b.name });
+    }
+
+    /**
+     * Print why each test of `failures` failed, and what it printed
+     *
+     * @params:
+     *    - failures: the outcomes of the tests that failed
+     * */
+    fn reportFailures(self, failures: [TestOutcome]) {
+        for failure in failures {
+            let name = displayName(failure.name);
+            if let Ok(err) = failure.error {
+                __LOG__.error("failed ", name, "\n", err);
+            }
+
+            if failure.output.len != 0us {
+                println(Colors::YELLOW, "---- output of ", name, " ----", Colors::RESET);
+                print(failure.output);
+                if failure.output[$-1] != '\n' { println(); }
+            }
+        }
     }
 
     /**
@@ -534,31 +641,16 @@ pub class UnittestLauncher {
      * Run a unittest
      *
      * @params:
-     *     - name: the name of the test
      *     - func: the function of the unit test
      *
      * @throws:
      *    - the exception thrown by the test if it fails
      * */
-    fn runTest(self, name: [c8], func: dg ()-> void)
+    fn runTest(self, func: dg ()-> void)
         throws Exception
     {
-        __LOG__.info("run ", name);
         self.fake_throw(true);
         func();
-        __LOG__.info("passed ", name);
-    }
-
-    /**
-     * Print the error of a test when it failed
-     *
-     * @params:
-     *     - name: the name of the test that failed
-     *     - err: the exception thrown by the test
-     *
-     * */
-    fn exposeError(self, name: [c8], err: &Exception) {
-        __LOG__.error("failed ", name, "\n", err);
     }
 
     /*!
