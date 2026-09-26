@@ -15,6 +15,7 @@
 #include <sys/sysinfo.h>
 #endif
 #include <rt/utils/gc.h>
+#include <rt/memory/capture.h>
 
 
 _yrt_mutex_t __monitor_mutex__ = PTHREAD_MUTEX_INITIALIZER;
@@ -59,12 +60,14 @@ void GC_pthread_detach (_yrt_thread_t p);
 typedef struct {
     void * (*call) (void*);
     void * data;
+    void * capture;
     sem_t copied;
 } _yrt_thread_start_t;
 
 static void _thread_remove_tls_roots (void * unused) {
     (void) unused;
 
+    _yrt_i_capture_drop ();
     _yrt_i_gc_remove_tls_roots ();
 }
 
@@ -72,6 +75,7 @@ static void * _thread_main (void * raw) {
     _yrt_thread_start_t * start = (_yrt_thread_start_t*) raw;
     void * (*call) (void*) = start-> call;
     void * data = start-> data;
+    _yrt_i_capture_adopt (start-> capture);
 
     // '@thread' globals of this thread are unreachable for the collector until this call, so it
     // has to come before any Ymir code runs
@@ -95,10 +99,13 @@ void _yrt_i_thread_create (_yrt_thread_t * id, _yrt_attr_t* attr, void*(*call)(v
     _yrt_thread_start_t start;
     start.call = call;
     start.data = data;
+    start.capture = _yrt_i_capture_retain ();
     sem_init (&start.copied, 0, 0);
 
     if (GC_pthread_create (id, attr, &_thread_main, &start) == 0) {
         sem_wait (&start.copied);
+    } else {
+        _yrt_i_capture_release (start.capture);
     }
 
     sem_destroy (&start.copied);
