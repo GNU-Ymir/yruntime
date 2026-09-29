@@ -293,8 +293,7 @@ _yrt_map_iterator_t * _yrt_map_iter_begin (_yrt_map_t * mp) {
 
     for (uint64_t i = 0 ; i < mp-> data-> cap ; i++) {
         if (mp-> data-> entries [i] != NULL) { // return the first allocated node found in the map
-            // We allocate without the GC, since the iterator is necessarily cleaned at exit
-            _yrt_map_iterator_t * result = (_yrt_map_iterator_t*) malloc (sizeof (_yrt_map_iterator_t));
+            _yrt_map_iterator_t * result = (_yrt_map_iterator_t*) GC_malloc (sizeof (_yrt_map_iterator_t));
 
             result-> mp = mp;
             result-> rootIndex = i;
@@ -354,6 +353,6 @@ void _yrt_map_iter_next (_yrt_map_iterator_t * iter) {
 
 void _yrt_map_iter_del (_yrt_map_iterator_t * iter) {
     if (iter != NULL) {
-        free (iter);
+        GC_free (iter);
     }
 }

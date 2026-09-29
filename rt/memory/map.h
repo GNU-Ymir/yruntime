@@ -129,7 +129,7 @@ void _yrt_i_map_relink_entries (_yrt_map_t * result, _yrt_map_t * old);
  */
 
 /**
- * Create a new iterator over a map
+ * Create a new iterator over a map, GC allocated: a loop suspended by a yield may never release it
  */
 _yrt_map_iterator_t * _yrt_map_iter_begin (_yrt_map_t * mp);
 
@@ -149,7 +149,7 @@ uint8_t* _yrt_map_iter_val (_yrt_map_iterator_t * iter);
 void _yrt_map_iter_next (_yrt_map_iterator_t * iter);
 
 /**
- * Free the allocated iterator
+ * Free the allocated iterator eagerly, before the GC would
  */
 void _yrt_map_iter_del (_yrt_map_iterator_t * iter);
 
