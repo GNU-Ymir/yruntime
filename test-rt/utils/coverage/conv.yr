@@ -151,7 +151,7 @@ pub record CoverageReport {
  * */
 class FunctionMerger {
 
-    let dmut _order: [([c8], [c8])] = [];
+    let mut _order: [mut ([c8], [c8])] = [];
     let dmut _byKey: [([c8], [c8]) => CoverageFunctionEntry] = copy [];
 
     pub self () {}
@@ -167,7 +167,7 @@ class FunctionMerger {
     }
 
     pub fn build(self)-> [CoverageFunctionEntry] {
-        let dmut result: [CoverageFunctionEntry] = [];
+        let mut result: [mut CoverageFunctionEntry] = [];
         for key in self._order {
             if let Ok(e) = self._byKey[key] {
                 result ~= [e];
@@ -202,8 +202,8 @@ fn mergeFunctionEntry(a: CoverageFunctionEntry, b: CoverageFunctionEntry)-> Cove
  * */
 class CallTreeMerger {
 
-    let dmut _callerOrder: [([c8], [c8])] = [];
-    let dmut _calleeOrder: [([c8], [c8]) => [([c8], [c8])]] = copy [];
+    let mut _callerOrder: [mut ([c8], [c8])] = [];
+    let mut _calleeOrder: [([c8], [c8]) => mut [([c8], [c8])]] = copy [];
     let dmut _counts: [(([c8], [c8]), ([c8], [c8])) => usize] = copy [];
 
     pub self () {}
@@ -249,15 +249,14 @@ class CallTreeMerger {
     }
 
     fn appendCalleeOrder(mut self, callerKey: ([c8], [c8]), calleeKey: ([c8], [c8])) {
-        let dmut lst: [([c8], [c8])] = if let Ok(dmut l) = alias self._calleeOrder[callerKey] {
-            alias l
+        let mut lst: [([c8], [c8])] = if let Ok(l) = self._calleeOrder[callerKey] {
+            l
         } else {
-            let dmut l: [([c8], [c8])] = [];
-            alias l
+            []
         };
 
         lst ~= [calleeKey];
-        self._calleeOrder[callerKey] = alias lst;
+        self._calleeOrder[callerKey] = lst;
     }
 
     fn buildCaller(self, callerKey: ([c8], [c8]))-> CoverageCaller {
@@ -440,7 +439,7 @@ pub mod CoverageConv {
      *           locations are read back as lines(`--resume` can pick such a file up).
      * */
     fn readLocations(cfg: &Config)-> [(u32, u32, u32)] {
-        let dmut result: [(u32, u32, u32)] = [];
+        let mut result: [(u32, u32, u32)] = [];
 
         if let Ok(locsCfg) = cfg["locations"]? {
             if let arr: &Array = locsCfg {
