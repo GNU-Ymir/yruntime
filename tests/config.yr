@@ -541,3 +541,25 @@ __test jsonMacroNull { // MID-56: the json macro accepts null as a value
     err => { println(err); assert(false, "threw"); }
   }
 }
+
+__test jsonBool { // MID-99: a Bool is dumped as a json boolean literal, not as a string
+  {
+    let dmut d = copy Dict();
+    d["t"] = copy Bool(true);
+    d["f"] = copy Bool(false);
+    let dmut a = copy Array();
+    a:.push(copy Bool(true));
+    a:.push(copy Bool(false));
+    d["a"] = a;
+
+    assert(json::dump(d) == "{\n   \"a\" : [true, false],\n   \"f\" : false,\n   \"t\" : true\n}", "a");
+
+    let parsed = json::parse(json::dump(d));
+    if let Ok(Bool(value-> b)) = parsed["t"]? { assert(b, "b"); } else { assert(false, "c"); }
+    if let Ok(Bool(value-> b)) = parsed["f"]? { assert(!b, "d"); } else { assert(false, "e"); }
+    if let Ok(Bool(value-> b)) = parsed["a"][0u32]? { assert(b, "f"); } else { assert(false, "g"); }
+    assert(json::dump(parsed) == json::dump(d), "h");
+  } catch {
+    err => { println(err); assert(false, "threw"); }
+  }
+}
