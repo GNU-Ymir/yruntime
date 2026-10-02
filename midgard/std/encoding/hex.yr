@@ -1,0 +1,117 @@
+/**
+ * This module implements the hexadecimal encoding of bytes, two digits per byte, most significant
+ * first.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @example:
+ * ```
+ * use std::encoding::hex;
+ *
+ * assert(hex::encode([0xcau8, 0xfeu8]) == "cafe");
+ * assert(hex::encode([0xcau8, 0xfeu8], upper-> true) == "CAFE");
+ * assert(hex::decode("CaFe") == copy [0xcau8, 0xfeu8]);
+ * ```
+ */
+
+in hex;
+
+use std::encoding::errors;
+use std::traits;
+
+def LOWER = "0123456789abcdef";
+def UPPER = "0123456789ABCDEF";
+
+/**
+ * Encode a sequence of bytes in hexadecimal.
+ * @params:
+ *    - data: the bytes to encode, a string being encoded as its UTF-8 bytes
+ *    - upper: write the digits above 9 in upper case
+ * @returns: the two digits of each byte of `data`
+ * @example:
+ * ```
+ * use std::encoding::hex;
+ *
+ * println(hex::encode("Ymir"));                 // 596d6972
+ * println(hex::encode(copy [1u8, 255u8], upper-> true)); // 01FF
+ * ```
+ */
+pub fn if isBytes!{T} encode {T} (data: T, upper: bool = false)-> dmut [c8] {
+    let digits = if upper { UPPER } else { LOWER };
+    let dmut res = core::types::array::allocArray!{c8} (data.len * 2us);
+    for i in 0us .. data.len {
+        let b = cast!u8(data[i]);
+        res[i * 2us] = digits[cast!usize(b >> 4u8)];
+        res[i * 2us + 1us] = digits[cast!usize(b & 0x0fu8)];
+    }
+
+    alias res
+}
+
+/**
+ * Decode a text written in hexadecimal, two digits per byte, in upper or lower case.
+ * @params:
+ *    - text: the hexadecimal text
+ * @returns: the bytes written in `text`
+ * @throws:
+ *    - &DecodeError: if `text` has an odd number of characters, or one that is not a digit
+ * @example:
+ * ```
+ * use std::encoding::{hex, errors};
+ *
+ * assert(hex::decode("00ff10") == copy [0u8, 255u8, 16u8]);
+ *
+ * {
+ *     hex::decode("0g");
+ * } catch {
+ *     err: &DecodeError => println(err.offset); // 1
+ * }
+ * ```
+ */
+pub fn decode(text: [c8])-> dmut [u8]
+    throws DecodeError
+{
+    if text.len % 2us != 0us {
+        throw copy DecodeError("odd number of hexadecimal digits", text.len - 1us);
+    }
+
+    let dmut res = core::types::array::allocArray!{u8} (text.len / 2us);
+    for i in 0us .. res.len {
+        res[i] = (digit(text, i * 2us) << 4u8) | digit(text, i * 2us + 1us);
+    }
+
+    alias res
+}
+
+/**
+ * @returns: the value of the hexadecimal digit `c`, in upper or lower case, none if `c` is not one
+ * @example:
+ * ```
+ * use std::encoding::hex;
+ *
+ * assert(hex::digitValue('B'c8) ?? 0u8 == 11u8);
+ * assert(hex::digitValue('z'c8) ?? 16u8 == 16u8);
+ * ```
+ */
+pub fn digitValue(c: c8)-> (u8)? {
+    if c >= '0'c8 && c <= '9'c8 return (cast!u8(c) - cast!u8('0'c8))?;
+    if c >= 'a'c8 && c <= 'f'c8 return (cast!u8(c) - cast!u8('a'c8) + 10u8)?;
+    if c >= 'A'c8 && c <= 'F'c8 return (cast!u8(c) - cast!u8('A'c8) + 10u8)?;
+
+    none
+}
+
+/**
+ * @returns: the value of the digit at index `i` of `text`
+ * @throws:
+ *    - &DecodeError: if it is not an hexadecimal digit
+ */
+fn digit(text: [c8], i: usize)-> u8
+    throws DecodeError
+{
+    if let Ok(v) = digitValue(text[i]) {
+        return v;
+    }
+
+    throw copy DecodeError("invalid hexadecimal digit '" ~ [text[i]] ~ "'", i);
+}

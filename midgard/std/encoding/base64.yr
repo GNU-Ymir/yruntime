@@ -1,0 +1,204 @@
+/**
+ * This module implements the base64 encoding of RFC 4648, with its standard alphabet and its URL
+ * and filename safe one, padded or not.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * The decoder is strict: it accepts a text with or without its padding, but refuses a character
+ * outside the alphabet (line breaks and spaces included), a misplaced `=`, and a last character
+ * whose unused bits are not zero, so a sequence of bytes has a single encoding.
+ * @example:
+ * ```
+ * use std::conv;
+ * use std::encoding::base64;
+ *
+ * let data = ("any carnal pleasure").to![u8] ();
+ *
+ * assert(base64::encode(data) == "YW55IGNhcm5hbCBwbGVhc3VyZQ==");
+ * assert(base64::encode(data, pad-> false) == "YW55IGNhcm5hbCBwbGVhc3VyZQ");
+ * assert(base64::decode("YW55IGNhcm5hbCBwbGVhc3VyZQ") == data);
+ * ```
+ */
+
+in base64;
+
+use std::encoding::errors;
+use std::traits;
+
+def STANDARD = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+def URL_SAFE = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+/**
+ * Encode a sequence of bytes in base64.
+ * @params:
+ *    - data: the bytes to encode, a string being encoded as its UTF-8 bytes
+ *    - url: use the URL and filename safe alphabet, `-` and `_` in place of `+` and `/`
+ *    - pad: complete the last group of four characters with `=`
+ * @returns: the base64 text of `data`
+ * @example:
+ * ```
+ * use std::encoding::base64;
+ *
+ * println(base64::encode("Ymir"));                             // WW1pcg==
+ * println(base64::encode(copy [0xfbu8, 0xffu8], url-> true));  // -_8=
+ * println(base64::encode("Ymir", pad-> false));                // WW1pcg
+ * ```
+ */
+pub fn if isBytes!{T} encode {T of [U], U} (data: T, url: bool = false, pad: bool = true)-> dmut [c8] {
+    let alphabet = if url { URL_SAFE } else { STANDARD };
+    let full = data.len / 3us, rest = data.len % 3us;
+    let tail = if rest == 0us { 0us } else if pad { 4us } else { rest + 1us };
+
+    let dmut res = core::types::array::allocArray!{c8} (full * 4us + tail);
+    for i in 0us .. full {
+        let n = (byte(data, i * 3us) << 16u32) | (byte(data, i * 3us + 1us) << 8u32) | byte(data, i * 3us + 2us);
+        for j in 0us .. 4us {
+            res[i * 4us + j] = alphabet[sextet(n, 18u32 - cast!u32(j) * 6u32)];
+        }
+    }
+
+    if rest != 0us {
+        let b1 = if rest == 2us { byte(data, full * 3us + 1us) } else { 0u32 };
+        let n = (byte(data, full * 3us) << 16u32) | (b1 << 8u32);
+        let at = full * 4us;
+
+        res[at] = alphabet[sextet(n, 18u32)];
+        res[at + 1us] = alphabet[sextet(n, 12u32)];
+        if rest == 2us {
+            res[at + 2us] = alphabet[sextet(n, 6u32)];
+        }
+
+        if pad {
+            if rest == 1us {
+                res[at + 2us] = '='c8;
+            }
+            res[at + 3us] = '='c8;
+        }
+    }
+
+    alias res
+}
+
+/**
+ * Encode a static array of bytes in base64, as `encode` does a slice.
+ * @params:
+ *    - data: the bytes to encode, an array of `c8` being encoded as its UTF-8 bytes
+ *    - url: use the URL and filename safe alphabet, `-` and `_` in place of `+` and `/`
+ *    - pad: complete the last group of four characters with `=`
+ * @returns: the base64 text of `data`
+ * @example:
+ * ```
+ * use std::encoding::base64;
+ *
+ * println(base64::encode([0xcau8, 0xfeu8])); // yv4=
+ * ```
+ */
+pub fn if isBytes!{T} encode {T of [U ; N], U, N: usize} (data: T, url: bool = false, pad: bool = true)-> dmut [c8] {
+    encode(copy data, url-> url, pad-> pad)
+}
+
+/**
+ * Decode a base64 text, padded or not.
+ * @params:
+ *    - text: the base64 text
+ *    - url: read the URL and filename safe alphabet, `-` and `_` in place of `+` and `/`
+ * @returns: the bytes encoded in `text`
+ * @throws:
+ *    - &DecodeError: if `text` is not the base64 encoding of a sequence of bytes
+ * @example:
+ * ```
+ * use std::conv;
+ * use std::encoding::{base64, errors};
+ *
+ * assert(base64::decode("WW1pcg==").to![c8] () == "Ymir");
+ * assert(base64::decode("-_8", url-> true) == copy [0xfbu8, 0xffu8]);
+ *
+ * {
+ *     base64::decode("WW1p cg");
+ * } catch {
+ *     err: &DecodeError => println(err.offset); // 4
+ * }
+ * ```
+ */
+pub fn decode(text: [c8], url: bool = false)-> dmut [u8]
+    throws DecodeError
+{
+    let mut pads = 0us;
+    while pads < 2us && pads < text.len && text[text.len - pads - 1us] == '='c8 {
+        pads += 1us;
+    }
+
+    if pads != 0us && text.len % 4us != 0us {
+        throw copy DecodeError("padded text whose length is not a multiple of four", text.len - 1us);
+    }
+
+    let len = text.len - pads;
+    let full = len / 4us, rest = len % 4us;
+    if rest == 1us {
+        throw copy DecodeError("truncated text", len - 1us);
+    }
+
+    let dmut res = core::types::array::allocArray!{u8} (full * 3us + if rest == 0us { 0us } else { rest - 1us });
+    for i in 0us .. full {
+        let mut n = 0u32;
+        for j in 0us .. 4us {
+            n = (n << 6u32) | value(text, i * 4us + j, url);
+        }
+
+        res[i * 3us] = cast!u8(n >> 16u32);
+        res[i * 3us + 1us] = cast!u8(n >> 8u32);
+        res[i * 3us + 2us] = cast!u8(n);
+    }
+
+    if rest != 0us {
+        let at = full * 4us;
+        let mut n = (value(text, at, url) << 18u32) | (value(text, at + 1us, url) << 12u32);
+        if rest == 3us {
+            n = n | (value(text, at + 2us, url) << 6u32);
+        }
+
+        res[full * 3us] = cast!u8(n >> 16u32);
+        if rest == 3us {
+            res[full * 3us + 1us] = cast!u8(n >> 8u32);
+        }
+
+        let unused = if rest == 2us { n & 0xffffu32 } else { n & 0xffu32 };
+        if unused != 0u32 {
+            throw copy DecodeError("non zero bits after the last byte", len - 1us);
+        }
+    }
+
+    alias res
+}
+
+/**
+ * @returns: the byte at index `i` of `data`
+ */
+fn byte {T} (data: T, i: usize)-> u32 {
+    cast!u32(cast!u8(data[i]))
+}
+
+/**
+ * @returns: the six bits of `n` starting at bit `shift`
+ */
+fn sextet(n: u32, shift: u32)-> usize {
+    cast!usize((n >> shift) & 0x3fu32)
+}
+
+/**
+ * @returns: the six bits encoded by the character at index `i` of `text`
+ * @throws:
+ *    - &DecodeError: if it is not a character of the alphabet
+ */
+fn value(text: [c8], i: usize, url: bool)-> u32
+    throws DecodeError
+{
+    let c = text[i];
+    if c >= 'A'c8 && c <= 'Z'c8 return cast!u32(cast!u8(c) - cast!u8('A'c8));
+    if c >= 'a'c8 && c <= 'z'c8 return cast!u32(cast!u8(c) - cast!u8('a'c8)) + 26u32;
+    if c >= '0'c8 && c <= '9'c8 return cast!u32(cast!u8(c) - cast!u8('0'c8)) + 52u32;
+    if c == (if url { '-'c8 } else { '+'c8 }) return 62u32;
+    if c == (if url { '_'c8 } else { '/'c8 }) return 63u32;
+
+    throw copy DecodeError("invalid base64 character '" ~ [c] ~ "'", i);
+}

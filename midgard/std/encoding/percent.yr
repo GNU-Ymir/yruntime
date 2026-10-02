@@ -1,0 +1,133 @@
+/**
+ * This module implements the percent-encoding of RFC 3986, the escapes `%XX` URIs write the bytes
+ * they cannot hold as they are with, and its `application/x-www-form-urlencoded` variant, where a
+ * space is written `+`.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @example:
+ * ```
+ * use std::encoding::percent;
+ *
+ * let path = "/home/a b/é.yr";
+ * let uri = "file://" ~ percent::encode(path, keep-> "/");
+ *
+ * assert(uri == "file:///home/a%20b/%C3%A9.yr");
+ * assert(percent::decode(uri["file://".len .. $]) == path);
+ * ```
+ */
+
+in percent;
+
+use std::encoding::hex;
+use std::traits;
+
+def DIGITS = "0123456789ABCDEF";
+
+/**
+ * Percent-encode a sequence of bytes, keeping as they are the unreserved characters of RFC 3986,
+ * the ASCII letters and digits and `-`, `.`, `_` and `~`.
+ * @params:
+ *    - data: the bytes to encode, a string being encoded as its UTF-8 bytes
+ *    - keep: the characters to keep as they are besides the unreserved ones, for instance the `/`
+ *            separating the segments of a path
+ *    - form: write a space as `+`, as an `application/x-www-form-urlencoded` content does
+ * @returns: the text of `data`, every other byte being written `%XX`, with upper case digits
+ * @example:
+ * ```
+ * use std::encoding::percent;
+ *
+ * println(percent::encode("a+b=c"));                  // a%2Bb%3Dc
+ * println(percent::encode("dir/file name", keep-> "/")); // dir/file%20name
+ * println(percent::encode("q=a b", form-> true));       // q%3Da+b
+ * ```
+ */
+pub fn if isBytes!{T} encode {T} (data: T, keep: [c8] = "", form: bool = false)-> dmut [c8] {
+    let mut len = 0us;
+    for i in 0us .. data.len {
+        let c = cast!c8(data[i]);
+        len += if isKept(c, keep) || (form && c == ' 'c8) { 1us } else { 3us };
+    }
+
+    let dmut res = core::types::array::allocArray!{c8} (len);
+    let mut at = 0us;
+    for i in 0us .. data.len {
+        let c = cast!c8(data[i]);
+        if isKept(c, keep) {
+            res[at] = c;
+            at += 1us;
+        } else if form && c == ' 'c8 {
+            res[at] = '+'c8;
+            at += 1us;
+        } else {
+            let b = cast!u8(c);
+            res[at] = '%'c8;
+            res[at + 1us] = DIGITS[cast!usize(b >> 4u8)];
+            res[at + 2us] = DIGITS[cast!usize(b & 0x0fu8)];
+            at += 3us;
+        }
+    }
+
+    alias res
+}
+
+/**
+ * Decode the percent-escapes of a text, in upper or lower case.
+ * A `%` that is not followed by two hexadecimal digits does not start an escape and is kept as it
+ * is, as URL parsers do, so decoding never fails.
+ * @params:
+ *    - text: the percent-encoded text
+ *    - form: read a `+` as a space, as an `application/x-www-form-urlencoded` content writes it
+ * @returns: the text with every escape replaced by the byte it encodes
+ * @example:
+ * ```
+ * use std::encoding::percent;
+ *
+ * println(percent::decode("%C3%a9t%C3%A9"));        // été
+ * println(percent::decode("100%"));                  // 100%
+ * println(percent::decode("q=a+b", form-> true));    // q=a b
+ * ```
+ */
+pub fn decode(text: [c8], form: bool = false)-> dmut [c8] {
+    let mut len = 0us, mut i = 0us;
+    while i < text.len {
+        i += if let Ok(_) = escaped(text, i) { 3us } else { 1us };
+        len += 1us;
+    }
+
+    let dmut res = core::types::array::allocArray!{c8} (len);
+    i = 0us;
+    for at in 0us .. len {
+        if let Ok(b) = escaped(text, i) {
+            res[at] = cast!c8(b);
+            i += 3us;
+        } else {
+            res[at] = if form && text[i] == '+'c8 { ' 'c8 } else { text[i] };
+            i += 1us;
+        }
+    }
+
+    alias res
+}
+
+/**
+ * @returns: the byte of the escape starting at index `i` of `text`, none if there is none there
+ */
+fn escaped(text: [c8], i: usize)-> (u8)? {
+    if text[i] != '%'c8 || i + 2us >= text.len return none;
+    if let Ok(h) = hex::digitValue(text[i + 1us]) {
+        if let Ok(l) = hex::digitValue(text[i + 2us]) {
+            return ((h << 4u8) | l)?;
+        }
+    }
+
+    none
+}
+
+/**
+ * @returns: true iif `c` is an unreserved character of RFC 3986, or one of `keep`
+ */
+fn isKept(c: c8, keep: [c8])-> bool {
+    (c >= 'a'c8 && c <= 'z'c8) || (c >= 'A'c8 && c <= 'Z'c8) || (c >= '0'c8 && c <= '9'c8)
+        || c == '-'c8 || c == '.'c8 || c == '_'c8 || c == '~'c8 || c in keep
+}
