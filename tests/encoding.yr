@@ -1,0 +1,148 @@
+in encoding;
+
+use std::conv;
+use std::encoding::{base64, errors, hex, percent};
+
+/**
+ * @returns: the offset of the error decoding `text` in base64, none if it decodes
+ */
+fn base64Error(text: [c8], url: bool = false)-> (usize)? {
+    {
+        base64::decode(text, url-> url);
+    } catch {
+        err: &DecodeError => return err.offset?;
+    }
+
+    none
+}
+
+/**
+ * @returns: the offset of the error decoding `text` in hexadecimal, none if it decodes
+ */
+fn hexError(text: [c8])-> (usize)? {
+    {
+        hex::decode(text);
+    } catch {
+        err: &DecodeError => return err.offset?;
+    }
+
+    none
+}
+
+@parameters ((yield (c._0, c._1, c._2) for c in [
+    ("", "", ""), ("f", "Zg==", "Zg"), ("fo", "Zm8=", "Zm8"), ("foo", "Zm9v", "Zm9v"),
+    ("foob", "Zm9vYg==", "Zm9vYg"), ("fooba", "Zm9vYmE=", "Zm9vYmE"), ("foobar", "Zm9vYmFy", "Zm9vYmFy")
+]))
+__test base64Rfc4648 (data: [c8], padded: [c8], unpadded: [c8]) {
+    assert(base64::encode(data) == padded);
+    assert(base64::encode(data, pad-> false) == unpadded);
+    assert(base64::decode(padded).to![c8] () == data);
+    assert(base64::decode(unpadded).to![c8] () == data);
+}
+
+__test base64Alphabets {
+    let data = copy [0xfbu8, 0xefu8, 0xbeu8, 0xffu8];
+    assert(base64::encode(data) == "++++/w==");
+    assert(base64::encode(data, url-> true) == "----_w==");
+    assert(base64::decode("----_w", url-> true) == data);
+
+    assert(base64Error("----_w==") == (0us)?);
+    assert(base64Error("++++/w==", url-> true) == (0us)?);
+}
+
+__test base64OfADigest {
+    let digest = [0u8 ; 32];
+    assert(base64::encode(digest) == "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+    assert(base64::encode([0xcau8, 0xfeu8], pad-> false) == "yv4");
+}
+
+__test base64AllBytes {
+    let dmut data = [0u8 ; 256];
+    for i in 0us .. 256us {
+        data[i] = cast!u8(i);
+    }
+
+    for url in [false, true] {
+        for pad in [false, true] {
+            assert(base64::decode(base64::encode(data, url-> url, pad-> pad), url-> url) == copy data);
+        }
+    }
+}
+
+__test base64Rejects {
+    assert(base64Error("Zm9v Zg") == (4us)?);
+    assert(base64Error("Zm9v Zg==") == (8us)?);
+    assert(base64Error("Zm9vZ") == (4us)?);
+    assert(base64Error("Zg=") == (2us)?);
+    assert(base64Error("Zg===") == (4us)?);
+    assert(base64Error("Z===") == (1us)?);
+    assert(base64Error("Zm=v") == (2us)?);
+    assert(base64Error("=") == (0us)?);
+
+    // the unused bits of the last character are zero
+    assert(base64Error("Zh==") == (1us)?);
+    assert(base64Error("Zm9=") == (2us)?);
+
+    if let Ok(_) = base64Error("Zm9vYmFy") { assert(false); }
+}
+
+__test hexRoundTrip {
+    assert(hex::encode("") == "");
+    assert(hex::encode([0x00u8, 0x7fu8, 0x80u8, 0xffu8]) == "007f80ff");
+    assert(hex::encode([0xabu8, 0xcdu8], upper-> true) == "ABCD");
+    assert(hex::encode("é") == "c3a9");
+
+    assert(hex::decode("").len == 0us);
+    assert(hex::decode("007F80fF") == copy [0x00u8, 0x7fu8, 0x80u8, 0xffu8]);
+}
+
+__test hexRejects {
+    assert(hexError("abc") == (2us)?);
+    assert(hexError("0g") == (1us)?);
+    assert(hexError("g0") == (0us)?);
+    assert(hexError(" 0") == (0us)?);
+    if let Ok(_) = hexError("abcd") { assert(false); }
+}
+
+__test hexDigitValue {
+    assert(hex::digitValue('0'c8) == (0u8)?);
+    assert(hex::digitValue('9'c8) == (9u8)?);
+    assert(hex::digitValue('a'c8) == (10u8)?);
+    assert(hex::digitValue('F'c8) == (15u8)?);
+    for c in ['g'c8, 'G'c8, '/'c8, ':'c8, '@'c8, '`'c8] {
+        if let Ok(_) = hex::digitValue(c) { assert(false, "a digit: " ~ [c]); }
+    }
+}
+
+__test percentEncode {
+    assert(percent::encode("") == "");
+    assert(percent::encode("AZaz09-._~") == "AZaz09-._~");
+    assert(percent::encode(" !#$&'()*+,/:;=?@[]%") == "%20%21%23%24%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D%25");
+    assert(percent::encode("/home/a b/é.yr", keep-> "/") == "/home/a%20b/%C3%A9.yr");
+    assert(percent::encode("a b+c", form-> true) == "a+b%2Bc");
+    assert(percent::encode(copy [0u8, 255u8]) == "%00%FF");
+}
+
+__test percentDecode {
+    assert(percent::decode("") == "");
+    assert(percent::decode("/home/a%20b/%C3%A9.yr") == "/home/a b/é.yr");
+    assert(percent::decode("%c3%a9") == "é");
+    assert(percent::decode("a+b%2Bc") == "a+b+c");
+    assert(percent::decode("a+b%2Bc", form-> true) == "a b+c");
+
+    // a % that does not start an escape is kept as it is
+    assert(percent::decode("100%") == "100%");
+    assert(percent::decode("%2") == "%2");
+    assert(percent::decode("%zz%41") == "%zzA");
+    assert(percent::decode("%%41") == "%A");
+}
+
+__test percentRoundTrip {
+    let dmut data = [0u8 ; 256];
+    for i in 0us .. 256us {
+        data[i] = cast!u8(i);
+    }
+
+    assert(percent::decode(percent::encode(data)).to![u8] () == copy data);
+    assert(percent::decode(percent::encode(data, form-> true), form-> true).to![u8] () == copy data);
+}

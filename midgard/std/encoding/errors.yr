@@ -1,0 +1,36 @@
+/**
+ * This module implements the error class thrown when a text cannot be decoded.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in errors;
+
+@final
+pub class DecodeError over core::exception::Exception {
+
+    // The message explaining the error
+    pub let msg: [c8];
+
+    // The index of the character of the text the error was found at
+    pub let offset: usize;
+
+    /**
+     * @params:
+     *   - msg: the message explaining the error
+     *   - offset: the index of the character of the text the error was found at
+     */
+    pub self (msg: [c8], offset: usize)
+        with msg = msg
+        , offset = offset
+    {}
+
+    impl std::stream::Streamable {
+        pub over toStream(self, dmut stream: &std::stream::StringStream) {
+            stream:.write(self.__typeinfo__.name, "(", self.msg, " at offset ", self.offset, ")");
+            if (self.hasTrace()) {
+                stream:.write(":\n", self.getStackTrace());
+            }
+        }
+    }
+}

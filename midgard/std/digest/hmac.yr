@@ -1,0 +1,164 @@
+/**
+ * This module implements HMAC, the message authentication code of RFC 2104, on top of any digest
+ * of this package: `Hmac!{&Sha256}` is HMAC-SHA-256.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @warning: comparing a received code with the expected one with `==` stops at the first byte that
+ * differs, and the time it takes tells an attacker how many were right, use `equals`.
+ * @example:
+ * ```
+ * use std::digest::{hmac, sha2};
+ * use std::encoding::hex;
+ *
+ * let code = hmac!{&Sha256} ("key", "The quick brown fox jumps over the lazy dog");
+ *
+ * assert(hex::encode(code) == "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8");
+ * ```
+ */
+
+in hmac;
+
+use std::traits;
+
+/**
+ * The HMAC of a message absorbed piece by piece, `H` being the class of the digest it is computed
+ * with, which has a constructor without argument, and the `update`, `finish` and `blockSize`
+ * methods of the digests of this package.
+ * @example:
+ * ```
+ * use std::digest::{hmac, sha1};
+ *
+ * let dmut h = copy Hmac!{&Sha1} ("key");
+ * h:.update("The quick brown fox ");
+ * h:.update("jumps over the lazy dog");
+ *
+ * assert(equals(h:.finish(), hmac!{&Sha1} ("key", "The quick brown fox jumps over the lazy dog")));
+ * ```
+ */
+@final
+pub class Hmac {class H} {
+
+    // The digest of the inner padded key followed by the message
+    let dmut _inner: H;
+
+    // The digest of the outer padded key followed by the inner digest
+    let dmut _outer: H;
+
+    // The key, padded to the size of a block
+    let mut _key: [u8];
+
+    /**
+     * @params:
+     *    - key: the secret key, a string being used as its UTF-8 bytes; a key longer than a block
+     *           of `H` is replaced by its digest
+     */
+    pub self if isBytes!{K} {K} (key: K)
+        with _inner = copy H ()
+        , _outer = copy H ()
+        , _key = []
+    {
+        let dmut padded = core::types::array::allocArray!{u8} (self._inner.blockSize());
+        for i in 0us .. padded.len {
+            padded[i] = 0u8;
+        }
+
+        if key.len > padded.len {
+            let dmut h = copy H ();
+            h:.update(key);
+            let d = h:.finish();
+            for i in 0us .. d.len {
+                padded[i] = d[i];
+            }
+        } else {
+            for i in 0us .. key.len {
+                padded[i] = cast!u8(key[i]);
+            }
+        }
+
+        self._key = padded;
+        self:.reset();
+    }
+
+    /**
+     * Absorb the next bytes of the message.
+     * @params:
+     *    - data: the bytes, a string being absorbed as its UTF-8 bytes
+     */
+    pub fn if isBytes!{T} update {T} (mut self, data: T)-> void {
+        self._inner:.update(data);
+    }
+
+    /**
+     * @returns: the code of the message absorbed so far, the hasher starting a new message with
+     * the same key
+     */
+    pub fn finish(mut self)-> typeof({ let dmut h = copy H (); h:.finish() }) {
+        let inner = self._inner:.finish();
+        self._outer:.update(inner);
+
+        let res = self._outer:.finish();
+        self:.reset();
+        res
+    }
+
+    /**
+     * Discard the message absorbed so far, keeping the key.
+     */
+    pub fn reset(mut self) {
+        self._inner:.reset();
+        self._outer:.reset();
+
+        let dmut pad = core::types::array::allocArray!{u8} (self._key.len);
+        for i in 0us .. pad.len {
+            pad[i] = self._key[i] ^ 0x36u8;
+        }
+        self._inner:.update(pad);
+
+        for i in 0us .. pad.len {
+            pad[i] = self._key[i] ^ 0x5cu8;
+        }
+        self._outer:.update(pad);
+    }
+}
+
+/**
+ * @returns: the HMAC of `data` with the key `key`, computed with the digest `H`; strings being used
+ * as their UTF-8 bytes
+ * @example:
+ * ```
+ * use std::digest::{hmac, sha2};
+ * use std::encoding::hex;
+ *
+ * println(hex::encode(hmac!{&Sha512} ("key", "message")));
+ * ```
+ */
+pub fn if (isBytes!{K} && isBytes!{T}) hmac {class H, K, T} (key: K, data: T)-> typeof({ let dmut h = copy H (); h:.finish() }) {
+    let dmut h = copy Hmac!{H} (key);
+    h:.update(data);
+    h:.finish()
+}
+
+/**
+ * Compare two codes in a time that depends on their length only, not on the position of the first
+ * byte that differs, so the time of the comparison tells nothing about the expected code.
+ * @returns: true iif `a` and `b` hold the same bytes
+ * @example:
+ * ```
+ * use std::digest::{hmac, sha2};
+ *
+ * let expected = hmac!{&Sha256} ("key", "message");
+ * assert(equals(expected, hmac!{&Sha256} ("key", "message")));
+ * assert(!equals(expected, hmac!{&Sha256} ("key", "massage")));
+ * ```
+ */
+pub fn if (isBytes!{A} && isBytes!{B}) equals {A, B} (a: A, b: B)-> bool {
+    let mut diff = a.len ^ b.len;
+    if diff != 0us return false;
+
+    for i in 0us .. a.len {
+        diff = diff | cast!usize(cast!u8(a[i]) ^ cast!u8(b[i]));
+    }
+
+    diff == 0us
+}

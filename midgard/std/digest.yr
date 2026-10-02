@@ -1,0 +1,38 @@
+/**
+ * This module implements the cryptographic digests, which reduce a message of any length to a
+ * value of a fixed size that nobody can choose a message to match, and the HMAC message
+ * authentication code built on them.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * Each digest comes as a function digesting a whole message at once, and as a class absorbing it
+ * piece by piece through `update`, whose `finish` returns the digest and starts a new message. A
+ * message is a sequence of bytes, a slice or a static array of `u8`, or a string, digested as its
+ * UTF-8 bytes. To detect accidental corruption only, `std::checksum` is cheaper.
+ * @warning: MD5 and SHA-1 are broken, they are only here for the formats and protocols that
+ * require them. Use SHA-256 or SHA-512 for anything else.
+ * @example:
+ * ```
+ * use std::digest::{hmac, sha2};
+ * use std::encoding::hex;
+ *
+ * println(hex::encode(sha256("hello")));
+ *
+ * let dmut h = copy Sha256();
+ * h:.update("hel");
+ * h:.update("lo");
+ * assert(h:.finish() == sha256("hello"));
+ *
+ * let code = hmac!{&Sha256} ("secret key", "hello");
+ * assert(equals(code, hmac!{&Sha256} ("secret key", "hello")));
+ * ```
+ */
+
+in digest;
+
+mod ::block;
+
+pub mod ::hmac;
+pub mod ::md5;
+pub mod ::sha1;
+pub mod ::sha2;

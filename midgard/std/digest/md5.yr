@@ -1,0 +1,128 @@
+/**
+ * This module implements the MD5 digest of RFC 1321, 16 bytes long.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @warning: MD5 is broken, colliding messages are found in seconds. Use it to interoperate with a
+ * format or a protocol that requires it, never to authenticate data, prefer `std::digest::sha2`.
+ * @example:
+ * ```
+ * use std::digest::md5;
+ * use std::encoding::hex;
+ *
+ * assert(hex::encode(md5("abc")) == "900150983cd24fb0d6963f7d28e17f72");
+ * ```
+ */
+
+in md5;
+
+use std::digest::block;
+use std::traits;
+
+def INIT = [0x67452301u32, 0xefcdab89u32, 0x98badcfeu32, 0x10325476u32];
+
+lazy __MD5_SHIFTS__: [u32 ; 16] = [7u32, 12u32, 17u32, 22u32, 5u32, 9u32, 14u32, 20u32, 4u32, 11u32, 16u32, 23u32, 6u32, 10u32, 15u32, 21u32];
+
+lazy __MD5_K__: [u32 ; 64] = [0xd76aa478u32, 0xe8c7b756u32, 0x242070dbu32, 0xc1bdceeeu32, 0xf57c0fafu32, 0x4787c62au32, 0xa8304613u32, 0xfd469501u32,
+         0x698098d8u32, 0x8b44f7afu32, 0xffff5bb1u32, 0x895cd7beu32, 0x6b901122u32, 0xfd987193u32, 0xa679438eu32, 0x49b40821u32,
+         0xf61e2562u32, 0xc040b340u32, 0x265e5a51u32, 0xe9b6c7aau32, 0xd62f105du32, 0x02441453u32, 0xd8a1e681u32, 0xe7d3fbc8u32,
+         0x21e1cde6u32, 0xc33707d6u32, 0xf4d50d87u32, 0x455a14edu32, 0xa9e3e905u32, 0xfcefa3f8u32, 0x676f02d9u32, 0x8d2a4c8au32,
+         0xfffa3942u32, 0x8771f681u32, 0x6d9d6122u32, 0xfde5380cu32, 0xa4beea44u32, 0x4bdecfa9u32, 0xf6bb4b60u32, 0xbebfbc70u32,
+         0x289b7ec6u32, 0xeaa127fau32, 0xd4ef3085u32, 0x04881d05u32, 0xd9d4d039u32, 0xe6db99e5u32, 0x1fa27cf8u32, 0xc4ac5665u32,
+         0xf4292244u32, 0x432aff97u32, 0xab9423a7u32, 0xfc93a039u32, 0x655b59c3u32, 0x8f0ccc92u32, 0xffeff47du32, 0x85845dd1u32,
+         0x6fa87e4fu32, 0xfe2ce6e0u32, 0xa3014314u32, 0x4e0811a1u32, 0xf7537e82u32, 0xbd3af235u32, 0x2ad7d2bbu32, 0xeb86d391u32];
+
+/**
+ * The MD5 digest of a message absorbed piece by piece.
+ * @example:
+ * ```
+ * use std::digest::md5;
+ * use std::encoding::hex;
+ *
+ * let dmut h = copy Md5();
+ * h:.update("a");
+ * h:.update("bc");
+ *
+ * assert(hex::encode(h:.finish()) == "900150983cd24fb0d6963f7d28e17f72");
+ * ```
+ */
+@final
+pub class Md5 over BlockDigest!{64us} {
+
+    let mut _h: [mut u32 ; 4];
+
+    pub self ()
+        with super ()
+        , _h = INIT
+    {}
+
+    /**
+     * @returns: the digest of the message absorbed so far, the hasher starting a new message
+     */
+    pub fn finish(mut self)-> [u8 ; 16] {
+        self:.pad(false);
+
+        let dmut res = [0u8 ; 16];
+        for i in 0us .. 16us {
+            res[i] = cast!u8(self._h[i / 4us] >> cast!u32((i % 4us) * 8us));
+        }
+
+        self._h = INIT;
+        res
+    }
+
+    /**
+     * Discard the message absorbed so far.
+     */
+    pub fn reset(mut self) {
+        self:.clear();
+        self._h = INIT;
+    }
+
+    prot over compress(mut self, block: [u8 ; 64us]) {
+        let mut a = self._h[0], mut b = self._h[1], mut c = self._h[2], mut d = self._h[3];
+        for i in 0us .. 64us {
+            let mut f = 0u32, mut g = 0us;
+            if i < 16us {
+                f = (b & c) | ((b ^ 0xffffffffu32) & d);
+                g = i;
+            } else if i < 32us {
+                f = (d & b) | ((d ^ 0xffffffffu32) & c);
+                g = (5us * i + 1us) % 16us;
+            } else if i < 48us {
+                f = b ^ c ^ d;
+                g = (3us * i + 5us) % 16us;
+            } else {
+                f = c ^ (b | (d ^ 0xffffffffu32));
+                g = (7us * i) % 16us;
+            }
+
+            let t = d;
+            d = c;
+            c = b;
+            b = b + rotl32(a + f + __MD5_K__[i] + load32le(block, g * 4us), __MD5_SHIFTS__[(i / 16us) * 4us + i % 4us]);
+            a = t;
+        }
+
+        self._h[0] += a;
+        self._h[1] += b;
+        self._h[2] += c;
+        self._h[3] += d;
+    }
+}
+
+/**
+ * @returns: the MD5 digest of `data`, a string being digested as its UTF-8 bytes
+ * @example:
+ * ```
+ * use std::digest::md5;
+ * use std::encoding::hex;
+ *
+ * println(hex::encode(md5(""))); // d41d8cd98f00b204e9800998ecf8427e
+ * ```
+ */
+pub fn if isBytes!{T} md5 {T} (data: T)-> [u8 ; 16] {
+    let dmut h = copy Md5();
+    h:.update(data);
+    h:.finish()
+}

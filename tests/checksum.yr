@@ -1,0 +1,33 @@
+in checksum;
+
+use std::checksum::crc32;
+
+__test crc32KnownValues {
+    assert(crc32("") == 0u32);
+    assert(crc32("a") == 0xe8b7be43u32);
+    assert(crc32("123456789") == 0xcbf43926u32);
+    assert(crc32("The quick brown fox jumps over the lazy dog") == 0x414fa339u32);
+
+    let dmut all = [0u8 ; 256];
+    for i in 0us .. 256us {
+        all[i] = cast!u8(i);
+    }
+    assert(crc32(all) == 0x29058c73u32);
+    assert(crc32(copy all) == 0x29058c73u32);
+}
+
+__test crc32Streaming {
+    let dmut c = copy Crc32();
+    assert(c.value() == 0u32);
+
+    c:.update("1234");
+    c:.update("");
+    c:.update(['5'c8]);
+    c:.update("6789");
+    assert(c.value() == 0xcbf43926u32);
+    assert(c.value() == 0xcbf43926u32);
+
+    c:.reset();
+    c:.update("a");
+    assert(c.value() == 0xe8b7be43u32);
+}

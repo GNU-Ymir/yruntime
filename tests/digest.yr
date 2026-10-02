@@ -1,0 +1,188 @@
+in digest;
+
+use std::conv;
+use std::digest::{hmac, md5, sha1, sha2};
+use std::encoding::hex;
+
+def ABC_448 = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
+def ABC_896 = "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu";
+def FOX = "The quick brown fox jumps over the lazy dog";
+
+/**
+ * @returns: `n` times the character `c`
+ */
+fn repeat(c: c8, n: usize)-> dmut [c8] {
+    let dmut res = core::types::array::allocArray!{c8} (n);
+    for i in 0us .. n {
+        res[i] = c;
+    }
+
+    alias res
+}
+
+__test md5Rfc1321 {
+    assert(hex::encode(md5("")) == "d41d8cd98f00b204e9800998ecf8427e");
+    assert(hex::encode(md5("a")) == "0cc175b9c0f1b6a831c399e269772661");
+    assert(hex::encode(md5("abc")) == "900150983cd24fb0d6963f7d28e17f72");
+    assert(hex::encode(md5("message digest")) == "f96b697d7cb7938d525a2f31aaf161d0");
+    assert(hex::encode(md5("abcdefghijklmnopqrstuvwxyz")) == "c3fcd3d76192e4007dfb496cca67e13b");
+    assert(hex::encode(md5("12345678901234567890123456789012345678901234567890123456789012345678901234567890"))
+           == "57edf4a22be3c955ac49da2e2107b67a");
+}
+
+__test sha1Fips180 {
+    assert(hex::encode(sha1("")) == "da39a3ee5e6b4b0d3255bfef95601890afd80709");
+    assert(hex::encode(sha1("abc")) == "a9993e364706816aba3e25717850c26c9cd0d89d");
+    assert(hex::encode(sha1(ABC_448)) == "84983e441c3bd26ebaae4aa1f95129e5e54670f1");
+    assert(hex::encode(sha1(repeat('a'c8, 1_000_000us))) == "34aa973cd4c4daa4f61eeb2bdbad27316534016f");
+}
+
+__test sha2Fips180 {
+    assert(hex::encode(sha224("abc")) == "23097d223405d8228642a477bda255b32aadbce4bda0b3f7e36c9da7");
+    assert(hex::encode(sha224(ABC_448)) == "75388b16512776cc5dba5da1fd890150b0c6455cb4f58b1952522525");
+
+    assert(hex::encode(sha256("")) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    assert(hex::encode(sha256("abc")) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    assert(hex::encode(sha256(ABC_448)) == "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1");
+    assert(hex::encode(sha256(repeat('a'c8, 1_000_000us))) == "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
+
+    assert(hex::encode(sha384("abc")) == "cb00753f45a35e8bb5a03d699ac65007272c32ab0eded163"
+                                         ~ "1a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7");
+    assert(hex::encode(sha384(ABC_896)) == "09330c33f71147e83d192fc782cd1b4753111b173b3b05d2"
+                                           ~ "2fa08086e3b0f712fcc7c71a557e2db966c3e9fa91746039");
+
+    assert(hex::encode(sha512("")) == "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce"
+                                      ~ "47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e");
+    assert(hex::encode(sha512("abc")) == "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a"
+                                         ~ "2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f");
+    assert(hex::encode(sha512(ABC_896)) == "8e959b75dae313da8cf4f72814fc143f8f7779c6eb9f7fa17299aeadb6889018"
+                                           ~ "501d289e4900f7e4331b99dec4b5433ac7d329eeb6dd26545e96e55b874be909");
+}
+
+__test paddingBoundaries {
+    // lengths around the point where the length of the message no longer fits its last block
+    let lengths = [55us, 56us, 63us, 64us, 111us, 112us, 127us, 128us];
+    let expected256 = ["9f4390f8d30c2dd92ec9f095b65e2b9ae9b0a925a5258e241c9f1e910f734318",
+                       "b35439a4ac6f0948b6d6f9e3c6af0f5f590ce20f1bde7090ef7970686ec6738a",
+                       "7d3e74a05d7db15bce4ad9ec0658ea98e3f06eeecf16b4c6fff2da457ddc2f34",
+                       "ffe054fe7ae0cb6dc65c3af9b61d5209f439851db43d0ba5997337df154668eb",
+                       "6374f73208854473827f6f6a3f43b1f53eaa3b82c21c1a6d69a2110b2a79baad",
+                       "f54353008a2553262ecdc4a34749563ba0950e8b0fc8652780b0a614b99683c1",
+                       "c57e9278af78fa3cab38667bef4ce29d783787a2f731d4e12200270f0c32320a",
+                       "6836cf13bac400e9105071cd6af47084dfacad4e5e302c94bfed24e013afb73e"];
+    let expected512 = ["b0220c772cbf6c1822e2cb38a437d0e1d58772417a4bbb21c961364f8b6143e05aa6316dca8d1d7b19e16448419076395f6086cb55101fbd6d5497b148e1745f",
+                       "962b64aae357d2a4fee3ded8b539bdc9d325081822b0bfc55583133aab44f18bafe11d72a7ae16c79ce2ba620ae2242d5144809161945f1367f41b3972e26e04",
+                       "c1b0f5c6d3b03dfe4a2602e67242f54e344090b66e01100a469b129f583f016c7e27dddeaa438393dcc7ec54b0b57c9ba7af007f9b56db5f6fb677d972a31362",
+                       "01d35c10c6c38c2dcf48f7eebb3235fb5ad74a65ec4cd016e2354c637a8fb49b695ef3c1d6f7ae4cd74d78cc9c9bcac9d4f23a73019998a7f73038a5c9b2dbde",
+                       "fa9121c7b32b9e01733d034cfc78cbf67f926c7ed83e82200ef86818196921760b4beff48404df811b953828274461673c68d04e297b0eb7b2b4d60fc6b566a2",
+                       "c01d080efd492776a1c43bd23dd99d0a2e626d481e16782e75d54c2503b5dc32bd05f0f1ba33e568b88fd2d970929b719ecbb152f58f130a407c8830604b70ca",
+                       "828613968b501dc00a97e08c73b118aa8876c26b8aac93df128502ab360f91bab50a51e088769a5c1eff4782ace147dce3642554199876374291f5d921629502",
+                       "b73d1929aa615934e61a871596b3f3b33359f42b8175602e89f7e06e5f658a243667807ed300314b95cacdd579f3e33abdfbe351909519a846d465c59582f321"];
+
+    for i, n in lengths {
+        assert(hex::encode(sha256(repeat('a'c8, n))) == expected256[i], "256 " ~ n.to![c8] ());
+        assert(hex::encode(sha512(repeat('a'c8, n))) == expected512[i], "512 " ~ n.to![c8] ());
+    }
+}
+
+__test streamingMatchesOneShot {
+    let msg = repeat('x'c8, 300us);
+    for split in [0us, 1us, 55us, 56us, 63us, 64us, 65us, 127us, 128us, 129us, 300us] {
+        let dmut a = copy Md5();
+        let dmut b = copy Sha1();
+        let dmut c = copy Sha224();
+        let dmut d = copy Sha256();
+        let dmut e = copy Sha384();
+        let dmut f = copy Sha512();
+
+        a:.update(msg[0us .. split]); a:.update(msg[split .. $]);
+        b:.update(msg[0us .. split]); b:.update(msg[split .. $]);
+        c:.update(msg[0us .. split]); c:.update(msg[split .. $]);
+        d:.update(msg[0us .. split]); d:.update(msg[split .. $]);
+        e:.update(msg[0us .. split]); e:.update(msg[split .. $]);
+        f:.update(msg[0us .. split]); f:.update(msg[split .. $]);
+
+        assert(a:.finish() == md5(msg));
+        assert(b:.finish() == sha1(msg));
+        assert(c:.finish() == sha224(msg));
+        assert(d:.finish() == sha256(msg));
+        assert(e:.finish() == sha384(msg));
+        assert(f:.finish() == sha512(msg));
+    }
+}
+
+__test finishStartsANewMessage {
+    let dmut h = copy Sha256();
+    h:.update("abc");
+    assert(h:.finish() == sha256("abc"));
+    assert(h:.finish() == sha256(""));
+
+    h:.update("discarded");
+    h:.reset();
+    h:.update("abc");
+    assert(h:.finish() == sha256("abc"));
+}
+
+__test bytesAndStringsDigestAlike {
+    assert(sha256("é") == sha256(copy [0xc3u8, 0xa9u8]));
+    assert(sha256("é") == sha256([0xc3u8, 0xa9u8]));
+    assert(md5(['a'c8, 'b'c8, 'c'c8]) == md5("abc"));
+}
+
+__test blockSizes {
+    assert((copy Md5()).blockSize() == 64us);
+    assert((copy Sha1()).blockSize() == 64us);
+    assert((copy Sha256()).blockSize() == 64us);
+    assert((copy Sha512()).blockSize() == 128us);
+}
+
+__test hmacRfc4231 {
+    let key = [0x0bu8 ; 20];
+    let data = "Hi There";
+    assert(hex::encode(hmac!{&Sha224} (key, data)) == "896fb1128abbdf196832107cd49df33f47b4b1169912ba4f53684b22");
+    assert(hex::encode(hmac!{&Sha256} (key, data)) == "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7");
+    assert(hex::encode(hmac!{&Sha512} (key, data)) == "87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cde"
+                                                       ~ "daa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854");
+
+    assert(hex::encode(hmac!{&Sha256} ("Jefe", "what do ya want for nothing?"))
+           == "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843");
+
+    // a key longer than a block is replaced by its digest
+    let long = [0xaau8 ; 131];
+    let msg = "Test Using Larger Than Block-Size Key - Hash Key First";
+    assert(hex::encode(hmac!{&Sha256} (long, msg)) == "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54");
+    assert(hex::encode(hmac!{&Sha384} (long, msg)) == "4ece084485813e9088d2c63a041bc5b44f9ef1012a2b588f3cd11f05033ac4c6"
+                                                      ~ "0c2ef6ab4030fe8296248df163f44952");
+}
+
+__test hmacRfc2202 {
+    assert(hex::encode(hmac!{&Md5} ("Jefe", "what do ya want for nothing?")) == "750c783e6ab0b503eaa86e310a5db738");
+    assert(hex::encode(hmac!{&Sha1} ("Jefe", "what do ya want for nothing?")) == "effcdf6ae5eb2fa2d27416d5f184df9c259a7c79");
+    assert(hex::encode(hmac!{&Sha1} ("key", FOX)) == "de7c9b85b8b78aa6bc8a7a36f70a90701c9db4d9");
+}
+
+__test hmacStreaming {
+    let dmut h = copy Hmac!{&Sha256} ("key");
+    h:.update("The quick brown fox ");
+    h:.update("jumps over the lazy dog");
+    assert(hex::encode(h:.finish()) == "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8");
+
+    // the key is kept for the next message
+    h:.update(FOX);
+    assert(h:.finish() == hmac!{&Sha256} ("key", FOX));
+
+    h:.update("discarded");
+    h:.reset();
+    h:.update(FOX);
+    assert(h:.finish() == hmac!{&Sha256} ("key", FOX));
+}
+
+__test hmacEquals {
+    let code = hmac!{&Sha256} ("key", FOX);
+    assert(equals(code, hmac!{&Sha256} ("key", FOX)));
+    assert(!equals(code, hmac!{&Sha256} ("kez", FOX)));
+    assert(equals(code, copy code));
+    assert(!equals(code, (copy code)[0us .. 31us]));
+    assert(equals("", ""));
+    assert(!equals("a", ""));
+}
