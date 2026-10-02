@@ -1,0 +1,176 @@
+/**
+ * This module implements the ancestor of the Merkle–Damgård digests, which absorb their message
+ * by blocks of `N` bytes, the last one being padded with a `1` bit, zeros, and the length of the
+ * message in bits.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in block;
+
+use std::traits;
+
+@abstract
+pub class BlockDigest {N: usize} {
+
+    // The bytes of the block being filled
+    let mut _buf: [mut u8 ; N];
+
+    // The number of bytes of `_buf` filled so far
+    let mut _fill: usize;
+
+    // The number of bytes absorbed since the start of the message
+    let mut _len: u64;
+
+    prot self ()
+        with _buf = [0u8 ; N]
+        , _fill = 0us
+        , _len = 0u64
+    {}
+
+    /**
+     * Absorb the next bytes of the message.
+     * @params:
+     *    - data: the bytes, a string being absorbed as its UTF-8 bytes
+     */
+    pub fn if isBytes!{T} update {T} (mut self, data: T)-> void {
+        for i in 0us .. data.len {
+            self._buf[self._fill] = cast!u8(data[i]);
+            self._fill += 1us;
+            if self._fill == N {
+                self:.compress(self._buf);
+                self._fill = 0us;
+            }
+        }
+
+        self._len += cast!u64(data.len);
+    }
+
+    /**
+     * @returns: the number of bytes of the blocks the message is absorbed by
+     */
+    pub fn blockSize(self)-> usize {
+        N
+    }
+
+    /**
+     * Absorb the padding of the message, its length being written on `N / 8` bytes, and start a
+     * new message. A length written on 16 bytes is always most significant byte first.
+     * @params:
+     *    - bigEndian: write the length most significant byte first
+     */
+    prot fn pad(mut self, bigEndian: bool) {
+        let lenSize = N / 8us;
+        let bits = self._len << 3u64;
+
+        self._buf[self._fill] = 0x80u8;
+        self._fill += 1us;
+        if self._fill > N - lenSize {
+            for i in self._fill .. N {
+                self._buf[i] = 0u8;
+            }
+
+            self:.compress(self._buf);
+            self._fill = 0us;
+        }
+
+        for i in self._fill .. N {
+            self._buf[i] = 0u8;
+        }
+
+        for i in 0us .. 8us {
+            let shift = if bigEndian { cast!u64(56us - i * 8us) } else { cast!u64(i * 8us) };
+            self._buf[N - 8us + i] = cast!u8(bits >> shift);
+        }
+
+        cte if (N > 64us) {
+            for i in 0us .. 8us {
+                self._buf[N - 16us + i] = cast!u8((self._len >> 61u64) >> cast!u64(56us - i * 8us));
+            }
+        }
+
+        self:.compress(self._buf);
+        self._fill = 0us;
+        self._len = 0u64;
+    }
+
+    /**
+     * Discard the bytes absorbed since the start of the message.
+     */
+    prot fn clear(mut self) {
+        self._fill = 0us;
+        self._len = 0u64;
+    }
+
+    /**
+     * Update the state of the digest with a full block of the message.
+     */
+    prot fn compress(mut self, block: [u8 ; N]);
+}
+
+/**
+ * @returns: the 32 bits word stored most significant byte first at index `i` of `block`
+ */
+pub fn load32be {N: usize} (block: [u8 ; N], i: usize)-> u32 {
+    (cast!u32(block[i]) << 24u32) | (cast!u32(block[i + 1us]) << 16u32)
+        | (cast!u32(block[i + 2us]) << 8u32) | cast!u32(block[i + 3us])
+}
+
+/**
+ * @returns: the 32 bits word stored least significant byte first at index `i` of `block`
+ */
+pub fn load32le {N: usize} (block: [u8 ; N], i: usize)-> u32 {
+    (cast!u32(block[i + 3us]) << 24u32) | (cast!u32(block[i + 2us]) << 16u32)
+        | (cast!u32(block[i + 1us]) << 8u32) | cast!u32(block[i])
+}
+
+/**
+ * @returns: the 64 bits word stored most significant byte first at index `i` of `block`
+ */
+pub fn load64be {N: usize} (block: [u8 ; N], i: usize)-> u64 {
+    let mut res = 0u64;
+    for j in 0us .. 8us {
+        res = (res << 8u64) | cast!u64(block[i + j]);
+    }
+
+    res
+}
+
+/**
+ * Write the words of `words`, each most significant byte first, to the first bytes of `res`.
+ */
+pub fn store32be {N: usize, M: usize} (words: [u32 ; M], ref mut res: [mut u8 ; N]) {
+    for i in 0us .. N {
+        res[i] = cast!u8(words[i / 4us] >> cast!u32((3us - i % 4us) * 8us));
+    }
+}
+
+/**
+ * Write the words of `words`, each most significant byte first, to the first bytes of `res`.
+ */
+pub fn store64be {N: usize, M: usize} (words: [u64 ; M], ref mut res: [mut u8 ; N]) {
+    for i in 0us .. N {
+        res[i] = cast!u8(words[i / 8us] >> cast!u64((7us - i % 8us) * 8us));
+    }
+}
+
+/**
+ * @returns: `x` rotated by `n` bits to the left
+ */
+pub fn rotl32(x: u32, n: u32)-> u32 {
+    (x << n) | (x >> (32u32 - n))
+}
+
+/**
+ * @returns: `x` rotated by `n` bits to the right
+ */
+pub fn rotr32(x: u32, n: u32)-> u32 {
+    (x >> n) | (x << (32u32 - n))
+}
+
+/**
+ * @returns: `x` rotated by `n` bits to the right
+ */
+pub fn rotr64(x: u64, n: u64)-> u64 {
+    (x >> n) | (x << (64u64 - n))
+}
