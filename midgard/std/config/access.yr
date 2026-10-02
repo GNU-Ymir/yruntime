@@ -1,0 +1,283 @@
+/**
+ * This module implements lenient accessors to read values out of a configuration tree. Where the functions of <a href="./std_config_conv.html">std::config::conv</a> throw when a node is missing or of the wrong type, the accessors return an option, which makes reading optional fields of a configuration short.
+ * Every accessor accepts a `&Config` as well as a `(&Config)?`, and an optional path of keys (strings index dictionnaries, integers index arrays), so they can be chained.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ *
+ * @example:
+ * ```
+ * use std::config::json;
+ *
+ * let j = json#{"server" : {"host" : "localhost", "ports" : [80, 443]}};
+ *
+ * assert(j.str("server", "host") == ("localhost")?);
+ * assert(j.at("server", "ports", 1).int() == (443i64)?);
+ * assert(j.at("server").int("timeout") ?? 30i64 == 30i64);
+ * ```
+ */
+
+in access;
+
+use std::config::data;
+use std::traits;
+
+/**
+ * @returns: `cfg` as an option of `&Config`, e.g. `lift(copy Int(1))` is `(copy Int(1))?`
+ */
+fn lift {C of &Config} (cfg: C)-> (&Config)? {
+    cfg?
+}
+
+/**
+ * @returns: `cfg` with its value upcast to `&Config`, e.g. a `(&Dict)?` into a `(&Config)?`
+ */
+fn lift {C of &Config} (cfg: (C)?)-> (&Config)? {
+    if let Ok(c) = cfg return lift(c);
+    none
+}
+
+/**
+ * @returns: the node at `key` of `cur`, the key of a dict for a string, the index of an array for an integer
+ * e.g. `step(j?, "a")` is `j["a"]?`, and `step(j?, 0)` is `j[0u32]?`; none if `cur` is none
+ */
+fn step {K} (cur: (&Config)?, key: K)-> (&Config)? {
+    if let Ok(c) = cur {
+        cte if isIntegral!{K} {
+            return c[cast!u32(key)]?;
+        } else {
+            return c[key]?;
+        }
+    }
+
+    none
+}
+
+/**
+ * @returns: the node at the end of the path `keys` (a single key or a tuple of them) of `cur`
+ * e.g. `walk(j?, ("a", 0))` is `step(step(j?, "a"), 0)`, and `walk(j?, "a")` is `step(j?, "a")`
+ */
+fn walk {K} (cur: (&Config)?, keys: K)-> (&Config)? {
+    cte if (template!{K} {Z of (U,), U...}) {
+        let mut res = cur;
+        cte for k in keys {
+            res = step(res, k);
+        }
+
+        return res;
+    } else {
+        return step(cur, keys);
+    }
+}
+
+/**
+ * Follow the path `keys` from `cfg`, a string key indexing a dictionnary, and an integer one an array.
+ * @returns: the node at the end of the path, none if `cfg` is none or a node of the path is missing
+ * @example:
+ * ```
+ * use std::config::json;
+ *
+ * let j = json#{"a" : {"b" : [{"c" : 1}, {"c" : 2}]}};
+ *
+ * assert(j.at("a", "b", 1, "c").int() == (2i64)?);
+ *
+ * match j.at("a", "b", 4) {
+ *     Ok(c) => println("found ", c);
+ *     Err() => println("the array a.b has no 5th element");
+ * }
+ * ```
+ */
+pub fn at {C, K...} (cfg: C, keys: K)-> (&Config)? {
+    walk(lift(cfg), keys)
+}
+
+/**
+ * @returns: the string value of `cfg`, none if it is not a `Str`
+ * @example:
+ * ```
+ * use std::config::data;
+ *
+ * let s: &Config = copy Str("foo");
+ * assert(s.str() == ("foo")?);
+ * assert((copy Int(1)).str() == none);
+ * ```
+ */
+pub fn str {C} (cfg: C)-> ([c8])? {
+    if let Ok(Str(value-> v)) = lift(cfg) return v?;
+    none
+}
+
+/**
+ * @returns: the string value at the path `keys` of `cfg`, none if there is none
+ * @example:
+ * ```
+ * use std::config::json;
+ *
+ * let j = json#{"name" : "foo", "tags" : ["bar"]};
+ * assert(j.str("name") == ("foo")?);
+ * assert(j.str("tags", 0) == ("bar")?);
+ * assert(j.str("version") ?? "0.1" == "0.1");
+ * ```
+ */
+pub fn str {C, K...} (cfg: C, keys: K)-> ([c8])? {
+    str(walk(lift(cfg), keys))
+}
+
+/**
+ * @returns: the integer value of `cfg`, none if it is not an `Int`
+ * @example:
+ * ```
+ * use std::config::data;
+ *
+ * let i: &Config = copy Int(12);
+ * assert(i.int() == (12i64)?);
+ * assert((copy Float(1.5)).int() == none);
+ * ```
+ */
+pub fn int {C} (cfg: C)-> (i64)? {
+    if let Ok(Int(value-> v)) = lift(cfg) return v?;
+    none
+}
+
+/**
+ * @returns: the integer value at the path `keys` of `cfg`, none if there is none
+ * @example:
+ * ```
+ * use std::config::json;
+ *
+ * let j = json#{"size" : 12, "name" : "foo"};
+ * assert(j.int("size") == (12i64)?);
+ * assert(j.int("name") == none);
+ * ```
+ */
+pub fn int {C, K...} (cfg: C, keys: K)-> (i64)? {
+    int(walk(lift(cfg), keys))
+}
+
+/**
+ * @returns: the float value of `cfg`, none if it is neither a `Float` nor an `Int`
+ * @example:
+ * ```
+ * use std::config::data;
+ *
+ * let f: &Config = copy Float(1.5);
+ * assert(f.float() == (1.5)?);
+ * assert((copy Int(2)).float() == (2.0)?);
+ * ```
+ */
+pub fn float {C} (cfg: C)-> (f64)? {
+    match lift(cfg) {
+        Ok(Float(value-> v)) => return v?;
+        Ok(Int(value-> v)) => return (cast!f64(v))?;
+    }
+
+    none
+}
+
+/**
+ * @returns: the float value at the path `keys` of `cfg`, none if there is none
+ * @example:
+ * ```
+ * use std::config::json;
+ *
+ * let j = json#{"ratio" : 0.5};
+ * assert(j.float("ratio") == (0.5)?);
+ * ```
+ */
+pub fn float {C, K...} (cfg: C, keys: K)-> (f64)? {
+    float(walk(lift(cfg), keys))
+}
+
+/**
+ * @returns: the boolean value of `cfg`, none if it is not a `Bool`
+ * @example:
+ * ```
+ * use std::config::data;
+ *
+ * let b: &Config = copy Bool(true);
+ * assert(b.boolean() == (true)?);
+ * ```
+ */
+pub fn boolean {C} (cfg: C)-> (bool)? {
+    if let Ok(Bool(value-> v)) = lift(cfg) return v?;
+    none
+}
+
+/**
+ * @returns: the boolean value at the path `keys` of `cfg`, none if there is none
+ * @example:
+ * ```
+ * use std::config::json;
+ *
+ * let j = json#{"verbose" : true};
+ * assert(j.boolean("verbose") ?? false);
+ * assert(!(j.boolean("quiet") ?? false));
+ * ```
+ */
+pub fn boolean {C, K...} (cfg: C, keys: K)-> (bool)? {
+    boolean(walk(lift(cfg), keys))
+}
+
+/**
+ * @returns: the elements of `cfg`, empty if it is not an `Array`
+ * @example:
+ * ```
+ * use std::config::json;
+ *
+ * let j = json#{"flags" : ["-O2", "-g"]};
+ * for f in j.at("flags").elements() {
+ *     println(f.str() ?? "");
+ * }
+ * ```
+ */
+pub fn elements {C} (cfg: C)-> [&Config] {
+    if let Ok(a: &Array) = lift(cfg) return a[];
+    []
+}
+
+/**
+ * @returns: the elements of the array at the path `keys` of `cfg`, empty if there is none
+ * @example:
+ * ```
+ * use std::config::json;
+ *
+ * let j = json#{"build" : {"flags" : ["-O2", "-g"]}};
+ * assert(j.elements("build", "flags").len == 2us);
+ * assert(j.elements("build", "libs").len == 0us);
+ * ```
+ */
+pub fn elements {C, K...} (cfg: C, keys: K)-> [&Config] {
+    elements(walk(lift(cfg), keys))
+}
+
+/**
+ * @returns: the entries of `cfg`, empty if it is not a `Dict`
+ * @example:
+ * ```
+ * use std::config::json;
+ *
+ * let j = json#{"env" : {"HOME" : "/home/foo", "SHELL" : "bash"}};
+ * for k, v in j.at("env").entries() {
+ *     println(k, " = ", v.str() ?? "");
+ * }
+ * ```
+ */
+pub fn entries {C} (cfg: C)-> [[c8] => &Config] {
+    if let Ok(d: &Dict) = lift(cfg) return d[];
+    copy []
+}
+
+/**
+ * @returns: the entries of the dictionnary at the path `keys` of `cfg`, empty if there is none
+ * @example:
+ * ```
+ * use std::config::json;
+ *
+ * let j = json#{"env" : {"HOME" : "/home/foo", "SHELL" : "bash"}};
+ * assert(j.entries("env").len == 2us);
+ * assert(j.entries("vars").len == 0us);
+ * ```
+ */
+pub fn entries {C, K...} (cfg: C, keys: K)-> [[c8] => &Config] {
+    entries(walk(lift(cfg), keys))
+}

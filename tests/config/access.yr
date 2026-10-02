@@ -1,0 +1,92 @@
+in access;
+
+use std::config::{data, access, json};
+
+__test atFollowsKeysAndIndices {
+    let j = json#{"a" : {"b" : [{"c" : 1}, {"c" : 2}]}};
+
+    assert(j.at("a", "b", 0, "c").int() == (1i64)?);
+    assert(j.at("a", "b", 1u32, "c").int() == (2i64)?);
+    assert(j.at("a").at("b").at(1us).int("c") == (2i64)?);
+    if let Ok(_: &Array) = j.at("a", "b") {} else assert(false);
+}
+
+__test atMissing {
+    let j = json#{"a" : {"b" : [1, 2]}};
+
+    for c in [j.at("z"), j.at("a", "z"), j.at("a", "b", 2), j.at("a", "b", -1), j.at("a", "b", "c"), j.at("a", "b", 0, "c"), j.at("z").at("a")] {
+        if let Ok(_) = c { assert(false); }
+    }
+}
+
+__test scalars {
+    let j = json#{"s" : "foo", "i" : 12, "f" : 1.5, "b" : true, "n" : null};
+
+    assert(j.str("s") == ("foo")?);
+    assert(j.int("i") == (12i64)?);
+    assert(j.float("f") == (1.5)?);
+    assert(j.float("i") == (12.0)?);
+    assert(j.boolean("b") == (true)?);
+
+    assert(j.str("i") == none);
+    assert(j.int("f") == none);
+    assert(j.int("s") == none);
+    assert(j.float("s") == none);
+    assert(j.boolean("s") == none);
+    assert(j.str("n") == none);
+    assert(j.str("missing") == none);
+}
+
+__test scalarsOfNodes {
+    let s: &Config = copy Str("foo");
+    let i = copy Int(3);
+    let none_: (&Config)? = none;
+
+    assert(s.str() == ("foo")?);
+    assert(i.int() == (3i64)?);
+    assert(i.str() == none);
+    assert(none_.str() == none);
+    assert(none_.int("a", 0) == none);
+    assert((s?).str() == ("foo")?);
+}
+
+__test defaults {
+    let j = json#{"name" : "foo"};
+
+    assert(j.str("name") ?? "bar" == "foo");
+    assert(j.str("version") ?? "0.1" == "0.1");
+    assert(j.int("jobs") ?? 4i64 == 4i64);
+    assert(j.boolean("verbose") ?? false == false);
+}
+
+__test elementsAndEntries {
+    let j = json#{"flags" : ["-O2", "-g"], "env" : {"HOME" : "/home/foo", "SHELL" : "bash"}, "x" : 1};
+
+    let flags = j.elements("flags");
+    assert(flags.len == 2us && flags[0].str() == ("-O2")? && flags[1].str() == ("-g")?);
+    assert(j.at("flags").elements().len == 2us);
+    assert(j.elements("env").len == 0us);
+    assert(j.elements("x").len == 0us);
+    assert(j.elements("missing").len == 0us);
+
+    let env = j.entries("env");
+    assert(env.len == 2us);
+    if let Ok(v) = env["SHELL"] {
+        assert(v.str() == ("bash")?);
+    } else assert(false);
+
+    assert(j.entries().len == 3us);
+    assert(j.entries("flags").len == 0us);
+    assert(j.entries("missing").len == 0us);
+}
+
+__test dictAndOptionOfDict {
+    let dmut d = copy Dict();
+    d["a"] = copy Int(1);
+
+    assert(d.int("a") == (1i64)?);
+
+    let o: (&Dict)? = d?;
+    assert(o.int("a") == (1i64)?);
+    assert(o.at("a").int() == (1i64)?);
+}
