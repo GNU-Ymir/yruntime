@@ -597,12 +597,14 @@ pub class UnittestLauncher {
 
     /**
      * Delete every coverage file left over from previous runs(see `CoverageStore::PID_FILE_PREFIX`),
-     * unless `--resume` was passed, in which case this run's coverage must be merged with theirs
+     * unless `--resume` was passed, in which case this run's coverage must be merged with theirs.
+     * The merged report of the previous run(see `CoverageStore::REPORT_FILE`) is deleted either way.
      *
      * @params:
      *    - hasResume: true iff the flag resume was found in argument parser
      * */
     fn resetCoverageUnlessResuming(self, hasResume: bool) {
+        CoverageStore::removeReport();
         if !hasResume {
             CoverageStore::removePidFiles(CoverageLoad::listPidFiles());
         }
@@ -626,13 +628,19 @@ pub class UnittestLauncher {
 
     /**
      * Print the coverage/call-tree report, merged from every coverage file found on disk(this
-     * run's, plus any left over from a previous `--resume` run)
+     * run's, plus any left over from a previous `--resume` run), and export it to
+     * `CoverageStore::REPORT_FILE`
      *
      * @params:
      *    - testArgs: the parsed arguments of this run
      * */
     fn reportCoverage(self, testArgs: TestRunnerArgument) {
         let report = CoverageConv::fromConfigs(CoverageLoad::loadAll(CoverageLoad::listPidFiles()));
+        {
+            CoverageStore::storeReport(report);
+        } catch {
+            err => { __LOG__.error("failed to store the coverage report\n", err); }
+        }
 
         CoverageFormat::report(report, testArgs.hasCoverage, testArgs.hasCallTree, withMissing-> testArgs.hasMissing);
     }
