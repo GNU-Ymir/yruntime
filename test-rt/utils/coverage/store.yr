@@ -35,12 +35,17 @@ use etc::c::process;
 
 use std::fs::_;
 use std::config::{data, json};
+use utils::coverage::conv;
 
 // Every process-local coverage file is named "{PID_FILE_PREFIX}{pid}{PID_FILE_SUFFIX}", so that
 // concurrent/successive runs of the test binary(e.g. across `--resume` sessions) each get their
 // own file instead of clobbering one another.
 pub def PID_FILE_PREFIX = ".ymir_coverage_";
 pub def PID_FILE_SUFFIX = ".json";
+
+// The merged coverage of a run, written alongside the per-process files when a report is printed,
+// with the functions that were never entered included(see `CoverageConv::fromConfigs`)
+pub def REPORT_FILE = ".ymir_coverage.json";
 
 /**
  * Exports a `CoverageTree` into a json configuration(see `CoverageConv` to convert it for `CoverageFormat`, `CoverageLoad` to read it back)
@@ -56,33 +61,65 @@ pub mod CoverageStore {
 
         for framePtr, hits in tree.frames() {
             let info = unsafe {*framePtr};
-            let dmut fnEntry = copy Dict();
-            fnEntry["file"] = copy Str(info.file);
-            fnEntry["func"] = copy Str(info.func);
-
-            let dmut locs = copy Array();
-            for loc in info.locations {
-                let (line, col, kind) = loc;
-                let dmut triple = copy Array();
-                triple:.push(copy Int(cast!i64(line)));
-                triple:.push(copy Int(cast!i64(col)));
-                triple:.push(copy Int(cast!i64(kind)));
-                locs:.push(triple);
-            }
-            fnEntry["locations"] = locs;
-
-            let dmut hitsArr = copy Array();
-            for h in hits {
-                hitsArr:.push(copy Int(cast!i64(h)));
-            }
-            fnEntry["hits"] = hitsArr;
-
-            functions:.push(fnEntry);
+            functions:.push(functionToConfig(info.file, info.func, info.locations, hits));
         }
         root["functions"] = functions;
         root["callTree"] = callTreeToConfig(tree);
 
         return root;
+    }
+
+    /**
+     * @returns: the content of `rep`, encoded as a json configuration in the format of `toConfig`
+     * */
+    pub fn reportToConfig(rep: CoverageReport)-> &Config {
+        let dmut root = copy Dict();
+        let dmut functions = copy Array();
+        for fnEntry in rep.functions {
+            functions:.push(functionToConfig(fnEntry.file, fnEntry.func, fnEntry.locations, fnEntry.hits));
+        }
+
+        let dmut callTreeArr = copy Array();
+        for caller in rep.callTree {
+            let dmut calleesArr = copy Array();
+            for callee in caller.callees {
+                let dmut c = funcToConfig(callee.file, callee.func);
+                c["count"] = copy Int(cast!i64(callee.count));
+                calleesArr:.push(c);
+            }
+
+            let dmut entry = funcToConfig(caller.file, caller.func);
+            entry["callees"] = calleesArr;
+            callTreeArr:.push(entry);
+        }
+
+        root["functions"] = functions;
+        root["callTree"] = callTreeArr;
+
+        return root;
+    }
+
+    /**
+     * Export `rep` to the json file `REPORT_FILE`(created, or erased if it already existed)
+     * @throws:
+     *    - FsError: if the file could not be created/written
+     * */
+    pub fn storeReport(rep: CoverageReport)
+        throws FsError
+    {
+        let dmut file = File::create(Path(REPORT_FILE), write-> true);
+        file:.write(dump(reportToConfig(rep)));
+    }
+
+    /**
+     * Delete the file `REPORT_FILE`, if any
+     * */
+    pub fn removeReport() {
+        {
+            removeFile(Path(REPORT_FILE));
+        } catch {
+            _ => {}
+        }
     }
 
     /**
@@ -136,6 +173,43 @@ pub mod CoverageStore {
                 _ => {}
             }
         }
+    }
+
+    /**
+     * @returns: a "functions" entry, with its locations as (line, column, kind) triples
+     * */
+    fn functionToConfig(file: [c8], func: [c8], locations: [(u32, u32, u32)], hits: [u32])-> &Config {
+        let dmut fnEntry = funcToConfig(file, func);
+
+        let dmut locs = copy Array();
+        for loc in locations {
+            let (line, col, kind) = loc;
+            let dmut triple = copy Array();
+            triple:.push(copy Int(cast!i64(line)));
+            triple:.push(copy Int(cast!i64(col)));
+            triple:.push(copy Int(cast!i64(kind)));
+            locs:.push(triple);
+        }
+        fnEntry["locations"] = locs;
+
+        let dmut hitsArr = copy Array();
+        for h in hits {
+            hitsArr:.push(copy Int(cast!i64(h)));
+        }
+        fnEntry["hits"] = hitsArr;
+
+        return fnEntry;
+    }
+
+    /**
+     * @returns: a `{"file", "func"}` dictionary
+     * */
+    fn funcToConfig(file: [c8], func: [c8])-> dmut &Dict {
+        let dmut res = copy Dict();
+        res["file"] = copy Str(file);
+        res["func"] = copy Str(func);
+
+        return alias res;
     }
 
     /**

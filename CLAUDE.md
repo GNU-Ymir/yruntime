@@ -331,7 +331,12 @@ process-global list, and `tree::mergedTree` folds them together at store time, s
   (`CoverageStore::toConfig`), and writes it to this process's own coverage file
   `.ymir_coverage_<pid>.json` (`CoverageStore::storePid`/`PID_FILE_PREFIX`/`PID_FILE_SUFFIX`),
   so multiple runs never clobber each other's coverage. `CoverageStore::removePidFiles` deletes
-  a given list of these files.
+  a given list of these files. Whenever a report is printed (`-cov`/`-m`/`-ct`), the merged
+  report it was computed from is also written to `.ymir_coverage.json`
+  (`CoverageStore::storeReport`/`REPORT_FILE`, same format as the pid files): unlike them it
+  includes the functions never entered, which only the test binary itself can list (from its own
+  ELF), so it is what an external tool (`gyllir doc --coverage`) reads to match the `TOTAL:` line.
+  Every run deletes it on start, so it never outlives the run that wrote it.
 - `utils::coverage::load` — `CoverageLoad::listPidFiles` finds every `.ymir_coverage_*.json` in
   the cwd, `CoverageLoad::load`/`loadAll` parse one/many of them back into `&Config`.
 - `utils::coverage::conv` — `CoverageConv::fromConfig(s)`/`merge`: converts the `&Config`(s)
