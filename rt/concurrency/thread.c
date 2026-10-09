@@ -134,6 +134,14 @@ void _yrt_i_thread_exit (_yrt_thread_t p) {
 #endif
 
 void _yrt_thread_mutex_init (_yrt_mutex_t* lock, _yrt_mutexattr_t * data) {
+    pthread_mutexattr_t attr, *ptr;
+    if (data != NULL) {
+        ptr = data;
+    } else {
+        ptr = &attr;
+    }
+
+    pthread_mutexattr_settype(ptr, PTHREAD_MUTEX_RECURSIVE);
     pthread_mutex_init (lock, data);
 }
 
