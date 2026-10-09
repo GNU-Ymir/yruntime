@@ -142,7 +142,7 @@ void _yrt_thread_mutex_init (_yrt_mutex_t* lock, _yrt_mutexattr_t * data) {
     }
 
     pthread_mutexattr_settype(ptr, PTHREAD_MUTEX_RECURSIVE);
-    pthread_mutex_init (lock, data);
+    pthread_mutex_init (lock, ptr);
 }
 
 void _yrt_thread_mutex_lock (_yrt_mutex_t* lock) {
