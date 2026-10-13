@@ -1,10 +1,10 @@
 #include <rt/concurrency/thread.h>
 
-#include <stdio.h> 
-#include <stdlib.h> 
-#include <unistd.h> 
-#include <sys/types.h> 
-#include <string.h> 
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <string.h>
 #include <errno.h>
 
 #ifdef _WIN32
@@ -246,9 +246,13 @@ int32_t _yrt_thread_sem_get (sem_t * sem) {
 
 _yrt_mutex_t * _yrt_i_ensure_monitor (void* object) {
     _yrt_mutex_t* mut = *((_yrt_mutex_t**) object + 1); // skip the vtable
-    if (mut == NULL) {
-        pthread_mutex_lock (&__monitor_mutex__);
+    if (mut != NULL) {
+        return mut;
+    }
 
+    pthread_mutex_lock (&__monitor_mutex__);
+    mut = *((_yrt_mutex_t**) object + 1); // skip the vtable
+    if (mut == NULL) {
         mut = GC_malloc (sizeof (_yrt_mutex_t));
         pthread_mutexattr_t attr;
         pthread_mutexattr_init(&attr);
@@ -256,10 +260,10 @@ _yrt_mutex_t * _yrt_i_ensure_monitor (void* object) {
         pthread_mutex_init (mut, &attr);
 
         *((_yrt_mutex_t**)object+1) = mut;
-        pthread_mutex_unlock (&__monitor_mutex__);
     }
+    pthread_mutex_unlock (&__monitor_mutex__);
 
-    return mut;    
+    return mut;
 }
 
 void _yrt_lock_global () {
@@ -284,7 +288,7 @@ uint32_t _yrt_get_nprocs () {
 #ifdef __linux__
     return get_nprocs ();
 #endif
-#ifdef _WIN32 
+#ifdef _WIN32
     SYSTEM_INFO sysinfo;
     GetSystemInfo(&sysinfo);
     return sysinfo.dwNumberOfProcessors;
