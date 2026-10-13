@@ -176,7 +176,9 @@ void _yrt_map_erase (_yrt_map_t * mp, uint8_t * key) {
 uint8_t _yrt_i_map_erase_entry (_yrt_map_entry_t ** en, uint64_t hash, uint8_t * key, _yrt_map_info_t * minfo) {
     uint8_t * keyEntry = ((uint8_t*) (*en)) + sizeof (_yrt_map_entry_t);
     if ((*en)-> hash == hash && minfo-> cmp (key, keyEntry) == 1) {
-        *en = (*en)-> next;
+        _yrt_map_entry_t * removed = *en;
+        *en = removed-> next;
+        memset (removed, 0, sizeof (_yrt_map_entry_t) + minfo-> keySize + minfo-> valueSize);
 
         return 1;
     }
