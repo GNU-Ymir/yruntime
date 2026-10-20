@@ -18,7 +18,7 @@
  * proc:.wait();
  *
  * // Retreive the stdout of the subprocess
- * let dmut result: [c8] = [];
+ * let mut result: [c8] = [];
  * while let Ok(c) = proc.stdout:.read!c8()? {
  *     result ~= [c];
  * }
@@ -90,8 +90,8 @@ pub class SubProcess {
             self._stderr = (copy IOPipe::new())?;
         }
 
-        let mut cmds: [*c8] = [std::conv::toStringZ(self._cmd)] ~ copy [std::conv::toStringZ(a) for a in self._args];
-        let mut cwd = std::conv::toStringZ(self._cwd.toStr());
+        let cmds: [*c8] = [std::conv::toStringZ(self._cmd)] ~ copy [std::conv::toStringZ(a) for a in self._args];
+        let cwd = std::conv::toStringZ(self._cwd.toStr());
 
         self._pid = threads::_yrt_fork();
         if (self._pid == 0) self:.child(cmds, cwd);

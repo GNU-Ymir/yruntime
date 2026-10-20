@@ -123,15 +123,15 @@ fn seededDigest ()-> u64 {
 
 __test threadsOwnTheirGenerator {
     // interleaved draws on other threads never disturb the sequence of this one
-    let dmut a = spawn seededDigest ();
-    let dmut b = spawn seededDigest ();
+    let a = spawn seededDigest ();
+    let b = spawn seededDigest ();
     let expected = seededDigest ();
 
     assert (a.value == expected);
     assert (b.value == expected);
 
-    let dmut c = spawn randBits ();
-    let dmut d = spawn randBits ();
+    let c = spawn randBits ();
+    let d = spawn randBits ();
     assert (c.value != d.value);
 }
 
@@ -158,7 +158,7 @@ __test splitDoesNotOverlap {
     assert (jumped:.bits () == 7028240683198899737u64);
 
     // the split generator continues the original sequence, the source jumped away from it
-    let dmut fromA: [u64] = [];
+    let mut fromA: [u64] = [];
     for _ in 0 .. 1000 {
         let x = ref_:.bits ();
         assert (b:.bits () == x);
@@ -282,7 +282,7 @@ __test bernoulliFrequency {
 __test normalMoments {
     seed (37u64);
 
-    let dmut xs: [f64] = [];
+    let mut xs: [f64] = [];
     for _ in 0 .. 100_000 { xs ~= [normal (5.0, 2.0)]; }
 
     let (mean, variance) = meanAndVariance (xs);
@@ -303,7 +303,7 @@ __test normalMoments {
 __test exponentialMoments {
     seed (41u64);
 
-    let dmut xs: [f64] = [];
+    let mut xs: [f64] = [];
     for _ in 0 .. 100_000 {
         let x = exponential (4.0);
         assert (x >= 0.0);
@@ -320,7 +320,7 @@ __test poissonMoments {
 
     // below and above the switch from Knuth's method to PTRS
     for lambda in [0.5, 4.0, 10.0, 50.0, 1000.0] {
-        let dmut xs: [f64] = [];
+        let mut xs: [f64] = [];
         for _ in 0 .. 100_000 {
             xs ~= [cast!f64 (poisson (lambda))];
         }
