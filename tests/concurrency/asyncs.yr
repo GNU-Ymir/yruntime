@@ -4,7 +4,11 @@ extern (C) fn _yrt_async_run (handle: (*void, *void), out: *void);
 
 extern (C) fn _yrt_test_async_inline ()-> (*void, *void);
 extern (C) fn _yrt_test_async_threaded ()-> (*void, *void);
+extern (C) fn _yrt_test_async_awaiting ()-> (*void, *void);
 extern (C) fn _yrt_test_async_finish (handle: (*void, *void), ref mut spurious: bool)-> u32;
+extern (C) fn _yrt_test_future_await_wakes ()-> u32;
+extern (C) fn _yrt_test_future_await_replaces ()-> u32;
+extern (C) fn _yrt_test_future_await_race (nb: u32)-> u32;
 
 /**
  * Runs `handle` to completion
@@ -31,4 +35,22 @@ __test runWokenFromThread {
     assert(out == 7);
     assert(resumes == 2u32);
     assert(!spurious);
+}
+
+__test runAwaitingFuture {
+    let (out, resumes, _) = run(_yrt_test_async_awaiting());
+    assert(out == 7);
+    assert(resumes == 2u32);
+}
+
+__test futureAwaitWakes {
+    assert(_yrt_test_future_await_wakes() == 0u32);
+}
+
+__test futureAwaitReplaces {
+    assert(_yrt_test_future_await_replaces() == 0u32);
+}
+
+__test futureAwaitRace {
+    assert(_yrt_test_future_await_race(500u32) == 0u32);
 }
