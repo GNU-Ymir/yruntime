@@ -12,6 +12,7 @@ typedef struct _yrt_future_content_t {
     uint8_t finished;
     uint32_t valueSize;
     void * value;
+    _yrt_delegate_t waker;
 } _yrt_future_content_t;
 
 
@@ -40,6 +41,15 @@ void* _yrt_wait_future (_yrt_future_t f);
  * @returns: true if the future is finished
  */
 uint8_t _yrt_check_finished_future (_yrt_future_t f);
+
+/**
+ * Register the waker of an await on a future, called once the future is finished
+ * @params:
+ *   - f: the awaited future
+ *   - waker: the waker to call, replacing the one registered by a previous await
+ * @returns: 1 if the future is already finished (the waker is not registered), 0 otherwise
+ */
+uint8_t _yrt_future_await (_yrt_future_t f, _yrt_delegate_t waker);
 
 /*!
  * ====================================================================================================

@@ -16,6 +16,8 @@ _yrt_future_t _yrt_spawn_future (_yrt_lazy_closure_t closure, uint32_t valueSize
     result.content-> closure = closure;
     result.content-> valueSize = valueSize;
     result.content-> value = NULL;
+    result.content-> waker.closure = NULL;
+    result.content-> waker.func = NULL;
 
     _yrt_i_thread_create (&result.id, NULL, &_yrt_i_future_main, result.content);
     _yrt_thread_sem_wait (&result.content-> wait);
@@ -30,10 +32,14 @@ void* _yrt_wait_future (_yrt_future_t f) {
     }
 
     _yrt_thread_mutex_lock (&f.content-> mutex);
-    if (!f.content-> finished) {
-        _yrt_thread_sem_wait (&f.content-> wait);
-    }
+    uint8_t finished = f.content-> finished;
     _yrt_thread_mutex_unlock (&f.content-> mutex);
+
+    if (!finished) {
+        // posted back, so every other waiter of the future is released as well
+        _yrt_thread_sem_wait (&f.content-> wait);
+        _yrt_thread_sem_post (&f.content-> wait);
+    }
 
     return f.content-> value;
 }
@@ -55,8 +61,17 @@ void* _yrt_i_future_main (void * data) {
         fptr (content-> closure.closure);
     }
 
+    _yrt_thread_mutex_lock (&content-> mutex);
     content-> finished = 1;
+    _yrt_delegate_t waker = content-> waker;
+    _yrt_thread_mutex_unlock (&content-> mutex);
+
     _yrt_thread_sem_post (&content-> wait);
+    if (waker.func != NULL) {
+        ((void (*) (void*)) waker.func) (waker.closure);
+    }
+
+    return NULL;
 }
 
 
@@ -64,4 +79,17 @@ uint8_t _yrt_check_finished_future (_yrt_future_t f) {
     if (f.content == NULL) return 1;
 
     return f.content-> finished;
+}
+
+uint8_t _yrt_future_await (_yrt_future_t f, _yrt_delegate_t waker) {
+    if (f.content == NULL) return 1;
+
+    _yrt_thread_mutex_lock (&f.content-> mutex);
+    uint8_t finished = f.content-> finished;
+    if (!finished) {
+        f.content-> waker = waker;
+    }
+    _yrt_thread_mutex_unlock (&f.content-> mutex);
+
+    return finished;
 }
