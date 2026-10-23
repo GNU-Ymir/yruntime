@@ -1,0 +1,34 @@
+in asyncs;
+
+extern (C) fn _yrt_async_run (handle: (*void, *void), out: *void);
+
+extern (C) fn _yrt_test_async_inline ()-> (*void, *void);
+extern (C) fn _yrt_test_async_threaded ()-> (*void, *void);
+extern (C) fn _yrt_test_async_finish (handle: (*void, *void), ref mut spurious: bool)-> u32;
+
+/**
+ * Runs `handle` to completion
+ * @returns: its result, the number of times it was resumed, and whether it was resumed before woken
+ */
+fn run (handle: (*void, *void))-> (i32, u32, bool) {
+    let dmut out = 0;
+    _yrt_async_run(handle, cast!{*void} (&out));
+
+    let dmut spurious = false;
+    let resumes = _yrt_test_async_finish(handle, ref spurious);
+
+    (out, resumes, spurious)
+}
+
+__test runWokenInline {
+    let (out, resumes, _) = run(_yrt_test_async_inline());
+    assert(out == 42);
+    assert(resumes == 3u32);
+}
+
+__test runWokenFromThread {
+    let (out, resumes, spurious) = run(_yrt_test_async_threaded());
+    assert(out == 7);
+    assert(resumes == 2u32);
+    assert(!spurious);
+}
