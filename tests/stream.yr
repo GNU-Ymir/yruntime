@@ -361,3 +361,49 @@ __test plainUnionWritesTheMemberName { // D and C are not Streamable, so neither
     str:.write(b, " ", d, " ", a, " ", c);
     assert(str[] == "stream::B() stream::D() stream::A() stream::C()", str[]);
 }
+
+class InheritBase {
+    let a: i32 = 1;
+    pub self () {}
+    impl Streamable;
+}
+
+class InheritMid over InheritBase {
+    let b: i32 = 2;
+    pub self () {}
+    impl Streamable;
+}
+
+class InheritEmpty over InheritMid {
+    pub self () {}
+    impl Streamable;
+}
+
+class InheritLeaf over InheritEmpty {
+    let c: i32 = 3;
+    pub self () {}
+    impl Streamable;
+}
+
+class InheritPlain {
+    pub let p: i32 = 9;
+    pub self () {}
+}
+
+class InheritOverPlain over InheritPlain {
+    let q: i32 = 8;
+    pub self () {}
+    impl Streamable;
+}
+
+__test streamableInheritedFields { // MID-137: the fields of every Streamable ancestor are written, a fieldless level adds no separator
+    let dmut str = copy StringStream();
+    str:.write(copy InheritMid(), " ", copy InheritEmpty(), " ", copy InheritLeaf());
+    assert(str[] == "stream::InheritMid(1, 2) stream::InheritEmpty(1, 2) stream::InheritLeaf(1, 2, 3)", str[]);
+}
+
+__test streamableNonStreamableAncestor { // MID-137: an ancestor that is not Streamable is skipped
+    let dmut str = copy StringStream();
+    str:.write(copy InheritOverPlain());
+    assert(str[] == "stream::InheritOverPlain(8)", str[]);
+}
