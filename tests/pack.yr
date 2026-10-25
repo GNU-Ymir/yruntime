@@ -1,0 +1,475 @@
+in pack;
+
+use core::concurrency::sync::mutex;
+use core::reflect::factory;
+use std::conv;
+use std::pack::_;
+
+extern (C) fn GC_gcollect();
+extern (C) fn GC_invoke_finalizers()-> i32;
+
+lazy dmut __DTOR_MUTEX__ = copy Mutex();
+
+lazy mut __DROPPED_DTORS__: usize = 0us;
+
+lazy mut __KEPT_DTORS__: usize = 0us;
+
+enum Color : u8
+| RED  = 1u8
+| BLUE = 7u8;
+
+enum Unit : [c8]
+| METER = "m"
+| GRAM  = "g";
+
+#[packable]
+record Point {
+    pub let x: i32;
+    pub let y: i32;
+    pub self (x: i32, y: i32) with x = x, y = y {}
+}
+
+#[packable (skip-> "cache")]
+record Tagged {
+    let name: [c8];
+    let cache: (u64)?;
+    pub self (name: [c8]) with name = name, cache = (12u64)? {}
+    pub fn getName(self)-> [c8] { self.name }
+    pub fn getCache(self)-> (u64)? { self.cache }
+}
+
+#[packable]
+record Pair {
+    let first: &Node;
+    let second: &Node;
+    let points: [Point];
+    pub self (first: &Node, second: &Node, points: [Point]) with first = first, second = second, points = points {}
+    pub fn same(self)-> bool { self.first is self.second }
+    pub fn sum(self)-> i32 { self.first.value + self.points[0].x }
+}
+
+#[packable]
+@abstract
+class Shape {
+    pub let name: [c8];
+    let origin: Point;
+    pub self (name: [c8], origin: Point) with name = name, origin = origin {}
+    pub fn area(self)-> i32;
+    pub fn getOrigin(self)-> Point { self.origin }
+}
+
+#[packable]
+class Rect over Shape {
+    pub let w: i32;
+    pub let h: i32;
+    pub self (w: i32, h: i32) with super ("rect", Point(1, 2)), w = w, h = h {}
+    pub over area(self)-> i32 { self.w * self.h }
+}
+
+#[packable]
+class Square over Rect {
+    pub self (side: i32) with super (side, side) {}
+}
+
+#[packable]
+class Circle over Shape {
+    pub let r: i32;
+    pub self (r: i32) with super ("circle", Point(0, 0)), r = r {}
+    pub over area(self)-> i32 { 3 * self.r * self.r }
+}
+
+#[packable]
+class Node {
+    pub let value: i32;
+    pub let mut next: (&Node)? = none;
+    pub let mut other: (&Node)? = none;
+    pub self (value: i32) with value = value {}
+}
+
+#[packable]
+class Everything {
+    pub let b: bool = true;
+    pub let i8_: i8 = -3i8;
+    pub let u16_: u16 = 0xBEEFu16;
+    pub let i64_: i64 = -1234567890123i64;
+    pub let usz: usize = 12us;
+    pub let isz: isize = -12is;
+    pub let c: c32 = 'é'c32;
+    pub let f: f32 = 1.5f;
+    pub let d: f64 = -2.25;
+    pub let s: [c8] = "hello";
+    pub let s32: [c32] = "wörld";
+    pub let arr: [i32 ; 3us] = [1, 2, 3];
+    pub let nested: [[i32]] = copy [copy [1], copy [2, 3]];
+    pub let m: [[c8] => i32] = copy ["a" => 1];
+    pub let t: (i32, [c8], bool) = (1, "t", false);
+    pub let o: (i32)? = (4)?;
+    pub let n: (i32)? = none;
+    pub let col: Color = Color::BLUE;
+    pub let unit: Unit = Unit::GRAM;
+    pub let pts: [Point] = copy [Point(1, 2), Point(3, 4)];
+    pub self () {}
+}
+
+#[packable]
+class P {
+    pub let x: i32;
+    pub let name: [c8];
+    pub let next: (&P)?;
+    pub self (x: i32, name: [c8], next: (&P)?) with x = x, name = name, next = next {}
+}
+
+#[packable (skip-> "lock,hits")]
+class Cached {
+    pub let key: [c8];
+    pub let lock: (u64)? = (1u64)?;
+    pub let mut hits: usize = 7us;
+    pub self (key: [c8]) with key = key {}
+}
+
+class Plain over Rect {
+    pub self () with super (1, 1) {}
+}
+
+#[packable]
+class Box {T} {
+    pub let v: T;
+    pub self (v: T) with v = v {}
+}
+
+#[packable]
+class Dropped {
+    pub let mut x: i32 = 1;
+    pub self () {}
+    __dtor(mut self) {
+        if (self.x == 2) {
+            atomic __DTOR_MUTEX__ {
+                __DROPPED_DTORS__ += 1us;
+            }
+        }
+    }
+}
+
+#[packable]
+class Kept {
+    pub let mut x: i32 = 1;
+    pub self () {}
+    __dtor(mut self) {
+        if (self.x == 2) {
+            atomic __DTOR_MUTEX__ {
+                __KEPT_DTORS__ += 1us;
+            }
+        }
+    }
+}
+
+#[packable]
+class Positive {
+    pub let v: i32;
+    pub self (v: i32) with v = v {}
+    pub fn unpacked(self)
+        throws UnpackError
+    {
+        if (self.v < 0) throw copy UnpackError("negative");
+    }
+}
+
+fn refusal {T} (bytes: [u8], maxDepth: usize = 1024us)-> (UnpackErrorCode)? {
+    {
+        unpack!{T} (bytes, maxDepth-> maxDepth);
+        none
+    } catch {
+        err: &UnpackError => {
+            (err.code)?
+        }
+    }
+}
+
+fn packet(body: [u8])-> [u8] {
+    [0x59u8, 0x50u8, 0x4Bu8, 0x01u8] ~ body
+}
+
+fn name(s: [c8])-> [u8] {
+    [cast!u8(s.len)] ~ s.to![u8] ()
+}
+
+fn chain(len: usize)-> &Node {
+    let dmut head = copy Node(0);
+    let dmut current = alias head;
+    for i in 1us .. len {
+        let dmut n = copy Node(cast!i32(i));
+        current.next = (alias n)?;
+        current = alias n;
+    }
+
+    head
+}
+
+fn unpackDropped(nb: usize) {
+    let dmut objects: [&Dropped] = [];
+    for _ in 0us .. nb {
+        let dmut o = copy Dropped();
+        o.x = 2;
+        objects ~= [alias o];
+    }
+
+    let bytes = pack(objects) ~ [0u8];
+    reset(alias objects);
+    refusal!{[&Dropped]} (bytes);
+}
+
+fn unpackKept(nb: usize)
+    throws UnpackError
+{
+    let dmut objects: [&Kept] = [];
+    for _ in 0us .. nb {
+        let dmut o = copy Kept();
+        o.x = 2;
+        objects ~= [alias o];
+    }
+
+    let bytes = pack(objects);
+    reset(alias objects);
+    unpack!{[&Kept]} (bytes);
+}
+
+/**
+ * Set back the objects packed by the destructor tests, so only the destructors of the objects unpacked are counted
+ */
+fn reset {T} (dmut objects: [T]) {
+    for i in 0us .. objects.len {
+        objects[i].x = 1;
+    }
+}
+
+/**
+ * @returns: the number of destructors run on the objects unpacked by unpackDropped and unpackKept
+ */
+fn dtors()-> (usize, usize) {
+    atomic __DTOR_MUTEX__ {
+        (__DROPPED_DTORS__, __KEPT_DTORS__)
+    }
+}
+
+fn collect() {
+    GC_gcollect();
+    GC_invoke_finalizers();
+}
+
+__test scalars {
+    assert(unpack!{i32} (pack(-5)) == -5);
+    assert(unpack!{u64} (pack(0xFFFFFFFFFFFFFFFFu64)) == 0xFFFFFFFFFFFFFFFFu64);
+    assert(unpack!{bool} (pack(true)));
+    assert(unpack!{c8} (pack('x')) == 'x');
+    assert(unpack!{f64} (pack(3.25)) == 3.25);
+    assert(unpack!{usize} (pack(7us)) == 7us);
+    assert(pack(1u32) == [0x59u8, 0x50u8, 0x4Bu8, 0x01u8, 0x01u8, 0x00u8, 0x00u8, 0x00u8]);
+    assert(pack(1us).len == 12us);
+}
+
+__test collections {
+    assert(unpack!{[c8]} (pack("hello")) == "hello");
+    assert(unpack!{[i32]} (pack(copy [1, 2, 3])) == [1, 2, 3]);
+    assert(unpack!{[[c8]]} (pack(copy ["a", "", "bc"])) == ["a", "", "bc"]);
+    assert(unpack!{[i32 ; 2us]} (pack([4, 5])) == [4, 5]);
+    assert(unpack!{(i32, [c8])} (pack((1, "a"))) == (1, "a"));
+    assert(unpack!{(i32)?} (pack((3)?)) == (3)?);
+
+    let m = unpack!{[[c8] => [i32]]} (pack(copy ["a" => copy [1], "b" => copy [2, 3]]));
+    assert(m.len == 2us && m["b"] == (copy [2, 3])?);
+}
+
+__test enums {
+    assert(unpack!{Color} (pack(Color::BLUE)) == Color::BLUE);
+    assert(unpack!{Unit} (pack(Unit::GRAM)) == Unit::GRAM);
+    assert(refusal!{Color} (pack(2u8)) == (UnpackErrorCode::NOT_A_MEMBER)?);
+}
+
+__test records {
+    let p = unpack!{Point} (pack(Point(5, -6)));
+    assert(p.x == 5 && p.y == -6);
+
+    let t = unpack!{Tagged} (pack(Tagged("x")));
+    assert(t.getName() == "x");
+    assert(t.getCache() == none);
+}
+
+__test recordHoldingObjects {
+    let n = copy Node(4);
+    let p = unpack!{Pair} (pack(Pair(n, n, copy [Point(3, 0)])));
+    assert(p.same() && p.sum() == 7);
+
+    let ps = unpack!{[Pair]} (pack(copy [Pair(n, copy Node(1), copy [Point(1, 1)]), Pair(n, n, copy [Point(2, 2)])]));
+    assert(ps.len == 2us && !ps[0].same() && ps[1].same() && ps[1].sum() == 6);
+}
+
+__test everyField {
+    let e = unpack!{&Everything} (pack(copy Everything()));
+    let r = copy Everything();
+    assert(e.b == r.b && e.i8_ == r.i8_ && e.u16_ == r.u16_ && e.i64_ == r.i64_);
+    assert(e.usz == r.usz && e.isz == r.isz && e.c == r.c && e.f == r.f && e.d == r.d);
+    assert(e.s == r.s && e.s32 == r.s32 && e.arr == r.arr && e.nested == r.nested);
+    assert(e.m["a"] == (1)? && e.t == r.t && e.o == r.o && e.n == r.n);
+    assert(e.col == r.col && e.unit == r.unit && e.pts.len == 2us && e.pts[1].y == 4);
+}
+
+__test subclassThroughAncestor {
+    let s = unpack!{&Shape} (pack(copy Square(3)));
+    assert(s.area() == 9);
+    assert(s.name == "rect");
+    assert(s.getOrigin().y == 2);
+    assert(s.__typeinfo__.name == "pack::Square");
+
+    let c = unpack!{&Shape} ((copy Circle(1)).pack());
+    assert(c.area() == 3 && c.name == "circle");
+}
+
+__test sharingAndCycles {
+    let dmut a = copy Node(1);
+    let dmut b = copy Node(2);
+    a.next = (alias b)?;
+    a.other = (alias b)?;
+    b.next = (alias a)?;
+
+    let back = unpack!{&Node} (pack(a));
+    if let Ok(n) = back.next {
+        if let Ok(o) = back.other {
+            assert(n is o);
+        } else {
+            assert(false);
+        }
+
+        if let Ok(m) = n.next {
+            assert(m is back);
+        } else {
+            assert(false);
+        }
+    } else {
+        assert(false);
+    }
+}
+
+__test refusedClasses {
+    assert(refusal!{&Circle} (pack(copy Square(1))) == (UnpackErrorCode::TYPE_MISMATCH)?);
+    assert(refusal!{&Node} (pack(copy Square(1))) == (UnpackErrorCode::TYPE_MISMATCH)?);
+}
+
+__test hook {
+    assert(unpack!{&Positive} (pack(copy Positive(1))).v == 1);
+    assert(refusal!{&Positive} (pack(copy Positive(-1))) == (UnpackErrorCode::INVALID)?);
+}
+
+__test malformed {
+    let good = pack(copy [1, 2, 3]);
+    assert(refusal!{[i32]} (good[0us .. good.len - 1us]) == (UnpackErrorCode::BAD_LENGTH)?);
+    assert(refusal!{i32} (pack(5)[0us .. 7us]) == (UnpackErrorCode::TRUNCATED)?);
+    assert(refusal!{[i32]} (good ~ [0u8]) == (UnpackErrorCode::TRAILING)?);
+    assert(refusal!{[i32]} ([0x58u8] ~ good[1us .. $]) == (UnpackErrorCode::BAD_MAGIC)?);
+    assert(refusal!{[i32]} (good[0us .. 3us] ~ [2u8] ~ good[4us .. $]) == (UnpackErrorCode::UNSUPPORTED_VERSION)?);
+    assert(refusal!{[i32]} (good[0us .. 4us] ~ [0x7Fu8]) == (UnpackErrorCode::BAD_LENGTH)?);
+    assert(refusal!{[i32]} (good[0us .. 4us] ~ [0x83u8, 0x00u8]) == (UnpackErrorCode::OVERFLOW)?);
+    assert(refusal!{bool} (good[0us .. 4us] ~ [2u8]) == (UnpackErrorCode::BAD_TAG)?);
+    assert(refusal!{(i32)?} (good[0us .. 4us] ~ [2u8]) == (UnpackErrorCode::BAD_TAG)?);
+}
+
+__test specExample {
+    let a = copy P(1, "a", none);
+    let b = copy P(2, "bc", (a)?);
+    let bytes = pack(b);
+
+    assert(bytes.len == 39us);
+    assert(bytes[0us .. 14us] == packet(copy [0x00u8, 0x00u8] ~ name("pack::P")));
+    assert(bytes[22us .. $] == [0x02u8, 0x00u8, 0x00u8, 0x00u8, 0x02u8, 0x62u8, 0x63u8, 0x01u8,
+                                0x01u8, 0x00u8, 0x01u8, 0x00u8, 0x00u8, 0x00u8, 0x01u8, 0x61u8, 0x00u8]);
+
+    let back = unpack!{&P} (bytes);
+    if let Ok(n) = back.next {
+        assert(n.x == 1 && n.name == "a");
+        if let Ok(_) = n.next {
+            assert(false);
+        }
+    } else {
+        assert(false);
+    }
+}
+
+__test unknownType {
+    let fp = pack(copy Circle(1))[19us .. 27us];
+    assert(refusal!{&Shape} (packet(copy [0x00u8, 0x00u8] ~ name("pack::Nope") ~ fp)) == (UnpackErrorCode::UNKNOWN_TYPE)?);
+    assert(refusal!{&Shape} (packet(copy [0x00u8, 0x00u8] ~ name("pack::Shape") ~ fp)) == (UnpackErrorCode::UNKNOWN_TYPE)?);
+
+    factory::register!{&Plain} ();
+    assert(refusal!{&Rect} (packet(copy [0x00u8, 0x00u8] ~ name("pack::Plain") ~ fp)) == (UnpackErrorCode::UNKNOWN_TYPE)?);
+}
+
+__test schemaMismatch {
+    let dmut bytes = copy pack(copy Circle(1));
+    bytes[20us] = bytes[20us] ^ 0x01u8;
+    assert(refusal!{&Shape} (bytes) == (UnpackErrorCode::SCHEMA_MISMATCH)?);
+}
+
+__test badReference {
+    assert(refusal!{&Node} (packet(copy [0x01u8])) == (UnpackErrorCode::BAD_REFERENCE)?);
+    assert(refusal!{&Node} (packet(copy [0x00u8, 0x01u8])) == (UnpackErrorCode::BAD_REFERENCE)?);
+}
+
+__test depth {
+    assert(unpack!{&Node} (pack(chain(5us)), maxDepth-> 5us).value == 0);
+    assert(refusal!{&Node} (pack(chain(5us)), maxDepth-> 4us) == (UnpackErrorCode::TOO_DEEP)?);
+}
+
+__test duplicateKey {
+    let one = copy [0x01u8, 0x61u8, 0x01u8, 0x00u8, 0x00u8, 0x00u8];
+    assert(unpack!{[[c8] => i32]} (packet(copy [0x01u8] ~ one))["a"] == (1)?);
+    assert(refusal!{[[c8] => i32]} (packet(copy [0x02u8] ~ one ~ one)) == (UnpackErrorCode::DUPLICATE_KEY)?);
+}
+
+__test varints {
+    let ten = copy [0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8];
+    assert(refusal!{[u8]} (packet(ten ~ [0x02u8])) == (UnpackErrorCode::OVERFLOW)?);
+    assert(refusal!{[u8]} (packet(ten ~ [0x01u8])) == (UnpackErrorCode::BAD_LENGTH)?);
+    assert(refusal!{[u8]} (packet(copy [0x80u8, 0x00u8])) == (UnpackErrorCode::OVERFLOW)?);
+
+    let long = copy [0u8 ; 200us];
+    assert(unpack!{[u8]} (pack(long)) == long);
+    assert(pack(long)[4us .. 6us] == [0xC8u8, 0x01u8]);
+}
+
+__test skippedFields {
+    let dmut c = copy Cached("k");
+    c.hits = 9us;
+    let back = unpack!{&Cached} (pack(c));
+    assert(back.key == "k" && back.lock == none && back.hits == 0us);
+}
+
+__test appendToBuffer {
+    let dmut buffer: [u8] = [];
+    pack(1, ref buffer);
+    pack("two", ref buffer);
+    assert(buffer.len == 16us);
+    assert(unpack!{i32} (buffer[0us .. 8us]) == 1);
+    assert(unpack!{[c8]} (buffer[8us .. $]) == "two");
+}
+
+__test templateClass {
+    let b = unpack!{&Box!{[i32]}} (pack(copy Box!{[i32]} (copy [1, 2])));
+    assert(b.v == [1, 2]);
+}
+
+__test destructorOnlyOnceUnpacked {
+    // initialized before any destructor can run: one run by an allocation made while initializing them would wait for itself
+    dtors();
+
+    unpackDropped(1000us);
+    collect();
+
+    // the collector is conservative: a stale stack slot can keep a whole round of objects alive
+    for _ in 0us .. 10us {
+        unpackKept(1000us);
+        collect();
+        if (dtors().1 != 0us) break;
+    }
+
+    let (dropped, kept) = dtors();
+    assert(dropped == 0us && kept != 0us);
+}
