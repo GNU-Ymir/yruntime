@@ -1,0 +1,333 @@
+/**
+ * Compile-time classification of the packable types, and the helpers shared by the packer and the unpacker.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in utils;
+
+use core::types::info;
+use std::pack::packable_;
+use std::stream;
+use std::traits;
+
+/**
+ * Slice growing, used to write a sequence of bytes straight at the end of a buffer
+ */
+pub mod Grow {C} {
+
+    /**
+     * Extend `res` by `len` elements, and set `appended` to a view of them
+     * */
+    pub extern (C) fn _yrt_grow_slice(ref dmut res: [C], ref dmut appended: [C], len: usize, size: usize);
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =================================          SKIPPED FIELDS          =================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * The index of the comma ending the entry of `list` that contains the index `i`, or `list.len` for the last entry
+ */
+pub def if (i >= list.len) entryEnd {list: [c8], i: usize} = list.len;
+pub def if (i < list.len) entryEnd {list: [c8], i: usize} = entryEndAt!{list, i, list[i]};
+
+def if (c == ',') entryEndAt {list: [c8], i: usize, c: c8} = i;
+def if (c != ',') entryEndAt {list: [c8], i: usize, c: c8} = entryEnd!{list, i + 1us};
+
+/**
+ * True if `name` is one of the entries of the comma-separated `list`, from the entry starting at `start`
+ * @info: an expression evaluated at compile time does not short-circuit, so every branch selects an overload instead of reading out of the list
+ */
+pub def if (start > list.len) inList {list: [c8], name: [c8], start: usize} = false;
+pub def if (start <= list.len) inList {list: [c8], name: [c8], start: usize} = cte (
+    list[start .. entryEnd!{list, start}] == name || inList!{list, name, entryEnd!{list, start} + 1us}
+);
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ================================          PACKABLE TYPES          ==================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * True for the types written as a fixed number of bytes: bool, integers, chars, f32 and f64
+ */
+pub def isScalarWire {T} = cte (template!{T}{X of bool} || isIntegral!{T} || isChar!{T} || template!{T}{X of f32} || template!{T}{X of f64});
+
+/**
+ * The number of bytes a scalar takes on the wire, `isize` and `usize` taking 8 whatever the host
+ */
+pub def if (template!{T}{X of usize} || template!{T}{X of isize}) wireSize {T} = 8us;
+pub def if !(template!{T}{X of usize} || template!{T}{X of isize}) wireSize {T} = T::size;
+
+/**
+ * True if `T` can be packed: a scalar but `f80`, a slice, a static array, a map, a tuple or an option of packable types, an enum whose values are packable, or a class or a record tagged `#[packable]`
+ * The tag is read rather than the trait it implements, which is not known yet while a class whose field refers to it is validated
+ */
+pub def if template!{T}{enum E} isPackable {T} = isPackableEnum!{T, __pragma!unproxied(T)};
+pub def if !template!{T}{enum E} isPackable {T} = isPackableType!{T};
+
+def isPackableEnum {T, U} = cte (isPackable!{U} && !template!{U}{class C} && __pragma!compile({ let a = T::members[0]; let b: U = a; let _c_ = (b == b); }));
+
+def isPackableType {T} = isScalarWire!{T};
+def isPackableType {T of [U], U} = cte (isPackable!{U} && !isZeroWire!{U});
+def isPackableType {T of [U ; N], U, N: usize} = isPackable!{U};
+def isPackableType {T of [K => V], K, V} = cte (isPackable!{K} && isPackable!{V} && !(isZeroWire!{K} && isZeroWire!{V}));
+def isPackableType {T of (U)?, U} = isPackable!{U};
+def isPackableType {T of R, record R} = __pragma!has_tag(R, std::pack::packable_::packable);
+def isPackableType {T of C, class C} = __pragma!has_tag(C, std::pack::packable_::packable);
+def isPackableType {T of (U,), U...} = isPackableTuple!{T, 0us};
+def isPackableType {T of ()} = true;
+
+def if (i >= T::arity) isPackableTuple {T, i: usize} = true;
+def if (i < T::arity) isPackableTuple {T, i: usize} = cte (isPackable!{__pragma!field_type(T, i)} && isPackableTuple!{T, i + 1us});
+
+/**
+ * True if the class `C` derives from a class tagged `#[packable]`
+ */
+pub def if __pragma!has_super(C) hasPackableSuper {C} = __pragma!has_tag(__pragma!super(C), std::pack::packable_::packable);
+pub def if !__pragma!has_super(C) hasPackableSuper {C} = false;
+
+/**
+ * True if every value of `T` is written in zero bytes, the empty tuple and the arrays of zero elements
+ * A slice of such elements is rejected: its length could not be bounded by the size of the packet.
+ */
+pub def isZeroWire {T} = false;
+pub def isZeroWire {T of ()} = true;
+pub def isZeroWire {T of [U ; N], U, N: usize} = cte (N == 0us || isZeroWire!{U});
+pub def isZeroWire {T of (U,), U...} = isZeroWireTuple!{T, 0us};
+
+def if (i >= T::arity) isZeroWireTuple {T, i: usize} = true;
+def if (i < T::arity) isZeroWireTuple {T, i: usize} = cte (isZeroWire!{__pragma!field_type(T, i)} && isZeroWireTuple!{T, i + 1us});
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =================================          MINIMAL SIZE          ===================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * @returns: the least number of bytes a value of `T` takes on the wire
+ */
+pub fn minWire {T} ()-> usize {
+    cte if (template!{T}{enum E}) {
+        utils::minWireOf!{__pragma!unproxied(T)} ()
+    } else {
+        utils::minWireOf!{T} ()
+    }
+}
+
+fn if isScalarWire!{T} minWireOf {T} ()-> usize {
+    wireSize!{T}
+}
+
+fn minWireOf {T of [U], U} ()-> usize {
+    1us
+}
+
+fn minWireOf {T of [U ; N], U, N: usize} ()-> usize {
+    N * minWire!{U} ()
+}
+
+fn minWireOf {T of [K => V], K, V} ()-> usize {
+    1us
+}
+
+fn minWireOf {T of (U)?, U} ()-> usize {
+    1us
+}
+
+fn minWireOf {T of (U,), U...} ()-> usize {
+    let mut res = 0us;
+    cte for i in 0us .. T::arity {
+        res += minWire!{__pragma!field_type(T, i)} ();
+    }
+
+    res
+}
+
+fn minWireOf {T of ()} ()-> usize {
+    0us
+}
+
+fn minWireOf {T of R, record R} ()-> usize {
+    utils::zeroed!{R} ().__pack__minWire()
+}
+
+fn minWireOf {T of C, class C} ()-> usize {
+    1us
+}
+
+/**
+ * @returns: a value of the record `R` whose bytes are all zero, on which the methods `#[packable]` declares are called, none of them reading a field
+ */
+pub fn zeroed {R} ()-> R {
+    let buffer: [u8 ; R::size] = [0u8 ; R::size];
+    unsafe {
+        *(etc::runtime::memory::Runtime!{*u8, *R}::_yrt_unsafe_cast(buffer.ptr))
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ====================================          SCHEMA          ======================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Write the spelling of the type `T` in the schema of a class, from which its fingerprint is computed
+ * A record is spelled with its fields, as its layout is not checked anywhere else, a class by its name, as it is checked by its own type entry.
+ */
+pub fn schema {T} (dmut s: &StringStream) {
+    cte if (template!{T}{enum E}) {
+        s:.write(T::typeid, ":");
+        utils::schemaOf!{__pragma!unproxied(T)} (alias s);
+    } else {
+        utils::schemaOf!{T} (alias s);
+    }
+}
+
+fn if isScalarWire!{T} schemaOf {T} (dmut s: &StringStream) {
+    cte if (template!{T}{X of bool}) {
+        s:.write("bool");
+    } else {
+        s:.write(T::typeinfo.name);
+    }
+}
+
+fn schemaOf {T of [U], U} (dmut s: &StringStream) {
+    s:.write("[");
+    utils::schema!{U} (alias s);
+    s:.write("]");
+}
+
+fn schemaOf {T of [U ; N], U, N: usize} (dmut s: &StringStream) {
+    s:.write("[");
+    utils::schema!{U} (alias s);
+    s:.write(";", N, "]");
+}
+
+fn schemaOf {T of [K => V], K, V} (dmut s: &StringStream) {
+    s:.write("[");
+    utils::schema!{K} (alias s);
+    s:.write("=>");
+    utils::schema!{V} (alias s);
+    s:.write("]");
+}
+
+fn schemaOf {T of (U)?, U} (dmut s: &StringStream) {
+    s:.write("(");
+    utils::schema!{U} (alias s);
+    s:.write(")?");
+}
+
+fn schemaOf {T of (U,), U...} (dmut s: &StringStream) {
+    s:.write("(");
+    cte for i in 0us .. T::arity {
+        cte if (i != 0us) {
+            s:.write(",");
+        }
+
+        utils::schema!{__pragma!field_type(T, i)} (alias s);
+    }
+
+    s:.write(")");
+}
+
+fn schemaOf {T of ()} (dmut s: &StringStream) {
+    s:.write("()");
+}
+
+fn schemaOf {T of R, record R} (dmut s: &StringStream) {
+    utils::zeroed!{R} ().__pack__schema(alias s);
+}
+
+fn schemaOf {T of C, class C} (dmut s: &StringStream) {
+    s:.write("&", C::typeinfo.inner[0].name);
+}
+
+/**
+ * @returns: the 64-bit FNV-1a hash of `schema`
+ */
+pub fn fingerprint(schema: [c8])-> u64 {
+    let mut h = 0xcbf29ce484222325u64;
+    for c in schema {
+        h = (h ^ cast!u64(cast!u8(c))) * 0x100000001b3u64;
+    }
+
+    h
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ===================================          CLASSES          ======================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * @returns: the type info of the class of the object at `obj`, stored in the first slot of its vtable
+ */
+pub fn classOf(obj: *void)-> TypeInfo {
+    unsafe {
+        *(*(*(cast!{*(*(*TypeInfo))} (obj))))
+    }
+}
+
+/**
+ * @returns: true if the class of `ti` is named `ancestor`, or one of its ancestors is
+ */
+pub fn inherits(ti: TypeInfo, ancestor: [c8])-> bool {
+    let mut current = ti;
+    while current.name != ancestor {
+        if current.inner.len == 0us return false;
+        current = current.inner[0];
+    }
+
+    true
+}
+
+/**
+ * @returns: true if `a` equals `b`
+ */
+pub fn equals {U} (a: U, b: U)-> bool {
+    a == b
+}
+
+/**
+ * @returns: the value at `p`, borrowing its memory when it holds borrowed data, a value without any being copied
+ */
+pub fn load {T} (dmut p: *T)-> dmut T {
+    cte if (__pragma!compile({ unsafe { let dmut _b_: T = alias *p; } })) {
+        unsafe {
+            return alias *p;
+        }
+    } else {
+        unsafe {
+            return *p;
+        }
+    }
+}
+
+/**
+ * @returns: `v`, borrowing its memory when it holds borrowed data, a value without any being copied
+ */
+pub fn keep {T} (ref dmut v: T)-> dmut T {
+    cte if (__pragma!compile({ let dmut _b_: T = alias v; })) {
+        alias v
+    } else {
+        v
+    }
+}
