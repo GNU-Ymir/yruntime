@@ -11,7 +11,7 @@ use etc::c::memory;
 use etc::runtime::memory;
 use etc::runtime::threads;
 use std::conv;
-use std::pack::{errors, packer, utils};
+use std::pack::{errors, utils};
 use std::stream;
 use std::traits;
 
@@ -31,7 +31,10 @@ pub class Unpacker {
     let _bytes: [u8];
 
     // The index of the next byte to read
-    let mut _pos: usize = 0us;
+    let mut _pos: usize;
+
+    // The index of the byte following the payload
+    let _end: usize;
 
     // The address of every object read, by index
     let mut _objects: [*void] = [];
@@ -54,10 +57,14 @@ pub class Unpacker {
     /**
      * @params:
      *    - bytes: the packet
+     *    - from: the index of the first byte of the payload
+     *    - to: the index of the byte following the payload, the end of `bytes` if it is beyond
      *    - maxDepth: the number of objects that can be nested inside one another, an object being refused anyway when less than `STACK_MARGIN` bytes of stack are left
      */
-    pub self (bytes: [u8], maxDepth: usize = 1024us)
+    pub self (bytes: [u8], from: usize, to: usize, maxDepth: usize = 1024us)
         with _bytes = bytes
+        , _end = unpacker::atMost(to, bytes.len)
+        , _pos = from
         , _maxDepth = maxDepth
     {}
 
@@ -65,39 +72,19 @@ pub class Unpacker {
      * @returns: the number of bytes left to read
      */
     pub fn remaining(self)-> usize {
-        self._bytes.len - self._pos
+        if (self._pos >= self._end) { 0us } else { self._end - self._pos }
     }
 
     /**
-     * Read the magic bytes and the version of the format
-     * @throws:
-     *    - &UnpackError: if the packet does not start with the magic bytes (BAD_MAGIC), or is written in another version of the format (UNSUPPORTED_VERSION)
-     */
-    pub fn readHeader(mut self)
-        throws UnpackError
-    {
-        for m in MAGIC {
-            if (self:.readByte() != m) {
-                throw copy UnpackError(UnpackErrorCode::BAD_MAGIC, self._pos - 1us, "not a packet");
-            }
-        }
-
-        let version = self:.readByte();
-        if (version != VERSION) {
-            throw copy UnpackError(UnpackErrorCode::UNSUPPORTED_VERSION, self._pos - 1us, "version " ~ version.to![c8] () ~ " of the format");
-        }
-    }
-
-    /**
-     * Check that every byte of the packet was read, run the `unpacked` hook of every object in the order they were read, and release them
+     * Check that every byte of the payload was read, run the `unpacked` hook of every object in the order they were read, and release them
      * @throws:
      *    - &UnpackError: if bytes are left (TRAILING), or if a hook refused its object (INVALID)
      */
     pub fn finish(mut self)
         throws UnpackError
     {
-        if (self._pos != self._bytes.len) {
-            throw copy UnpackError(UnpackErrorCode::TRAILING, self._pos, (self._bytes.len - self._pos).to![c8] () ~ " bytes left");
+        if (self._pos != self._end) {
+            throw copy UnpackError(UnpackErrorCode::TRAILING, self._pos, self.remaining().to![c8] () ~ " bytes left");
         }
 
         for i, hook in self._hooks {
@@ -495,7 +482,7 @@ pub class Unpacker {
     pub fn readByte(mut self)-> u8
         throws UnpackError
     {
-        if (self._pos >= self._bytes.len) {
+        if (self._pos >= self._end) {
             throw copy UnpackError(UnpackErrorCode::TRUNCATED, self._pos, "the packet ends");
         }
 
@@ -518,6 +505,13 @@ pub class Unpacker {
         memcpy(dst, cast!{*void} (self._bytes.ptr + self._pos), len);
         self._pos += len;
     }
+}
+
+/**
+ * @returns: the least of `a` and `b`
+ */
+fn atMost(a: usize, b: usize)-> usize {
+    if (a > b) { b } else { a }
 }
 
 /**

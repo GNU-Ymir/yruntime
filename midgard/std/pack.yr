@@ -9,7 +9,10 @@
  * <br>
  * The format of a packet is, in little-endian, a varint being an unsigned LEB128 in its shortest form:
  * ```text
- * Packet      := "YPK" 0x01 Value(T)
+ * Packet      := Header Value(T) Tag
+ * Header      := "YPK" 0x02 auth-alg (u8) key-id (u32) sequence (u64) payload-len (u64),
+ *                key-id and sequence being 0 if auth-alg is 0, payload-len the number of bytes of Value(T)
+ * Tag         := nothing if auth-alg is 0, the 32 bytes of HMAC-SHA-256 (every byte before the tag, then the context) if it is 1
  * Value(T)    := bool: 0x00 | 0x01      integers, chars, f32, f64: their bytes      isize, usize: 8 bytes
  *              | slice, map: varint length, then its elements, or its keys each followed by its value
  *              | static array, tuple, record: their elements, or fields, in order
@@ -50,6 +53,7 @@
 
 in pack;
 
+pub mod ::envelope;
 pub mod ::errors;
 pub mod ::packable_;
 pub mod ::packer;
@@ -57,7 +61,7 @@ pub mod ::unpacker;
 
 mod ::utils;
 
-use std::pack::{errors, packer, unpacker, utils};
+use std::pack::{envelope, errors, packer, unpacker, utils};
 
 /**
  * @returns: a packet holding `value`
@@ -67,14 +71,14 @@ use std::pack::{errors, packer, unpacker, utils};
  * use std::pack;
  *
  * let bytes = pack([1, 2, 3]);
- * assert(bytes[0us .. 4us] == [0x59u8, 0x50u8, 0x4Bu8, 0x01u8]);
+ * assert(bytes[0us .. 4us] == [0x59u8, 0x50u8, 0x4Bu8, 0x02u8]);
  * ```
  */
 pub fn pack {T} (value: T)-> [u8] {
     cte assert(isPackable!{T}, T::typeid ~ " cannot be packed");
     let dmut p = copy Packer();
     p:.write(value);
-    p:.bytes()
+    p:.seal()
 }
 
 /**
@@ -87,24 +91,24 @@ pub fn pack {T} (value: T)-> [u8] {
  * let dmut buffer: [u8] = [];
  * pack(1, ref buffer);
  * pack("two", ref buffer);
- * assert(buffer.len == 16us);
+ * assert(buffer.len == 58us);
  * ```
  */
 pub fn pack {T} (value: T, ref dmut into: [u8]) {
     cte assert(isPackable!{T}, T::typeid ~ " cannot be packed");
     let dmut p = copy Packer(into-> alias into);
     p:.write(value);
-    into = p:.bytes();
+    into = p:.seal();
 }
 
 /**
- * Rebuild a value of type `T` from the packet `bytes`, every byte of which it has to use
+ * Rebuild a value of type `T` from the packet `bytes`, every byte of which it has to use. The packet must not be authenticated
  * @params:
  *    - bytes: the packet
  *    - maxDepth: the number of objects that can be nested inside one another, as each one costs a frame on the stack; whatever its value, an object is refused when less than `STACK_MARGIN` bytes of stack are left
  * @returns: the value, an object being an instance of `T` or one of its subclasses tagged `#[packable]`
  * @throws:
- *    - &UnpackError: if the packet does not hold a value of type `T`, see `UnpackErrorCode`
+ *    - &UnpackError: if the packet does not hold a value of type `T`, or is authenticated (UNSUPPORTED_AUTH), see `UnpackErrorCode`
  * @example:
  * ```
  * use std::pack::_;
@@ -135,8 +139,24 @@ pub fn unpack {T} (bytes: [u8], maxDepth: usize = 1024us)-> dmut T
     throws UnpackError
 {
     cte assert(isPackable!{T}, T::typeid ~ " cannot be packed");
-    let dmut u = copy Unpacker(bytes, maxDepth-> maxDepth);
-    u:.readHeader();
+    let h = readHeader(bytes);
+    if (h.alg != AuthAlgorithm::NONE) {
+        tagSize(h.alg);
+        throw copy UnpackError(UnpackErrorCode::UNSUPPORTED_AUTH, ALG_OFFSET, "the packet is authenticated");
+    }
+
+    checkFrame(h, bytes.len);
+    readPayload!{T} (bytes, maxDepth)
+}
+
+/**
+ * Read the payload of the packet `bytes`, whose envelope was checked
+ */
+fn readPayload {T} (bytes: [u8], maxDepth: usize)-> dmut T
+    throws UnpackError
+{
+    let h = readHeader(bytes);
+    let dmut u = copy Unpacker(bytes, HEADER_SIZE, HEADER_SIZE + cast!usize(h.payloadLen), maxDepth-> maxDepth);
     let dmut res = u:.read!{T} ();
     u:.finish();
     utils::keep!{T} (ref res)

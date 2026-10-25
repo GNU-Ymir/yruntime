@@ -186,8 +186,20 @@ fn refusal {T} (bytes: [u8], maxDepth: usize = 1024us)-> (UnpackErrorCode)? {
     }
 }
 
+/**
+ * @returns: an unsigned packet whose payload is `body`
+ */
 fn packet(body: [u8])-> [u8] {
-    [0x59u8, 0x50u8, 0x4Bu8, 0x01u8] ~ body
+    let dmut res = copy [0u8 ; HEADER_SIZE] ~ body;
+    writeHeader(alias res, 0us, Header(AuthAlgorithm::NONE, 0u32, 0u64, cast!u64(body.len)));
+    res
+}
+
+/**
+ * @returns: the payload of the unsigned packet `bytes`
+ */
+fn payload(bytes: [u8])-> [u8] {
+    bytes[HEADER_SIZE .. $]
 }
 
 fn name(s: [c8])-> [u8] {
@@ -264,8 +276,9 @@ __test scalars {
     assert(unpack!{c8} (pack('x')) == 'x');
     assert(unpack!{f64} (pack(3.25)) == 3.25);
     assert(unpack!{usize} (pack(7us)) == 7us);
-    assert(pack(1u32) == [0x59u8, 0x50u8, 0x4Bu8, 0x01u8, 0x01u8, 0x00u8, 0x00u8, 0x00u8]);
-    assert(pack(1us).len == 12us);
+    assert(pack(1u32)[0us .. 4us] == [0x59u8, 0x50u8, 0x4Bu8, 0x02u8]);
+    assert(payload(pack(1u32)) == [0x01u8, 0x00u8, 0x00u8, 0x00u8]);
+    assert(pack(1us).len == HEADER_SIZE + 8us);
 }
 
 __test collections {
@@ -362,25 +375,28 @@ __test hook {
 
 __test malformed {
     let good = pack(copy [1, 2, 3]);
-    assert(refusal!{[i32]} (good[0us .. good.len - 1us]) == (UnpackErrorCode::BAD_LENGTH)?);
+    assert(refusal!{[i32]} (good[0us .. good.len - 1us]) == (UnpackErrorCode::TRUNCATED)?);
+    assert(refusal!{[i32]} (packet(payload(good)[0us .. $ - 1us])) == (UnpackErrorCode::BAD_LENGTH)?);
     assert(refusal!{i32} (pack(5)[0us .. 7us]) == (UnpackErrorCode::TRUNCATED)?);
     assert(refusal!{[i32]} (good ~ [0u8]) == (UnpackErrorCode::TRAILING)?);
+    assert(refusal!{[i32]} (packet(payload(good) ~ [0u8])) == (UnpackErrorCode::TRAILING)?);
     assert(refusal!{[i32]} ([0x58u8] ~ good[1us .. $]) == (UnpackErrorCode::BAD_MAGIC)?);
-    assert(refusal!{[i32]} (good[0us .. 3us] ~ [2u8] ~ good[4us .. $]) == (UnpackErrorCode::UNSUPPORTED_VERSION)?);
-    assert(refusal!{[i32]} (good[0us .. 4us] ~ [0x7Fu8]) == (UnpackErrorCode::BAD_LENGTH)?);
-    assert(refusal!{[i32]} (good[0us .. 4us] ~ [0x83u8, 0x00u8]) == (UnpackErrorCode::OVERFLOW)?);
-    assert(refusal!{bool} (good[0us .. 4us] ~ [2u8]) == (UnpackErrorCode::BAD_TAG)?);
-    assert(refusal!{(i32)?} (good[0us .. 4us] ~ [2u8]) == (UnpackErrorCode::BAD_TAG)?);
+    assert(refusal!{[i32]} (good[0us .. 3us] ~ [1u8] ~ good[4us .. $]) == (UnpackErrorCode::UNSUPPORTED_VERSION)?);
+    assert(refusal!{[i32]} (packet(copy [0x7Fu8])) == (UnpackErrorCode::BAD_LENGTH)?);
+    assert(refusal!{[i32]} (packet(copy [0x83u8, 0x00u8])) == (UnpackErrorCode::OVERFLOW)?);
+    assert(refusal!{bool} (packet(copy [2u8])) == (UnpackErrorCode::BAD_TAG)?);
+    assert(refusal!{(i32)?} (packet(copy [2u8])) == (UnpackErrorCode::BAD_TAG)?);
 }
 
 __test specExample {
     let a = copy P(1, "a", none);
     let b = copy P(2, "bc", (a)?);
     let bytes = pack(b);
+    let body = payload(bytes);
 
-    assert(bytes.len == 39us);
-    assert(bytes[0us .. 14us] == packet(copy [0x00u8, 0x00u8] ~ name("pack::P")));
-    assert(bytes[22us .. $] == [0x02u8, 0x00u8, 0x00u8, 0x00u8, 0x02u8, 0x62u8, 0x63u8, 0x01u8,
+    assert(body.len == 35us);
+    assert(body[0us .. 10us] == [0x00u8, 0x00u8] ~ name("pack::P"));
+    assert(body[18us .. $] == [0x02u8, 0x00u8, 0x00u8, 0x00u8, 0x02u8, 0x62u8, 0x63u8, 0x01u8,
                                 0x01u8, 0x00u8, 0x01u8, 0x00u8, 0x00u8, 0x00u8, 0x01u8, 0x61u8, 0x00u8]);
 
     let back = unpack!{&P} (bytes);
@@ -395,7 +411,7 @@ __test specExample {
 }
 
 __test unknownType {
-    let fp = pack(copy Circle(1))[19us .. 27us];
+    let fp = payload(pack(copy Circle(1)))[15us .. 23us];
     assert(refusal!{&Shape} (packet(copy [0x00u8, 0x00u8] ~ name("pack::Nope") ~ fp)) == (UnpackErrorCode::UNKNOWN_TYPE)?);
     assert(refusal!{&Shape} (packet(copy [0x00u8, 0x00u8] ~ name("pack::Shape") ~ fp)) == (UnpackErrorCode::UNKNOWN_TYPE)?);
 
@@ -405,7 +421,7 @@ __test unknownType {
 
 __test schemaMismatch {
     let dmut bytes = copy pack(copy Circle(1));
-    bytes[20us] = bytes[20us] ^ 0x01u8;
+    bytes[HEADER_SIZE + 16us] = bytes[HEADER_SIZE + 16us] ^ 0x01u8;
     assert(refusal!{&Shape} (bytes) == (UnpackErrorCode::SCHEMA_MISMATCH)?);
 }
 
@@ -433,7 +449,7 @@ __test varints {
 
     let long = copy [0u8 ; 200us];
     assert(unpack!{[u8]} (pack(long)) == long);
-    assert(pack(long)[4us .. 6us] == [0xC8u8, 0x01u8]);
+    assert(payload(pack(long))[0us .. 2us] == [0xC8u8, 0x01u8]);
 }
 
 __test skippedFields {
@@ -447,9 +463,9 @@ __test appendToBuffer {
     let dmut buffer: [u8] = [];
     pack(1, ref buffer);
     pack("two", ref buffer);
-    assert(buffer.len == 16us);
-    assert(unpack!{i32} (buffer[0us .. 8us]) == 1);
-    assert(unpack!{[c8]} (buffer[8us .. $]) == "two");
+    assert(buffer.len == 58us);
+    assert(unpack!{i32} (buffer[0us .. 29us]) == 1);
+    assert(unpack!{[c8]} (buffer[29us .. $]) == "two");
 }
 
 __test templateClass {
@@ -495,7 +511,7 @@ fn sample()-> [u8] {
 fn varint(v: u64)-> [u8] {
     let dmut p = copy Packer();
     p:.writeVarint(v);
-    p:.bytes()[4us .. $]
+    payload(p:.seal())
 }
 
 /**
@@ -560,7 +576,7 @@ __test hugeLengths {
 }
 
 __test unknownTypeNames {
-    let fp = pack(copy Node(1))[17us .. 25us];
+    let fp = payload(pack(copy Node(1)))[13us .. 21us];
     let node = copy [0x00u8, 0x00u8, 0x00u8, 0x00u8, 0x00u8, 0x00u8];
     assert(refusal!{&Node} (packet(copy [0x00u8, 0x00u8, 0x00u8] ~ fp ~ node)) == (UnpackErrorCode::UNKNOWN_TYPE)?);
     assert(refusal!{&Node} (packet(copy [0x00u8, 0x00u8] ~ name("pack::Nod") ~ fp ~ node)) == (UnpackErrorCode::UNKNOWN_TYPE)?);
@@ -569,17 +585,17 @@ __test unknownTypeNames {
 }
 
 __test sharedEntriesOfAnotherClass {
-    let s = pack(copy Square(1));
-    let fields = s[27us .. $];
+    let s = payload(pack(copy Square(1)));
+    let fields = s[23us .. $];
 
     // the second object reuses the type entry of the first, a Square, where a Circle is expected
-    let second = packet(s[4us .. $] ~ [0x01u8, 0x00u8] ~ fields);
+    let second = packet(s ~ [0x01u8, 0x00u8] ~ fields);
     let (_, other) = unpack!{(&Shape, &Shape)} (second);
     assert(other.area() == 1);
     assert(refusal!{(&Shape, &Circle)} (second) == (UnpackErrorCode::TYPE_MISMATCH)?);
 
     // the second refers back to the first object
-    let back = packet(s[4us .. $] ~ [0x00u8]);
+    let back = packet(s ~ [0x00u8]);
     let (a, b) = unpack!{(&Shape, &Rect)} (back);
     assert(a is b);
     assert(refusal!{(&Shape, &Circle)} (back) == (UnpackErrorCode::TYPE_MISMATCH)?);
@@ -587,8 +603,8 @@ __test sharedEntriesOfAnotherClass {
 }
 
 __test selfCycle {
-    let n = pack(copy Node(7));
-    let cycle = n[0us .. 29us] ~ [0x01u8, 0x00u8, 0x01u8, 0x00u8];
+    let n = payload(pack(copy Node(7)));
+    let cycle = packet(n[0us .. 25us] ~ [0x01u8, 0x00u8, 0x01u8, 0x00u8]);
     let back = unpack!{&Node} (cycle);
     if let Ok(next) = back.next {
         assert(next is back && back.value == 7);
@@ -604,7 +620,7 @@ __test deepNesting {
     // objects nested in one another far deeper than the limit, refused once it is reached rather than when the stack is exhausted
     let n = pack(copy Node(0));
     let dmut p = copy Packer();
-    p:.writeRaw(cast!{*void} (n.ptr + 4us), 21us);
+    p:.writeRaw(cast!{*void} (n.ptr + HEADER_SIZE), 21us);
     for i in 1us .. 100000us {
         p:.write(0);
         p:.write(true);
@@ -612,7 +628,7 @@ __test deepNesting {
         p:.writeVarint(0u64);
     }
 
-    let deep = p:.bytes();
+    let deep = p:.seal();
     assert(refusal!{&Node} (deep) == (UnpackErrorCode::TOO_DEEP)?);
     assert(refusal!{&Node} (deep, maxDepth-> usize::max) == (UnpackErrorCode::TOO_DEEP)?);
 }

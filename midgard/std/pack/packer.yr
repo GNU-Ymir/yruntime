@@ -9,19 +9,9 @@ in packer;
 use etc::c::memory;
 use etc::runtime::memory;
 use std::io;
-use std::pack::utils;
+use std::pack::{envelope, utils};
 use std::stream;
 use std::traits;
-
-/**
- * The magic bytes every packet starts with, "YPK"
- */
-pub def MAGIC = [0x59u8, 0x50u8, 0x4Bu8];
-
-/**
- * The version of the format of the packets written
- */
-pub def VERSION = 1u8;
 
 /**
  * Writes values into a packet, following the wire format of `std::pack`.
@@ -33,6 +23,9 @@ pub class Packer {
     // The bytes written so far
     let dmut _bytes: [u8] = [];
 
+    // The index of the header of the packet in `_bytes`
+    let _start: usize;
+
     // The index of every object written, by address
     let mut _objects: [*void => mut usize] = copy [];
 
@@ -40,22 +33,33 @@ pub class Packer {
     let mut _types: [[c8] => mut usize] = copy [];
 
     /**
-     * A packer writing after the bytes of `into`, the header of the packet included
+     * A packer writing a packet after the bytes of `into`, its header being completed by `seal`
      * @params:
      *    - into: the buffer to append the packet to
      */
     pub self (dmut into: [u8] = [])
         with _bytes = alias into
+        , _start = into.len
     {
-        self._bytes ~= MAGIC;
-        self._bytes ~= [VERSION];
+        let dmut header: [u8] = [];
+        Grow!{u8}::_yrt_grow_slice(ref self._bytes, ref header, HEADER_SIZE, 1us);
+        writeHeader(alias header, 0us, Header(AuthAlgorithm::NONE, 0u32, 0u64, 0u64));
     }
 
     /**
-     * @returns: the bytes written so far, the bytes of the buffer the packer was given included
+     * Complete the header of a packet that is not authenticated
+     * @returns: the bytes written, those of the buffer the packer was given included
      */
-    pub fn bytes(mut self)-> dmut [u8] {
+    pub fn seal(mut self)-> dmut [u8] {
+        writeHeader(alias self._bytes, self._start, Header(AuthAlgorithm::NONE, 0u32, 0u64, cast!u64(self.payloadLen())));
         alias self._bytes
+    }
+
+    /**
+     * @returns: the number of bytes of payload written so far
+     */
+    fn payloadLen(self)-> usize {
+        self._bytes.len - self._start - HEADER_SIZE
     }
 
     /**
