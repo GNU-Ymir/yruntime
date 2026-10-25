@@ -9,7 +9,7 @@ in packer;
 use etc::c::memory;
 use etc::runtime::memory;
 use std::io;
-use std::pack::{envelope, utils};
+use std::pack::{auth, envelope, utils};
 use std::stream;
 use std::traits;
 
@@ -52,6 +52,22 @@ pub class Packer {
      */
     pub fn seal(mut self)-> dmut [u8] {
         writeHeader(alias self._bytes, self._start, Header(AuthAlgorithm::NONE, 0u32, 0u64, cast!u64(self.payloadLen())));
+        alias self._bytes
+    }
+
+    /**
+     * Complete the header of a packet authenticated by `signer`, and append its tag
+     * @params:
+     *    - signer: the signer, whose next sequence number the packet takes
+     *    - context: the context the packet is sent in, which the receiver gives too
+     * @returns: the bytes written, those of the buffer the packer was given included
+     */
+    pub fn seal(mut self, dmut signer: &Signer, context: [u8] = [])-> dmut [u8] {
+        let h = Header(AuthAlgorithm::HMAC_SHA256, signer.keyId(), signer:.next(), cast!u64(self.payloadLen()));
+        writeHeader(alias self._bytes, self._start, h);
+
+        let tag = signer.tag(self._bytes[self._start .. $], context);
+        self:.writeRaw(cast!{*void} (tag.ptr), tag.len);
         alias self._bytes
     }
 

@@ -7,6 +7,8 @@
  * An object is rebuilt as an instance of its own class, which the packet names: `unpack!{&Shape}` rebuilds a `Square`, if `Square` is a subclass of `Shape` tagged `#[packable]`. A packet can only name such a class, and only where the type of the value it is read into allows it, so it never picks an arbitrary class of the program. The objects are allocated without calling a constructor and filled from the packet, and none of them is visible before the whole packet is read: on an error, they are dropped without their destructor ever running.
  * The sharing of the objects is kept: an object referenced twice is packed once and rebuilt once, and a cycle is rebuilt as a cycle. Slices, maps, tuples and records are values, packed in full wherever they appear, and rebuilt in fresh memory.
  * <br>
+ * A packet can be authenticated, by a `Signer` holding a key the receiver holds too: its `Verifier` checks the tag of the packet, and that it was not received already, before any byte of its payload is read. A packet that is not authenticated is only read by `unpack` without a verifier, or by a verifier built to accept it, never because the packet says so.
+ * <br>
  * The format of a packet is, in little-endian, a varint being an unsigned LEB128 in its shortest form:
  * ```text
  * Packet      := Header Value(T) Tag
@@ -53,6 +55,7 @@
 
 in pack;
 
+pub mod ::auth;
 pub mod ::envelope;
 pub mod ::errors;
 pub mod ::packable_;
@@ -61,7 +64,7 @@ pub mod ::unpacker;
 
 mod ::utils;
 
-use std::pack::{envelope, errors, packer, unpacker, utils};
+use std::pack::{auth, envelope, errors, packer, unpacker, utils};
 
 /**
  * @returns: a packet holding `value`
@@ -102,7 +105,31 @@ pub fn pack {T} (value: T, ref dmut into: [u8]) {
 }
 
 /**
- * Rebuild a value of type `T` from the packet `bytes`, every byte of which it has to use. The packet must not be authenticated
+ * @params:
+ *    - value: the value to pack
+ *    - signer: the signer authenticating the packet, whose next sequence number it takes
+ *    - context: the context the packet is sent in, which is not packed: the receiver has to give the same to accept it
+ * @returns: a packet holding `value`, authenticated by `signer`
+ * @warning: panics if `value` holds an object whose class is not tagged `#[packable]`, a subclass of a tagged class that is not tagged itself
+ * @example:
+ * ```
+ * use std::conv;
+ * use std::pack::_;
+ *
+ * let dmut signer = copy Signer(7u32, "secret".to![u8] ());
+ * let bytes = pack(12, alias signer);
+ * assert(bytes.len == 61us);
+ * ```
+ */
+pub fn pack {T} (value: T, dmut signer: &Signer, context: [u8] = [])-> [u8] {
+    cte assert(isPackable!{T}, T::typeid ~ " cannot be packed");
+    let dmut p = copy Packer();
+    p:.write(value);
+    p:.seal(alias signer, context-> context)
+}
+
+/**
+ * Rebuild a value of type `T` from the packet `bytes`, every byte of which it has to use. The packet must not be authenticated, see the version taking a `Verifier` for those that are
  * @params:
  *    - bytes: the packet
  *    - maxDepth: the number of objects that can be nested inside one another, as each one costs a frame on the stack; whatever its value, an object is refused when less than `STACK_MARGIN` bytes of stack are left
@@ -142,10 +169,53 @@ pub fn unpack {T} (bytes: [u8], maxDepth: usize = 1024us)-> dmut T
     let h = readHeader(bytes);
     if (h.alg != AuthAlgorithm::NONE) {
         tagSize(h.alg);
-        throw copy UnpackError(UnpackErrorCode::UNSUPPORTED_AUTH, ALG_OFFSET, "the packet is authenticated");
+        throw copy UnpackError(UnpackErrorCode::UNSUPPORTED_AUTH, ALG_OFFSET, "an authenticated packet is unpacked with a Verifier");
     }
 
     checkFrame(h, bytes.len);
+    readPayload!{T} (bytes, maxDepth)
+}
+
+/**
+ * Rebuild a value of type `T` from the packet `bytes`, once `verifier` has checked it: none of its payload is read before
+ * @params:
+ *    - bytes: the packet
+ *    - verifier: the verifier, recording the sequence number of the packet as received
+ *    - context: the context the packet was sent in, see `pack`
+ *    - sender: the sender of the packet, the verifier remembering the sequence numbers received for each sender
+ *    - maxDepth: the number of objects that can be nested inside one another, see the other version of `unpack`
+ * @returns: the value, an object being an instance of `T` or one of its subclasses tagged `#[packable]`
+ * @throws:
+ *    - &UnpackError: if the verifier refuses the packet (see `Verifier::verify`), or it does not hold a value of type `T`, see `UnpackErrorCode`
+ * @example:
+ * ```
+ * use std::conv;
+ * use std::pack::_;
+ *
+ * let key = "secret".to![u8] ();
+ * let dmut signer = copy Signer(7u32, key);
+ * let dmut verifier = copy Verifier();
+ * verifier:.addKey(7u32, key);
+ *
+ * assert(unpack!{i32} (pack(12, alias signer), alias verifier) == 12);
+ *
+ * let refused = {
+ *     unpack!{i32} (pack(12), alias verifier);
+ *     false
+ * } catch {
+ *     err: &UnpackError => {
+ *         err.code == UnpackErrorCode::UNAUTHENTICATED
+ *     }
+ * };
+ *
+ * assert(refused);
+ * ```
+ */
+pub fn unpack {T} (bytes: [u8], dmut verifier: &Verifier, context: [u8] = [], sender: [c8] = "", maxDepth: usize = 1024us)-> dmut T
+    throws UnpackError
+{
+    cte assert(isPackable!{T}, T::typeid ~ " cannot be packed");
+    verifier:.verify(bytes, context-> context, sender-> sender);
     readPayload!{T} (bytes, maxDepth)
 }
 

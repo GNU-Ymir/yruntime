@@ -1,0 +1,270 @@
+/**
+ * This module implements the authentication of packets: the `Signer` a sender tags its packets with, and the `Verifier` a receiver checks them with before reading any of their payload.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * A packet is tagged with an HMAC-SHA-256 over every byte before the tag, header included, followed by a context the caller gives on both sides, which is not sent (the actor the packet is addressed to, for example): a packet replayed to another context is refused.
+ * Whether a packet has to be authenticated is decided by the receiver, never by the packet: a `Verifier` refuses the unsigned ones unless it was built to accept them.
+ * @example:
+ * ```
+ * use std::conv;
+ * use std::pack::_;
+ *
+ * let key = "a secret shared by both sides".to![u8] ();
+ * let dmut signer = copy Signer(1u32, key);
+ * let dmut verifier = copy Verifier();
+ * verifier:.addKey(1u32, key);
+ *
+ * let bytes = pack("hello", alias signer, context-> "greeter".to![u8] ());
+ * assert(unpack!{[c8]} (bytes, alias verifier, context-> "greeter".to![u8] ()) == "hello");
+ *
+ * // the same packet, received again
+ * let replayed = {
+ *     unpack!{[c8]} (bytes, alias verifier, context-> "greeter".to![u8] ());
+ *     false
+ * } catch {
+ *     err: &UnpackError => {
+ *         err.code == UnpackErrorCode::REPLAYED
+ *     }
+ * };
+ *
+ * assert(replayed);
+ * ```
+ */
+
+in auth;
+
+use std::conv;
+use std::digest::{hmac, sha2};
+use std::pack::{envelope, errors};
+
+/**
+ * The number of sequence numbers below the highest one received that a `Verifier` remembers, for each key and sender
+ */
+pub def REPLAY_WINDOW = 64u64;
+
+/**
+ * The default largest payload a `Verifier` accepts, 16 MiB
+ */
+pub def MAX_PAYLOAD = 16777216us;
+
+/**
+ * Tags the packets of a sender with an HMAC-SHA-256 of one of its keys, numbering them so a receiver can refuse a packet it already received.
+ */
+@final
+pub class Signer {
+
+    // The identifier of the key, written in the header so the receiver picks the same key
+    let _keyId: u32;
+
+    // The key
+    let _key: [u8];
+
+    // The sequence number of the next packet
+    let mut _sequence: u64;
+
+    /**
+     * @params:
+     *    - keyId: the identifier of the key, under which the receivers hold it
+     *    - key: the secret key
+     *    - sequence: the sequence number of the first packet. A receiver refuses the numbers it already received, so a sender that starts again with a key a receiver still holds has to start above the numbers it used
+     */
+    pub self (keyId: u32, key: [u8], sequence: u64 = 1u64)
+        with _keyId = keyId
+        , _key = copy key
+        , _sequence = sequence
+    {}
+
+    /**
+     * @returns: the identifier of the key
+     */
+    pub fn keyId(self)-> u32 {
+        self._keyId
+    }
+
+    /**
+     * @returns: the sequence number of the next packet, which is reserved for it
+     */
+    pub fn next(mut self)-> u64 {
+        atomic self {
+            let s = self._sequence;
+            self._sequence += 1u64;
+            s
+        }
+    }
+
+    /**
+     * @returns: the tag of the frame `frame` sent in the context `context`
+     */
+    pub fn tag(self, frame: [u8], context: [u8])-> [u8 ; 32us] {
+        auth::tagOf(self._key, frame, context)
+    }
+}
+
+/**
+ * The sequence numbers received with one key from one sender: the highest one, and which of the `REPLAY_WINDOW` below it were received
+ */
+record Window {
+
+    // The highest sequence number received
+    pub let top: u64;
+
+    // The bit i is set if the number `top - i` was received, none being set before the first one is
+    pub let seen: u64;
+
+    pub self (top: u64, seen: u64) with top = top, seen = seen {}
+
+    /**
+     * @returns: the window once `sequence` is received, none if it was already received or falls below the window
+     */
+    pub fn accept(self, sequence: u64)-> (Window)? {
+        if (self.seen == 0u64 || sequence > self.top) {
+            let shift = sequence - self.top;
+            let seen = if (self.seen == 0u64 || shift >= REPLAY_WINDOW) { 1u64 } else { (self.seen << shift) | 1u64 };
+            return Window(sequence, seen)?;
+        }
+
+        let diff = self.top - sequence;
+        if (diff >= REPLAY_WINDOW || (self.seen & (1u64 << diff)) != 0u64) return none;
+
+        Window(self.top, self.seen | (1u64 << diff))?
+    }
+}
+
+/**
+ * Checks the packets a receiver is given before their payload is read: their size, their tag, and that they were not received already.
+ * The keys are looked up by the identifier the packet names, and the sequence numbers are remembered for each key and sender.
+ */
+@final
+pub class Verifier {
+
+    // The keys, by identifier
+    let mut _keys: [u32 => mut [u8]] = copy [];
+
+    // The sequence numbers received, by key and sender
+    let mut _windows: [[c8] => mut Window] = copy [];
+
+    // Whether the packets that are not authenticated are accepted
+    let _allowUnsigned: bool;
+
+    // The largest payload accepted
+    let _maxPayload: usize;
+
+    /**
+     * @params:
+     *    - allowUnsigned: accept the packets that are not authenticated, for a receiver whose packets cannot be forged (in the same process, for example)
+     *    - maxPayload: the largest payload accepted, a packet announcing a larger one being refused from its header
+     */
+    pub self (allowUnsigned: bool = false, maxPayload: usize = MAX_PAYLOAD)
+        with _allowUnsigned = allowUnsigned
+        , _maxPayload = maxPayload
+    {}
+
+    /**
+     * Accept the packets tagged with `key`, under the identifier `keyId`, replacing the key it named
+     */
+    pub fn addKey(mut self, keyId: u32, key: [u8]) {
+        atomic self {
+            self._keys[keyId] = copy key;
+        }
+    }
+
+    /**
+     * Refuse the packets tagged with the key `keyId`. The sequence numbers received with it are still remembered, should it be added again.
+     */
+    pub fn removeKey(mut self, keyId: u32) {
+        atomic self {
+            self._keys:.remove(keyId);
+        }
+    }
+
+    /**
+     * @params:
+     *    - header: the first `HEADER_SIZE` bytes of a packet
+     * @returns: the number of bytes of the whole packet, to read before giving it to `verify`
+     * @throws:
+     *    - &UnpackError: if the header cannot be read (TRUNCATED, BAD_MAGIC, UNSUPPORTED_VERSION), if the packet is not authenticated and has to be (UNAUTHENTICATED), if it is authenticated with an algorithm this program does not implement (UNSUPPORTED_AUTH), or if its payload is larger than the verifier accepts (TOO_LARGE)
+     */
+    pub fn frameSize(self, header: [u8])-> usize
+        throws UnpackError
+    {
+        let h = readHeader(header);
+        let tag = self.check(h);
+        HEADER_SIZE + cast!usize(h.payloadLen) + tag
+    }
+
+    /**
+     * Check the packet `bytes`, received in the context `context` from `sender`, and record its sequence number as received
+     * @params:
+     *    - bytes: the whole packet
+     *    - context: the context the sender tagged the packet in
+     *    - sender: the sender of the packet, the sequence numbers being remembered for each sender
+     * @returns: the header of the packet
+     * @throws:
+     *    - &UnpackError: if `frameSize` refuses its header, if the bytes end before the packet does (TRUNCATED) or go on after it (TRAILING), if it names a key the verifier does not hold (UNKNOWN_KEY), if its tag is not the one of its bytes, key and context (BAD_SIGNATURE), or if its sequence number was received already, or falls below the window (REPLAYED)
+     */
+    pub fn verify(mut self, bytes: [u8], context: [u8] = [], sender: [c8] = "")-> Header
+        throws UnpackError
+    {
+        let h = readHeader(bytes);
+        self.check(h);
+        let tag = checkFrame(h, bytes.len);
+        if (tag == 0us) return h;
+
+        let end = bytes.len - tag;
+        let key = atomic self { self._keys[h.keyId] };
+        if let Ok(k) = key {
+            if (!hmac::equals(auth::tagOf(k, bytes[0us .. end], context), bytes[end .. $])) {
+                throw copy UnpackError(UnpackErrorCode::BAD_SIGNATURE, end, "the tag does not match the packet");
+            }
+        } else {
+            throw copy UnpackError(UnpackErrorCode::UNKNOWN_KEY, KEY_OFFSET, "key " ~ h.keyId.to![c8] () ~ " is unknown");
+        }
+
+        let accepted = atomic self {
+            let name = h.keyId.to![c8] () ~ "/" ~ sender;
+            let current = if let Ok(w) = self._windows[name] { w } else { Window(0u64, 0u64) };
+            if let Ok(next) = current.accept(h.sequence) {
+                self._windows[name] = next;
+                true
+            } else {
+                false
+            }
+        };
+
+        if (!accepted) {
+            throw copy UnpackError(UnpackErrorCode::REPLAYED, SEQUENCE_OFFSET, "packet " ~ h.sequence.to![c8] () ~ " was already received");
+        }
+
+        h
+    }
+
+    /**
+     * Check the header `h` against the policy of the verifier
+     * @returns: the number of bytes of the tag
+     */
+    fn check(self, h: Header)-> usize
+        throws UnpackError
+    {
+        let tag = tagSize(h.alg);
+        if (tag == 0us && !self._allowUnsigned) {
+            throw copy UnpackError(UnpackErrorCode::UNAUTHENTICATED, ALG_OFFSET, "the packet is not authenticated");
+        }
+
+        if (h.payloadLen > cast!u64(self._maxPayload) || h.payloadLen > cast!u64(usize::max - HEADER_SIZE - tag)) {
+            throw copy UnpackError(UnpackErrorCode::TOO_LARGE, LENGTH_OFFSET, "a payload of " ~ h.payloadLen.to![c8] () ~ " bytes is larger than " ~ self._maxPayload.to![c8] ());
+        }
+
+        tag
+    }
+}
+
+/**
+ * @returns: the HMAC-SHA-256 with `key` of `frame` followed by `context`
+ */
+fn tagOf(key: [u8], frame: [u8], context: [u8])-> [u8 ; 32us] {
+    let dmut h = copy Hmac!{&Sha256} (key);
+    h:.update(frame);
+    h:.update(context);
+    h:.finish()
+}
