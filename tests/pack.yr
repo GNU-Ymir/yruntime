@@ -4,6 +4,7 @@ use core::concurrency::sync::mutex;
 use core::reflect::factory;
 use std::conv;
 use std::pack::_;
+use std::rand::generator;
 
 extern (C) fn GC_gcollect();
 extern (C) fn GC_invoke_finalizers()-> i32;
@@ -472,4 +473,146 @@ __test destructorOnlyOnceUnpacked {
 
     let (dropped, kept) = dtors();
     assert(dropped == 0us && kept != 0us);
+}
+
+/**
+ * @returns: a packet holding every kind of packable value, objects shared, in a cycle and through their ancestor
+ */
+fn sample()-> [u8] {
+    let dmut a = copy Node(1);
+    let dmut b = copy Node(2);
+    a.next = (alias b)?;
+    b.other = (alias a)?;
+
+    let pairs = copy [Pair(a, b, copy [Point(1, 2)]), Pair(b, b, [])];
+    let m = copy ["x" => copy [1, 2], "" => []];
+    pack((copy Everything(), a, pairs, m, copy Square(3), Color::RED))
+}
+
+/**
+ * @returns: the bytes of the varint `v`
+ */
+fn varint(v: u64)-> [u8] {
+    let dmut p = copy Packer();
+    p:.writeVarint(v);
+    p:.bytes()[4us .. $]
+}
+
+/**
+ * @returns: `bytes` with one or a few of them changed, inserted, removed or cut off
+ */
+fn mutate(dmut rng: &Random, bytes: [u8])-> [u8] {
+    let dmut res = copy bytes;
+    for _ in 0us .. rng:.uniform(1us, 3us) {
+        let i = rng:.uniform(0us, res.len - 1us);
+        match rng:.uniform(0, 5) {
+            0 => { res[i] = cast!u8(rng:.bits()); }
+            1 => { res[i] = res[i] ^ (1u8 << cast!u8(rng:.uniform(0, 7))); }
+            2 => { res[i] = if (rng:.bernoulli(0.5)) { 0xFFu8 } else { 0x80u8 }; }
+            3 => { res = copy res[0us .. i] ~ [cast!u8(rng:.bits())] ~ res[i .. $]; }
+            4 => { res = copy res[0us .. i] ~ res[i + 1us .. $]; }
+            _ => { res = copy res[0us .. i]; }
+        }
+
+        if (res.len == 0us) break;
+    }
+
+    res
+}
+
+__test truncatedAtEveryOffset {
+    let bytes = sample();
+    let (e, _, _, _, s, c) = unpack!{(&Everything, &Node, [Pair], [[c8] => [i32]], &Shape, Color)} (bytes);
+    assert(e.s == "hello" && s.area() == 9 && c == Color::RED);
+
+    for i in 0us .. bytes.len {
+        assert(refusal!{(&Everything, &Node, [Pair], [[c8] => [i32]], &Shape, Color)} (bytes[0us .. i]) != none);
+    }
+}
+
+__test mutatedPackets {
+    let bytes = sample();
+    let dmut rng = copy Random(seed-> 75u64);
+    let mut refused = 0us;
+    for _ in 0us .. 5000us {
+        if let Ok(_) = refusal!{(&Everything, &Node, [Pair], [[c8] => [i32]], &Shape, Color)} (mutate(alias rng, bytes)) {
+            refused += 1us;
+        }
+    }
+
+    assert(refused > 4000us);
+}
+
+__test hugeLengths {
+    let huge = varint(0x7FFFFFFFFFFFFFFFu64);
+    let max = varint(0xFFFFFFFFFFFFFFFFu64);
+    assert(refusal!{[u8]} (packet(huge)) == (UnpackErrorCode::BAD_LENGTH)?);
+    assert(refusal!{[u64]} (packet(max ~ copy [0u8 ; 64us])) == (UnpackErrorCode::BAD_LENGTH)?);
+    assert(refusal!{[[c8] => i32]} (packet(huge)) == (UnpackErrorCode::BAD_LENGTH)?);
+    assert(refusal!{[[u8]]} (packet(copy [0x02u8, 0x00u8] ~ huge)) == (UnpackErrorCode::BAD_LENGTH)?);
+
+    // each element takes 5 bytes at least, 4 of them cannot hold a second one
+    assert(refusal!{[(i32, bool)]} (packet(copy [0x02u8, 0x00u8, 0x00u8, 0x00u8, 0x00u8, 0x00u8, 0x00u8])) == (UnpackErrorCode::BAD_LENGTH)?);
+
+    assert(refusal!{&Node} (packet(huge)) == (UnpackErrorCode::BAD_REFERENCE)?);
+    assert(refusal!{&Node} (packet(copy [0x00u8] ~ huge)) == (UnpackErrorCode::BAD_REFERENCE)?);
+    assert(refusal!{&Node} (packet(copy [0x00u8, 0x00u8] ~ huge)) == (UnpackErrorCode::BAD_LENGTH)?);
+}
+
+__test unknownTypeNames {
+    let fp = pack(copy Node(1))[17us .. 25us];
+    let node = copy [0x00u8, 0x00u8, 0x00u8, 0x00u8, 0x00u8, 0x00u8];
+    assert(refusal!{&Node} (packet(copy [0x00u8, 0x00u8, 0x00u8] ~ fp ~ node)) == (UnpackErrorCode::UNKNOWN_TYPE)?);
+    assert(refusal!{&Node} (packet(copy [0x00u8, 0x00u8] ~ name("pack::Nod") ~ fp ~ node)) == (UnpackErrorCode::UNKNOWN_TYPE)?);
+    assert(refusal!{&Node} (packet(copy [0x00u8, 0x00u8, 0x02u8, 0xFFu8, 0xFEu8] ~ fp ~ node)) == (UnpackErrorCode::UNKNOWN_TYPE)?);
+    assert(refusal!{&Node} (packet(copy [0x00u8, 0x00u8] ~ name("core::exception::Exception") ~ fp ~ node)) == (UnpackErrorCode::UNKNOWN_TYPE)?);
+}
+
+__test sharedEntriesOfAnotherClass {
+    let s = pack(copy Square(1));
+    let fields = s[27us .. $];
+
+    // the second object reuses the type entry of the first, a Square, where a Circle is expected
+    let second = packet(s[4us .. $] ~ [0x01u8, 0x00u8] ~ fields);
+    let (_, other) = unpack!{(&Shape, &Shape)} (second);
+    assert(other.area() == 1);
+    assert(refusal!{(&Shape, &Circle)} (second) == (UnpackErrorCode::TYPE_MISMATCH)?);
+
+    // the second refers back to the first object
+    let back = packet(s[4us .. $] ~ [0x00u8]);
+    let (a, b) = unpack!{(&Shape, &Rect)} (back);
+    assert(a is b);
+    assert(refusal!{(&Shape, &Circle)} (back) == (UnpackErrorCode::TYPE_MISMATCH)?);
+    assert(refusal!{(&Square, &Node)} (back) == (UnpackErrorCode::TYPE_MISMATCH)?);
+}
+
+__test selfCycle {
+    let n = pack(copy Node(7));
+    let cycle = n[0us .. 29us] ~ [0x01u8, 0x00u8, 0x01u8, 0x00u8];
+    let back = unpack!{&Node} (cycle);
+    if let Ok(next) = back.next {
+        assert(next is back && back.value == 7);
+    } else {
+        assert(false);
+    }
+}
+
+__test deepNesting {
+    assert(unpack!{&Node} (pack(chain(1024us))).value == 0);
+    assert(refusal!{&Node} (pack(chain(1025us))) == (UnpackErrorCode::TOO_DEEP)?);
+
+    // objects nested in one another far deeper than the limit, refused once it is reached rather than when the stack is exhausted
+    let n = pack(copy Node(0));
+    let dmut p = copy Packer();
+    p:.writeRaw(cast!{*void} (n.ptr + 4us), 21us);
+    for i in 1us .. 100000us {
+        p:.write(0);
+        p:.write(true);
+        p:.writeVarint(cast!u64(i));
+        p:.writeVarint(0u64);
+    }
+
+    let deep = p:.bytes();
+    assert(refusal!{&Node} (deep) == (UnpackErrorCode::TOO_DEEP)?);
+    assert(refusal!{&Node} (deep, maxDepth-> usize::max) == (UnpackErrorCode::TOO_DEEP)?);
 }
