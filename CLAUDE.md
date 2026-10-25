@@ -262,7 +262,10 @@ Three top-level modules declared in `midgard/__lib__.yr`:
   application picks the level and sinks. `std::pack` packs values into bytes and rebuilds them
   (classes and records opt in with `#[packable]`); its generic code splits enums off in one entry
   point per operation (`write`, `read`, `schema`, `minWire`), because a pattern like
-  `{T of [U], U}` also matches an enum through its proxy type.
+  `{T of [U], U}` also matches an enum through its proxy type. A packet is a payload inside an
+  envelope (`std::pack::envelope`); `std::pack::auth` tags it with HMAC-SHA-256 (`Signer`) and
+  checks the tag and the sequence number before any of the payload is read (`Verifier`). Whether
+  a packet must be signed is the receiver's choice, never a header flag.
 - `core` (`midgard/core.yr`): language-support types — `atom`, `exception`, `concurrency`,
   `math`, `types`, `reflect`. `core::exception::Exception` is the root of the exception
   hierarchy; in `DEBUG_LIB` builds it captures a stack trace at construction.
