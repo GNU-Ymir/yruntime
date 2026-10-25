@@ -9,10 +9,16 @@ in unpacker;
 use core::reflect::factory;
 use etc::c::memory;
 use etc::runtime::memory;
+use etc::runtime::threads;
 use std::conv;
 use std::pack::{errors, packer, utils};
 use std::stream;
 use std::traits;
+
+/**
+ * The number of bytes of stack an object is never read without, whatever the depth the unpacker allows
+ */
+pub def STACK_MARGIN = 262144u64;
 
 /**
  * Reads values from a packet, following the wire format of `std::pack`.
@@ -48,7 +54,7 @@ pub class Unpacker {
     /**
      * @params:
      *    - bytes: the packet
-     *    - maxDepth: the number of objects that can be nested inside one another
+     *    - maxDepth: the number of objects that can be nested inside one another, an object being refused anyway when less than `STACK_MARGIN` bytes of stack are left
      */
     pub self (bytes: [u8], maxDepth: usize = 1024us)
         with _bytes = bytes
@@ -303,7 +309,7 @@ pub class Unpacker {
     /**
      * Read an object of the class `T`, or one of its subclasses: the index of an object already read, or a type entry followed by the fields of a new object
      * @throws:
-     *    - &UnpackError: if the object or its type entry refers to one the packet has not defined (BAD_REFERENCE), if it is not of the class `T` or one of its subclasses (TYPE_MISMATCH), if its class is not packable in this program (UNKNOWN_TYPE) or has other fields (SCHEMA_MISMATCH), or if objects are nested deeper than the unpacker allows (TOO_DEEP)
+     *    - &UnpackError: if the object or its type entry refers to one the packet has not defined (BAD_REFERENCE), if it is not of the class `T` or one of its subclasses (TYPE_MISMATCH), if its class is not packable in this program (UNKNOWN_TYPE) or has other fields (SCHEMA_MISMATCH), or if objects are nested deeper than the unpacker allows, or than the stack left can hold (TOO_DEEP)
      */
     pub fn readValue {T of C, class C} (mut self)-> dmut T
         throws UnpackError
@@ -326,6 +332,10 @@ pub class Unpacker {
 
         if (self._depth >= self._maxDepth) {
             throw copy UnpackError(UnpackErrorCode::TOO_DEEP, at, "objects are nested deeper than " ~ self._maxDepth.to![c8] ());
+        }
+
+        if (_yrt_stack_left() < STACK_MARGIN) {
+            throw copy UnpackError(UnpackErrorCode::TOO_DEEP, at, "objects are nested deeper than the stack can hold");
         }
 
         let (name, fp) = self:.readTypeEntry();
