@@ -24,15 +24,22 @@ pub trait Streamable {
      */
     prot fn __stream__streamContent(self, dmut stream: &StringStream)-> bool {
         stream;
-        cte if (__pragma!compile({self::super.__stream__streamContent(alias stream);})) {
-            let printed = self::super.__stream__streamContent(alias stream);
-            cte if (typeof(self)::field_infos.len != 0u32 && printed) {
-                stream:.write(", "s8);
+        let printed = cte if (__pragma!has_super(typeof(self))) {
+            cte if template!{__pragma!super(typeof(self))}{X impl std::stream::Streamable} {
+                self.super.__stream__streamContent(alias stream)
+            } else {
+                false
             }
-        }
+        } else {
+            false
+        };
 
         cte for i in 0 .. typeof(self)::field_infos.len {
-            cte if (i != 0) stream:.write(", ");
+            cte if (i != 0) {
+                stream:.write(", ");
+            } else {
+                if (printed) stream:.write(", ");
+            }
             let name = cte {typeof(self)::field_infos[i].name};
             cte if (__pragma!compile({stream:.write(__pragma!field(self, name));})) {
                 stream:.write(__pragma!field(self, name));
@@ -41,7 +48,7 @@ pub trait Streamable {
             }
         }
 
-        return cte (typeof(self)::field_infos.len != 0);
+        return printed || cte (typeof(self)::field_infos.len != 0);
     }
 
     /**

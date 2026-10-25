@@ -564,3 +564,37 @@ __test jsonBool { // MID-99: a Bool is dumped as a json boolean literal, not as 
     err => { println(err); assert(false, "threw"); }
   }
 }
+
+class SerialBase {
+    pub let a: i32 = 1;
+    pub self () {}
+    impl Serializable;
+}
+
+class SerialMid over SerialBase {
+    pub let b: i32 = 2;
+    pub self () {}
+    impl Serializable;
+}
+
+class SerialLeaf over SerialMid {
+    pub let c: i32 = 3;
+    pub self () {}
+    impl Serializable;
+}
+
+class SerialPlain {
+    pub let p: i32 = 9;
+    pub self () {}
+}
+
+class SerialOverPlain over SerialPlain {
+    pub let q: i32 = 8;
+    pub self () {}
+    impl Serializable;
+}
+
+__test serializableInheritedFields { // MID-137: the fields of every Serializable ancestor are serialized, a non Serializable one is skipped
+    assert(json::dump((copy SerialLeaf()).to!{&Config} ()) == "{\n   \"a\" : 1,\n   \"b\" : 2,\n   \"c\" : 3\n}", "a");
+    assert(json::dump((copy SerialOverPlain()).to!{&Config} ()) == "{\n   \"q\" : 8\n}", "b");
+}
