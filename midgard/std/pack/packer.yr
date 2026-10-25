@@ -1,0 +1,228 @@
+/**
+ * This module implements the writer of packets.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in packer;
+
+use etc::c::memory;
+use etc::runtime::memory;
+use std::io;
+use std::pack::utils;
+use std::stream;
+use std::traits;
+
+/**
+ * The magic bytes every packet starts with, "YPK"
+ */
+pub def MAGIC = [0x59u8, 0x50u8, 0x4Bu8];
+
+/**
+ * The version of the format of the packets written
+ */
+pub def VERSION = 1u8;
+
+/**
+ * Writes values into a packet, following the wire format of `std::pack`.
+ * The objects written are remembered by identity, an object referenced twice being written once, so the sharing and the cycles of an object graph are written as they are.
+ */
+@final
+pub class Packer {
+
+    // The bytes written so far
+    let dmut _bytes: [u8] = [];
+
+    // The index of every object written, by address
+    let mut _objects: [*void => mut usize] = copy [];
+
+    // The index of every type entry written, by class name
+    let mut _types: [[c8] => mut usize] = copy [];
+
+    /**
+     * A packer writing after the bytes of `into`, the header of the packet included
+     * @params:
+     *    - into: the buffer to append the packet to
+     */
+    pub self (dmut into: [u8] = [])
+        with _bytes = alias into
+    {
+        self._bytes ~= MAGIC;
+        self._bytes ~= [VERSION];
+    }
+
+    /**
+     * @returns: the bytes written so far, the bytes of the buffer the packer was given included
+     */
+    pub fn bytes(mut self)-> dmut [u8] {
+        alias self._bytes
+    }
+
+    /**
+     * Write a value of a packable type, see `std::pack::utils::isPackable`
+     */
+    pub fn write {T} (mut self, v: T) {
+        cte if (template!{T}{enum E}) {
+            let raw: __pragma!unproxied(T) = v;
+            self:.writeValue(raw);
+        } else {
+            self:.writeValue(v);
+        }
+    }
+
+    /**
+     * Write a scalar: a bool as a byte 0 or 1, the other scalars in little-endian, `isize` and `usize` on 8 bytes
+     */
+    pub fn if isScalarWire!{T} writeValue {T} (mut self, v: T) {
+        cte if (template!{T}{X of bool}) {
+            self._bytes ~= [if (v) { 1u8 } else { 0u8 }];
+        } else cte if (template!{T}{X of usize}) {
+            let w = cast!u64(v);
+            self:.writeRaw(cast!{*void} (&w), 8us);
+        } else cte if (template!{T}{X of isize}) {
+            let w = cast!i64(v);
+            self:.writeRaw(cast!{*void} (&w), 8us);
+        } else {
+            let w = v;
+            self:.writeRaw(cast!{*void} (&w), T::size);
+        }
+    }
+
+    /**
+     * Write a slice: its length, and its elements
+     */
+    pub fn writeValue {T of [U], U} (mut self, v: T)
+    {
+        self:.writeVarint(cast!u64(v.len));
+        cte if (!template!{U}{enum E} && isScalarWire!{U} && !template!{U}{X of bool} && wireSize!{U} == U::size) {
+            self:.writeRaw(cast!{*void} (v.ptr), v.len * U::size);
+        } else {
+            for e in v {
+                self:.write(e);
+            }
+        }
+    }
+
+    /**
+     * Write a static array: its elements, its size being given by its type
+     */
+    pub fn writeValue {T of [U ; N], U, N: usize} (mut self, v: T)
+    {
+        for e in v {
+            self:.write(e);
+        }
+    }
+
+    /**
+     * Write a map: its length, and each of its keys followed by its value, in the order of iteration of the map
+     */
+    pub fn writeValue {T of [K => V], K, V} (mut self, v: T)
+    {
+        self:.writeVarint(cast!u64(v.len));
+        for k, e in v {
+            self:.write(k);
+            self:.write(e);
+        }
+    }
+
+    /**
+     * Write an option: 0 for an empty option, the error being dropped, 1 followed by the value otherwise
+     */
+    pub fn writeValue {T of (U)?, U} (mut self, v: T)
+    {
+        if let Ok(e) = v {
+            self._bytes ~= [1u8];
+            self:.write(e);
+        } else {
+            self._bytes ~= [0u8];
+        }
+    }
+
+    /**
+     * Write a tuple: its elements in order
+     */
+    pub fn writeValue {T of (U,), U...} (mut self, v: T)
+    {
+        for e in v {
+            self:.write(e);
+        }
+    }
+
+    /**
+     * Write the empty tuple, in zero bytes
+     */
+    pub fn writeValue {T of ()} (mut self, v: T) {
+        v;
+    }
+
+    /**
+     * Write a record tagged `#[packable]`: its fields
+     */
+    pub fn writeValue {T of R, record R} (mut self, v: T)
+    {
+        v.__pack__write(alias self);
+    }
+
+    /**
+     * Write an object of a class tagged `#[packable]`: the index of the object if it was already written, its type entry and its fields otherwise
+     * @warning: panics if the class of the object is a subclass of `C` that is not tagged `#[packable]`, whose fields could not be written
+     */
+    pub fn writeValue {T of C, class C} (mut self, v: T)
+    {
+        let addr = Runtime!{T, *void}::_yrt_unsafe_cast(v);
+        if let Ok(k) = self._objects[addr] {
+            self:.writeVarint(cast!u64(k));
+            return;
+        }
+
+        let name = v.__typeinfo__.name;
+        if (v.__pack__name() != name) {
+            std::io::eprintln(name, " is not tagged #[packable], its fields cannot be packed");
+            panic;
+        }
+
+        let k = self._objects.len;
+        self._objects[addr] = k;
+        self:.writeVarint(cast!u64(k));
+
+        if let Ok(t) = self._types[name] {
+            self:.writeVarint(cast!u64(t));
+        } else {
+            let t = self._types.len;
+            self._types[name] = t;
+            self:.writeVarint(cast!u64(t));
+            self:.writeVarint(cast!u64(name.len));
+            self:.writeRaw(cast!{*void} (name.ptr), name.len);
+
+            let dmut s = copy StringStream();
+            v.__pack__schema(alias s);
+            self:.write(utils::fingerprint(s[]));
+        }
+
+        v.__pack__write(alias self);
+    }
+
+    /**
+     * Write an unsigned integer in LEB128, 7 bits per byte from the least significant, the high bit of a byte telling whether another one follows
+     */
+    pub fn writeVarint(mut self, v: u64) {
+        let mut rest = v;
+        while rest >= 0x80u64 {
+            self._bytes ~= [cast!u8(rest & 0x7Fu64) | 0x80u8];
+            rest = rest >> 7u64;
+        }
+
+        self._bytes ~= [cast!u8(rest)];
+    }
+
+    /**
+     * Write the `len` bytes found at `data`, as they are
+     */
+    pub fn writeRaw(mut self, data: *void, len: usize) {
+        if (len == 0us) return;
+
+        let dmut region: [u8] = [];
+        Grow!{u8}::_yrt_grow_slice(ref self._bytes, ref region, len, 1us);
+        memcpy(cast!{*void} (region.ptr), data, len);
+    }
+}
