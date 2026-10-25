@@ -1,0 +1,523 @@
+/**
+ * This module implements the reader of packets.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in unpacker;
+
+use core::reflect::factory;
+use etc::c::memory;
+use etc::runtime::memory;
+use etc::runtime::threads;
+use std::conv;
+use std::pack::{errors, utils};
+use std::stream;
+use std::traits;
+
+/**
+ * The number of bytes of stack an object is never read without, whatever the depth the unpacker allows
+ */
+pub def STACK_MARGIN = 262144u64;
+
+/**
+ * Reads values from a packet, following the wire format of `std::pack`.
+ * The objects it allocates are pending until `finish`: none of them escapes before the whole packet is read, and an unpacker dropped on an error leaves them to the collector without ever running their destructor.
+ */
+@final
+pub class Unpacker {
+
+    // The packet
+    let _bytes: [u8];
+
+    // The index of the next byte to read
+    let mut _pos: usize;
+
+    // The index of the byte following the payload
+    let _end: usize;
+
+    // The address of every object read, by index
+    let mut _objects: [*void] = [];
+
+    // The function running the `unpacked` hook of every object read, by index
+    let mut _hooks: [fn (*void)-> (&UnpackError)?] = [];
+
+    // The class name of every type entry read, by index
+    let mut _types: [[c8]] = [];
+
+    // The factory allocating the objects read, until they are committed
+    let dmut _factory: &Factory = copy Factory();
+
+    // The number of objects being filled at the moment
+    let mut _depth: usize = 0us;
+
+    // The number of objects that can be filled inside one another
+    let _maxDepth: usize;
+
+    /**
+     * @params:
+     *    - bytes: the packet
+     *    - from: the index of the first byte of the payload
+     *    - to: the index of the byte following the payload, the end of `bytes` if it is beyond
+     *    - maxDepth: the number of objects that can be nested inside one another, an object being refused anyway when less than `STACK_MARGIN` bytes of stack are left
+     */
+    pub self (bytes: [u8], from: usize, to: usize, maxDepth: usize = 1024us)
+        with _bytes = bytes
+        , _end = unpacker::atMost(to, bytes.len)
+        , _pos = from
+        , _maxDepth = maxDepth
+    {}
+
+    /**
+     * @returns: the number of bytes left to read
+     */
+    pub fn remaining(self)-> usize {
+        if (self._pos >= self._end) { 0us } else { self._end - self._pos }
+    }
+
+    /**
+     * Check that every byte of the payload was read, run the `unpacked` hook of every object in the order they were read, and release them
+     * @throws:
+     *    - &UnpackError: if bytes are left (TRAILING), or if a hook refused its object (INVALID)
+     */
+    pub fn finish(mut self)
+        throws UnpackError
+    {
+        if (self._pos != self._end) {
+            throw copy UnpackError(UnpackErrorCode::TRAILING, self._pos, self.remaining().to![c8] () ~ " bytes left");
+        }
+
+        for i, hook in self._hooks {
+            if let Ok(err) = hook(self._objects[i]) {
+                throw err;
+            }
+        }
+
+        self._factory:.commit();
+    }
+
+    /**
+     * Read a value of a packable type, see `std::pack::utils::isPackable`
+     */
+    pub fn read {T} (mut self)-> dmut T
+        throws UnpackError
+    {
+        cte if (template!{T}{enum E}) {
+            return self:.readEnum!{T} ();
+        } else {
+            return self:.readValue!{T} ();
+        }
+    }
+
+    /**
+     * Read a scalar, written as `Packer::write` writes it
+     * @throws:
+     *    - &UnpackError: if the packet ends before the scalar does (TRUNCATED), if a bool is neither 0 nor 1 (BAD_TAG), or if an `isize` or a `usize` does not fit the host (OVERFLOW)
+     */
+    pub fn if isScalarWire!{T} readValue {T} (mut self)-> dmut T
+        throws UnpackError
+    {
+        cte if (template!{T}{X of bool}) {
+            let b = self:.readByte();
+            if (b > 1u8) {
+                throw copy UnpackError(UnpackErrorCode::BAD_TAG, self._pos - 1us, "a bool is 0 or 1");
+            }
+
+            return b == 1u8;
+        } else cte if (template!{T}{X of usize}) {
+            let mut w = 0u64;
+            self:.readRaw(cast!{*void} (&w), 8us);
+            cte if (usize::size < 8us) {
+                if (w > cast!u64(usize::max)) {
+                    throw copy UnpackError(UnpackErrorCode::OVERFLOW, self._pos - 8us, "does not fit a usize");
+                }
+            }
+
+            return cast!usize(w);
+        } else cte if (template!{T}{X of isize}) {
+            let mut w = 0i64;
+            self:.readRaw(cast!{*void} (&w), 8us);
+            cte if (isize::size < 8us) {
+                if (w > cast!i64(isize::max) || w < cast!i64(isize::min)) {
+                    throw copy UnpackError(UnpackErrorCode::OVERFLOW, self._pos - 8us, "does not fit an isize");
+                }
+            }
+
+            return cast!isize(w);
+        } else {
+            let mut w = T::init;
+            self:.readRaw(cast!{*void} (&w), T::size);
+            return w;
+        }
+    }
+
+    /**
+     * Read a slice: its length, and its elements
+     * @throws:
+     *    - &UnpackError: if its length is greater than what the rest of the packet can hold (BAD_LENGTH), or one of its elements cannot be read
+     */
+    pub fn readValue {T of [U], U} (mut self)-> dmut T
+        throws UnpackError
+    {
+        let n = self:.readCount(utils::minWire!{U} ());
+        let dmut res: [U] = [];
+        cte if (!template!{U}{enum E} && isScalarWire!{U} && !template!{U}{X of bool} && wireSize!{U} == U::size) {
+            let dmut region: [U] = [];
+            Grow!{U}::_yrt_grow_slice(ref res, ref region, n, U::size);
+            self:.readRaw(cast!{*void} (region.ptr), n * U::size);
+        } else {
+            for _ in 0us .. n {
+                res ~= [self:.read!{U} ()];
+            }
+        }
+
+        alias res
+    }
+
+    /**
+     * Read a static array: its elements, its size being given by its type
+     */
+    pub fn readValue {T of [U ; N], U, N: usize} (mut self)-> dmut T
+        throws UnpackError
+    {
+        let dmut buffer: [u8 ; T::size] = [0u8 ; T::size];
+        for i in 0us .. N {
+            let e = self:.read!{U} ();
+            memcpy(cast!{*void} (buffer.ptr + i * U::size), cast!{*void} (&e), U::size);
+        }
+
+        utils::load!{T} (Runtime!{*u8, *T}::_yrt_unsafe_cast(buffer.ptr))
+    }
+
+    /**
+     * Read a map: its length, and each of its keys followed by its value
+     * @throws:
+     *    - &UnpackError: if its length is greater than what the rest of the packet can hold (BAD_LENGTH), if a key is read twice (DUPLICATE_KEY), or one of its entries cannot be read
+     */
+    pub fn readValue {T of [K => V], K, V} (mut self)-> dmut T
+        throws UnpackError
+    {
+        let n = self:.readCount(utils::minWire!{K} () + utils::minWire!{V} ());
+        let dmut res: [K => V] = copy [];
+        for _ in 0us .. n {
+            let at = self._pos;
+            let k = self:.read!{K} ();
+            if let Ok(_) = res[k] {
+                throw copy UnpackError(UnpackErrorCode::DUPLICATE_KEY, at, "a key is read twice");
+            }
+
+            res[k] = self:.read!{V} ();
+        }
+
+        alias res
+    }
+
+    /**
+     * Read an option: 0 for an empty option, 1 followed by its value otherwise
+     * @throws:
+     *    - &UnpackError: if its tag is neither 0 nor 1 (BAD_TAG), or its value cannot be read
+     */
+    pub fn readValue {T of (U)?, U} (mut self)-> dmut T
+        throws UnpackError
+    {
+        let b = self:.readByte();
+        if (b == 1u8) {
+            let dmut v = self:.read!{U} ();
+            return (utils::keep!{U} (ref v))?;
+        }
+
+        if (b != 0u8) {
+            throw copy UnpackError(UnpackErrorCode::BAD_TAG, self._pos - 1us, "an option is 0 or 1");
+        }
+
+        let dmut res: T = none;
+        utils::keep!{T} (ref res)
+    }
+
+    /**
+     * Read a tuple: its elements in order
+     */
+    pub fn readValue {T of (U,), U...} (mut self)-> dmut T
+        throws UnpackError
+    {
+        let dmut buffer: [u8 ; T::size] = [0u8 ; T::size];
+        let infos = __pragma!field_infos(T);
+        cte for i in 0us .. T::arity {
+            let f = self:.read!{__pragma!field_type(T, i)} ();
+            memcpy(cast!{*void} (buffer.ptr + infos[i].offset), cast!{*void} (&f), typeof(f)::size);
+        }
+
+        utils::load!{T} (Runtime!{*u8, *T}::_yrt_unsafe_cast(buffer.ptr))
+    }
+
+    /**
+     * Read the empty tuple, in zero bytes
+     */
+    pub fn readValue {T of ()} (mut self)-> T
+        throws UnpackError
+    {
+        self:.readNothing();
+        ()
+    }
+
+    /**
+     * Read an enum: the value of one of its members
+     * @throws:
+     *    - &UnpackError: if the value is the one of none of its members (NOT_A_MEMBER)
+     */
+    fn readEnum {T} (mut self)-> T
+        throws UnpackError
+    {
+        let at = self._pos;
+        let raw = self:.read!{__pragma!unproxied(T)} ();
+        let members = T::members;
+        for i in 0us .. members.len {
+            let v: __pragma!unproxied(T) = members[i];
+            if (utils::equals(v, raw)) {
+                return members[i];
+            }
+        }
+
+        throw copy UnpackError(UnpackErrorCode::NOT_A_MEMBER, at, "not a member of " ~ T::typeid);
+    }
+
+    /**
+     * Read a record tagged `#[packable]`: its fields
+     */
+    pub fn readValue {T of R, record R} (mut self)-> dmut T
+        throws UnpackError
+    {
+        let dmut buffer: [u8 ; R::size] = [0u8 ; R::size];
+        utils::zeroed!{R} ().__pack__read(alias self, buffer.ptr);
+
+        utils::load!{T} (Runtime!{*u8, *T}::_yrt_unsafe_cast(buffer.ptr))
+    }
+
+    /**
+     * Read an object of the class `T`, or one of its subclasses: the index of an object already read, or a type entry followed by the fields of a new object
+     * @throws:
+     *    - &UnpackError: if the object or its type entry refers to one the packet has not defined (BAD_REFERENCE), if it is not of the class `T` or one of its subclasses (TYPE_MISMATCH), if its class is not packable in this program (UNKNOWN_TYPE) or has other fields (SCHEMA_MISMATCH), or if objects are nested deeper than the unpacker allows, or than the stack left can hold (TOO_DEEP)
+     */
+    pub fn readValue {T of C, class C} (mut self)-> dmut T
+        throws UnpackError
+    {
+        let at = self._pos;
+        let expected = classNameOf!{T} ();
+        let k = self:.readLength();
+        if (k < self._objects.len) {
+            let addr = self._objects[k];
+            if (!utils::inherits(utils::classOf(addr), expected)) {
+                throw copy UnpackError(UnpackErrorCode::TYPE_MISMATCH, at, utils::classOf(addr).name ~ " is not " ~ expected ~ " nor one of its subclasses");
+            }
+
+            return Runtime!{*void, T}::_yrt_unsafe_cast(addr);
+        }
+
+        if (k > self._objects.len) {
+            throw copy UnpackError(UnpackErrorCode::BAD_REFERENCE, at, "object " ~ k.to![c8] () ~ " is not defined");
+        }
+
+        if (self._depth >= self._maxDepth) {
+            throw copy UnpackError(UnpackErrorCode::TOO_DEEP, at, "objects are nested deeper than " ~ self._maxDepth.to![c8] ());
+        }
+
+        if (_yrt_stack_left() < STACK_MARGIN) {
+            throw copy UnpackError(UnpackErrorCode::TOO_DEEP, at, "objects are nested deeper than the stack can hold");
+        }
+
+        let (name, fp) = self:.readTypeEntry();
+        let dmut obj = {
+            self._factory:.allocate!{T} (name)
+        } catch {
+            err: &FactoryError => {
+                match err.code {
+                    FactoryErrorCode::UNKNOWN_CLASS => {
+                        throw copy UnpackError(UnpackErrorCode::UNKNOWN_TYPE, at, name ~ " is not packable");
+                    }
+                    _ => {
+                        throw copy UnpackError(UnpackErrorCode::TYPE_MISMATCH, at, name ~ " is not " ~ expected ~ " nor one of its subclasses");
+                    }
+                }
+            }
+        };
+
+        if (obj.__pack__name() != name) {
+            throw copy UnpackError(UnpackErrorCode::UNKNOWN_TYPE, at, name ~ " is not packable");
+        }
+
+        if let Ok(f) = fp {
+            let dmut s = copy StringStream();
+            obj.__pack__schema(alias s);
+            if (utils::fingerprint(s[]) != f) {
+                throw copy UnpackError(UnpackErrorCode::SCHEMA_MISMATCH, at, "the fields of " ~ name ~ " are not the same in the packet");
+            }
+
+            self._types ~= [name];
+        }
+
+        self._objects ~= [Runtime!{T, *void}::_yrt_unsafe_cast(obj)];
+        self._hooks ~= [&unpacker::runHook!{T}];
+
+        self._depth += 1us;
+        obj.__pack__read(alias self, Runtime!{T, *u8}::_yrt_unsafe_cast(obj));
+        self._depth -= 1us;
+
+        alias obj
+    }
+
+    /**
+     * Read the type entry of a new object: the index of an entry already read, or a new entry, its class name followed by its fingerprint
+     * @returns: the class name, and the fingerprint of a new entry, which is added once the object is allocated
+     */
+    fn readTypeEntry(mut self)-> ([c8], (u64)?)
+        throws UnpackError
+    {
+        let at = self._pos;
+        let t = self:.readLength();
+        if (t < self._types.len) {
+            return (self._types[t], none);
+        }
+
+        if (t > self._types.len) {
+            throw copy UnpackError(UnpackErrorCode::BAD_REFERENCE, at, "type entry " ~ t.to![c8] () ~ " is not defined");
+        }
+
+        let len = self:.readCount(1us);
+        let dmut name: [c8] = [];
+        let dmut region: [c8] = [];
+        Grow!{c8}::_yrt_grow_slice(ref name, ref region, len, 1us);
+        self:.readRaw(cast!{*void} (region.ptr), len);
+
+        let fp = self:.read!{u64} ();
+        (name, fp?)
+    }
+
+    /**
+     * Write the field of an object being read, at `offset` bytes from its start
+     */
+    pub fn readField {T} (mut self, dst: *u8, offset: usize)
+        throws UnpackError
+    {
+        let f = self:.read!{T} ();
+        memcpy(cast!{*void} (dst + offset), cast!{*void} (&f), T::size);
+    }
+
+    /**
+     * Read the number of elements of a collection, each taking at least `minWire` bytes
+     * @throws:
+     *    - &UnpackError: if the rest of the packet cannot hold that many elements (BAD_LENGTH)
+     */
+    fn readCount(mut self, minWire: usize)-> usize
+        throws UnpackError
+    {
+        let at = self._pos;
+        let n = self:.readLength();
+        let atLeast = if (minWire == 0us) { 1us } else { minWire };
+        if (n > self.remaining() / atLeast) {
+            throw copy UnpackError(UnpackErrorCode::BAD_LENGTH, at, "length " ~ n.to![c8] () ~ " exceeds the packet");
+        }
+
+        n
+    }
+
+    /**
+     * Read a varint that fits a usize
+     */
+    fn readLength(mut self)-> usize
+        throws UnpackError
+    {
+        let v = self:.readVarint();
+        cte if (usize::size < 8us) {
+            if (v > cast!u64(usize::max)) {
+                throw copy UnpackError(UnpackErrorCode::OVERFLOW, self._pos, "does not fit a usize");
+            }
+        }
+
+        cast!usize(v)
+    }
+
+    /**
+     * Read an unsigned integer in LEB128, written in its shortest form
+     * @throws:
+     *    - &UnpackError: if it does not fit an u64, or is not written in its shortest form (OVERFLOW)
+     */
+    pub fn readVarint(mut self)-> u64
+        throws UnpackError
+    {
+        let at = self._pos;
+        let mut res = 0u64;
+        for i in 0u64 .. 10u64 {
+            let b = self:.readByte();
+            if (i == 9u64 && b > 1u8) {
+                throw copy UnpackError(UnpackErrorCode::OVERFLOW, at, "does not fit an u64");
+            }
+
+            res = res | (cast!u64(b & 0x7Fu8) << (7u64 * i));
+            if ((b & 0x80u8) == 0u8) {
+                if (b == 0u8 && i != 0u64) {
+                    throw copy UnpackError(UnpackErrorCode::OVERFLOW, at, "not written in its shortest form");
+                }
+
+                return res;
+            }
+        }
+
+        throw copy UnpackError(UnpackErrorCode::OVERFLOW, at, "does not fit an u64");
+    }
+
+    /**
+     * Read a value written in zero bytes, which never fails, but lets such a value be read as any other
+     */
+    pub fn readNothing(mut self)
+        throws UnpackError
+    {
+        self:.readRaw(cast!{*void} (self._bytes.ptr), 0us);
+    }
+
+    /**
+     * Read a byte
+     * @throws:
+     *    - &UnpackError: if the packet ends (TRUNCATED)
+     */
+    pub fn readByte(mut self)-> u8
+        throws UnpackError
+    {
+        if (self._pos >= self._end) {
+            throw copy UnpackError(UnpackErrorCode::TRUNCATED, self._pos, "the packet ends");
+        }
+
+        self._pos += 1us;
+        self._bytes[self._pos - 1us]
+    }
+
+    /**
+     * Copy the next `len` bytes of the packet to `dst`
+     * @throws:
+     *    - &UnpackError: if the packet ends before (TRUNCATED)
+     */
+    pub fn readRaw(mut self, dst: *void, len: usize)
+        throws UnpackError
+    {
+        if (len > self.remaining()) {
+            throw copy UnpackError(UnpackErrorCode::TRUNCATED, self._pos, "the packet ends");
+        }
+
+        memcpy(dst, cast!{*void} (self._bytes.ptr + self._pos), len);
+        self._pos += len;
+    }
+}
+
+/**
+ * @returns: the least of `a` and `b`
+ */
+fn atMost(a: usize, b: usize)-> usize {
+    if (a > b) { b } else { a }
+}
+
+/**
+ * Run the `unpacked` hook of the object of the class `C`, or one of its subclasses, at `addr`
+ * @returns: the error the hook threw, if any
+ */
+fn runHook {class C} (addr: *void)-> (&UnpackError)? {
+    Runtime!{*void, C}::_yrt_unsafe_cast(addr).__pack__unpacked()
+}

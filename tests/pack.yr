@@ -1,0 +1,805 @@
+in pack;
+
+use core::concurrency::sync::mutex;
+use core::reflect::factory;
+use std::conv;
+use std::pack::_;
+use std::rand::generator;
+
+extern (C) fn GC_gcollect();
+extern (C) fn GC_invoke_finalizers()-> i32;
+
+lazy dmut __DTOR_MUTEX__ = copy Mutex();
+
+lazy mut __DROPPED_DTORS__: usize = 0us;
+
+lazy mut __KEPT_DTORS__: usize = 0us;
+
+enum Color : u8
+| RED  = 1u8
+| BLUE = 7u8;
+
+enum Unit : [c8]
+| METER = "m"
+| GRAM  = "g";
+
+#[packable]
+record Point {
+    pub let x: i32;
+    pub let y: i32;
+    pub self (x: i32, y: i32) with x = x, y = y {}
+}
+
+#[packable (skip-> "cache")]
+record Tagged {
+    let name: [c8];
+    let cache: (u64)?;
+    pub self (name: [c8]) with name = name, cache = (12u64)? {}
+    pub fn getName(self)-> [c8] { self.name }
+    pub fn getCache(self)-> (u64)? { self.cache }
+}
+
+#[packable]
+record Pair {
+    let first: &Node;
+    let second: &Node;
+    let points: [Point];
+    pub self (first: &Node, second: &Node, points: [Point]) with first = first, second = second, points = points {}
+    pub fn same(self)-> bool { self.first is self.second }
+    pub fn sum(self)-> i32 { self.first.value + self.points[0].x }
+}
+
+#[packable]
+@abstract
+class Shape {
+    pub let name: [c8];
+    let origin: Point;
+    pub self (name: [c8], origin: Point) with name = name, origin = origin {}
+    pub fn area(self)-> i32;
+    pub fn getOrigin(self)-> Point { self.origin }
+}
+
+#[packable]
+class Rect over Shape {
+    pub let w: i32;
+    pub let h: i32;
+    pub self (w: i32, h: i32) with super ("rect", Point(1, 2)), w = w, h = h {}
+    pub over area(self)-> i32 { self.w * self.h }
+}
+
+#[packable]
+class Square over Rect {
+    pub self (side: i32) with super (side, side) {}
+}
+
+#[packable]
+class Circle over Shape {
+    pub let r: i32;
+    pub self (r: i32) with super ("circle", Point(0, 0)), r = r {}
+    pub over area(self)-> i32 { 3 * self.r * self.r }
+}
+
+#[packable]
+class Node {
+    pub let value: i32;
+    pub let mut next: (&Node)? = none;
+    pub let mut other: (&Node)? = none;
+    pub self (value: i32) with value = value {}
+}
+
+#[packable]
+class Everything {
+    pub let b: bool = true;
+    pub let i8_: i8 = -3i8;
+    pub let u16_: u16 = 0xBEEFu16;
+    pub let i64_: i64 = -1234567890123i64;
+    pub let usz: usize = 12us;
+    pub let isz: isize = -12is;
+    pub let c: c32 = 'é'c32;
+    pub let f: f32 = 1.5f;
+    pub let d: f64 = -2.25;
+    pub let s: [c8] = "hello";
+    pub let s32: [c32] = "wörld";
+    pub let arr: [i32 ; 3us] = [1, 2, 3];
+    pub let nested: [[i32]] = copy [copy [1], copy [2, 3]];
+    pub let m: [[c8] => i32] = copy ["a" => 1];
+    pub let t: (i32, [c8], bool) = (1, "t", false);
+    pub let o: (i32)? = (4)?;
+    pub let n: (i32)? = none;
+    pub let col: Color = Color::BLUE;
+    pub let unit: Unit = Unit::GRAM;
+    pub let pts: [Point] = copy [Point(1, 2), Point(3, 4)];
+    pub self () {}
+}
+
+#[packable]
+class P {
+    pub let x: i32;
+    pub let name: [c8];
+    pub let next: (&P)?;
+    pub self (x: i32, name: [c8], next: (&P)?) with x = x, name = name, next = next {}
+}
+
+#[packable (skip-> "lock,hits")]
+class Cached {
+    pub let key: [c8];
+    pub let lock: (u64)? = (1u64)?;
+    pub let mut hits: usize = 7us;
+    pub self (key: [c8]) with key = key {}
+}
+
+class Plain over Rect {
+    pub self () with super (1, 1) {}
+}
+
+#[packable]
+class Box {T} {
+    pub let v: T;
+    pub self (v: T) with v = v {}
+}
+
+#[packable]
+class Dropped {
+    pub let mut x: i32 = 1;
+    pub self () {}
+    __dtor(mut self) {
+        if (self.x == 2) {
+            atomic __DTOR_MUTEX__ {
+                __DROPPED_DTORS__ += 1us;
+            }
+        }
+    }
+}
+
+#[packable]
+class Kept {
+    pub let mut x: i32 = 1;
+    pub self () {}
+    __dtor(mut self) {
+        if (self.x == 2) {
+            atomic __DTOR_MUTEX__ {
+                __KEPT_DTORS__ += 1us;
+            }
+        }
+    }
+}
+
+#[packable]
+class Positive {
+    pub let v: i32;
+    pub self (v: i32) with v = v {}
+    pub fn unpacked(self)
+        throws UnpackError
+    {
+        if (self.v < 0) throw copy UnpackError("negative");
+    }
+}
+
+fn refusal {T} (bytes: [u8], maxDepth: usize = 1024us)-> (UnpackErrorCode)? {
+    {
+        unpack!{T} (bytes, maxDepth-> maxDepth);
+        none
+    } catch {
+        err: &UnpackError => {
+            (err.code)?
+        }
+    }
+}
+
+/**
+ * @returns: an unsigned packet whose payload is `body`
+ */
+fn packet(body: [u8])-> [u8] {
+    let dmut res = copy [0u8 ; HEADER_SIZE] ~ body;
+    writeHeader(alias res, 0us, Header(AuthAlgorithm::NONE, 0u32, 0u64, cast!u64(body.len)));
+    res
+}
+
+/**
+ * @returns: the payload of the unsigned packet `bytes`
+ */
+fn payload(bytes: [u8])-> [u8] {
+    bytes[HEADER_SIZE .. $]
+}
+
+fn name(s: [c8])-> [u8] {
+    [cast!u8(s.len)] ~ s.to![u8] ()
+}
+
+fn chain(len: usize)-> &Node {
+    let dmut head = copy Node(0);
+    let dmut current = alias head;
+    for i in 1us .. len {
+        let dmut n = copy Node(cast!i32(i));
+        current.next = (alias n)?;
+        current = alias n;
+    }
+
+    head
+}
+
+fn unpackDropped(nb: usize) {
+    let dmut objects: [&Dropped] = [];
+    for _ in 0us .. nb {
+        let dmut o = copy Dropped();
+        o.x = 2;
+        objects ~= [alias o];
+    }
+
+    let bytes = pack(objects) ~ [0u8];
+    reset(alias objects);
+    refusal!{[&Dropped]} (bytes);
+}
+
+fn unpackKept(nb: usize)
+    throws UnpackError
+{
+    let dmut objects: [&Kept] = [];
+    for _ in 0us .. nb {
+        let dmut o = copy Kept();
+        o.x = 2;
+        objects ~= [alias o];
+    }
+
+    let bytes = pack(objects);
+    reset(alias objects);
+    unpack!{[&Kept]} (bytes);
+}
+
+/**
+ * Set back the objects packed by the destructor tests, so only the destructors of the objects unpacked are counted
+ */
+fn reset {T} (dmut objects: [T]) {
+    for i in 0us .. objects.len {
+        objects[i].x = 1;
+    }
+}
+
+/**
+ * @returns: the number of destructors run on the objects unpacked by unpackDropped and unpackKept
+ */
+fn dtors()-> (usize, usize) {
+    atomic __DTOR_MUTEX__ {
+        (__DROPPED_DTORS__, __KEPT_DTORS__)
+    }
+}
+
+fn collect() {
+    GC_gcollect();
+    GC_invoke_finalizers();
+}
+
+__test scalars {
+    assert(unpack!{i32} (pack(-5)) == -5);
+    assert(unpack!{u64} (pack(0xFFFFFFFFFFFFFFFFu64)) == 0xFFFFFFFFFFFFFFFFu64);
+    assert(unpack!{bool} (pack(true)));
+    assert(unpack!{c8} (pack('x')) == 'x');
+    assert(unpack!{f64} (pack(3.25)) == 3.25);
+    assert(unpack!{usize} (pack(7us)) == 7us);
+    assert(pack(1u32)[0us .. 4us] == [0x59u8, 0x50u8, 0x4Bu8, 0x02u8]);
+    assert(payload(pack(1u32)) == [0x01u8, 0x00u8, 0x00u8, 0x00u8]);
+    assert(pack(1us).len == HEADER_SIZE + 8us);
+}
+
+__test collections {
+    assert(unpack!{[c8]} (pack("hello")) == "hello");
+    assert(unpack!{[i32]} (pack(copy [1, 2, 3])) == [1, 2, 3]);
+    assert(unpack!{[[c8]]} (pack(copy ["a", "", "bc"])) == ["a", "", "bc"]);
+    assert(unpack!{[i32 ; 2us]} (pack([4, 5])) == [4, 5]);
+    assert(unpack!{(i32, [c8])} (pack((1, "a"))) == (1, "a"));
+    assert(unpack!{(i32)?} (pack((3)?)) == (3)?);
+
+    let m = unpack!{[[c8] => [i32]]} (pack(copy ["a" => copy [1], "b" => copy [2, 3]]));
+    assert(m.len == 2us && m["b"] == (copy [2, 3])?);
+}
+
+__test enums {
+    assert(unpack!{Color} (pack(Color::BLUE)) == Color::BLUE);
+    assert(unpack!{Unit} (pack(Unit::GRAM)) == Unit::GRAM);
+    assert(refusal!{Color} (pack(2u8)) == (UnpackErrorCode::NOT_A_MEMBER)?);
+}
+
+__test records {
+    let p = unpack!{Point} (pack(Point(5, -6)));
+    assert(p.x == 5 && p.y == -6);
+
+    let t = unpack!{Tagged} (pack(Tagged("x")));
+    assert(t.getName() == "x");
+    assert(t.getCache() == none);
+}
+
+__test recordHoldingObjects {
+    let n = copy Node(4);
+    let p = unpack!{Pair} (pack(Pair(n, n, copy [Point(3, 0)])));
+    assert(p.same() && p.sum() == 7);
+
+    let ps = unpack!{[Pair]} (pack(copy [Pair(n, copy Node(1), copy [Point(1, 1)]), Pair(n, n, copy [Point(2, 2)])]));
+    assert(ps.len == 2us && !ps[0].same() && ps[1].same() && ps[1].sum() == 6);
+}
+
+__test everyField {
+    let e = unpack!{&Everything} (pack(copy Everything()));
+    let r = copy Everything();
+    assert(e.b == r.b && e.i8_ == r.i8_ && e.u16_ == r.u16_ && e.i64_ == r.i64_);
+    assert(e.usz == r.usz && e.isz == r.isz && e.c == r.c && e.f == r.f && e.d == r.d);
+    assert(e.s == r.s && e.s32 == r.s32 && e.arr == r.arr && e.nested == r.nested);
+    assert(e.m["a"] == (1)? && e.t == r.t && e.o == r.o && e.n == r.n);
+    assert(e.col == r.col && e.unit == r.unit && e.pts.len == 2us && e.pts[1].y == 4);
+}
+
+__test subclassThroughAncestor {
+    let s = unpack!{&Shape} (pack(copy Square(3)));
+    assert(s.area() == 9);
+    assert(s.name == "rect");
+    assert(s.getOrigin().y == 2);
+    assert(s.__typeinfo__.name == "pack::Square");
+
+    let c = unpack!{&Shape} ((copy Circle(1)).pack());
+    assert(c.area() == 3 && c.name == "circle");
+}
+
+__test sharingAndCycles {
+    let dmut a = copy Node(1);
+    let dmut b = copy Node(2);
+    a.next = (alias b)?;
+    a.other = (alias b)?;
+    b.next = (alias a)?;
+
+    let back = unpack!{&Node} (pack(a));
+    if let Ok(n) = back.next {
+        if let Ok(o) = back.other {
+            assert(n is o);
+        } else {
+            assert(false);
+        }
+
+        if let Ok(m) = n.next {
+            assert(m is back);
+        } else {
+            assert(false);
+        }
+    } else {
+        assert(false);
+    }
+}
+
+__test refusedClasses {
+    assert(refusal!{&Circle} (pack(copy Square(1))) == (UnpackErrorCode::TYPE_MISMATCH)?);
+    assert(refusal!{&Node} (pack(copy Square(1))) == (UnpackErrorCode::TYPE_MISMATCH)?);
+}
+
+__test hook {
+    assert(unpack!{&Positive} (pack(copy Positive(1))).v == 1);
+    assert(refusal!{&Positive} (pack(copy Positive(-1))) == (UnpackErrorCode::INVALID)?);
+}
+
+__test malformed {
+    let good = pack(copy [1, 2, 3]);
+    assert(refusal!{[i32]} (good[0us .. good.len - 1us]) == (UnpackErrorCode::TRUNCATED)?);
+    assert(refusal!{[i32]} (packet(payload(good)[0us .. $ - 1us])) == (UnpackErrorCode::BAD_LENGTH)?);
+    assert(refusal!{i32} (pack(5)[0us .. 7us]) == (UnpackErrorCode::TRUNCATED)?);
+    assert(refusal!{[i32]} (good ~ [0u8]) == (UnpackErrorCode::TRAILING)?);
+    assert(refusal!{[i32]} (packet(payload(good) ~ [0u8])) == (UnpackErrorCode::TRAILING)?);
+    assert(refusal!{[i32]} ([0x58u8] ~ good[1us .. $]) == (UnpackErrorCode::BAD_MAGIC)?);
+    assert(refusal!{[i32]} (good[0us .. 3us] ~ [1u8] ~ good[4us .. $]) == (UnpackErrorCode::UNSUPPORTED_VERSION)?);
+    assert(refusal!{[i32]} (packet(copy [0x7Fu8])) == (UnpackErrorCode::BAD_LENGTH)?);
+    assert(refusal!{[i32]} (packet(copy [0x83u8, 0x00u8])) == (UnpackErrorCode::OVERFLOW)?);
+    assert(refusal!{bool} (packet(copy [2u8])) == (UnpackErrorCode::BAD_TAG)?);
+    assert(refusal!{(i32)?} (packet(copy [2u8])) == (UnpackErrorCode::BAD_TAG)?);
+}
+
+__test specExample {
+    let a = copy P(1, "a", none);
+    let b = copy P(2, "bc", (a)?);
+    let bytes = pack(b);
+    let body = payload(bytes);
+
+    assert(body.len == 35us);
+    assert(body[0us .. 10us] == [0x00u8, 0x00u8] ~ name("pack::P"));
+    assert(body[18us .. $] == [0x02u8, 0x00u8, 0x00u8, 0x00u8, 0x02u8, 0x62u8, 0x63u8, 0x01u8,
+                                0x01u8, 0x00u8, 0x01u8, 0x00u8, 0x00u8, 0x00u8, 0x01u8, 0x61u8, 0x00u8]);
+
+    let back = unpack!{&P} (bytes);
+    if let Ok(n) = back.next {
+        assert(n.x == 1 && n.name == "a");
+        if let Ok(_) = n.next {
+            assert(false);
+        }
+    } else {
+        assert(false);
+    }
+}
+
+__test unknownType {
+    let fp = payload(pack(copy Circle(1)))[15us .. 23us];
+    assert(refusal!{&Shape} (packet(copy [0x00u8, 0x00u8] ~ name("pack::Nope") ~ fp)) == (UnpackErrorCode::UNKNOWN_TYPE)?);
+    assert(refusal!{&Shape} (packet(copy [0x00u8, 0x00u8] ~ name("pack::Shape") ~ fp)) == (UnpackErrorCode::UNKNOWN_TYPE)?);
+
+    factory::register!{&Plain} ();
+    assert(refusal!{&Rect} (packet(copy [0x00u8, 0x00u8] ~ name("pack::Plain") ~ fp)) == (UnpackErrorCode::UNKNOWN_TYPE)?);
+}
+
+__test schemaMismatch {
+    let dmut bytes = copy pack(copy Circle(1));
+    bytes[HEADER_SIZE + 16us] = bytes[HEADER_SIZE + 16us] ^ 0x01u8;
+    assert(refusal!{&Shape} (bytes) == (UnpackErrorCode::SCHEMA_MISMATCH)?);
+}
+
+__test badReference {
+    assert(refusal!{&Node} (packet(copy [0x01u8])) == (UnpackErrorCode::BAD_REFERENCE)?);
+    assert(refusal!{&Node} (packet(copy [0x00u8, 0x01u8])) == (UnpackErrorCode::BAD_REFERENCE)?);
+}
+
+__test depth {
+    assert(unpack!{&Node} (pack(chain(5us)), maxDepth-> 5us).value == 0);
+    assert(refusal!{&Node} (pack(chain(5us)), maxDepth-> 4us) == (UnpackErrorCode::TOO_DEEP)?);
+}
+
+__test duplicateKey {
+    let one = copy [0x01u8, 0x61u8, 0x01u8, 0x00u8, 0x00u8, 0x00u8];
+    assert(unpack!{[[c8] => i32]} (packet(copy [0x01u8] ~ one))["a"] == (1)?);
+    assert(refusal!{[[c8] => i32]} (packet(copy [0x02u8] ~ one ~ one)) == (UnpackErrorCode::DUPLICATE_KEY)?);
+}
+
+__test varints {
+    let ten = copy [0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8];
+    assert(refusal!{[u8]} (packet(ten ~ [0x02u8])) == (UnpackErrorCode::OVERFLOW)?);
+    assert(refusal!{[u8]} (packet(ten ~ [0x01u8])) == (UnpackErrorCode::BAD_LENGTH)?);
+    assert(refusal!{[u8]} (packet(copy [0x80u8, 0x00u8])) == (UnpackErrorCode::OVERFLOW)?);
+
+    let long = copy [0u8 ; 200us];
+    assert(unpack!{[u8]} (pack(long)) == long);
+    assert(payload(pack(long))[0us .. 2us] == [0xC8u8, 0x01u8]);
+}
+
+__test skippedFields {
+    let dmut c = copy Cached("k");
+    c.hits = 9us;
+    let back = unpack!{&Cached} (pack(c));
+    assert(back.key == "k" && back.lock == none && back.hits == 0us);
+}
+
+__test appendToBuffer {
+    let dmut buffer: [u8] = [];
+    pack(1, ref buffer);
+    pack("two", ref buffer);
+    assert(buffer.len == 58us);
+    assert(unpack!{i32} (buffer[0us .. 29us]) == 1);
+    assert(unpack!{[c8]} (buffer[29us .. $]) == "two");
+}
+
+__test templateClass {
+    let b = unpack!{&Box!{[i32]}} (pack(copy Box!{[i32]} (copy [1, 2])));
+    assert(b.v == [1, 2]);
+}
+
+__test destructorOnlyOnceUnpacked {
+    // initialized before any destructor can run: one run by an allocation made while initializing them would wait for itself
+    dtors();
+
+    unpackDropped(1000us);
+    collect();
+
+    // the collector is conservative: a stale stack slot can keep a whole round of objects alive
+    for _ in 0us .. 10us {
+        unpackKept(1000us);
+        collect();
+        if (dtors().1 != 0us) break;
+    }
+
+    let (dropped, kept) = dtors();
+    assert(dropped == 0us && kept != 0us);
+}
+
+/**
+ * @returns: a packet holding every kind of packable value, objects shared, in a cycle and through their ancestor
+ */
+fn sample()-> [u8] {
+    let dmut a = copy Node(1);
+    let dmut b = copy Node(2);
+    a.next = (alias b)?;
+    b.other = (alias a)?;
+
+    let pairs = copy [Pair(a, b, copy [Point(1, 2)]), Pair(b, b, [])];
+    let m = copy ["x" => copy [1, 2], "" => []];
+    pack((copy Everything(), a, pairs, m, copy Square(3), Color::RED))
+}
+
+/**
+ * @returns: the bytes of the varint `v`
+ */
+fn varint(v: u64)-> [u8] {
+    let dmut p = copy Packer();
+    p:.writeVarint(v);
+    payload(p:.seal())
+}
+
+/**
+ * @returns: `bytes` with one or a few of them changed, inserted, removed or cut off
+ */
+fn mutate(dmut rng: &Random, bytes: [u8])-> [u8] {
+    let dmut res = copy bytes;
+    for _ in 0us .. rng:.uniform(1us, 3us) {
+        let i = rng:.uniform(0us, res.len - 1us);
+        match rng:.uniform(0, 5) {
+            0 => { res[i] = cast!u8(rng:.bits()); }
+            1 => { res[i] = res[i] ^ (1u8 << cast!u8(rng:.uniform(0, 7))); }
+            2 => { res[i] = if (rng:.bernoulli(0.5)) { 0xFFu8 } else { 0x80u8 }; }
+            3 => { res = copy res[0us .. i] ~ [cast!u8(rng:.bits())] ~ res[i .. $]; }
+            4 => { res = copy res[0us .. i] ~ res[i + 1us .. $]; }
+            _ => { res = copy res[0us .. i]; }
+        }
+
+        if (res.len == 0us) break;
+    }
+
+    res
+}
+
+__test truncatedAtEveryOffset {
+    let bytes = sample();
+    let (e, _, _, _, s, c) = unpack!{(&Everything, &Node, [Pair], [[c8] => [i32]], &Shape, Color)} (bytes);
+    assert(e.s == "hello" && s.area() == 9 && c == Color::RED);
+
+    for i in 0us .. bytes.len {
+        assert(refusal!{(&Everything, &Node, [Pair], [[c8] => [i32]], &Shape, Color)} (bytes[0us .. i]) != none);
+    }
+}
+
+__test mutatedPackets {
+    let bytes = sample();
+    let dmut rng = copy Random(seed-> 75u64);
+    let mut refused = 0us;
+    for _ in 0us .. 5000us {
+        if let Ok(_) = refusal!{(&Everything, &Node, [Pair], [[c8] => [i32]], &Shape, Color)} (mutate(alias rng, bytes)) {
+            refused += 1us;
+        }
+    }
+
+    assert(refused > 4000us);
+}
+
+__test hugeLengths {
+    let huge = varint(0x7FFFFFFFFFFFFFFFu64);
+    let max = varint(0xFFFFFFFFFFFFFFFFu64);
+    assert(refusal!{[u8]} (packet(huge)) == (UnpackErrorCode::BAD_LENGTH)?);
+    assert(refusal!{[u64]} (packet(max ~ copy [0u8 ; 64us])) == (UnpackErrorCode::BAD_LENGTH)?);
+    assert(refusal!{[[c8] => i32]} (packet(huge)) == (UnpackErrorCode::BAD_LENGTH)?);
+    assert(refusal!{[[u8]]} (packet(copy [0x02u8, 0x00u8] ~ huge)) == (UnpackErrorCode::BAD_LENGTH)?);
+
+    // each element takes 5 bytes at least, 4 of them cannot hold a second one
+    assert(refusal!{[(i32, bool)]} (packet(copy [0x02u8, 0x00u8, 0x00u8, 0x00u8, 0x00u8, 0x00u8, 0x00u8])) == (UnpackErrorCode::BAD_LENGTH)?);
+
+    assert(refusal!{&Node} (packet(huge)) == (UnpackErrorCode::BAD_REFERENCE)?);
+    assert(refusal!{&Node} (packet(copy [0x00u8] ~ huge)) == (UnpackErrorCode::BAD_REFERENCE)?);
+    assert(refusal!{&Node} (packet(copy [0x00u8, 0x00u8] ~ huge)) == (UnpackErrorCode::BAD_LENGTH)?);
+}
+
+__test unknownTypeNames {
+    let fp = payload(pack(copy Node(1)))[13us .. 21us];
+    let node = copy [0x00u8, 0x00u8, 0x00u8, 0x00u8, 0x00u8, 0x00u8];
+    assert(refusal!{&Node} (packet(copy [0x00u8, 0x00u8, 0x00u8] ~ fp ~ node)) == (UnpackErrorCode::UNKNOWN_TYPE)?);
+    assert(refusal!{&Node} (packet(copy [0x00u8, 0x00u8] ~ name("pack::Nod") ~ fp ~ node)) == (UnpackErrorCode::UNKNOWN_TYPE)?);
+    assert(refusal!{&Node} (packet(copy [0x00u8, 0x00u8, 0x02u8, 0xFFu8, 0xFEu8] ~ fp ~ node)) == (UnpackErrorCode::UNKNOWN_TYPE)?);
+    assert(refusal!{&Node} (packet(copy [0x00u8, 0x00u8] ~ name("core::exception::Exception") ~ fp ~ node)) == (UnpackErrorCode::UNKNOWN_TYPE)?);
+}
+
+__test sharedEntriesOfAnotherClass {
+    let s = payload(pack(copy Square(1)));
+    let fields = s[23us .. $];
+
+    // the second object reuses the type entry of the first, a Square, where a Circle is expected
+    let second = packet(s ~ [0x01u8, 0x00u8] ~ fields);
+    let (_, other) = unpack!{(&Shape, &Shape)} (second);
+    assert(other.area() == 1);
+    assert(refusal!{(&Shape, &Circle)} (second) == (UnpackErrorCode::TYPE_MISMATCH)?);
+
+    // the second refers back to the first object
+    let back = packet(s ~ [0x00u8]);
+    let (a, b) = unpack!{(&Shape, &Rect)} (back);
+    assert(a is b);
+    assert(refusal!{(&Shape, &Circle)} (back) == (UnpackErrorCode::TYPE_MISMATCH)?);
+    assert(refusal!{(&Square, &Node)} (back) == (UnpackErrorCode::TYPE_MISMATCH)?);
+}
+
+__test selfCycle {
+    let n = payload(pack(copy Node(7)));
+    let cycle = packet(n[0us .. 25us] ~ [0x01u8, 0x00u8, 0x01u8, 0x00u8]);
+    let back = unpack!{&Node} (cycle);
+    if let Ok(next) = back.next {
+        assert(next is back && back.value == 7);
+    } else {
+        assert(false);
+    }
+}
+
+__test deepNesting {
+    assert(unpack!{&Node} (pack(chain(1024us))).value == 0);
+    assert(refusal!{&Node} (pack(chain(1025us))) == (UnpackErrorCode::TOO_DEEP)?);
+
+    // objects nested in one another far deeper than the limit, refused once it is reached rather than when the stack is exhausted
+    let n = pack(copy Node(0));
+    let dmut p = copy Packer();
+    p:.writeRaw(cast!{*void} (n.ptr + HEADER_SIZE), 21us);
+    for i in 1us .. 100000us {
+        p:.write(0);
+        p:.write(true);
+        p:.writeVarint(cast!u64(i));
+        p:.writeVarint(0u64);
+    }
+
+    let deep = p:.seal();
+    assert(refusal!{&Node} (deep) == (UnpackErrorCode::TOO_DEEP)?);
+    assert(refusal!{&Node} (deep, maxDepth-> usize::max) == (UnpackErrorCode::TOO_DEEP)?);
+}
+
+def KEY = "a key shared by the sender and the receiver";
+
+fn signer(sequence: u64 = 1u64)-> dmut &Signer {
+    copy Signer(3u32, KEY.to![u8] (), sequence-> sequence)
+}
+
+fn verifier(allowUnsigned: bool = false, maxPayload: usize = MAX_PAYLOAD)-> dmut &Verifier {
+    let dmut v = copy Verifier(allowUnsigned-> allowUnsigned, maxPayload-> maxPayload);
+    v:.addKey(3u32, KEY.to![u8] ());
+    alias v
+}
+
+fn rejection {T} (bytes: [u8], dmut v: &Verifier, context: [u8] = [], sender: [c8] = "")-> (UnpackErrorCode)? {
+    {
+        unpack!{T} (bytes, alias v, context-> context, sender-> sender);
+        none
+    } catch {
+        err: &UnpackError => {
+            (err.code)?
+        }
+    }
+}
+
+fn frameRefusal(v: &Verifier, header: [u8])-> (UnpackErrorCode)? {
+    {
+        v.frameSize(header);
+        none
+    } catch {
+        err: &UnpackError => {
+            (err.code)?
+        }
+    }
+}
+
+__test signedRoundTrip {
+    let dmut s = signer();
+    let dmut v = verifier();
+    let bytes = pack(copy Square(4), alias s, context-> "shapes".to![u8] ());
+    assert(bytes[ALG_OFFSET] == 1u8 && bytes.len == pack(copy Square(4)).len + HMAC_TAG_SIZE);
+    assert(v.frameSize(bytes[0us .. HEADER_SIZE]) == bytes.len);
+    assert(unpack!{&Shape} (bytes, alias v, context-> "shapes".to![u8] ()).area() == 16);
+    assert(unpack!{i32} (pack(5, alias s), alias v) == 5);
+}
+
+__test everyByteFlipped {
+    let dmut s = signer();
+    let dmut v = verifier();
+    let bytes = pack((copy Node(1), "payload"), alias s);
+    for i in 0us .. bytes.len {
+        for bit in [0x01u8, 0x80u8] {
+            let dmut m = copy bytes;
+            m[i] = m[i] ^ bit;
+
+            let code = rejection!{(&Node, [c8])} (m, alias v);
+            assert(code != none);
+            if (i >= SEQUENCE_OFFSET && i < LENGTH_OFFSET || i >= HEADER_SIZE) {
+                assert(code == (UnpackErrorCode::BAD_SIGNATURE)?);
+            }
+        }
+    }
+
+    assert(rejection!{(&Node, [c8])} (bytes, alias v) == none);
+}
+
+__test strippedTag {
+    let dmut s = signer();
+    let dmut v = verifier();
+    let bytes = pack(7, alias s);
+    assert(rejection!{i32} (bytes[0us .. $ - HMAC_TAG_SIZE], alias v) == (UnpackErrorCode::TRUNCATED)?);
+    assert(rejection!{i32} (bytes[0us .. $ - 1us], alias v) == (UnpackErrorCode::TRUNCATED)?);
+
+    let dmut downgraded = copy bytes;
+    downgraded[ALG_OFFSET] = 0u8;
+    assert(rejection!{i32} (downgraded, alias v) == (UnpackErrorCode::UNAUTHENTICATED)?);
+    assert(rejection!{i32} (downgraded[0us .. $ - HMAC_TAG_SIZE], alias v) == (UnpackErrorCode::UNAUTHENTICATED)?);
+
+    // a receiver accepting unsigned packets is given one when the tag is stripped too, as it chose to
+    let dmut open = verifier(allowUnsigned-> true);
+    assert(rejection!{i32} (downgraded, alias open) == (UnpackErrorCode::TRAILING)?);
+    assert(rejection!{i32} (downgraded[0us .. $ - HMAC_TAG_SIZE], alias open) == none);
+
+    for alg in [2u8, 7u8] {
+        let dmut other = copy bytes;
+        other[ALG_OFFSET] = alg;
+        assert(rejection!{i32} (other, alias v) == (UnpackErrorCode::UNSUPPORTED_AUTH)?);
+        assert(refusal!{i32} (other) == (UnpackErrorCode::UNSUPPORTED_AUTH)?);
+    }
+}
+
+__test unsignedPolicy {
+    let dmut v = verifier();
+    assert(rejection!{i32} (pack(1), alias v) == (UnpackErrorCode::UNAUTHENTICATED)?);
+    assert(frameRefusal(v, pack(1)[0us .. HEADER_SIZE]) == (UnpackErrorCode::UNAUTHENTICATED)?);
+
+    let dmut open = verifier(allowUnsigned-> true);
+    assert(unpack!{i32} (pack(1), alias open) == 1);
+    assert(unpack!{i32} (pack(1), alias open) == 1);
+
+    let dmut s = signer();
+    assert(refusal!{i32} (pack(1, alias s)) == (UnpackErrorCode::UNSUPPORTED_AUTH)?);
+}
+
+__test keysAndContexts {
+    let dmut s = signer();
+    let dmut v = verifier();
+
+    let dmut unknown = copy Signer(4u32, KEY.to![u8] ());
+    assert(rejection!{i32} (pack(1, alias unknown), alias v) == (UnpackErrorCode::UNKNOWN_KEY)?);
+
+    let dmut wrong = copy Signer(3u32, "another key".to![u8] ());
+    assert(rejection!{i32} (pack(1, alias wrong), alias v) == (UnpackErrorCode::BAD_SIGNATURE)?);
+
+    let bytes = pack(1, alias s, context-> "actor-a".to![u8] ());
+    assert(rejection!{i32} (bytes, alias v, context-> "actor-b".to![u8] ()) == (UnpackErrorCode::BAD_SIGNATURE)?);
+    assert(rejection!{i32} (bytes, alias v) == (UnpackErrorCode::BAD_SIGNATURE)?);
+    assert(rejection!{i32} (bytes, alias v, context-> "actor-a".to![u8] ()) == none);
+
+    v:.removeKey(3u32);
+    assert(rejection!{i32} (pack(1, alias s), alias v) == (UnpackErrorCode::UNKNOWN_KEY)?);
+}
+
+__test replays {
+    let dmut v = verifier();
+    let dmut s = signer(sequence-> 100u64);
+    let first = pack(1, alias s);
+    let second = pack(2, alias s);
+
+    assert(rejection!{i32} (second, alias v) == none);
+    assert(rejection!{i32} (first, alias v) == none);
+    assert(rejection!{i32} (first, alias v) == (UnpackErrorCode::REPLAYED)?);
+    assert(rejection!{i32} (second, alias v) == (UnpackErrorCode::REPLAYED)?);
+    assert(rejection!{i32} (second, alias v, sender-> "another") == none);
+
+    let dmut below = signer(sequence-> 101u64 - REPLAY_WINDOW);
+    assert(rejection!{i32} (pack(3, alias below), alias v) == (UnpackErrorCode::REPLAYED)?);
+
+    let dmut lowest = signer(sequence-> 102u64 - REPLAY_WINDOW);
+    assert(rejection!{i32} (pack(3, alias lowest), alias v) == none);
+
+    // a number far above the window forgets every number below it
+    let dmut far = signer(sequence-> 1000u64);
+    assert(rejection!{i32} (pack(4, alias far), alias v) == none);
+    assert(rejection!{i32} (pack(4, alias s), alias v) == (UnpackErrorCode::REPLAYED)?);
+}
+
+__test oversizedPayload {
+    let dmut s = signer();
+    let dmut v = verifier(maxPayload-> 64us);
+    assert(rejection!{[u8]} (pack(copy [0u8 ; 63us], alias s), alias v) == none);
+
+    let big = pack(copy [0u8 ; 64us], alias s);
+    assert(rejection!{[u8]} (big, alias v) == (UnpackErrorCode::TOO_LARGE)?);
+    assert(frameRefusal(v, big[0us .. HEADER_SIZE]) == (UnpackErrorCode::TOO_LARGE)?);
+    assert(frameRefusal(v, big[0us .. HEADER_SIZE - 1us]) == (UnpackErrorCode::TRUNCATED)?);
+
+    let dmut huge = copy big[0us .. HEADER_SIZE];
+    writeHeader(alias huge, 0us, Header(AuthAlgorithm::HMAC_SHA256, 3u32, 9u64, u64::max));
+    assert(rejection!{[u8]} (huge, alias v) == (UnpackErrorCode::TOO_LARGE)?);
+
+    let dmut unbounded = verifier(maxPayload-> usize::max);
+    assert(rejection!{[u8]} (huge, alias unbounded) == (UnpackErrorCode::TOO_LARGE)?);
+    assert(frameRefusal(unbounded, huge) == (UnpackErrorCode::TOO_LARGE)?);
+
+    writeHeader(alias huge, 0us, Header(AuthAlgorithm::HMAC_SHA256, 3u32, 9u64, 1000u64));
+    assert(unbounded.frameSize(huge) == HEADER_SIZE + 1000us + HMAC_TAG_SIZE);
+    assert(rejection!{[u8]} (huge, alias unbounded) == (UnpackErrorCode::TRUNCATED)?);
+
+    writeHeader(alias huge, 0us, Header(AuthAlgorithm::NONE, 0u32, 0u64, u64::max));
+    assert(refusal!{[u8]} (huge) == (UnpackErrorCode::TRUNCATED)?);
+}

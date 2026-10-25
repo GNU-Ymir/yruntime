@@ -1,0 +1,156 @@
+/**
+ * This module implements the envelope of a packet: the header telling how the payload is authenticated, and how long it is.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in envelope;
+
+use etc::c::memory;
+use std::conv;
+use std::pack::errors;
+
+/**
+ * The magic bytes every packet starts with, "YPK"
+ */
+pub def MAGIC = [0x59u8, 0x50u8, 0x4Bu8];
+
+/**
+ * The version of the format of the packets written
+ */
+pub def VERSION = 2u8;
+
+/**
+ * The number of bytes of the header: magic, version, auth-alg, key-id, sequence and payload-len
+ */
+pub def HEADER_SIZE = 25us;
+
+/**
+ * The offset of each field of the header
+ */
+pub def ALG_OFFSET = 4us;
+pub def KEY_OFFSET = 5us;
+pub def SEQUENCE_OFFSET = 9us;
+pub def LENGTH_OFFSET = 17us;
+
+/**
+ * The algorithms a packet can be authenticated with
+ */
+pub enum AuthAlgorithm : u8
+| NONE        = 0u8   // not authenticated, no tag follows the payload
+| HMAC_SHA256 = 1u8   // a 32 bytes HMAC-SHA-256 tag follows the payload
+| SIGNATURE   = 2u8   // reserved for a public-key signature, not implemented
+;
+
+/**
+ * The size of the tag of an HMAC-SHA-256 packet
+ */
+pub def HMAC_TAG_SIZE = 32us;
+
+/**
+ * The header of a packet, as it is written
+ */
+pub record Header {
+
+    // The algorithm the packet is authenticated with, as written: it can be none of `AuthAlgorithm`
+    pub let alg: u8;
+
+    // The key the tag is computed with
+    pub let keyId: u32;
+
+    // The number of the packet among those its sender signed with that key
+    pub let sequence: u64;
+
+    // The number of bytes of the payload
+    pub let payloadLen: u64;
+
+    pub self (alg: u8, keyId: u32, sequence: u64, payloadLen: u64)
+        with alg = alg
+        , keyId = keyId
+        , sequence = sequence
+        , payloadLen = payloadLen
+    {}
+}
+
+/**
+ * Read the header at the start of `bytes`
+ * @throws:
+ *    - &UnpackError: if `bytes` is shorter than a header (TRUNCATED), does not start with the magic bytes (BAD_MAGIC), or is written in another version of the format (UNSUPPORTED_VERSION)
+ */
+pub fn readHeader(bytes: [u8])-> Header
+    throws UnpackError
+{
+    for i, m in MAGIC {
+        if (i >= bytes.len) throw copy UnpackError(UnpackErrorCode::TRUNCATED, i, "the packet ends");
+        if (bytes[i] != m) throw copy UnpackError(UnpackErrorCode::BAD_MAGIC, i, "not a packet");
+    }
+
+    if (bytes.len > 3us && bytes[3us] != VERSION) {
+        throw copy UnpackError(UnpackErrorCode::UNSUPPORTED_VERSION, 3us, "version " ~ bytes[3us].to![c8] () ~ " of the format");
+    }
+
+    if (bytes.len < HEADER_SIZE) {
+        throw copy UnpackError(UnpackErrorCode::TRUNCATED, bytes.len, "the packet ends");
+    }
+
+    let mut keyId = 0u32;
+    let mut sequence = 0u64;
+    let mut len = 0u64;
+    memcpy(cast!{*void} (&keyId), cast!{*void} (bytes.ptr + KEY_OFFSET), 4us);
+    memcpy(cast!{*void} (&sequence), cast!{*void} (bytes.ptr + SEQUENCE_OFFSET), 8us);
+    memcpy(cast!{*void} (&len), cast!{*void} (bytes.ptr + LENGTH_OFFSET), 8us);
+
+    Header(bytes[ALG_OFFSET], keyId, sequence, len)
+}
+
+/**
+ * Write `header` over the header starting at `at` in `bytes`
+ */
+pub fn writeHeader(dmut bytes: [u8], at: usize, header: Header) {
+    for i, m in MAGIC {
+        bytes[at + i] = m;
+    }
+
+    bytes[at + 3us] = VERSION;
+    bytes[at + ALG_OFFSET] = header.alg;
+    memcpy(cast!{*void} (bytes.ptr + at + KEY_OFFSET), cast!{*void} (&header.keyId), 4us);
+    memcpy(cast!{*void} (bytes.ptr + at + SEQUENCE_OFFSET), cast!{*void} (&header.sequence), 8us);
+    memcpy(cast!{*void} (bytes.ptr + at + LENGTH_OFFSET), cast!{*void} (&header.payloadLen), 8us);
+}
+
+/**
+ * @returns: the number of bytes of the tag following the payload of a packet authenticated with `alg`
+ * @throws:
+ *    - &UnpackError: if `alg` is not an algorithm this program implements (UNSUPPORTED_AUTH)
+ */
+pub fn tagSize(alg: u8)-> usize
+    throws UnpackError
+{
+    if (alg == AuthAlgorithm::NONE) return 0us;
+    if (alg == AuthAlgorithm::HMAC_SHA256) return HMAC_TAG_SIZE;
+
+    throw copy UnpackError(UnpackErrorCode::UNSUPPORTED_AUTH, ALG_OFFSET, "authentication algorithm " ~ alg.to![c8] () ~ " is not implemented");
+}
+
+/**
+ * Check that `len` bytes hold the whole frame of the packet whose header is `header`, and nothing else
+ * @returns: the number of bytes of the tag
+ * @throws:
+ *    - &UnpackError: if the bytes end before the frame does (TRUNCATED), or go on after it (TRAILING)
+ */
+pub fn checkFrame(header: Header, len: usize)-> usize
+    throws UnpackError
+{
+    let tag = tagSize(header.alg);
+    let room = if (len < HEADER_SIZE + tag) { 0u64 } else { cast!u64(len - HEADER_SIZE - tag) };
+    if (header.payloadLen > room) {
+        throw copy UnpackError(UnpackErrorCode::TRUNCATED, len, "the packet ends");
+    }
+
+    if (header.payloadLen < room) {
+        let end = HEADER_SIZE + cast!usize(header.payloadLen) + tag;
+        throw copy UnpackError(UnpackErrorCode::TRAILING, end, (len - end).to![c8] () ~ " bytes left");
+    }
+
+    tag
+}

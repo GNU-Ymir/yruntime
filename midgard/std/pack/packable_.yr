@@ -1,0 +1,283 @@
+/**
+ * This module implements the `Packable` trait, and the `#[packable]` tag that implements it.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in packable_;
+
+use core::reflect::factory;
+use etc::c::memory;
+use std::pack::{errors, packer, unpacker, utils};
+use std::stream;
+
+/**
+ * Trait of the classes and the records that can be packed into bytes, and rebuilt from them.
+ * It is implemented by the tag `#[packable]`, never by hand: the tag reads and writes every field of the type, the private ones included, and registers the class so a packet can name it.
+ */
+pub trait Packable {
+
+    /**
+     * @returns: a packet holding the value, see `std::pack::pack`
+     */
+    pub fn pack(self)-> [u8] {
+        let dmut p = copy Packer();
+        p:.write(self);
+        p:.seal()
+    }
+
+    /**
+     * Write the fields of the value, those of its ancestors first
+     */
+    pub fn __pack__write(self, dmut p: &Packer);
+
+    /**
+     * Read the fields of a value, those of its ancestors first, and write them at their offset from `dst`
+     */
+    pub fn __pack__read(self, dmut u: &Unpacker, dst: *u8)
+        throws UnpackError;
+
+    /**
+     * Write the canonical spelling of the fields of the type, from which its fingerprint is computed
+     */
+    pub fn __pack__schema(self, dmut s: &StringStream);
+}
+
+/**
+ * Tag implementing `Packable` for a class or a record.
+ * Every field is packed, the private ones included, in the order of declaration, those of the ancestor first. A field whose type cannot be packed (a pointer, a function, a delegate, a class or a record that is not tagged, ...) is a compile error, unless it is skipped.
+ * A tagged class is registered under its name, so a packet can name it, and has to derive from a tagged class if it derives from any. An abstract class is not registered: the objects of its subclasses are packed and rebuilt.
+ * An object is rebuilt without calling a constructor, its fields read from the packet. A class can check that the fields it was given keep its invariants, by declaring a method `pub fn unpacked(self) throws UnpackError`, called once every object of the packet is read.
+ * @params:
+ *    - skip: the names of the fields that are not packed, separated by commas, without spaces. A skipped field is set to the `init` value of its type when the value is rebuilt, a type that has none (a class) cannot be skipped.
+ * @example:
+ * ```
+ * use std::pack::_;
+ *
+ * #[packable]
+ * class Shape {
+ *     pub let name: [c8];
+ *     pub self (name: [c8]) with name = name {}
+ * }
+ *
+ * #[packable (skip-> "draws")]
+ * class Square over Shape {
+ *     pub let side: i32;
+ *
+ *     // local to the process drawing the square, it is rebuilt as 0
+ *     let mut draws: usize = 0us;
+ *
+ *     pub self (side: i32) with super ("square"), side = side {}
+ *
+ *     pub fn area(self)-> i32 {
+ *         self.side * self.side
+ *     }
+ *
+ *     pub fn draw(mut self) {
+ *         self.draws += 1us;
+ *     }
+ *
+ *     pub fn unpacked(self)
+ *         throws UnpackError
+ *     {
+ *         if (self.side < 0) throw copy UnpackError("negative side");
+ *     }
+ * }
+ *
+ * let dmut sq = copy Square(3);
+ * sq:.draw();
+ *
+ * let s = unpack!{&Shape} (sq.pack());
+ * if let back: &Square = s {
+ *     assert(back.area() == 9);
+ * }
+ * ```
+ */
+pub tag packable (skip: [c8] = "") {
+
+    pub class apply {class C} {
+
+        impl Packable {
+
+            pub over __pack__write(self, dmut p: &Packer) {
+                cte if (__pragma!has_super(C)) {
+                    cte assert(hasPackableSuper!{C},
+                               C::typeid ~ " is tagged #[packable], but its ancestor " ~ __pragma!super(C)::typeid ~ " is not");
+                }
+
+                cte if (hasPackableSuper!{C}) {
+                    self.super.__pack__write(alias p);
+                }
+
+                cte for i in 0us .. C::field_infos.len {
+                    cte if (!inList!{skip, C::field_infos[i].name, 0us}) {
+                        cte if (isPackable!{__pragma!field_type(C, C::field_infos[i].name)}) {
+                            p:.write(__pragma!field(self, C::field_infos[i].name));
+                        } else {
+                            cte assert(false, "the field " ~ C::field_infos[i].name ~ " of " ~ C::typeid ~ " cannot be packed, it has to be skipped");
+                        }
+                    }
+                }
+            }
+
+            pub over __pack__read(self, dmut u: &Unpacker, dst: *u8)
+                throws UnpackError
+            {
+                cte if (hasPackableSuper!{C}) {
+                    self.super.__pack__read(alias u, dst);
+                } else {
+                    u:.readNothing();
+                }
+
+                cte for i in 0us .. C::field_infos.len {
+                    cte if (!inList!{skip, C::field_infos[i].name, 0us}) {
+                        cte if (isPackable!{__pragma!field_type(C, C::field_infos[i].name)}) {
+                            u:.readField!{__pragma!field_type(C, C::field_infos[i].name)} (dst, C::field_infos[i].offset);
+                        }
+                    } else {
+                        packable_::writeInit!{__pragma!field_type(C, C::field_infos[i].name), C::field_infos[i].name} (dst, C::field_infos[i].offset);
+                    }
+                }
+            }
+
+            pub over __pack__schema(self, dmut s: &StringStream) {
+                s:.write(classNameOf!{typeof(self)} (), "{");
+                cte for i in 0us .. C::field_infos.len {
+                    cte if (!inList!{skip, C::field_infos[i].name, 0us} && isPackable!{__pragma!field_type(C, C::field_infos[i].name)}) {
+                        s:.write(C::field_infos[i].name, ":");
+                        utils::schema!{__pragma!field_type(C, C::field_infos[i].name)} (alias s);
+                        s:.write(",");
+                    }
+                }
+
+                s:.write("}");
+                cte if (hasPackableSuper!{C}) {
+                    s:.write("<");
+                    self.super.__pack__schema(alias s);
+                }
+            }
+        }
+
+        cte if (hasPackableSuper!{C}) {
+            pub over __pack__name(self)-> [c8] {
+                classNameOf!{typeof(self)} ()
+            }
+
+            pub over __pack__unpacked(self)-> (&UnpackError)? {
+                packable_::runUnpacked(self)
+            }
+        } else {
+            /**
+             * @returns: the name of the class tagged `#[packable]` this method belongs to, the one of the object if its class is tagged
+             */
+            pub fn __pack__name(self)-> [c8] {
+                classNameOf!{typeof(self)} ()
+            }
+
+            /**
+             * Run the `unpacked` hook of the class, if it declares one
+             * @returns: the error the hook threw, if any
+             */
+            pub fn __pack__unpacked(self)-> (&UnpackError)? {
+                packable_::runUnpacked(self)
+            }
+        }
+    }
+
+    pub record apply {record R} {
+
+        impl Packable {
+
+            pub over __pack__write(self, dmut p: &Packer) {
+                cte for i in 0us .. R::field_infos.len {
+                    cte if (!inList!{skip, R::field_infos[i].name, 0us}) {
+                        cte if (isPackable!{__pragma!field_type(R, R::field_infos[i].name)}) {
+                            p:.write(__pragma!field(self, R::field_infos[i].name));
+                        } else {
+                            cte assert(false, "the field " ~ R::field_infos[i].name ~ " of " ~ R::typeid ~ " cannot be packed, it has to be skipped");
+                        }
+                    }
+                }
+            }
+
+            pub over __pack__read(self, dmut u: &Unpacker, dst: *u8)
+                throws UnpackError
+            {
+                u:.readNothing();
+                cte for i in 0us .. R::field_infos.len {
+                    cte if (!inList!{skip, R::field_infos[i].name, 0us}) {
+                        cte if (isPackable!{__pragma!field_type(R, R::field_infos[i].name)}) {
+                            u:.readField!{__pragma!field_type(R, R::field_infos[i].name)} (dst, R::field_infos[i].offset);
+                        }
+                    } else {
+                        packable_::writeInit!{__pragma!field_type(R, R::field_infos[i].name), R::field_infos[i].name} (dst, R::field_infos[i].offset);
+                    }
+                }
+            }
+
+            pub over __pack__schema(self, dmut s: &StringStream) {
+                s:.write(R::typeid, "{");
+                cte for i in 0us .. R::field_infos.len {
+                    cte if (!inList!{skip, R::field_infos[i].name, 0us} && isPackable!{__pragma!field_type(R, R::field_infos[i].name)}) {
+                        s:.write(R::field_infos[i].name, ":");
+                        utils::schema!{__pragma!field_type(R, R::field_infos[i].name)} (alias s);
+                        s:.write(",");
+                    }
+                }
+
+                s:.write("}");
+            }
+        }
+
+        /**
+         * @returns: the least number of bytes the record takes on the wire
+         */
+        pub fn __pack__minWire(self)-> usize {
+            let mut res = 0us;
+            cte for i in 0us .. R::field_infos.len {
+                cte if (!inList!{skip, R::field_infos[i].name, 0us} && isPackable!{__pragma!field_type(R, R::field_infos[i].name)}) {
+                    res += minWire!{__pragma!field_type(R, R::field_infos[i].name)} ();
+                }
+            }
+
+            res
+        }
+    }
+
+    pub self {class C} () {
+        cte if (__pragma!compile(__pragma!vtable(C))) {
+            factory::register!{C} ();
+        }
+    }
+
+    pub self {record R} () {}
+}
+
+/**
+ * Write the `init` value of the type `T` of the skipped field `name`, at `offset` bytes from `dst`
+ */
+pub fn writeInit {T, name: [c8]} (dst: *u8, offset: usize) {
+    cte assert(__pragma!compile(T::init), "the field " ~ name ~ " is skipped, but " ~ T::typeid ~ " has no init value to rebuild it with");
+    let v = T::init;
+    memcpy(cast!{*void} (dst + offset), cast!{*void} (&v), T::size);
+}
+
+/**
+ * Call the `unpacked` hook of `v`, if its class declares one
+ * @returns: the error the hook threw, if any
+ */
+pub fn runUnpacked {T} (v: T)-> (&UnpackError)? {
+    cte if (__pragma!compile({ v.unpacked(); })) {
+        {
+            v.unpacked();
+            none
+        } catch {
+            err: &UnpackError => {
+                err?
+            }
+        }
+    } else {
+        v;
+        none
+    }
+}

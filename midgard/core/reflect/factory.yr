@@ -1,0 +1,264 @@
+/**
+ * Allocation of a class picked at runtime by its name, among the classes registered beforehand.
+ * Only a registered class can be allocated, and only when it is the class the caller expects or one of its subclasses, so a name read from outside the program (a packet, a file) never picks an arbitrary class of the binary.
+ * The allocated objects are built field by field instead of by a constructor, and nothing outside the code filling them must see them before every one of their fields is written. A `Factory` keeps them pending until `commit`: a pending object that is dropped is collected without its destructor ever running.
+ * @example:
+ * ```
+ * use core::reflect::factory;
+ *
+ * class Shape {
+ *     pub let mut w: i32 = 0;
+ *     pub self () {}
+ *     pub fn area (self)-> i32 { 0 }
+ * }
+ *
+ * class Square over Shape {
+ *     pub self () {}
+ *     pub over area (self)-> i32 { self.w * self.w }
+ * }
+ *
+ * register!{&Square}();
+ *
+ * let dmut f = copy Factory();
+ * let dmut s = f:.allocate!{&Shape}(classNameOf!{&Square}());
+ * s.w = 3;
+ * f:.commit();
+ * assert(s.area() == 9);
+ * ```
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in factory;
+
+use core::concurrency::sync::mutex;
+use core::exception;
+use core::types::info;
+use etc::runtime::classes;
+use etc::runtime::memory;
+use std::stream;
+
+lazy dmut __FACTORY_MUTEX__ = copy Mutex();
+
+lazy mut __FACTORY_CLASSES__: [[c8] => mut *void] = copy [];
+
+/**
+ * Error code telling why a factory refused to allocate a class
+ */
+pub enum FactoryErrorCode: u8
+| UNKNOWN_CLASS  = 1u8
+| NOT_A_SUBCLASS = 2u8;
+
+/**
+ * Error thrown when a factory refuses to allocate a class
+ */
+@final
+pub class FactoryError over Exception {
+
+    // Why the class was refused
+    pub let code: FactoryErrorCode;
+
+    // The name of the class asked for
+    pub let name: [c8];
+
+    // The name of the class it had to be, or one of the ancestors of
+    pub let expected: [c8];
+
+    /**
+     * @params:
+     *    - code: why the class was refused
+     *    - name: the name of the class asked for
+     *    - expected: the name of the class it had to be, or one of the ancestors of
+     */
+    pub self (code: FactoryErrorCode, name: [c8], expected: [c8])
+        with code = code
+        , name = name
+        , expected = expected
+    {}
+
+    impl Streamable {
+        pub over toStream(self, dmut stream: &StringStream) {
+            stream:.write(self.__typeinfo__.name, " : ");
+            match self.code {
+                FactoryErrorCode::UNKNOWN_CLASS => {
+                    stream:.writeln("no class named ", self.name, " is registered");
+                }
+                _ => {
+                    stream:.writeln(self.name, " is not ", self.expected, " nor one of its subclasses");
+                }
+            }
+
+            if (self.trace.len != 0us) {
+                stream:.write(self.getStackTrace());
+            }
+        }
+    }
+}
+
+/**
+ * Let factories allocate the class `C`, under the name `classNameOf!{C}()`.
+ * Registering a class is opting it in: it states that the class can be rebuilt field by field, without its constructor.
+ * @example:
+ * ```
+ * use core::reflect::factory;
+ *
+ * class Point {
+ *     pub let x: i32 = 0;
+ *     pub self () {}
+ * }
+ *
+ * register!{&Point}();
+ * assert(isRegistered(classNameOf!{&Point}()));
+ * ```
+ */
+pub fn register {class C} () {
+    let vtable = __pragma!vtable(C);
+    let name = factory::vtableTypeInfo(vtable).name;
+    atomic __FACTORY_MUTEX__ {
+        __FACTORY_CLASSES__[name] = vtable;
+    }
+}
+
+/**
+ * @returns: true if a class named `name` is registered
+ * @example:
+ * ```
+ * use core::reflect::factory;
+ *
+ * assert(!isRegistered("main::NotAClass"));
+ * ```
+ */
+pub fn isRegistered(name: [c8])-> bool {
+    atomic __FACTORY_MUTEX__ {
+        if let Ok(_) = __FACTORY_CLASSES__[name] {
+            true
+        } else {
+            false
+        }
+    }
+}
+
+/**
+ * @returns: the name a class is registered under, which is also the `__typeinfo__.name` of its instances
+ * @example:
+ * ```
+ * use core::reflect::factory;
+ *
+ * class Point {
+ *     pub self () {}
+ * }
+ *
+ * let p = copy Point();
+ * assert(classNameOf!{&Point}() == p.__typeinfo__.name);
+ * ```
+ */
+pub fn classNameOf {class C} ()-> [c8] {
+    C::typeinfo.inner[0].name
+}
+
+/**
+ * The type info of the class whose vtable is `vtable`, stored in the first slot of the vtable
+ */
+fn vtableTypeInfo(vtable: *void)-> TypeInfo {
+    unsafe {
+        *(*(cast!{*(*TypeInfo)} (vtable)))
+    }
+}
+
+/**
+ * @returns: true if the class of `ti` is named `ancestor`, or one of its ancestors is
+ */
+fn inherits(ti: TypeInfo, ancestor: [c8])-> bool {
+    let mut current = ti;
+    while current.name != ancestor {
+        if current.inner.len == 0us return false;
+        current = current.inner[0];
+    }
+
+    true
+}
+
+/**
+ * Allocates registered classes, and keeps them pending until they are committed.
+ * A pending object is zeroed but for its vtable: it is not a valid instance of its class until every one of its fields, inherited ones included, is written, and it must not escape the code filling it before then.
+ * Committing registers the destructors of the pending objects. A factory dropped before committing leaves its objects to the collector, their destructors never running on a partially written instance.
+ */
+pub class Factory {
+
+    let mut _pending: [*void] = [];
+
+    pub self () {}
+
+    /**
+     * Allocate a pending instance of the class registered under `name`, which has to be `T` or one of its subclasses.
+     * @params:
+     *    - name: the name the class is registered under (see `classNameOf`)
+     * @returns: an instance of the class named `name`, zeroed but for its vtable
+     * @throws:
+     *    - &FactoryError: if no class is registered under `name` (UNKNOWN_CLASS), or if that class is neither `T` nor one of its subclasses (NOT_A_SUBCLASS)
+     * @example:
+     * ```
+     * use core::reflect::factory;
+     *
+     * class Shape {
+     *     pub self () {}
+     * }
+     *
+     * class Circle {
+     *     pub self () {}
+     * }
+     *
+     * register!{&Circle}();
+     *
+     * let dmut f = copy Factory();
+     * let refused = {
+     *     f:.allocate!{&Shape}(classNameOf!{&Circle}());
+     *     false
+     * } catch {
+     *     err: &FactoryError => {
+     *         err.code == FactoryErrorCode::NOT_A_SUBCLASS
+     *     }
+     * };
+     *
+     * assert(refused);
+     * ```
+     */
+    pub fn allocate {class T} (mut self, name: [c8])-> dmut T
+        throws FactoryError
+    {
+        let expected = classNameOf!{T}();
+        let found = atomic __FACTORY_MUTEX__ {
+            __FACTORY_CLASSES__[name]
+        };
+
+        if let Ok(vtable) = found {
+            if !factory::inherits(factory::vtableTypeInfo(vtable), expected) {
+                throw copy FactoryError(FactoryErrorCode::NOT_A_SUBCLASS, name, expected);
+            }
+
+            let dmut obj = Classes!{dmut T}::_yrt_alloc_class_pending(vtable);
+            self._pending ~= [Runtime!{T, *void}::_yrt_unsafe_cast(obj)];
+            return alias obj;
+        }
+
+        throw copy FactoryError(FactoryErrorCode::UNKNOWN_CLASS, name, expected);
+    }
+
+    /**
+     * Register the destructors of the objects allocated since the last commit, every one of their fields being written
+     */
+    pub fn commit(mut self) {
+        for obj in self._pending {
+            _yrt_commit_class(obj);
+        }
+
+        self._pending = [];
+    }
+
+    /**
+     * @returns: the number of objects allocated since the last commit
+     */
+    pub fn pending(self)-> usize {
+        self._pending.len
+    }
+}
