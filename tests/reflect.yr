@@ -1,0 +1,211 @@
+in reflect;
+
+use core::concurrency::sync::mutex;
+use core::reflect::factory;
+
+extern (C) fn GC_gcollect();
+extern (C) fn GC_invoke_finalizers()-> i32;
+
+lazy dmut __DTOR_MUTEX__ = copy Mutex();
+
+lazy mut __PENDING_DTORS__: usize = 0us;
+
+lazy mut __COMMITTED_DTORS__: usize = 0us;
+
+tag registered {
+    pub self {class C} () {
+        factory::register!{C}();
+    }
+}
+
+@abstract
+class Shape {
+    pub let mut w: i32 = 0;
+    pub self () {}
+    pub fn name(self)-> [c8];
+}
+
+#[registered]
+class Rect over Shape {
+    pub let mut h: i32 = 0;
+    pub self () {}
+    pub over name(self)-> [c8] { "rect" }
+    pub fn area(self)-> i32 { self.w * self.h }
+}
+
+#[registered]
+class Square over Rect {
+    pub self () {}
+    pub over name(self)-> [c8] { "square" }
+}
+
+class Circle over Shape {
+    pub self () {}
+    pub over name(self)-> [c8] { "circle" }
+}
+
+#[registered]
+class Unrelated {
+    pub self () {}
+}
+
+#[registered]
+class Dropped {
+    pub let mut x: i32 = 0;
+    pub self () {}
+    __dtor(mut self) {
+        atomic __DTOR_MUTEX__ {
+            __PENDING_DTORS__ += 1us;
+        }
+    }
+}
+
+#[registered]
+class Kept {
+    pub let mut x: i32 = 0;
+    pub self () {}
+    __dtor(mut self) {
+        atomic __DTOR_MUTEX__ {
+            __COMMITTED_DTORS__ += 1us;
+        }
+    }
+}
+
+fn allocateDropped(nb: usize)
+    throws FactoryError
+{
+    let dmut f = copy Factory();
+    for _ in 0us .. nb {
+        let dmut d = f:.allocate!{&Dropped}(classNameOf!{&Dropped}());
+        d.x = 1;
+    }
+}
+
+fn allocateKept(nb: usize)
+    throws FactoryError
+{
+    let dmut f = copy Factory();
+    for _ in 0us .. nb {
+        let dmut k = f:.allocate!{&Kept}(classNameOf!{&Kept}());
+        k.x = 1;
+    }
+
+    f:.commit();
+}
+
+fn refusal {class T} (dmut f: &Factory, name: [c8])-> (&FactoryError)? {
+    {
+        f:.allocate!{T}(name);
+        none
+    } catch {
+        err: &FactoryError => {
+            err?
+        }
+    }
+}
+
+/**
+ * @returns: the number of destructors run on the objects allocated by allocateDropped and allocateKept
+ */
+fn dtors()-> (usize, usize) {
+    atomic __DTOR_MUTEX__ {
+        (__PENDING_DTORS__, __COMMITTED_DTORS__)
+    }
+}
+
+fn collect() {
+    GC_gcollect();
+    GC_invoke_finalizers();
+}
+
+__test registeredByTag {
+    assert(isRegistered(classNameOf!{&Rect}()));
+    assert(isRegistered(classNameOf!{&Square}()));
+    assert(!isRegistered(classNameOf!{&Circle}()));
+    assert(classNameOf!{&Square}() == "reflect::Square");
+}
+
+__test allocateSubclass {
+    let dmut f = copy Factory();
+    let dmut s = f:.allocate!{&Shape}(classNameOf!{&Square}());
+    s.w = 4;
+    f:.commit();
+
+    assert(s.name() == "square");
+    assert(s.__typeinfo__.name == "reflect::Square");
+    if let r: &Rect = s {
+        assert(r.area() == 0);
+    } else {
+        assert(false);
+    }
+}
+
+__test allocateExact {
+    let dmut f = copy Factory();
+    let dmut r = f:.allocate!{&Rect}(classNameOf!{&Rect}());
+    r.w = 2;
+    r.h = 3;
+    f:.commit();
+
+    assert(r.name() == "rect" && r.area() == 6);
+}
+
+__test unknownClass {
+    let dmut f = copy Factory();
+    for name in ["reflect::Nope", "", classNameOf!{&Circle}()] {
+        if let Ok(err) = refusal!{&Shape}(alias f, name) {
+            assert(err.code == FactoryErrorCode::UNKNOWN_CLASS);
+            assert(err.name == name && err.expected == "reflect::Shape");
+        } else {
+            assert(false);
+        }
+    }
+
+    assert(f.pending() == 0us);
+}
+
+__test notASubclass {
+    let dmut f = copy Factory();
+    if let Ok(err) = refusal!{&Shape}(alias f, classNameOf!{&Unrelated}()) {
+        assert(err.code == FactoryErrorCode::NOT_A_SUBCLASS);
+    } else {
+        assert(false);
+    }
+
+    if let Ok(err) = refusal!{&Square}(alias f, classNameOf!{&Rect}()) {
+        assert(err.code == FactoryErrorCode::NOT_A_SUBCLASS);
+        assert(err.name == "reflect::Rect" && err.expected == "reflect::Square");
+    } else {
+        assert(false);
+    }
+
+    assert(f.pending() == 0us);
+}
+
+__test pendingUntilCommit {
+    let dmut f = copy Factory();
+    f:.allocate!{&Rect}(classNameOf!{&Rect}());
+    f:.allocate!{&Shape}(classNameOf!{&Square}());
+    assert(f.pending() == 2us);
+
+    f:.commit();
+    assert(f.pending() == 0us);
+}
+
+__test destructorOnlyOnceCommitted {
+    // initialized before any destructor can run: one run by an allocation made while initializing them would wait for itself
+    dtors();
+
+    allocateDropped(1000us);
+    collect();
+
+    // the collector is conservative: a stale stack slot can keep a whole round of objects alive
+    for _ in 0us .. 10us {
+        allocateKept(1000us);
+        collect();
+        if (dtors().1 != 0us) break;
+    }
+
+    let (pending, committed) = dtors();
+    assert(pending == 0us && committed != 0us);
+}
