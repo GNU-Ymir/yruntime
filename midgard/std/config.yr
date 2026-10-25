@@ -50,8 +50,10 @@ pub trait Serializable {
      * */
     prot fn __config__serializeContent(self, dmut dict: &Dict) {
         dict;
-        cte if (__pragma!compile({self::super.__config__serializeContent(alias dict);})) {
-            self::super.__config__serializeContent(alias dict);
+        cte if (__pragma!has_super(typeof(self))) {
+            cte if template!{__pragma!super(typeof(self))}{X impl std::config::Serializable} {
+                self.super.__config__serializeContent(alias dict);
+            }
         }
 
         cte for i in 0 .. typeof(self)::field_infos.len {
