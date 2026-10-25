@@ -29,7 +29,7 @@ function flush_line(l) {
 }
 
 function is_decl_start(l) {
-    return l ~ /^(pub |prv |use |mod |in |fn |class |record |enum |trait |def |static |extern|import |aka |macro |union |lazy |template |__test|@)/
+    return l ~ /^(pub |prv |use |mod |in |fn |class |record |enum |trait |def |static |extern|import |aka |macro |union |lazy |template |__test|@|#\[)/
 }
 
 function uses_io(l) {
