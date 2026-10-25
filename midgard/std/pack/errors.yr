@@ -1,0 +1,79 @@
+/**
+ * This module implements the error thrown when a packet cannot be unpacked.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in errors;
+
+use core::exception;
+use std::stream;
+
+/**
+ * Error code telling why a packet was refused
+ */
+pub enum UnpackErrorCode: u8
+| TRUNCATED           = 1u8   // the packet ends before the value does
+| BAD_MAGIC           = 2u8   // the packet does not start with the magic bytes "YPK"
+| UNSUPPORTED_VERSION = 3u8   // the packet is written in a version of the format this program does not read
+| BAD_TAG             = 4u8   // a bool or an option is written with a byte other than 0 or 1
+| OVERFLOW            = 5u8   // a number does not fit its type, or a varint is not written in its shortest form
+| BAD_LENGTH          = 6u8   // a length is greater than what the rest of the packet can hold
+| UNKNOWN_TYPE        = 7u8   // the packet names a class that is not packable in this program
+| SCHEMA_MISMATCH     = 8u8   // the packet names a class whose fields are not the same in this program
+| TYPE_MISMATCH       = 9u8   // an object is not of the class, or a subclass of the class, it has to be
+| BAD_REFERENCE       = 10u8  // an object or a type entry refers to one the packet has not defined
+| DUPLICATE_KEY       = 11u8  // a map holds the same key twice
+| NOT_A_MEMBER        = 12u8  // the value of an enum is none of its members
+| TOO_DEEP            = 13u8  // objects are nested deeper than the unpacker allows
+| TRAILING            = 14u8  // bytes are left once the value is read
+| INVALID             = 15u8  // the `unpacked` hook of a class refused the object it was given
+;
+
+/**
+ * Error thrown when a packet cannot be unpacked
+ */
+@final
+pub class UnpackError over Exception {
+
+    // Why the packet was refused
+    pub let code: UnpackErrorCode;
+
+    // The index of the byte of the packet the error was found at
+    pub let offset: usize;
+
+    // The message explaining the error
+    pub let msg: [c8];
+
+    /**
+     * @params:
+     *   - code: why the packet was refused
+     *   - offset: the index of the byte of the packet the error was found at
+     *   - msg: the message explaining the error
+     */
+    pub self (code: UnpackErrorCode, offset: usize, msg: [c8])
+        with code = code
+        , offset = offset
+        , msg = msg
+    {}
+
+    /**
+     * An error thrown by the `unpacked` hook of a class, refusing an object whose fields break its invariants
+     * @params:
+     *   - msg: the message explaining the error
+     */
+    pub self (msg: [c8])
+        with code = UnpackErrorCode::INVALID
+        , offset = 0us
+        , msg = msg
+    {}
+
+    impl Streamable {
+        pub over toStream(self, dmut stream: &StringStream) {
+            stream:.write(self.__typeinfo__.name, "(", self.code, " at offset ", self.offset, ": ", self.msg, ")");
+            if (self.hasTrace()) {
+                stream:.write(":\n", self.getStackTrace());
+            }
+        }
+    }
+}
