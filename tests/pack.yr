@@ -632,3 +632,174 @@ __test deepNesting {
     assert(refusal!{&Node} (deep) == (UnpackErrorCode::TOO_DEEP)?);
     assert(refusal!{&Node} (deep, maxDepth-> usize::max) == (UnpackErrorCode::TOO_DEEP)?);
 }
+
+def KEY = "a key shared by the sender and the receiver";
+
+fn signer(sequence: u64 = 1u64)-> dmut &Signer {
+    copy Signer(3u32, KEY.to![u8] (), sequence-> sequence)
+}
+
+fn verifier(allowUnsigned: bool = false, maxPayload: usize = MAX_PAYLOAD)-> dmut &Verifier {
+    let dmut v = copy Verifier(allowUnsigned-> allowUnsigned, maxPayload-> maxPayload);
+    v:.addKey(3u32, KEY.to![u8] ());
+    alias v
+}
+
+fn rejection {T} (bytes: [u8], dmut v: &Verifier, context: [u8] = [], sender: [c8] = "")-> (UnpackErrorCode)? {
+    {
+        unpack!{T} (bytes, alias v, context-> context, sender-> sender);
+        none
+    } catch {
+        err: &UnpackError => {
+            (err.code)?
+        }
+    }
+}
+
+fn frameRefusal(v: &Verifier, header: [u8])-> (UnpackErrorCode)? {
+    {
+        v.frameSize(header);
+        none
+    } catch {
+        err: &UnpackError => {
+            (err.code)?
+        }
+    }
+}
+
+__test signedRoundTrip {
+    let dmut s = signer();
+    let dmut v = verifier();
+    let bytes = pack(copy Square(4), alias s, context-> "shapes".to![u8] ());
+    assert(bytes[ALG_OFFSET] == 1u8 && bytes.len == pack(copy Square(4)).len + HMAC_TAG_SIZE);
+    assert(v.frameSize(bytes[0us .. HEADER_SIZE]) == bytes.len);
+    assert(unpack!{&Shape} (bytes, alias v, context-> "shapes".to![u8] ()).area() == 16);
+    assert(unpack!{i32} (pack(5, alias s), alias v) == 5);
+}
+
+__test everyByteFlipped {
+    let dmut s = signer();
+    let dmut v = verifier();
+    let bytes = pack((copy Node(1), "payload"), alias s);
+    for i in 0us .. bytes.len {
+        for bit in [0x01u8, 0x80u8] {
+            let dmut m = copy bytes;
+            m[i] = m[i] ^ bit;
+
+            let code = rejection!{(&Node, [c8])} (m, alias v);
+            assert(code != none);
+            if (i >= SEQUENCE_OFFSET && i < LENGTH_OFFSET || i >= HEADER_SIZE) {
+                assert(code == (UnpackErrorCode::BAD_SIGNATURE)?);
+            }
+        }
+    }
+
+    assert(rejection!{(&Node, [c8])} (bytes, alias v) == none);
+}
+
+__test strippedTag {
+    let dmut s = signer();
+    let dmut v = verifier();
+    let bytes = pack(7, alias s);
+    assert(rejection!{i32} (bytes[0us .. $ - HMAC_TAG_SIZE], alias v) == (UnpackErrorCode::TRUNCATED)?);
+    assert(rejection!{i32} (bytes[0us .. $ - 1us], alias v) == (UnpackErrorCode::TRUNCATED)?);
+
+    let dmut downgraded = copy bytes;
+    downgraded[ALG_OFFSET] = 0u8;
+    assert(rejection!{i32} (downgraded, alias v) == (UnpackErrorCode::UNAUTHENTICATED)?);
+    assert(rejection!{i32} (downgraded[0us .. $ - HMAC_TAG_SIZE], alias v) == (UnpackErrorCode::UNAUTHENTICATED)?);
+
+    // a receiver accepting unsigned packets is given one when the tag is stripped too, as it chose to
+    let dmut open = verifier(allowUnsigned-> true);
+    assert(rejection!{i32} (downgraded, alias open) == (UnpackErrorCode::TRAILING)?);
+    assert(rejection!{i32} (downgraded[0us .. $ - HMAC_TAG_SIZE], alias open) == none);
+
+    for alg in [2u8, 7u8] {
+        let dmut other = copy bytes;
+        other[ALG_OFFSET] = alg;
+        assert(rejection!{i32} (other, alias v) == (UnpackErrorCode::UNSUPPORTED_AUTH)?);
+        assert(refusal!{i32} (other) == (UnpackErrorCode::UNSUPPORTED_AUTH)?);
+    }
+}
+
+__test unsignedPolicy {
+    let dmut v = verifier();
+    assert(rejection!{i32} (pack(1), alias v) == (UnpackErrorCode::UNAUTHENTICATED)?);
+    assert(frameRefusal(v, pack(1)[0us .. HEADER_SIZE]) == (UnpackErrorCode::UNAUTHENTICATED)?);
+
+    let dmut open = verifier(allowUnsigned-> true);
+    assert(unpack!{i32} (pack(1), alias open) == 1);
+    assert(unpack!{i32} (pack(1), alias open) == 1);
+
+    let dmut s = signer();
+    assert(refusal!{i32} (pack(1, alias s)) == (UnpackErrorCode::UNSUPPORTED_AUTH)?);
+}
+
+__test keysAndContexts {
+    let dmut s = signer();
+    let dmut v = verifier();
+
+    let dmut unknown = copy Signer(4u32, KEY.to![u8] ());
+    assert(rejection!{i32} (pack(1, alias unknown), alias v) == (UnpackErrorCode::UNKNOWN_KEY)?);
+
+    let dmut wrong = copy Signer(3u32, "another key".to![u8] ());
+    assert(rejection!{i32} (pack(1, alias wrong), alias v) == (UnpackErrorCode::BAD_SIGNATURE)?);
+
+    let bytes = pack(1, alias s, context-> "actor-a".to![u8] ());
+    assert(rejection!{i32} (bytes, alias v, context-> "actor-b".to![u8] ()) == (UnpackErrorCode::BAD_SIGNATURE)?);
+    assert(rejection!{i32} (bytes, alias v) == (UnpackErrorCode::BAD_SIGNATURE)?);
+    assert(rejection!{i32} (bytes, alias v, context-> "actor-a".to![u8] ()) == none);
+
+    v:.removeKey(3u32);
+    assert(rejection!{i32} (pack(1, alias s), alias v) == (UnpackErrorCode::UNKNOWN_KEY)?);
+}
+
+__test replays {
+    let dmut v = verifier();
+    let dmut s = signer(sequence-> 100u64);
+    let first = pack(1, alias s);
+    let second = pack(2, alias s);
+
+    assert(rejection!{i32} (second, alias v) == none);
+    assert(rejection!{i32} (first, alias v) == none);
+    assert(rejection!{i32} (first, alias v) == (UnpackErrorCode::REPLAYED)?);
+    assert(rejection!{i32} (second, alias v) == (UnpackErrorCode::REPLAYED)?);
+    assert(rejection!{i32} (second, alias v, sender-> "another") == none);
+
+    let dmut below = signer(sequence-> 101u64 - REPLAY_WINDOW);
+    assert(rejection!{i32} (pack(3, alias below), alias v) == (UnpackErrorCode::REPLAYED)?);
+
+    let dmut lowest = signer(sequence-> 102u64 - REPLAY_WINDOW);
+    assert(rejection!{i32} (pack(3, alias lowest), alias v) == none);
+
+    // a number far above the window forgets every number below it
+    let dmut far = signer(sequence-> 1000u64);
+    assert(rejection!{i32} (pack(4, alias far), alias v) == none);
+    assert(rejection!{i32} (pack(4, alias s), alias v) == (UnpackErrorCode::REPLAYED)?);
+}
+
+__test oversizedPayload {
+    let dmut s = signer();
+    let dmut v = verifier(maxPayload-> 64us);
+    assert(rejection!{[u8]} (pack(copy [0u8 ; 63us], alias s), alias v) == none);
+
+    let big = pack(copy [0u8 ; 64us], alias s);
+    assert(rejection!{[u8]} (big, alias v) == (UnpackErrorCode::TOO_LARGE)?);
+    assert(frameRefusal(v, big[0us .. HEADER_SIZE]) == (UnpackErrorCode::TOO_LARGE)?);
+    assert(frameRefusal(v, big[0us .. HEADER_SIZE - 1us]) == (UnpackErrorCode::TRUNCATED)?);
+
+    let dmut huge = copy big[0us .. HEADER_SIZE];
+    writeHeader(alias huge, 0us, Header(AuthAlgorithm::HMAC_SHA256, 3u32, 9u64, u64::max));
+    assert(rejection!{[u8]} (huge, alias v) == (UnpackErrorCode::TOO_LARGE)?);
+
+    let dmut unbounded = verifier(maxPayload-> usize::max);
+    assert(rejection!{[u8]} (huge, alias unbounded) == (UnpackErrorCode::TOO_LARGE)?);
+    assert(frameRefusal(unbounded, huge) == (UnpackErrorCode::TOO_LARGE)?);
+
+    writeHeader(alias huge, 0us, Header(AuthAlgorithm::HMAC_SHA256, 3u32, 9u64, 1000u64));
+    assert(unbounded.frameSize(huge) == HEADER_SIZE + 1000us + HMAC_TAG_SIZE);
+    assert(rejection!{[u8]} (huge, alias unbounded) == (UnpackErrorCode::TRUNCATED)?);
+
+    writeHeader(alias huge, 0us, Header(AuthAlgorithm::NONE, 0u32, 0u64, u64::max));
+    assert(refusal!{[u8]} (huge) == (UnpackErrorCode::TRUNCATED)?);
+}
