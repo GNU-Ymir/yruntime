@@ -1,0 +1,143 @@
+/**
+ * This module packs values into bytes, and rebuilds them from those bytes, in another thread, process or machine.
+ * Classes and records opt in with the tag `#[packable]`, which implements the trait `Packable`; scalars, slices, static arrays, maps, tuples, options and enums of packable types are packable as they are.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * An object is rebuilt as an instance of its own class, which the packet names: `unpack!{&Shape}` rebuilds a `Square`, if `Square` is a subclass of `Shape` tagged `#[packable]`. A packet can only name such a class, and only where the type of the value it is read into allows it, so it never picks an arbitrary class of the program. The objects are allocated without calling a constructor and filled from the packet, and none of them is visible before the whole packet is read: on an error, they are dropped without their destructor ever running.
+ * The sharing of the objects is kept: an object referenced twice is packed once and rebuilt once, and a cycle is rebuilt as a cycle. Slices, maps, tuples and records are values, packed in full wherever they appear, and rebuilt in fresh memory.
+ * <br>
+ * The format of a packet is, in little-endian, a varint being an unsigned LEB128 in its shortest form:
+ * ```text
+ * Packet      := "YPK" 0x01 Value(T)
+ * Value(T)    := bool: 0x00 | 0x01      integers, chars, f32, f64: their bytes      isize, usize: 8 bytes
+ *              | slice, map: varint length, then its elements, or its keys each followed by its value
+ *              | static array, tuple, record: their elements, or fields, in order
+ *              | option: 0x00 (empty, its error is not packed) | 0x01 Value(U)
+ *              | enum: the value of its member
+ *              | class: ObjRef
+ * ObjRef      := varint k: the k-th object of the packet, or a new one if k is the number of objects so far,
+ *                followed by TypeRef and the fields of the object, those of its ancestors first
+ * TypeRef     := varint t: the t-th type entry of the packet, or a new one if t is the number of entries so far,
+ *                followed by the class name (varint length, bytes) and the fingerprint of its fields (u64)
+ * ```
+ * Sender and receiver must be built from the same definitions of their classes: a class whose fields differ is refused, as is a class the receiver does not know. A packet whose content does not follow the format is refused with an `UnpackError` telling why, never read out of its bounds.
+ * @example:
+ * ```
+ * use std::pack::_;
+ *
+ * #[packable]
+ * class Node {
+ *     pub let value: i32;
+ *     pub let mut next: (&Node)? = none;
+ *     pub self (value: i32) with value = value {}
+ * }
+ *
+ * let dmut a = copy Node(1);
+ * let dmut b = copy Node(2);
+ * a.next = (alias b)?;
+ * b.next = (alias a)?;
+ *
+ * let back = unpack!{&Node} (pack(a));
+ * if let Ok(n) = back.next {
+ *     assert(n.value == 2);
+ * }
+ *
+ * let (s, l) = unpack!{([c8], [i32])} (pack(("hi", copy [1, 2])));
+ * assert(s == "hi" && l == [1, 2]);
+ * ```
+ */
+
+in pack;
+
+pub mod ::errors;
+pub mod ::packable_;
+pub mod ::packer;
+pub mod ::unpacker;
+
+mod ::utils;
+
+use std::pack::{errors, packer, unpacker, utils};
+
+/**
+ * @returns: a packet holding `value`
+ * @warning: panics if `value` holds an object whose class is not tagged `#[packable]`, a subclass of a tagged class that is not tagged itself
+ * @example:
+ * ```
+ * use std::pack;
+ *
+ * let bytes = pack([1, 2, 3]);
+ * assert(bytes[0us .. 4us] == [0x59u8, 0x50u8, 0x4Bu8, 0x01u8]);
+ * ```
+ */
+pub fn pack {T} (value: T)-> [u8] {
+    cte assert(isPackable!{T}, T::typeid ~ " cannot be packed");
+    let dmut p = copy Packer();
+    p:.write(value);
+    p:.bytes()
+}
+
+/**
+ * Append a packet holding `value` to `into`
+ * @warning: panics if `value` holds an object whose class is not tagged `#[packable]`, a subclass of a tagged class that is not tagged itself
+ * @example:
+ * ```
+ * use std::pack;
+ *
+ * let dmut buffer: [u8] = [];
+ * pack(1, ref buffer);
+ * pack("two", ref buffer);
+ * assert(buffer.len == 16us);
+ * ```
+ */
+pub fn pack {T} (value: T, ref dmut into: [u8]) {
+    cte assert(isPackable!{T}, T::typeid ~ " cannot be packed");
+    let dmut p = copy Packer(into-> alias into);
+    p:.write(value);
+    into = p:.bytes();
+}
+
+/**
+ * Rebuild a value of type `T` from the packet `bytes`, every byte of which it has to use
+ * @params:
+ *    - bytes: the packet
+ *    - maxDepth: the number of objects that can be nested inside one another, as each one costs a frame on the stack
+ * @returns: the value, an object being an instance of `T` or one of its subclasses tagged `#[packable]`
+ * @throws:
+ *    - &UnpackError: if the packet does not hold a value of type `T`, see `UnpackErrorCode`
+ * @example:
+ * ```
+ * use std::pack::_;
+ *
+ * #[packable]
+ * record Point {
+ *     pub let x: i32;
+ *     pub let y: i32;
+ *     pub self (x: i32, y: i32) with x = x, y = y {}
+ * }
+ *
+ * let p = unpack!{Point} (pack(Point(1, 2)));
+ * assert(p.x == 1 && p.y == 2);
+ *
+ * let refused = {
+ *     unpack!{i32} (pack(1u8));
+ *     false
+ * } catch {
+ *     err: &UnpackError => {
+ *         err.code == UnpackErrorCode::TRUNCATED
+ *     }
+ * };
+ *
+ * assert(refused);
+ * ```
+ */
+pub fn unpack {T} (bytes: [u8], maxDepth: usize = 1024us)-> dmut T
+    throws UnpackError
+{
+    cte assert(isPackable!{T}, T::typeid ~ " cannot be packed");
+    let dmut u = copy Unpacker(bytes, maxDepth-> maxDepth);
+    u:.readHeader();
+    let dmut res = u:.read!{T} ();
+    u:.finish();
+    utils::keep!{T} (ref res)
+}
