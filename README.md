@@ -2,8 +2,9 @@
 
 Midgard is the standard library for [GNU-Ymir](https://github.com/GNU-Ymir) (`gyc`), covering
 everything under the `std`, `core`, and `etc` module roots — collections, algorithms, I/O,
-filesystem, networking, concurrency (threads/actors/futures), formatting, config parsing, and
-low-level runtime/C bindings.
+filesystem, networking, concurrency (threads/task pools/futures), formatting, config parsing, and
+low-level runtime/C bindings. The HTTP server and the actor system, built on top of it, live in
+[heimdall](https://github.com/GNU-Ymir/heimdall).
 
 It is one component of a larger Ymir toolchain checkout: `gyc` (the GCC-based Ymir compiler)
 builds and links against Midgard, and the `midgard` sources are installed as system-wide Ymir

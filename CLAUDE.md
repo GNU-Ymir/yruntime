@@ -312,7 +312,7 @@ compiler-generated `__test` glue) into `utils::runner::UnittestLauncher`, and wi
 `utils::coverage::tree` CoverageTree (`tree::threadTree`). The tree is per-thread because the
 enter/exit stack it maintains is one thread's call stack; every tree handed out is registered in a
 process-global list, and `tree::mergedTree` folds them together at store time, so what ran on a
-`TaskPool` worker or an actor loop is not lost with the thread that ran it.
+`TaskPool` worker is not lost with the thread that ran it.
 
 - `utils::args` — CLI parsing (`TestRunnerArgument`, built on `std::config::ArgumentParser`).
 - `utils::filters` — include/exclude test-name filtering used by the runner, plus reading and
@@ -441,7 +441,7 @@ Things that will bite you here:
 - **Tests run concurrently in one address space**, so anything process-global they touch (env,
   cwd, files at fixed paths, stdout) has to be safe to share — MID-79 is the pass that made the
   runtime and the suite so. A test that creates threads must release them (`TaskPool::dispose`,
-  `ActorSystem::join`, `.value` on a `spawn`): a leaked pool stays parked in the process for
+  `.value` on a `spawn`): a leaked pool stays parked in the process for
   the rest of the run.
 - **A test that crashes the process takes the whole run down.** There is no worker process to
   lose and attribute the crash to; the segfault handler prints the trace of the faulty thread.
@@ -455,7 +455,7 @@ What a test prints is captured, unless `-s` is passed: `runOne` wraps it in
 `_yrt_capture_begin`/`_yrt_capture_end` (`rt/memory/capture.c`), which swap the stream
 `_yrt_stdout()`/`_yrt_stderr()` return *for the calling thread* — `std::io` and `rt/memory/print.c`
 write through those, never through `stdout`/`stderr` directly. A thread created while a capture is
-active inherits it (`rt/concurrency/thread.c`), so a test's `spawn`/`TaskPool`/actors are captured
+active inherits it (`rt/concurrency/thread.c`), so a test's `spawn`/`TaskPool` are captured
 with it. Not captured: child processes (they inherit fd 1/2) and raw C writes to `stdout`. The
 output of a passing test is dropped; failures, with their error and output, are only printed once
 every test completed (`reportFailures`), under the progress bar. During the run, stdout carries
