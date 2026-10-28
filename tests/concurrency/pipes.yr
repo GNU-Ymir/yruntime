@@ -7,6 +7,9 @@ use std::io;
 use etc::c::files;
 use etc::c::socket;
 
+extern (C) fn _yrt_test_interrupt_then_write (fd: i32)-> *void;
+extern (C) fn _yrt_test_interrupter_join (handle: *void)-> void;
+
 /**
  * @returns: true if the O_NONBLOCK flag is set on `fd`
  * */
@@ -65,4 +68,19 @@ __test closedPipeBlocking { // a closed pipe ignores both, rather than calling f
     p:.setNonBlocking();
     p:.setBlocking();
     assert(!p.isOpen(), "b");
+}
+
+__test readRetriesWhenInterrupted { // MID-143: an EINTR from read was taken for a broken pipe
+    {
+        let dmut p = copy IOPipe::new();
+
+        let interrupter = _yrt_test_interrupt_then_write(p.opipe.getHandle());
+        let byte = p.ipipe:.read!{u8} ();
+        _yrt_test_interrupter_join(interrupter);
+
+        assert(byte == 42u8, "a");
+        p:.dispose();
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
 }
