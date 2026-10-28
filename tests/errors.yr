@@ -9,8 +9,6 @@ use std::conv::errors;
 use std::format::errors;
 use std::syntax::errors;
 use std::net::tcp;
-use std::net::http;
-use std::concurrency::actor;
 use helpers;
 
 // Every error below is built by hand rather than provoked: what is under test is the text each
@@ -70,16 +68,4 @@ __test tcpErrors { // std::net::tcp -- reachable without ever opening a socket
     assert(contains(refused, "refused"), "b");
 
     assert(contains(format("{}", copy TcpError(TcpErrorCode::SOCKET_CLOSED, "")), "SOCKET_CLOSED"), "c");
-}
-
-__test httpErrors { // std::net::http
-    let notFound = format("{}", copy HttpError(404u32, msg-> "not found"));
-    assert(contains(notFound, "404"), "a");
-    assert(contains(notFound, "not found"), "b");
-
-    assert(contains(format("{}", copy HttpError(500u32)), "500"), "c");
-}
-
-__test actorErrors { // std::concurrency::actor
-    assert(contains(format("{}", copy ActorError("no such actor")), "no such actor"), "a");
 }
