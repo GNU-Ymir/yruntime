@@ -153,7 +153,11 @@ pub class TcpListener {
         let mut len = sockaddr_in::size;
 
         errno(ErrnoValue::NONE);
-        let sock = socket::accept(self._sockFd, alias &client, alias &len);
+        let mut sock = socket::accept(self._sockFd, alias &client, alias &len);
+        while sock < 0 && errno() == ErrnoValue::EINTR {
+            sock = socket::accept(self._sockFd, alias &client, alias &len);
+        }
+
         if sock <= 0 {
             let err = errno();
             let errStr = strerrno(err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
@@ -175,7 +179,11 @@ pub class TcpListener {
         let mut len = sockaddr_in6::size;
 
         errno(ErrnoValue::NONE);
-        let sock = socket::accept(self._sockFd, alias &client, alias &len);
+        let mut sock = socket::accept(self._sockFd, alias &client, alias &len);
+        while sock < 0 && errno() == ErrnoValue::EINTR {
+            sock = socket::accept(self._sockFd, alias &client, alias &len);
+        }
+
         if sock <= 0 {
             let err = errno();
             let errStr = strerrno(err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
