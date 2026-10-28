@@ -1,6 +1,7 @@
 in opipe;
 
 use etc::c::{files, socket};
+use etc::runtime::errno;
 use core::exception::io;
 
 /**
@@ -160,6 +161,7 @@ pub class OPipe {
 
         while (lenToSend > 0) {
             let valsent = socket::write(self._pipe, cast!{*void} (curr), cast!usize(lenToSend));
+            if (valsent < 0 && errno() == ErrnoValue::EINTR) { continue; }
             if (valsent <= 0) {
                 self._error = true;
                 throw copy core::exception::io::IOError();
