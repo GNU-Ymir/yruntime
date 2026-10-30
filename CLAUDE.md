@@ -267,16 +267,17 @@ Three top-level modules declared in `midgard/__lib__.yr`:
   checks the tag and the sequence number before any of the payload is read (`Verifier`). Whether
   a packet must be signed is the receiver's choice, never a header flag.
 - `core` (`midgard/core.yr`): language-support types — `atom`, `exception`, `concurrency`,
-  `math`, `types`, `reflect`. `core::exception::Exception` is the root of the exception
-  hierarchy; in `DEBUG_LIB` builds it captures a stack trace at construction.
+  `math`, `nidhogg`, `types`, `reflect`. `core::exception::Exception` is the root of the exception
+  hierarchy; in `DEBUG_LIB` builds it captures a stack trace at construction. `core::nidhogg` is
+  the garbage collector (see below).
 - `etc` (`midgard/etc.yr`): externals — `etc::c` (raw C bindings) and `etc::runtime::*`
   (`dwarf`, `elf`, `env`, `errno`, `exception`, `files`, `gc`, `memory`, `threads` — thin
   Ymir wrappers around `rt/`).
 
 ### `rt/` — the C runtime
 
-Backs the language runtime independent of Ymir compilation: `rt/memory` (GC, allocation,
-class/type info, printing), `rt/except` (exception raising, stack unwinding, DWARF-based
+Backs the language runtime independent of Ymir compilation: `rt/memory` (allocation,
+class/type info, printing), `rt/nidhogg` (the C shim of the collector), `rt/except` (exception raising, stack unwinding, DWARF-based
 stacktraces), `rt/concurrency` (threads, futures), `rt/utils` (demangling, env, errno, files,
 math, string helpers), `rt/run.c` (process entry glue). Built once as `libruntime.a` and also
 folded into both `gymidgard-*` static libs.
@@ -295,6 +296,36 @@ after touching `rt/`. MID-62 is what it exists to prevent: YMI-141 dropped the `
 `binding/binding/parser.yr` actually calls, and the breakage shipped in a patch release as a bare
 link failure. **A rename inside `_yrt_*` is an ABI change** — it belongs in a minor release with a
 release note, and anything gymir calls has to be changed there in the same breath.
+
+### `core::nidhogg` — the garbage collector
+
+Níðhöggr replaced Boehm: a concurrent, non-moving tri-color mark and sweep collector, close to
+Go's, that never stops all the threads at once. It marks while the program runs, interrupts one
+thread at a time through a handshake (`SIGPWR`, the thread parking in the handler while the
+collector reads its stack and its TLS block), and relies on the write barriers the compiler emits
+before every store of a pointer out of a frame (`_yrt_nh_wb`, `_yrt_nh_wb_range`,
+`_yrt_nh_store`, tested on `_yrt_nh_marking`), which shade both the overwritten and the stored
+pointer. Stacks, registers and objects are scanned conservatively, interior pointers included.
+
+- It is written in Ymir, every function `@nogc` (no barrier, no coverage hook, no GC allocation,
+  no call to a non-`@nogc` function — the frontend checks it), its memory coming from `calloc` and
+  `mmap`; `rt/nidhogg/shim.c` holds only what Ymir cannot express (atomics, locks, the signal
+  handler, threads, `dl_iterate_phdr`). Building midgard therefore needs a `gyc` that knows
+  `@nogc` and emits the barriers (YMI-269).
+- C code storing a pointer into collected memory goes through the barrier too: the inline helpers
+  of `rt/utils/gc.h` (`_yrt_i_gc_store`, `_yrt_i_gc_store_ptr`, `_yrt_i_gc_clear`, and
+  `_yrt_i_gc_copy_new` to copy into a fresh block). A plain store of a pointer into a collected
+  object can free what it points to; memory out of the collector holding collected pointers is
+  registered as a root (`_yrt_nh_add_roots`, as the exception headers are).
+- A thread the runtime creates registers before any Ymir code runs on it (`_yrt_i_thread_create`).
+- `NIDHOGG_GOGC` (heap growth before the next cycle, 100 by default), `NIDHOGG_STATS=1` (cycles,
+  allocations, peak, collector time and longest per-thread pause at exit) and `NIDHOGG_VERIFY=1`
+  (after each mark, every thread parked at once, aborts if a marked object, root or data segment
+  points into an unmarked object — the stacks are not checked, their stale words would be false
+  positives) are read at the first allocation.
+- `etc::runtime::gc` exposes `_yrt_gc_collect` (a whole cycle, waited for) and
+  `_yrt_gc_wait_finalizers`; finalizers run unordered on a thread of their own, and once more at
+  exit.
 
 ### `tests/` — the test suite
 
