@@ -40,6 +40,6 @@ void _yrt_commit_class (void* cl);
 /**
  * Called when a class is destroyed by the gc
  *  */
-void _yrt_i_destruct_class (GC_PTR obj, GC_PTR x);
+void _yrt_i_destruct_class (void * obj, void * x);
 
 #endif // CLASSES_H_
