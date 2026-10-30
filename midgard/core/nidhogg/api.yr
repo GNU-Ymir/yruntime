@@ -1,0 +1,235 @@
+/**
+ * The entry points of the collector: the allocations and the write barriers compiled code and
+ * the runtime call, the finalizers, the roots and the threads the runtime registers, and the
+ * control of the collector.
+ */
+in api;
+
+use core::nidhogg::{cycle, mark, state, sys, thread};
+
+/**
+ * @params:
+ *    - size: the size of the object
+ *    - flags: 1 if the object holds no pointer, so that it is never scanned
+ * @returns: a new zeroed object of `size` bytes
+ * */
+@nogc
+pub extern (C) fn _yrt_nh_alloc (size: usize, flags: u8)-> usize {
+    allocate (size, flags)
+}
+
+/**
+ * The write barrier of a store of the pointer `val` into the slot `slot`, shading the pointer it
+ * overwrites and the one it stores
+ * */
+@nogc
+pub extern (C) fn _yrt_nh_wb (slot: usize, val: usize) {
+    let ts = enterBusy ();
+    if (marking ()) {
+        shadeFromThread (ld (slot));
+        shadeFromThread (val);
+    }
+
+    leaveBusy (ts);
+}
+
+/**
+ * The write barrier of a store of the `size` bytes at `src` into the ones at `dst`, shading what
+ * both point to
+ * */
+@nogc
+pub extern (C) fn _yrt_nh_wb_range (dst: usize, src: usize, size: usize) {
+    let ts = enterBusy ();
+    if (marking ()) {
+        scanRangeFromThread (dst, dst + size);
+        if (src != 0us) {
+            scanRangeFromThread (src, src + size);
+        }
+    }
+
+    leaveBusy (ts);
+}
+
+/**
+ * Store the `size` bytes at `src` into the ones at `dst`, through the write barrier
+ * */
+@nogc
+pub extern (C) fn _yrt_nh_store (dst: usize, src: usize, size: usize) {
+    _yrt_nh_wb_range (dst, src, size);
+    memmove (dst, src, size);
+}
+
+/**
+ * Shade what the `size` bytes at `src` point to, before they are copied into a new object
+ * */
+@nogc
+pub extern (C) fn _yrt_nh_shade_range (src: usize, size: usize) {
+    _yrt_nh_wb_range (src, 0us, size);
+}
+
+/**
+ * Register the finalizer `fn_` of the object `obj`, called with it once it is unreachable
+ * */
+@nogc
+pub extern (C) fn _yrt_nh_register_finalizer (obj: usize, fn_: usize) {
+    registerFinalizer (obj, fn_);
+}
+
+/**
+ * Register the memory [lo, hi), which the collector does not allocate, as a root
+ * */
+@nogc
+pub extern (C) fn _yrt_nh_add_roots (lo: usize, hi: usize) {
+    let dmut g = G ();
+    _yrt_i_nh_mutex_lock ((*g).rootsLock);
+    pushPair (cast!usize (&((*g).roots)), cast!usize (&((*g).nroots)), cast!usize (&((*g).capRoots)), lo, hi);
+    _yrt_i_nh_mutex_unlock ((*g).rootsLock);
+}
+
+/**
+ * Forget the root [lo, hi)
+ * */
+@nogc
+pub extern (C) fn _yrt_nh_remove_roots (lo: usize, hi: usize) {
+    let dmut g = G ();
+    _yrt_i_nh_mutex_lock ((*g).rootsLock);
+    for i in 0us .. (*g).nroots {
+        if (ld ((*g).roots + i * 16us) == lo && ld ((*g).roots + i * 16us + 8us) == hi) {
+            (*g).nroots = (*g).nroots - 1us;
+            st ((*g).roots + i * 16us, ld ((*g).roots + (*g).nroots * 16us));
+            st ((*g).roots + i * 16us + 8us, ld ((*g).roots + (*g).nroots * 16us + 8us));
+            break;
+        }
+    }
+
+    _yrt_i_nh_mutex_unlock ((*g).rootsLock);
+}
+
+/**
+ * Make the calling thread known to the collector, before it reads any pointer
+ * */
+@nogc
+pub extern (C) fn _yrt_nh_register_thread () {
+    register ();
+}
+
+/**
+ * Run a whole cycle, and wait until it is over
+ * */
+@nogc
+pub extern (C) fn _yrt_nh_collect () {
+    collect ();
+}
+
+/**
+ * Wait until the finalizers queued have run
+ * */
+@nogc
+pub extern (C) fn _yrt_nh_wait_finalizers () {
+    waitFinalizers ();
+}
+
+/**
+ * Run a last cycle and the finalizers it queues, the program exiting
+ * */
+@nogc
+pub extern (C) fn _yrt_nh_exit () {
+    let dmut g = G ();
+    if ((*g).forked == 0u8 && (*g).disabled == 0u64 && _yrt_i_nh_load64 (cast!usize (&((*g).started))) != 0u64) {
+        collect ();
+        waitFinalizers ();
+    }
+
+    printStats ();
+}
+
+/**
+ * Prevent the cycles from starting, until _yrt_nh_enable is called as many times
+ * */
+@nogc
+pub extern (C) fn _yrt_nh_disable () {
+    let dmut g = G ();
+    _yrt_i_nh_mutex_lock ((*g).lock);
+    (*g).disabled = (*g).disabled + 1u64;
+    _yrt_i_nh_mutex_unlock ((*g).lock);
+}
+
+/**
+ * Let the cycles start again
+ * */
+@nogc
+pub extern (C) fn _yrt_nh_enable () {
+    let dmut g = G ();
+    _yrt_i_nh_mutex_lock ((*g).lock);
+    if ((*g).disabled != 0u64) {
+        (*g).disabled = (*g).disabled - 1u64;
+    }
+
+    _yrt_i_nh_cond_broadcast ((*g).cond);
+    _yrt_i_nh_mutex_unlock ((*g).lock);
+}
+
+/**
+ * @returns: 1 iif the cycles can start
+ * */
+@nogc
+pub extern (C) fn _yrt_nh_is_enabled ()-> u8 {
+    cast!u8 ((*G ()).disabled == 0u64)
+}
+
+/**
+ * Take every lock of the collector before a fork, in the order they nest, so that none is held by
+ * another thread. Once the lock of the threads is held no round can park the thread, which then
+ * counts as allocating, so that no round parks it to take one of the others either.
+ * */
+@nogc
+pub extern (C) fn _yrt_nh_atfork_prepare () {
+    let g = G ();
+    let dmut t = thread (register ());
+    _yrt_i_nh_mutex_lock ((*g).rootsLock);
+    _yrt_i_nh_mutex_lock ((*g).finLock);
+    _yrt_i_nh_mutex_lock ((*g).threadsLock);
+
+    (*t).inAlloc = 1u8;
+    for k in 0us .. NLISTS {
+        _yrt_i_nh_mutex_lock (ld ((*g).listLocks + k * 8us));
+    }
+
+    _yrt_i_nh_mutex_lock ((*g).heapLock);
+    _yrt_i_nh_mutex_lock ((*g).workLock);
+    _yrt_i_nh_mutex_lock ((*g).lock);
+}
+
+/**
+ * Release the locks taken before a fork, in the parent
+ * */
+@nogc
+pub extern (C) fn _yrt_nh_atfork_parent () {
+    let g = G ();
+    _yrt_i_nh_mutex_unlock ((*g).lock);
+    _yrt_i_nh_mutex_unlock ((*g).workLock);
+    _yrt_i_nh_mutex_unlock ((*g).heapLock);
+    for k in 0us .. NLISTS {
+        _yrt_i_nh_mutex_unlock (ld ((*g).listLocks + k * 8us));
+    }
+
+    let dmut t = thread (_yrt_i_nh_get_self ());
+    (*t).inAlloc = 0u8;
+
+    _yrt_i_nh_mutex_unlock ((*g).threadsLock);
+    _yrt_i_nh_mutex_unlock ((*g).finLock);
+    _yrt_i_nh_mutex_unlock ((*g).rootsLock);
+}
+
+/**
+ * Release the locks taken before a fork, in the child, which collects no more: it only has the
+ * thread that forked, and is about to exec
+ * */
+@nogc
+pub extern (C) fn _yrt_nh_atfork_child () {
+    let dmut g = G ();
+    _yrt_nh_atfork_parent ();
+    (*g).forked = 1u8;
+    (*g).disabled = (*g).disabled + 1u64;
+    _yrt_i_nh_store8 (cast!usize (&_yrt_nh_marking), 0u8);
+}
