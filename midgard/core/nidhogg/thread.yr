@@ -1,0 +1,527 @@
+/**
+ * The threads: their registration, the handshake through which the collector interrupts one of
+ * them at a time, the rounds the collector makes over them, and their allocations.
+ *
+ * In a handshake the thread parks in the handler of the handshake signal, the top of its stack
+ * recorded, until the collector, which reads its stack and its grey buffer meanwhile, lets it go.
+ * A thread parked may hold any lock: the collector takes none until it lets it go.
+ */
+in thread;
+
+use core::nidhogg::{heap, mark, state, sys};
+
+/**
+ * The flag of an allocation holding no pointer
+ * */
+pub def NOSCAN = 1u8;
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ===============================          REGISTRATION          =====================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Make the calling thread known to the collector, its stack and its TLS block being scanned from
+ * then on, until it ends
+ * @returns: its state
+ * */
+@{nogc, unsafe}
+pub fn register ()-> usize {
+    let current = _yrt_i_nh_get_self ();
+    if (current != 0us) return current;
+
+    let g = G ();
+    let ts = calloc (1us, ThreadState::size);
+    if (ts == 0us) {
+        fatal ("nidhogg: out of memory for the collector metadata\n");
+    }
+
+    let dmut t = thread (ts);
+    {
+        (*t).thread = _yrt_i_nh_thread_self ();
+        _yrt_i_nh_stack_bounds (cast!usize (&((*t).stackLo)), cast!usize (&((*t).stackHi)));
+        _yrt_i_nh_tls_bounds (cast!usize (&((*t).tlsLo)), cast!usize (&((*t).tlsHi)));
+        (*t).cache = words (NLISTS);
+        (*t).grey = words (GREY_WORDS);
+
+        _yrt_i_nh_mutex_lock ((*g).threadsLock);
+        (*t).next = ld ((*g).threads);
+        if ((*t).next != 0us) {
+            let dmut n = thread ((*t).next);
+            (*n).prev = ts;
+        }
+
+        st ((*g).threads, ts);
+        _yrt_i_nh_set_self (ts);
+        _yrt_i_nh_mutex_unlock ((*g).threadsLock);
+    }
+
+    _yrt_i_nh_set_thread_key (ts);
+    ts
+}
+
+/**
+ * Forget the thread whose state is `ts`, which ends
+ * */
+@nogc
+pub extern (C) fn _yrt_i_nh_thread_exit (ts: usize) {
+    if (ts == 0us) return;
+
+    let g = G ();
+    let dmut t = thread (ts);
+
+    // what it shaded is handed over before it leaves the rounds of the collector, its spans are
+    // handed back as an allocation does
+    (*t).inAlloc = 1u8;
+    flushGrey (ts);
+    releaseCache (ts);
+    flushAllocated (ts);
+    (*t).inAlloc = 0u8;
+
+    _yrt_i_nh_mutex_lock ((*g).threadsLock);
+    let prev = (*t).prev, next = (*t).next;
+    if (prev != 0us) {
+        let dmut p = thread (prev);
+        (*p).next = next;
+    } else {
+        st ((*g).threads, next);
+    }
+
+    if (next != 0us) {
+        let dmut n = thread (next);
+        (*n).prev = prev;
+    }
+
+    _yrt_i_nh_set_self (0us);
+    _yrt_i_nh_mutex_unlock ((*g).threadsLock);
+
+    free ((*t).cache);
+    free ((*t).grey);
+    free (ts);
+}
+
+/**
+ * Hand the spans the thread `ts` allocates from back to their lists
+ * */
+@{nogc, unsafe}
+pub fn releaseCache (ts: usize) {
+    let cache = { (*thread (ts)).cache };
+    for k in 0us .. NLISTS {
+        let s = ld (cache + k * 8us);
+        if (s != 0us) {
+            release (s);
+            st (cache + k * 8us, 0us);
+        }
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =================================          HANDSHAKES          =====================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Park the calling thread, in the handler of the handshake signal, until the collector lets it go
+ * @params:
+ *    - sp: the lowest address of its stack in use, the registers it was interrupted with included
+ * */
+@nogc
+pub extern (C) fn _yrt_i_nh_handshake (sp: usize) {
+    let ts = _yrt_i_nh_get_self ();
+    if (ts == 0us) return;
+
+    let dmut t = thread (ts);
+    (*t).sp = sp;
+    _yrt_i_nh_store8 (cast!usize (&((*t).parked)), 1u8);
+    while (_yrt_i_nh_load8 (cast!usize (&((*t).go))) == 0u8) {
+        _yrt_i_nh_yield ();
+    }
+
+    (*t).sp = 0us;
+    _yrt_i_nh_store8 (cast!usize (&((*t).parked)), 0u8);
+}
+
+/**
+ * Interrupt the thread `ts`, until resume is called
+ * @returns: false iif the thread could not be signaled
+ * */
+@{nogc, unsafe}
+pub fn suspend (ts: usize)-> bool {
+    let dmut t = thread (ts);
+    {
+        _yrt_i_nh_store8 (cast!usize (&((*t).go)), 0u8);
+        if (_yrt_i_nh_signal ((*t).thread) != 0) return false;
+
+        while (_yrt_i_nh_load8 (cast!usize (&((*t).parked))) == 0u8) {
+            _yrt_i_nh_yield ();
+        }
+    }
+
+    true
+}
+
+/**
+ * Let the thread `ts` interrupted by suspend go
+ * */
+@{nogc, unsafe}
+pub fn resume (ts: usize) {
+    let dmut t = thread (ts);
+    {
+        _yrt_i_nh_store8 (cast!usize (&((*t).go)), 1u8);
+        while (_yrt_i_nh_load8 (cast!usize (&((*t).parked))) == 1u8) {
+            _yrt_i_nh_yield ();
+        }
+
+        _yrt_i_nh_store8 (cast!usize (&((*t).go)), 0u8);
+    }
+}
+
+/**
+ * Record how long a thread was parked
+ * */
+@{nogc, unsafe}
+fn parked (since: u64) {
+    let dmut g = G ();
+    let d = _yrt_i_nh_now_ns () - since;
+    {
+        if (d > (*g).statLongestPark) {
+            (*g).statLongestPark = d;
+        }
+    }
+}
+
+/**
+ * Scan the stack and the TLS block of the thread `ts`, parked
+ * */
+@{nogc, unsafe}
+fn scanThread (ts: usize) {
+    let t = thread (ts);
+    {
+        scanRange ((*t).sp, (*t).stackHi);
+        scanRange ((*t).tlsLo, (*t).tlsHi);
+    }
+}
+
+/**
+ * Move the objects of the grey buffer of the thread `ts`, parked, to the mark stack
+ * @returns: their number
+ * */
+@{nogc, unsafe}
+pub fn takeGrey (ts: usize)-> usize {
+    let dmut t = thread (ts);
+    {
+        let n = (*t).greyLen;
+        for i in 0us .. n {
+            markPush (ld ((*t).grey + (2us + i) * 8us));
+        }
+
+        (*t).greyLen = 0us;
+        n
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ===================================          ROUNDS          =======================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * The work done on a thread during a round
+ * */
+pub def ROUND_ACK     = 0u8;
+pub def ROUND_SCAN    = 1u8;
+pub def ROUND_FLUSH   = 2u8;
+pub def ROUND_RECLAIM = 3u8;
+
+/**
+ * Interrupt every thread, one at a time, doing the work of the round on it
+ * @params:
+ *    - kind: the work of the round
+ *    - cycle: the number of the cycle
+ * @returns: the number of grey objects found, the stacks scanned during a flush, and the threads
+ * found running a barrier or an assist
+ * */
+@{nogc, unsafe}
+pub fn round (kind: u8, cycle: u64)-> usize {
+    let g = G ();
+    let mut found = 0us;
+
+    _yrt_i_nh_mutex_lock ((*g).threadsLock);
+    let mut ts = ld ((*g).threads);
+    while (ts != 0us) {
+        let dmut t = thread (ts);
+        let since = _yrt_i_nh_now_ns ();
+        if (kind == ROUND_RECLAIM) {
+            reclaim (ts);
+        } else if (suspend (ts)) {
+            if (kind == ROUND_SCAN) {
+                scanThread (ts);
+                (*t).scanned = cycle;
+                found = found + takeGrey (ts);
+            } else if (kind == ROUND_FLUSH) {
+                found = found + takeGrey (ts);
+                if ((*t).scanned != cycle) {
+                    scanThread (ts);
+                    (*t).scanned = cycle;
+                    found = found + 1us;
+                }
+
+                if (_yrt_i_nh_load8 (cast!usize (&((*t).busy))) != 0u8) {
+                    found = found + 1us;
+                }
+            }
+
+            resume (ts);
+            parked (since);
+        }
+
+        ts = (*t).next;
+    }
+
+    _yrt_i_nh_mutex_unlock ((*g).threadsLock);
+    found
+}
+
+/**
+ * Take back the spans the thread `ts` allocates from, so that every span is swept before the
+ * collector forgets the marks of the last cycle, and add what it allocated to the live heap. The
+ * thread is parked out of an allocation and of a fork, when it holds no lock of a list and no span
+ * but the ones of its cache.
+ * */
+@{nogc, unsafe}
+fn reclaim (ts: usize) {
+    loop {
+        let since = _yrt_i_nh_now_ns ();
+        if (!suspend (ts)) return;
+        if (_yrt_i_nh_load8 (cast!usize (&((*thread (ts)).inAlloc))) == 0u8) {
+            releaseCache (ts);
+            flushAllocated (ts);
+            resume (ts);
+            parked (since);
+            return;
+        }
+
+        resume (ts);
+        parked (since);
+        _yrt_i_nh_yield ();
+    }
+}
+
+/**
+ * Wait until no thread runs a write barrier or an assist anymore, the collector no longer marking
+ * */
+@{nogc, unsafe}
+pub fn quiesce () {
+    let dmut g = G ();
+    _yrt_i_nh_mutex_lock ((*g).threadsLock);
+    let mut ts = ld ((*g).threads);
+    while (ts != 0us) {
+        while (_yrt_i_nh_load8 (cast!usize (&((*thread (ts)).busy))) != 0u8) {
+            _yrt_i_nh_yield ();
+        }
+
+        ts = (*thread (ts)).next;
+    }
+
+    _yrt_i_nh_mutex_unlock ((*g).threadsLock);
+    while (_yrt_i_nh_load64 (cast!usize (&((*g).foreignBusy))) != 0u64) {
+        _yrt_i_nh_yield ();
+    }
+}
+
+/**
+ * Mark the calling thread as running a write barrier or an assist
+ * @returns: its state, 0 if it is unknown to the collector
+ * */
+@{nogc, unsafe}
+pub fn enterBusy ()-> usize {
+    let ts = _yrt_i_nh_get_self ();
+    if (ts != 0us) {
+        _yrt_i_nh_store8 (cast!usize (&((*thread (ts)).busy)), 1u8);
+    } else {
+        _yrt_i_nh_add64 (cast!usize (&((*G ()).foreignBusy)), 1u64);
+    }
+
+    _yrt_i_nh_fence ();
+    ts
+}
+
+/**
+ * Mark the thread `ts` returned by enterBusy as done
+ * */
+@{nogc, unsafe}
+pub fn leaveBusy (ts: usize) {
+    if (ts != 0us) {
+        _yrt_i_nh_store8 (cast!usize (&((*thread (ts)).busy)), 0u8);
+    } else {
+        _yrt_i_nh_sub64 (cast!usize (&((*G ()).foreignBusy)), 1u64);
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ================================          ALLOCATION          ======================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * @returns: true while the collector marks
+ * */
+@{nogc, unsafe}
+pub fn marking ()-> bool {
+    _yrt_i_nh_load8 (cast!usize (&_yrt_nh_marking)) == 1u8
+}
+
+/**
+ * Allocate a zeroed object of `size` bytes from the calling thread
+ * @params:
+ *    - size: the size of the object
+ *    - flags: NOSCAN if it holds no pointer
+ * @returns: the address of the object
+ * */
+@{nogc, unsafe}
+pub fn allocate (size: usize, flags: u8)-> usize {
+    let mut ts = _yrt_i_nh_get_self ();
+    if (ts == 0us) {
+        ts = register ();
+    }
+
+    let dmut t = thread (ts);
+    (*t).inAlloc = 1u8;
+
+    // one byte more, so that a pointer to the end of an object is still in it
+    let need = (if (size == 0us) { 1us } else { size }) + 1us;
+    let noscan = (flags & NOSCAN) != 0u8;
+
+    let mut obj = 0us;
+    let mut real = 0us;
+    if (need <= MAX_SMALL) {
+        let k = classOf (need) * 2us + (if (noscan) { 1us } else { 0us });
+        let slot = (*t).cache + k * 8us;
+        let mut s = ld (slot);
+
+        // a span the end of a cycle left unswept is handed back, to be swept before its objects are reused
+        if (s != 0us && (*span (s)).sweepGen != sweepGen ()) {
+            release (s);
+            st (slot, 0us);
+            s = 0us;
+        }
+
+        if (s != 0us) {
+            obj = spanAlloc (s, false);
+        }
+
+        if (obj == 0us) {
+            if (s != 0us) {
+                release (s);
+            }
+
+            s = refill (k);
+            st (slot, s);
+            obj = spanAlloc (s, false);
+        }
+
+        let x = span (s);
+        real = (*x).elemSize;
+        memset (obj, 0, real);
+
+        // zeroed first, so that no marked object holds stale words; an allocation the end of the
+        // cycle came across is in a span about to be swept
+        if (marking () || (*x).sweepGen != sweepGen ()) {
+            st8 ((*x).marks + (obj - (*x).base) / (*x).elemSize, 1u8);
+        }
+    } else {
+        obj = allocLarge (need, noscan, marking ());
+        real = ((need + PAGE - 1us) / PAGE) * PAGE;
+    }
+
+    account (ts, cast!u64 (real));
+    (*t).inAlloc = 0u8;
+    obj
+}
+
+/**
+ * Account for `bytes` the thread `ts` allocated: the live heap, its assists while the collector
+ * marks, and the trigger of the next cycle
+ * */
+@{nogc, unsafe}
+fn account (ts: usize, bytes: u64) {
+    let g = G ();
+    let dmut t = thread (ts);
+
+    (*t).allocated = (*t).allocated + bytes;
+    if ((*t).allocated >= ALLOC_BATCH) {
+        if (flushAllocated (ts) >= (*g).goal) {
+            trigger ();
+        }
+    }
+
+    if (marking ()) {
+        (*t).sinceAssist = (*t).sinceAssist + bytes;
+        if ((*t).sinceAssist >= ALLOC_BATCH) {
+            (*t).sinceAssist = 0u64;
+            let b = enterBusy ();
+            if (marking ()) {
+                assist ();
+            }
+
+            leaveBusy (b);
+        }
+    }
+}
+
+/**
+ * Add the bytes the thread `ts` allocated since it last did to the live heap
+ * @returns: the live heap
+ * @info: the thread is the calling one, or it is parked out of an allocation
+ * */
+@{nogc, unsafe}
+fn flushAllocated (ts: usize)-> u64 {
+    let dmut g = G ();
+    let dmut t = thread (ts);
+
+    let live = liveHeap (_yrt_i_nh_add64 (cast!usize (&((*g).heapLive)), (*t).allocated));
+    (*g).statAllocated = (*g).statAllocated + (*t).allocated;
+    if (live > (*g).statPeak) {
+        (*g).statPeak = live;
+    }
+
+    (*t).allocated = 0u64;
+    live
+}
+
+/**
+ * Wake the collector up, the live heap having reached its goal
+ * */
+@{nogc, unsafe}
+pub fn trigger () {
+    let g = G ();
+    startCollector ();
+    _yrt_i_nh_mutex_lock ((*g).lock);
+    _yrt_i_nh_cond_broadcast ((*g).cond);
+    _yrt_i_nh_mutex_unlock ((*g).lock);
+}
+
+/**
+ * Start the threads of the collector and of the finalizers, the first time
+ * */
+@{nogc, unsafe}
+pub fn startCollector () {
+    let dmut g = G ();
+    if (_yrt_i_nh_load64 (cast!usize (&((*g).started))) != 0u64) return;
+    if (_yrt_i_nh_cas64 (cast!usize (&((*g).started)), 0u64, 1u64) == 1u8) {
+        _yrt_i_nh_spawn (0u8);
+        _yrt_i_nh_spawn (1u8);
+    }
+}
