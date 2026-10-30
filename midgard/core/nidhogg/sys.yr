@@ -1,0 +1,232 @@
+/**
+ * The C functions the collector is built on: the allocator and the memory mappings of the C
+ * library, and the shim of `rt/nidhogg` for what Ymir cannot express.
+ */
+in sys;
+
+pub extern (C) {
+    fn calloc (n: usize, size: usize)-> usize;
+    fn free (p: usize);
+    fn realloc (p: usize, size: usize)-> usize;
+    fn memset (p: usize, c: i32, n: usize)-> usize;
+    fn memmove (dst: usize, src: usize, n: usize)-> usize;
+    fn mmap (addr: usize, len: usize, prot: i32, flags: i32, fd: i32, off: i64)-> usize;
+    fn munmap (addr: usize, len: usize)-> i32;
+    fn madvise (addr: usize, len: usize, advice: i32)-> i32;
+    fn getenv (name: usize)-> usize;
+    fn write (fd: i32, buf: usize, n: usize)-> i64;
+
+    static mut _yrt_nh_marking : u8;
+    static mut _yrt_i_nh_globals : usize;
+
+    fn _yrt_i_nh_get_self ()-> usize;
+    fn _yrt_i_nh_set_self (state: usize);
+    fn _yrt_i_nh_load8 (p: usize)-> u8;
+    fn _yrt_i_nh_store8 (p: usize, v: u8);
+    fn _yrt_i_nh_xchg8 (p: usize, v: u8)-> u8;
+    fn _yrt_i_nh_load64 (p: usize)-> u64;
+    fn _yrt_i_nh_store64 (p: usize, v: u64);
+    fn _yrt_i_nh_add64 (p: usize, v: u64)-> u64;
+    fn _yrt_i_nh_sub64 (p: usize, v: u64)-> u64;
+    fn _yrt_i_nh_cas64 (p: usize, expected: u64, desired: u64)-> u8;
+    fn _yrt_i_nh_fence ();
+    fn _yrt_i_nh_mutex_new ()-> usize;
+    fn _yrt_i_nh_mutex_lock (m: usize);
+    fn _yrt_i_nh_mutex_unlock (m: usize);
+    fn _yrt_i_nh_cond_new ()-> usize;
+    fn _yrt_i_nh_cond_wait (c: usize, m: usize);
+    fn _yrt_i_nh_cond_timedwait (c: usize, m: usize, ns: u64);
+    fn _yrt_i_nh_cond_broadcast (c: usize);
+    fn _yrt_i_nh_sleep_ns (ns: u64);
+    fn _yrt_i_nh_yield ();
+    fn _yrt_i_nh_now_ns ()-> u64;
+    fn _yrt_i_nh_thread_self ()-> u64;
+    fn _yrt_i_nh_stack_bounds (lo: usize, hi: usize);
+    fn _yrt_i_nh_tls_bounds (lo: usize, hi: usize);
+    fn _yrt_i_nh_set_thread_key (state: usize);
+    fn _yrt_i_nh_spawn (which: u8);
+    fn _yrt_i_nh_install_handshake ();
+    fn _yrt_i_nh_unblock_handshake ();
+    fn _yrt_i_nh_signal (thread: u64)-> i32;
+    fn _yrt_i_nh_data_segments ();
+    fn _yrt_i_nh_call_finalizer (fn_: usize, obj: usize);
+    fn _yrt_i_nh_fatal (msg: usize, len: usize);
+}
+
+/**
+ * The protections and flags of the memory mappings of the heap
+ * */
+pub def PROT_RW = 3;
+pub def MAP_ANON_PRIVATE = 34;
+pub def MAP_NORESERVE = 16384;
+pub def MAP_FAILED = 18446744073709551615us;
+pub def MADV_DONTNEED = 4;
+
+/**
+ * @returns: the word at `addr`
+ * */
+@{nogc, unsafe}
+pub fn ld (addr: usize)-> usize {
+    {
+        *(cast!{*usize} (addr))
+    }
+}
+
+/**
+ * Write the word `v` at `addr`
+ * */
+@{nogc, unsafe}
+pub fn st (addr: usize, v: usize) {
+    {
+        let dmut p = cast!{*usize} (addr);
+        *p = v;
+    }
+}
+
+/**
+ * @returns: the byte at `addr`
+ * */
+@{nogc, unsafe}
+pub fn ld8 (addr: usize)-> u8 {
+    {
+        *(cast!{*u8} (addr))
+    }
+}
+
+/**
+ * Write the byte `v` at `addr`
+ * */
+@{nogc, unsafe}
+pub fn st8 (addr: usize, v: u8) {
+    {
+        let dmut p = cast!{*u8} (addr);
+        *p = v;
+    }
+}
+
+/**
+ * @returns: `n` words of zeroed memory from the C allocator, aborting when there is none
+ * */
+@{nogc, unsafe}
+pub fn words (n: usize)-> usize {
+    let p = calloc (n, 8us);
+    if (p == 0us) {
+        fatal ("nidhogg: out of memory for the collector metadata\n");
+    }
+
+    p
+}
+
+/**
+ * Append the pair (`a`, `b`) to an array of pairs from the C allocator, growing it when it is full
+ * @params:
+ *    - arr, len, cap: the addresses of the array, of its number of pairs and of its capacity
+ * */
+@{nogc, unsafe}
+pub fn pushPair (arr: usize, len: usize, cap: usize, a: usize, b: usize) {
+    let n = ld (len);
+    if (n == ld (cap)) {
+        let c = if (n == 0us) { 16us } else { n * 2us };
+        let p = realloc (ld (arr), c * 16us);
+        if (p == 0us) {
+            fatal ("nidhogg: out of memory for the collector metadata\n");
+        }
+
+        st (arr, p);
+        st (cap, c);
+    }
+
+    st (ld (arr) + n * 16us, a);
+    st (ld (arr) + n * 16us + 8us, b);
+    st (len, n + 1us);
+}
+
+/**
+ * Write `msg` on the standard error, and abort the process
+ * */
+@{nogc, unsafe}
+pub fn fatal (msg: [c8]) {
+    {
+        _yrt_i_nh_fatal (cast!usize (msg.ptr), msg.len);
+    }
+}
+
+/**
+ * Write `msg` on the standard error
+ * */
+@{nogc, unsafe}
+pub fn print (msg: [c8]) {
+    {
+        write (2, cast!usize (msg.ptr), msg.len);
+    }
+}
+
+/**
+ * Write the decimal writing of `v` on the standard error
+ * */
+@{nogc, unsafe}
+pub fn printNum (v: u64) {
+    let dmut buf = [0u8 ; 24];
+    let mut i = 24us;
+    let mut x = v;
+    loop {
+        i = i - 1us;
+        buf [i] = cast!u8 (48u64 + (x % 10u64));
+        x = x / 10u64;
+        if (x == 0u64) break;
+    }
+
+    {
+        write (2, cast!usize (buf.ptr) + i, 24us - i);
+    }
+}
+
+/**
+ * Write the hexadecimal writing of `v` on the standard error
+ * */
+@{nogc, unsafe}
+pub fn printHex (v: u64) {
+    let dmut buf = [0u8 ; 18];
+    let mut i = 18us;
+    let mut x = v;
+    loop {
+        i = i - 1us;
+        let d = cast!u8 (x % 16u64);
+        buf [i] = if (d < 10u8) { 48u8 + d } else { 87u8 + d };
+        x = x / 16u64;
+        if (x == 0u64) break;
+    }
+
+    i = i - 1us;
+    buf [i] = 120u8;
+    i = i - 1us;
+    buf [i] = 48u8;
+    {
+        write (2, cast!usize (buf.ptr) + i, 18us - i);
+    }
+}
+
+/**
+ * @params:
+ *    - name: the name of an environment variable, ending with a nul char
+ *    - fallback: the value it defaults to
+ * @returns: the unsigned integer the variable holds, `fallback` if it is unset or not a number
+ * */
+@{nogc, unsafe}
+pub fn envNum (name: [c8], fallback: u64)-> u64 {
+    let s = { getenv (cast!usize (name.ptr)) };
+    if (s == 0us) return fallback;
+
+    let mut v = 0u64;
+    let mut i = 0us;
+    loop {
+        let c = ld8 (s + i);
+        if (c == 0u8) break;
+        if (c < 48u8 || c > 57u8) return fallback;
+        v = v * 10u64 + cast!u64 (c - 48u8);
+        i = i + 1us;
+    }
+
+    if (i == 0us) return fallback;
+    v
+}
