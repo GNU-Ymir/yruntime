@@ -3,13 +3,11 @@
 
 #include <sys/types.h>
 #include <pthread.h>
-
-#define GC_PTHREADS
-#include <gc/gc.h>
 #include <semaphore.h>
-
-#include <gc/gc_disclaim.h>
 #include <stdint.h>
+#include <string.h>
+
+#include <rt/nidhogg/shim.h>
 
 void _yrt_disable_GC ();
 void _yrt_enable_GC ();
@@ -17,23 +15,70 @@ void _yrt_enable_GC ();
 uint8_t _yrt_is_GC_enabled ();
 
 /**
- * Register the calling thread's static TLS block as a GC root.
- *
- * Boehm scans the stack and registers of every thread it knows about, plus the data segments,
- * but never thread local storage. A GC pointer whose only reference lives in a '@thread' global
- * is therefore invisible to the collector, and gets freed while the thread is still using it.
- * Registering the block makes '@thread' globals ordinary roots.
- *
- * Called by _yrt_init_runtime for the main thread, and by _yrt_i_thread_create for every thread
- * it spawns. A caller that registers a thread must unregister it before the thread dies: glibc
- * recycles a dead thread's TLS block for the next one, so a root left behind would both retain
- * garbage and be scanned after the block has been reused.
+ * Run a whole cycle of the collector, and wait until it is over
  * */
-void _yrt_i_gc_add_tls_roots ();
+void _yrt_gc_collect ();
 
 /**
- * Unregister the calling thread's static TLS block, undoing _yrt_i_gc_add_tls_roots
+ * Wait until the finalizers the collector queued have run
  * */
-void _yrt_i_gc_remove_tls_roots ();
+void _yrt_gc_wait_finalizers ();
+
+/**
+ * @returns: true while the collector marks, read anew at each call so that it is never hoisted out
+ * of a loop of stores
+ * */
+static inline uint8_t _yrt_i_gc_marking (void) {
+    return __atomic_load_n (&_yrt_nh_marking, __ATOMIC_RELAXED);
+}
+
+/**
+ * @returns: 'size' bytes of zeroed memory of the collector, that may hold pointers
+ * */
+static inline void * _yrt_i_gc_alloc (uint64_t size) {
+    return _yrt_nh_alloc (size, 0);
+}
+
+/**
+ * @returns: 'size' bytes of zeroed memory of the collector, holding no pointer: it is never scanned
+ * */
+static inline void * _yrt_i_gc_alloc_atomic (uint64_t size) {
+    return _yrt_nh_alloc (size, NH_NOSCAN);
+}
+
+/**
+ * Store the 'size' bytes at 'src' into the memory of the collector at 'dst', through the write
+ * barrier
+ * */
+static inline void _yrt_i_gc_store (void * dst, const void * src, uint64_t size) {
+    if (_yrt_i_gc_marking ()) _yrt_nh_wb_range (dst, (void*) src, size);
+    memmove (dst, src, size);
+}
+
+/**
+ * Store the pointer 'val' into the slot 'slot' of the memory of the collector, through the write
+ * barrier
+ * */
+static inline void _yrt_i_gc_store_ptr (void ** slot, void * val) {
+    if (_yrt_i_gc_marking ()) _yrt_nh_wb (slot, val);
+    *slot = val;
+}
+
+/**
+ * Zero the 'size' bytes at 'dst' of the memory of the collector, through the write barrier
+ * */
+static inline void _yrt_i_gc_clear (void * dst, uint64_t size) {
+    if (_yrt_i_gc_marking ()) _yrt_nh_wb_range (dst, NULL, size);
+    memset (dst, 0, size);
+}
+
+/**
+ * Copy the 'size' bytes at 'src' into the new memory of the collector at 'dst', shading what they
+ * point to as the new memory is never scanned while the collector marks
+ * */
+static inline void _yrt_i_gc_copy_new (void * dst, const void * src, uint64_t size) {
+    if (_yrt_i_gc_marking ()) _yrt_nh_shade_range ((void*) src, size);
+    memcpy (dst, src, size);
+}
 
 #endif // GC_H_
