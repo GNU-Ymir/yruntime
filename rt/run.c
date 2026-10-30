@@ -20,6 +20,7 @@ _yrt_slice_t __MAIN_ARGS__;
 
 
 void _yrt_exit (int i) {
+    _yrt_nh_exit ();
     exit (i);
 }
 
@@ -67,8 +68,7 @@ void _yrt_i_install_handler () {
 void _yrt_init_runtime (int isDebug) {
     __YRT_DEBUG__ = isDebug;
 
-    GC_INIT ();
-    _yrt_i_gc_add_tls_roots (); // spawned threads get theirs in _yrt_i_thread_create
+    _yrt_nh_register_thread (); // spawned threads register in _yrt_i_thread_create
 
     _yrt_i_atomic_init ();
     _yrt_i_install_handler ();
@@ -85,13 +85,15 @@ void _yrt_force_debug (int act) {
 
 _yrt_slice_t _yrt_create_args_slice (int len, char ** argv) {
     _yrt_slice_t arr;
-    arr.data = GC_malloc (sizeof (_yrt_slice_t) * len);
+    arr.data = _yrt_i_gc_alloc (sizeof (_yrt_slice_t) * len);
     arr.len = (unsigned long) len;
+    arr.blk_info = NULL;
 
     for (int i = 0 ; i < len ; i++) {
         _yrt_slice_t inner;
         inner.data = argv[i];
         inner.len = strlen (argv [i]);
+        inner.blk_info = NULL;
         ((_yrt_slice_t*) arr.data)[i] = inner;
     }
 
@@ -115,6 +117,7 @@ int _yrt_run_main_debug (int argc, char ** argv, int(* y_main)(_yrt_slice_t)) {
     _yrt_init_runtime (1);
 
     int ret = y_main (_yrt_create_args_slice (argc, argv));
+    _yrt_nh_exit ();
     return ret;
 }
 
@@ -122,5 +125,6 @@ int _yrt_run_main (int argc, char ** argv, int(* y_main)(_yrt_slice_t)) {
     _yrt_init_runtime (0);
 
     int ret = y_main (_yrt_create_args_slice (argc, argv));
+    _yrt_nh_exit ();
     return ret;
 }
