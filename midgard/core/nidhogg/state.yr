@@ -1,0 +1,441 @@
+/**
+ * The state of the collector: the layout of its spans and of the threads it knows, its global
+ * state, and their initialization at the first allocation.
+ */
+in state;
+
+use core::nidhogg::sys;
+
+/**
+ * A page of the heap, the unit of the page map, is 8KiB
+ * */
+pub def PAGE_SHIFT = 13us;
+pub def PAGE = 8192us;
+
+/**
+ * The heap is mapped by chunks of 4MiB, aligned on their size, of 512 pages
+ * */
+pub def CHUNK_SHIFT = 22us;
+pub def CHUNK = 4194304us;
+pub def CHUNK_PAGES = 512us;
+
+/**
+ * The page map has a first level of 8192 entries for the bits 35 to 47 of an address, a second
+ * of 8192 entries for its bits 22 to 34, naming the page table of its chunk
+ * */
+pub def MAP_L1 = 8192us;
+pub def MAP_L2 = 8192us;
+
+/**
+ * The size classes of the small objects, the larger ones having a span of their own
+ * */
+pub def NCLASSES = 40us;
+pub def MAX_SMALL = 32768us;
+
+/**
+ * Each size class has a list of spans holding pointers, and one of spans holding none
+ * */
+pub def NLISTS = 80us;
+
+/**
+ * The number of objects a grey buffer holds, its two first words being its link and its length
+ * */
+pub def GREY_CAP = 1022us;
+pub def GREY_WORDS = 1024us;
+
+/**
+ * The number of entries of the mark stack of the collector, reserved but not committed
+ * */
+pub def MARK_CAP = 67108864us;
+
+/**
+ * The bytes a thread allocates between two updates of the live heap, and two assists
+ * */
+pub def ALLOC_BATCH = 65536u64;
+
+/**
+ * The heap below which no cycle is triggered
+ * */
+pub def MIN_GOAL = 4194304u64;
+
+/**
+ * The states of a span
+ * */
+pub def SPAN_FREE    = 0u8;
+pub def SPAN_AVAIL   = 1u8;
+pub def SPAN_FULL    = 2u8;
+pub def SPAN_UNSWEPT = 3u8;
+pub def SPAN_CACHED  = 4u8;
+pub def SPAN_LARGE   = 5u8;
+
+/**
+ * A run of pages of the heap: free, or cut into objects of one size class, or holding a single
+ * large object
+ * */
+pub record Span {
+    // the address of the first page, and of the first object
+    pub let mut base : usize;
+
+    // the number of pages of the span
+    pub let mut npages : usize;
+
+    // the size of its objects, and their number
+    pub let mut elemSize : usize;
+    pub let mut nelems : usize;
+
+    // the list of the span (its size class, twice, plus 1 if it holds no pointer), NLISTS if large
+    pub let mut list : usize;
+
+    // 1 iif the objects of the span hold no pointer, and are never scanned
+    pub let mut noscan : u8;
+
+    // one of the SPAN_ states
+    pub let mut state : u8;
+
+    // the address of `nelems` bytes, 1 iif the object is allocated
+    pub let mut alloc : usize;
+
+    // the address of `nelems` bytes, 1 iif the object is marked
+    pub let mut marks : usize;
+
+    // the number of free objects, and the index from which the next one is searched
+    pub let mut nfree : usize;
+    pub let mut cursor : usize;
+
+    // the generation the span was last swept in
+    pub let mut sweepGen : u64;
+
+    // the links of the list holding the span
+    pub let mut prev : usize;
+    pub let mut next : usize;
+}
+
+/**
+ * A thread the collector knows: the bounds of the memory it scans, the handshake, and the spans
+ * and the grey objects the thread keeps for itself
+ * */
+pub record ThreadState {
+    // the identifier the handshake signal is sent to
+    pub let mut thread : u64;
+
+    // the bounds of its stack and of its static TLS block
+    pub let mut stackLo : usize;
+    pub let mut stackHi : usize;
+    pub let mut tlsLo : usize;
+    pub let mut tlsHi : usize;
+
+    // the top of its stack while it is parked in a handshake
+    pub let mut sp : usize;
+
+    // 1 while it is parked in a handshake, and when the collector lets it go
+    pub let mut parked : u8;
+    pub let mut go : u8;
+
+    // the cycle its stack was last scanned in
+    pub let mut scanned : u64;
+
+    // the address of NLISTS words, the span it allocates from in each list
+    pub let mut cache : usize;
+
+    // 1 while it allocates, using the spans it took for itself
+    pub let mut inAlloc : u8;
+
+    // its grey buffer, and the number of objects in it
+    pub let mut grey : usize;
+    pub let mut greyLen : usize;
+
+    // the bytes it allocated since it last updated the live heap, and since it last assisted
+    pub let mut allocated : u64;
+    pub let mut sinceAssist : u64;
+
+    // 1 while it runs a write barrier or an assist, reading the spans of the heap
+    pub let mut busy : u8;
+
+    // the links of the list of the threads
+    pub let mut prev : usize;
+    pub let mut next : usize;
+}
+
+/**
+ * The global state of the collector
+ * */
+pub record Globals {
+    // the first level of the page map, and the chunks of the heap
+    pub let mut l1 : usize;
+    pub let mut chunks : usize;
+    pub let mut nchunks : usize;
+    pub let mut capChunks : usize;
+
+    // the lowest and highest addresses of the heap, filtering what cannot be one of its objects
+    pub let mut heapLo : usize;
+    pub let mut heapHi : usize;
+
+    // the lock of the pages, the list of the free spans, and the span records to reuse (the lists
+    // of the collector are the addresses of words holding their first element)
+    pub let mut heapLock : usize;
+    pub let mut freeSpans : usize;
+    pub let mut spareSpans : usize;
+
+    // the write barriers run by threads the collector does not know
+    pub let mut foreignBusy : u64;
+
+    // the large spans in use
+    pub let mut large : usize;
+
+    // the size and the number of pages of the objects of each class
+    pub let mut classSize : usize;
+    pub let mut classPages : usize;
+
+    // for each list, its lock, and its spans with free objects, full, and to sweep
+    pub let mut listLocks : usize;
+    pub let mut avail : usize;
+    pub let mut full : usize;
+    pub let mut unswept : usize;
+
+    // the current sweep generation, increased by 2 at the end of each cycle
+    pub let mut sweepGen : u64;
+
+    // the bytes of the live objects, of the ones the last cycle marked, and the next trigger
+    pub let mut heapLive : u64;
+    pub let mut heapMarked : u64;
+    pub let mut goal : u64;
+    pub let mut gogc : u64;
+
+    // the lock and the condition of the cycles, the number of completed ones and of the one waited for
+    pub let mut lock : usize;
+    pub let mut cond : usize;
+    pub let mut cycle : u64;
+    pub let mut requested : u64;
+    pub let mut collecting : u8;
+    pub let mut disabled : u64;
+
+    // 1 once the threads of the collector and of the finalizers are started
+    pub let mut started : u64;
+    pub let mut forked : u8;
+
+    // the threads, and their lock
+    pub let mut threadsLock : usize;
+    pub let mut threads : usize;
+
+    // the full grey buffers the threads handed to the collector, and their lock
+    pub let mut workLock : usize;
+    pub let mut work : usize;
+
+    // the assists running, and the number of the ones that started
+    pub let mut assisting : u64;
+    pub let mut assists : u64;
+
+    // the mark stack of the collector
+    pub let mut markStack : usize;
+    pub let mut markTop : usize;
+
+    // the roots registered by the runtime, as pairs of bounds
+    pub let mut rootsLock : usize;
+    pub let mut roots : usize;
+    pub let mut nroots : usize;
+    pub let mut capRoots : usize;
+
+    // the finalizers registered, an open addressing table of (object, function) pairs
+    pub let mut finLock : usize;
+    pub let mut finCond : usize;
+    pub let mut finTable : usize;
+    pub let mut finCap : usize;
+    pub let mut finCount : usize;
+
+    // the finalizers to run, as (object, function) pairs, and the ones running
+    pub let mut finQueue : usize;
+    pub let mut finLen : usize;
+    pub let mut finQueueCap : usize;
+    pub let mut finRunning : u64;
+
+    // the data segments, listed instead of scanned while `listSegs` is set, as pairs of bounds
+    pub let mut listSegs : u8;
+    pub let mut segs : usize;
+    pub let mut nsegs : usize;
+    pub let mut capSegs : usize;
+
+    // the debugging options
+    pub let mut verify : u8;
+    pub let mut stats : u8;
+
+    // the statistics
+    pub let mut statCycles : u64;
+    pub let mut statAllocated : u64;
+    pub let mut statLongestPark : u64;
+    pub let mut statMarkNs : u64;
+    pub let mut statPeak : u64;
+}
+
+/**
+ * @returns: the global state of the collector, initialized at its first use
+ * */
+@{nogc, unsafe}
+pub fn G ()-> dmut *Globals {
+    {
+        if (_yrt_i_nh_globals == 0us) {
+            init ();
+        }
+
+        cast!{*Globals} (_yrt_i_nh_globals)
+    }
+}
+
+/**
+ * @returns: the address of the global state of the collector, initialized at its first use
+ * */
+@{nogc, unsafe}
+pub fn gaddr ()-> usize {
+    {
+        if (_yrt_i_nh_globals == 0us) {
+            init ();
+        }
+
+        _yrt_i_nh_globals
+    }
+}
+
+/**
+ * @returns: the span at `addr`
+ * */
+@{nogc, unsafe}
+pub fn span (addr: usize)-> dmut *Span {
+    {
+        cast!{*Span} (addr)
+    }
+}
+
+/**
+ * Set the state of the span `s` to `v`
+ * */
+@{nogc, unsafe}
+pub fn setState (s: usize, v: u8) {
+    let dmut x = span (s);
+    (*x).state = v;
+}
+
+/**
+ * @returns: the thread state at `addr`
+ * */
+@{nogc, unsafe}
+pub fn thread (addr: usize)-> dmut *ThreadState {
+    {
+        cast!{*ThreadState} (addr)
+    }
+}
+
+/**
+ * Create the global state of the collector, the first allocation of the program being made
+ * before any other thread exists
+ * */
+@{nogc, unsafe}
+fn init () {
+    let addr = calloc (1us, Globals::size);
+    if (addr == 0us) {
+        fatal ("nidhogg: cannot allocate the state of the collector\n");
+    }
+
+    {
+        let dmut g = cast!{*Globals} (addr);
+        (*g).l1 = words (MAP_L1);
+        (*g).freeSpans = words (1us);
+        (*g).spareSpans = words (1us);
+        (*g).large = words (1us);
+        (*g).threads = words (1us);
+        (*g).work = words (1us);
+        (*g).capChunks = 64us;
+        (*g).chunks = words (64us);
+        (*g).heapLo = 18446744073709551615us;
+        (*g).heapLock = _yrt_i_nh_mutex_new ();
+
+        (*g).classSize = words (NCLASSES);
+        (*g).classPages = words (NCLASSES);
+        initClasses ((*g).classSize, (*g).classPages);
+
+        (*g).listLocks = words (NLISTS);
+        (*g).avail = words (NLISTS);
+        (*g).full = words (NLISTS);
+        (*g).unswept = words (NLISTS);
+        for i in 0us .. NLISTS {
+            st ((*g).listLocks + i * 8us, _yrt_i_nh_mutex_new ());
+        }
+
+        (*g).sweepGen = 2u64;
+        (*g).gogc = envNum ("NIDHOGG_GOGC\u{0}", 100u64);
+        (*g).goal = MIN_GOAL;
+        (*g).verify = cast!u8 (envNum ("NIDHOGG_VERIFY\u{0}", 0u64) != 0u64);
+        (*g).stats = cast!u8 (envNum ("NIDHOGG_STATS\u{0}", 0u64) != 0u64);
+
+        (*g).lock = _yrt_i_nh_mutex_new ();
+        (*g).cond = _yrt_i_nh_cond_new ();
+        (*g).threadsLock = _yrt_i_nh_mutex_new ();
+        (*g).workLock = _yrt_i_nh_mutex_new ();
+        (*g).rootsLock = _yrt_i_nh_mutex_new ();
+        (*g).finLock = _yrt_i_nh_mutex_new ();
+        (*g).finCond = _yrt_i_nh_cond_new ();
+
+        (*g).finCap = 1024us;
+        (*g).finTable = words (2048us);
+        (*g).finQueueCap = 256us;
+        (*g).finQueue = words (512us);
+
+        let stack = mmap (0us, MARK_CAP * 8us, PROT_RW, MAP_ANON_PRIVATE | MAP_NORESERVE, -1, 0i64);
+        if (stack == MAP_FAILED) {
+            fatal ("nidhogg: cannot reserve the mark stack\n");
+        }
+
+        (*g).markStack = stack;
+        _yrt_i_nh_globals = addr;
+    }
+
+    _yrt_i_nh_install_handshake ();
+}
+
+/**
+ * Write the size and the number of pages of the objects of each class: by 16 bytes up to 128,
+ * then four classes between two powers of two, up to 32KiB
+ * */
+@{nogc, unsafe}
+fn initClasses (sizes: usize, pages: usize) {
+    let mut c = 0us;
+    let mut size = 16us;
+    while (size <= 128us) {
+        st (sizes + c * 8us, size);
+        c = c + 1us;
+        size = size + 16us;
+    }
+
+    let mut step = 32us;
+    while (c < NCLASSES) {
+        for _ in 0us .. 4us {
+            size = ld (sizes + (c - 1us) * 8us) + step;
+            st (sizes + c * 8us, size);
+            c = c + 1us;
+        }
+
+        step = step * 2us;
+    }
+
+    for i in 0us .. NCLASSES {
+        let s = ld (sizes + i * 8us);
+        let mut n = (s * 8us + PAGE - 1us) / PAGE;
+        if (n < 1us) n = 1us;
+        st (pages + i * 8us, n);
+    }
+}
+
+/**
+ * @returns: the size class of an object of `size` bytes, NCLASSES if it is a large one
+ * */
+@{nogc, unsafe}
+pub fn classOf (size: usize)-> usize {
+    if (size <= 128us) return (size + 15us) / 16us - 1us;
+    if (size > MAX_SMALL) return NCLASSES;
+
+    let sizes = { (*G ()).classSize };
+    let mut c = 8us;
+    while (ld (sizes + c * 8us) < size) {
+        c = c + 1us;
+    }
+
+    c
+}
