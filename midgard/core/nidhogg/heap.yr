@@ -1,0 +1,749 @@
+/**
+ * The heap: the chunks mapped from the system, the page map telling the span of any address,
+ * the free pages, and the spans of each size class with the objects they hold.
+ *
+ * The spans of a list move between its spans with free objects, its full ones and the ones to
+ * sweep under the lock of the list, a thread allocating from a span it took for itself. The page
+ * heap is under its own lock, always taken after the one of a list. A span record and its tables
+ * are only ever reused by the collector while it sweeps, when no thread reads them. The free
+ * pages are always zeroed: the fresh chunks are, and the collector zeroes the ones it frees.
+ */
+in heap;
+
+use core::nidhogg::{state, sys};
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ==================================          PAGE MAP          ======================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * @returns: the span holding the address `p`, 0 if it is not in the heap
+ * */
+@{nogc, unsafe}
+pub fn spanOf (p: usize)-> usize {
+    if ((p >> 48us) != 0us) return 0us;
+
+    let l2 = ld ({ (*G ()).l1 } + (p >> 35us) * 8us);
+    if (l2 == 0us) return 0us;
+
+    let pt = ld (l2 + ((p >> CHUNK_SHIFT) & 8191us) * 8us);
+    if (pt == 0us) return 0us;
+
+    ld (pt + ((p >> PAGE_SHIFT) & 511us) * 8us)
+}
+
+/**
+ * @returns: the address of the entry of the page map naming the span of the page holding `p`,
+ * whose chunk is registered
+ * */
+@{nogc, unsafe}
+fn pageEntry (p: usize)-> usize {
+    let l2 = ld ({ (*G ()).l1 } + (p >> 35us) * 8us);
+    let pt = ld (l2 + ((p >> CHUNK_SHIFT) & 8191us) * 8us);
+    pt + ((p >> PAGE_SHIFT) & 511us) * 8us
+}
+
+/**
+ * Make the `npages` pages from `base` name the span `s`, once its fields are written
+ * */
+@{nogc, unsafe}
+fn setPages (s: usize, base: usize, npages: usize) {
+    _yrt_i_nh_fence ();
+    for i in 0us .. npages {
+        st (pageEntry (base + i * PAGE), s);
+    }
+}
+
+/**
+ * Map `n` contiguous chunks, and register their page tables
+ * @returns: the address of the first one
+ * */
+@{nogc, unsafe}
+fn newChunks (n: usize)-> usize {
+    let size = n * CHUNK;
+    let raw = mmap (0us, size + CHUNK, PROT_RW, MAP_ANON_PRIVATE, -1, 0i64);
+    if (raw == MAP_FAILED) {
+        fatal ("nidhogg: out of memory\n");
+    }
+
+    let base = ((raw + CHUNK - 1us) / CHUNK) * CHUNK;
+    if (base > raw) {
+        munmap (raw, base - raw);
+    }
+
+    let end = raw + size + CHUNK;
+    if (end > base + size) {
+        munmap (base + size, end - (base + size));
+    }
+
+    for i in 0us .. n {
+        registerChunk (base + i * CHUNK);
+    }
+
+    let dmut g = G ();
+    {
+        if (base < (*g).heapLo) { (*g).heapLo = base; }
+        if (base + size > (*g).heapHi) { (*g).heapHi = base + size; }
+    }
+
+    base
+}
+
+/**
+ * Register the page table of the chunk at `c` in the page map
+ * */
+@{nogc, unsafe}
+fn registerChunk (c: usize) {
+    let dmut g = G ();
+    {
+        let slot = (*g).l1 + (c >> 35us) * 8us;
+        let mut l2 = ld (slot);
+        if (l2 == 0us) {
+            l2 = words (MAP_L2);
+            _yrt_i_nh_fence ();
+            st (slot, l2);
+        }
+
+        let pt = words (CHUNK_PAGES);
+        _yrt_i_nh_fence ();
+        st (l2 + ((c >> CHUNK_SHIFT) & 8191us) * 8us, pt);
+
+        if ((*g).nchunks == (*g).capChunks) {
+            (*g).capChunks = (*g).capChunks * 2us;
+            (*g).chunks = realloc ((*g).chunks, (*g).capChunks * 8us);
+            if ((*g).chunks == 0us) {
+                fatal ("nidhogg: out of memory for the collector metadata\n");
+            }
+        }
+
+        st ((*g).chunks + (*g).nchunks * 8us, c);
+        (*g).nchunks = (*g).nchunks + 1us;
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ===================================          LISTS          ========================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Push the span `s` at the front of the list whose first element is at `head`
+ * */
+@{nogc, unsafe}
+pub fn push (head: usize, s: usize) {
+    let dmut x = span (s);
+    let first = ld (head);
+    {
+        (*x).prev = 0us;
+        (*x).next = first;
+        if (first != 0us) {
+            let dmut f = span (first);
+            (*f).prev = s;
+        }
+    }
+
+    st (head, s);
+}
+
+/**
+ * Remove the span `s` from the list whose first element is at `head`
+ * */
+@{nogc, unsafe}
+pub fn unlink (head: usize, s: usize) {
+    let dmut x = span (s);
+    {
+        let prev = (*x).prev, next = (*x).next;
+        if (prev != 0us) {
+            let dmut p = span (prev);
+            (*p).next = next;
+        } else {
+            st (head, next);
+        }
+
+        if (next != 0us) {
+            let dmut n = span (next);
+            (*n).prev = prev;
+        }
+
+        (*x).prev = 0us;
+        (*x).next = 0us;
+    }
+}
+
+/**
+ * @returns: the first span of the list whose first element is at `head`, removed from it, 0 if
+ * the list is empty
+ * */
+@{nogc, unsafe}
+pub fn pop (head: usize)-> usize {
+    let s = ld (head);
+    if (s != 0us) {
+        unlink (head, s);
+    }
+
+    s
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ================================          PAGE HEAP          =======================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * @returns: a zeroed span record, reused if one is spare
+ * */
+@{nogc, unsafe}
+fn newRecord ()-> usize {
+    let mut s = pop ({ (*G ()).spareSpans });
+    if (s == 0us) {
+        s = calloc (1us, Span::size);
+        if (s == 0us) {
+            fatal ("nidhogg: out of memory for the collector metadata\n");
+        }
+    } else {
+        memset (s, 0, Span::size);
+    }
+
+    s
+}
+
+/**
+ * Take `n` contiguous pages from the free ones, mapping new chunks if none is large enough
+ * @returns: a span of the pages, still free
+ * @info: the lock of the heap is held
+ * */
+@{nogc, unsafe}
+fn allocPages (n: usize)-> usize {
+    let free_ = { (*G ()).freeSpans };
+    loop {
+        let mut cur = ld (free_);
+        while (cur != 0us) {
+            let dmut s = span (cur);
+            let next = { (*s).next };
+            if ({ (*s).npages } >= n) {
+                unlink (free_, cur);
+                {
+                    if ((*s).npages > n) {
+                        let rest = newRecord ();
+                        let dmut r = span (rest);
+                        (*r).base = (*s).base + n * PAGE;
+                        (*r).npages = (*s).npages - n;
+                        (*r).state = SPAN_FREE;
+                        setPages (rest, (*r).base, (*r).npages);
+                        push (free_, rest);
+                        (*s).npages = n;
+                    }
+                }
+
+                return cur;
+            }
+
+            cur = next;
+        }
+
+        let nchunks = (n * PAGE + CHUNK - 1us) / CHUNK;
+        let base = newChunks (nchunks);
+        let fresh = newRecord ();
+        let dmut f = span (fresh);
+        {
+            (*f).base = base;
+            (*f).npages = nchunks * CHUNK_PAGES;
+            (*f).state = SPAN_FREE;
+        }
+
+        setPages (fresh, base, nchunks * CHUNK_PAGES);
+        push (free_, fresh);
+    }
+
+    0us
+}
+
+/**
+ * Zero the `npages` pages from `base`, the large runs being given back to the system, which
+ * maps them zeroed when they are touched again
+ * */
+@nogc
+fn zeroPages (base: usize, npages: usize) {
+    if (npages >= 8us) {
+        if (madvise (base, npages * PAGE, MADV_DONTNEED) == 0) return;
+    }
+
+    memset (base, 0, npages * PAGE);
+}
+
+/**
+ * Give the pages of the span `s` back to the free ones, zeroed, merged with the free spans around them
+ * @info: the lock of the heap is held, by the collector while it sweeps
+ * */
+@{nogc, unsafe}
+fn freePages (s: usize) {
+    let g = G ();
+    let dmut x = span (s);
+    {
+        zeroPages ((*x).base, (*x).npages);
+        free ((*x).alloc);
+        free ((*x).marks);
+        (*x).alloc = 0us;
+        (*x).marks = 0us;
+        (*x).state = SPAN_FREE;
+
+        let mut base = (*x).base;
+        let mut npages = (*x).npages;
+        let free_ = (*g).freeSpans;
+
+        if (base > (*g).heapLo) {
+            let p = spanOf (base - PAGE);
+            if (p != 0us && (*span (p)).state == SPAN_FREE) {
+                unlink (free_, p);
+                base = (*span (p)).base;
+                npages = npages + (*span (p)).npages;
+                push ((*g).spareSpans, p);
+            }
+        }
+
+        let after = base + npages * PAGE;
+        if (after < (*g).heapHi) {
+            let q = spanOf (after);
+            if (q != 0us && (*span (q)).state == SPAN_FREE) {
+                unlink (free_, q);
+                npages = npages + (*span (q)).npages;
+                push ((*g).spareSpans, q);
+            }
+        }
+
+        (*x).base = base;
+        (*x).npages = npages;
+        (*x).elemSize = 0us;
+        (*x).nelems = 0us;
+        setPages (s, base, npages);
+        push (free_, s);
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ===================================          SPANS          ========================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Cut fresh pages into a span of the list `k`
+ * @returns: the span, with all its objects free
+ * @info: the lock of the list is held
+ * */
+@{nogc, unsafe}
+fn newSpan (k: usize)-> usize {
+    let g = G ();
+    let c = k / 2us;
+    let size = ld ({ (*g).classSize } + c * 8us);
+    let npages = ld ({ (*g).classPages } + c * 8us);
+    let lock = { (*g).heapLock };
+
+    _yrt_i_nh_mutex_lock (lock);
+    let s = allocPages (npages);
+    _yrt_i_nh_mutex_unlock (lock);
+
+    initSpan (s, size, (npages * PAGE) / size, k);
+    s
+}
+
+/**
+ * Prepare the free span `s` to hold `nelems` objects of `size` bytes, for the list `k`
+ * */
+@{nogc, unsafe}
+fn initSpan (s: usize, size: usize, nelems: usize, k: usize) {
+    let dmut x = span (s);
+    let gen = sweepGen ();
+    {
+        (*x).elemSize = size;
+        (*x).nelems = nelems;
+        (*x).list = k;
+        (*x).noscan = cast!u8 ((k % 2us) == 1us);
+        (*x).alloc = calloc (nelems, 1us);
+        (*x).marks = calloc (nelems, 1us);
+        if ((*x).alloc == 0us || (*x).marks == 0us) {
+            fatal ("nidhogg: out of memory for the collector metadata\n");
+        }
+
+        (*x).nfree = nelems;
+        (*x).cursor = 0us;
+        (*x).sweepGen = gen;
+        _yrt_i_nh_fence ();
+        (*x).state = SPAN_CACHED;
+    }
+}
+
+/**
+ * @returns: the current sweep generation
+ * */
+@{nogc, unsafe}
+pub fn sweepGen ()-> u64 {
+    {
+        _yrt_i_nh_load64 (cast!usize (&((*G ()).sweepGen)))
+    }
+}
+
+/**
+ * Allocate an object in the span `s`, marked if `black`
+ * @returns: the address of the object, 0 if the span is full
+ * @info: the span is owned by the calling thread, or is a large one
+ * */
+@{nogc, unsafe}
+pub fn spanAlloc (s: usize, black: bool)-> usize {
+    let dmut x = span (s);
+    {
+        if ((*x).nfree == 0us) return 0us;
+
+        let mut i = (*x).cursor;
+        while (i < (*x).nelems) {
+            if (ld8 ((*x).alloc + i) == 0u8) {
+                if (black) {
+                    st8 ((*x).marks + i, 1u8);
+                }
+
+                st8 ((*x).alloc + i, 1u8);
+                (*x).nfree = (*x).nfree - 1us;
+                (*x).cursor = i + 1us;
+                return (*x).base + i * (*x).elemSize;
+            }
+
+            i = i + 1us;
+        }
+
+        (*x).nfree = 0us;
+    }
+
+    0us
+}
+
+/**
+ * Free the objects of the span `s` the last cycle left unmarked
+ * @returns: the bytes freed
+ * @info: the span is owned by the calling thread, or its list is locked
+ * */
+@{nogc, unsafe}
+pub fn sweep (s: usize)-> u64 {
+    let dmut x = span (s);
+    let gen = sweepGen ();
+    let mut freed = 0us;
+    let mut nfree = 0us;
+    {
+        let alloc = (*x).alloc, marks = (*x).marks;
+        for i in 0us .. (*x).nelems {
+            if (ld8 (alloc + i) == 1u8) {
+                if (ld8 (marks + i) == 0u8) {
+                    st8 (alloc + i, 0u8);
+                    freed = freed + 1us;
+                    nfree = nfree + 1us;
+                }
+            } else {
+                nfree = nfree + 1us;
+            }
+        }
+
+        (*x).nfree = nfree;
+        (*x).cursor = 0us;
+        (*x).sweepGen = gen;
+        cast!u64 (freed * (*x).elemSize)
+    }
+}
+
+/**
+ * @returns: the live heap, 0 while it is negative
+ * @info: a thread adds its allocations to it by batches, so that a sweep can remove objects it
+ * does not count yet
+ * */
+@nogc
+pub fn liveHeap (live: u64)-> u64 {
+    if (cast!i64 (live) < 0i64) { 0u64 } else { live }
+}
+
+/**
+ * Remove `freed` bytes from the live heap
+ * */
+@{nogc, unsafe}
+pub fn subLive (freed: u64) {
+    if (freed != 0u64) {
+        {
+            _yrt_i_nh_sub64 (cast!usize (&((*G ()).heapLive)), freed);
+        }
+    }
+}
+
+/**
+ * @returns: a span of the list `k` with free objects, for the calling thread to allocate from
+ * */
+@{nogc, unsafe}
+pub fn refill (k: usize)-> usize {
+    let g = G ();
+    let lock = ld ({ (*g).listLocks } + k * 8us);
+    let gen = sweepGen ();
+    let mut freed = 0u64;
+    let mut s = 0us;
+
+    _yrt_i_nh_mutex_lock (lock);
+    {
+        loop {
+            s = pop ((*g).avail + k * 8us);
+            if (s == 0us) {
+                s = pop ((*g).unswept + k * 8us);
+            }
+
+            if (s == 0us) {
+                s = newSpan (k);
+                break;
+            }
+
+            if ((*span (s)).sweepGen != gen) {
+                freed = freed + sweep (s);
+            }
+
+            if ((*span (s)).nfree != 0us) break;
+
+            setState (s, SPAN_FULL);
+            push ((*g).full + k * 8us, s);
+        }
+
+        setState (s, SPAN_CACHED);
+    }
+
+    _yrt_i_nh_mutex_unlock (lock);
+    subLive (freed);
+    s
+}
+
+/**
+ * Hand the span `s` a thread allocated from back to its list
+ * */
+@{nogc, unsafe}
+pub fn release (s: usize) {
+    let g = G ();
+    let dmut x = span (s);
+    let gen = sweepGen ();
+    {
+        let k = (*x).list;
+        let lock = ld ((*g).listLocks + k * 8us);
+        _yrt_i_nh_mutex_lock (lock);
+
+        if ((*x).sweepGen != gen) {
+            (*x).state = SPAN_UNSWEPT;
+            push ((*g).unswept + k * 8us, s);
+        } else if ((*x).nfree == 0us) {
+            (*x).state = SPAN_FULL;
+            push ((*g).full + k * 8us, s);
+        } else {
+            (*x).state = SPAN_AVAIL;
+            push ((*g).avail + k * 8us, s);
+        }
+
+        _yrt_i_nh_mutex_unlock (lock);
+    }
+}
+
+/**
+ * Allocate a large object of `size` bytes in a span of its own, marked if `black`
+ * @returns: the address of the object, zeroed as every free page is
+ * */
+@{nogc, unsafe}
+pub fn allocLarge (size: usize, noscan: bool, black: bool)-> usize {
+    let g = G ();
+    let npages = (size + PAGE - 1us) / PAGE;
+    let lock = { (*g).heapLock };
+
+    _yrt_i_nh_mutex_lock (lock);
+    let s = allocPages (npages);
+    initSpan (s, npages * PAGE, 1us, NLISTS);
+
+    let dmut x = span (s);
+    {
+        (*x).noscan = cast!u8 (noscan);
+        (*x).state = SPAN_LARGE;
+        push ((*g).large, s);
+    }
+
+    let obj = spanAlloc (s, black);
+    _yrt_i_nh_mutex_unlock (lock);
+    obj
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =================================          OBJECTS          ========================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * @returns: the span and the index of the allocated object `p` points into, (0, 0) if it points
+ * into none
+ * */
+@{nogc, unsafe}
+pub fn findObject (p: usize)-> (usize, usize) {
+    let s = spanOf (p);
+    if (s == 0us) return (0us, 0us);
+
+    let x = span (s);
+    {
+        if ((*x).state == SPAN_FREE) return (0us, 0us);
+
+        let base = (*x).base;
+        if (p < base) return (0us, 0us);
+
+        let i = (p - base) / (*x).elemSize;
+        if (i >= (*x).nelems) return (0us, 0us);
+        if (ld8 ((*x).alloc + i) == 0u8) return (0us, 0us);
+
+        (s, i)
+    }
+}
+
+/**
+ * @returns: the span starting at the page of the chunk `chunk`, 0 if none does
+ * */
+@{nogc, unsafe}
+pub fn spanAt (chunk: usize, page: usize)-> usize {
+    let addr = chunk + page * PAGE;
+    let s = spanOf (addr);
+    if (s != 0us && { (*span (s)).base } == addr) {
+        return s;
+    }
+
+    0us
+}
+
+/**
+ * Forget the marks of the objects of every span in use
+ * @info: called by the collector before it marks, the spans are only reused by it; the page heap
+ * is locked, a thread mapping a chunk reallocating the list of the chunks
+ * */
+@{nogc, unsafe}
+pub fn clearAllMarks () {
+    let g = G ();
+    _yrt_i_nh_mutex_lock ({ (*g).heapLock });
+    {
+        for c in 0us .. (*g).nchunks {
+            let chunk = ld ((*g).chunks + c * 8us);
+            let mut page = 0us;
+            while (page < CHUNK_PAGES) {
+                let s = spanAt (chunk, page);
+                if (s == 0us) {
+                    page = page + 1us;
+                } else {
+                    if ((*span (s)).state != SPAN_FREE) {
+                        memset ((*span (s)).marks, 0, (*span (s)).nelems);
+                    }
+
+                    // a span crossing the end of the chunk goes on in the next one
+                    page = page + (*span (s)).npages;
+                }
+            }
+        }
+    }
+
+    _yrt_i_nh_mutex_unlock ({ (*g).heapLock });
+}
+
+/**
+ * Move every span of every list to its spans to sweep, the cycle having ended
+ * */
+@{nogc, unsafe}
+pub fn toUnswept () {
+    let g = G ();
+    {
+        for k in 0us .. NLISTS {
+            let lock = ld ((*g).listLocks + k * 8us);
+            _yrt_i_nh_mutex_lock (lock);
+            loop {
+                let s = pop ((*g).avail + k * 8us);
+                if (s == 0us) break;
+
+                setState (s, SPAN_UNSWEPT);
+                push ((*g).unswept + k * 8us, s);
+            }
+
+            loop {
+                let s = pop ((*g).full + k * 8us);
+                if (s == 0us) break;
+
+                setState (s, SPAN_UNSWEPT);
+                push ((*g).unswept + k * 8us, s);
+            }
+
+            _yrt_i_nh_mutex_unlock (lock);
+        }
+    }
+}
+
+/**
+ * Sweep every span left to sweep, giving the empty ones back to the free pages, and free the
+ * unmarked large objects
+ * @returns: the bytes freed
+ * @info: called by the collector, once no thread reads the spans
+ * */
+@{nogc, unsafe}
+pub fn sweepAll ()-> u64 {
+    let g = G ();
+    let mut freed = 0u64;
+    {
+        for k in 0us .. NLISTS {
+            let lock = ld ((*g).listLocks + k * 8us);
+            _yrt_i_nh_mutex_lock (lock);
+            loop {
+                let s = pop ((*g).unswept + k * 8us);
+                if (s == 0us) break;
+
+                freed = freed + sweep (s);
+                if ((*span (s)).nfree == (*span (s)).nelems) {
+                    _yrt_i_nh_mutex_lock ((*g).heapLock);
+                    freePages (s);
+                    _yrt_i_nh_mutex_unlock ((*g).heapLock);
+                } else if ((*span (s)).nfree == 0us) {
+                    setState (s, SPAN_FULL);
+                    push ((*g).full + k * 8us, s);
+                } else {
+                    setState (s, SPAN_AVAIL);
+                    push ((*g).avail + k * 8us, s);
+                }
+            }
+
+            _yrt_i_nh_mutex_unlock (lock);
+        }
+
+        // a large object allocated since the end of the last cycle was not part of its marking
+        let gen = sweepGen ();
+        _yrt_i_nh_mutex_lock ((*g).heapLock);
+        let mut cur = ld ((*g).large);
+        while (cur != 0us) {
+            let dmut x = span (cur);
+            let next = (*x).next;
+            if ((*x).sweepGen != gen) {
+                if (ld8 ((*x).marks) == 0u8) {
+                    freed = freed + cast!u64 ((*x).elemSize);
+                    unlink ((*g).large, cur);
+                    freePages (cur);
+                } else {
+                    (*x).sweepGen = gen;
+                }
+            }
+
+            cur = next;
+        }
+
+        _yrt_i_nh_mutex_unlock ((*g).heapLock);
+    }
+
+    freed
+}
