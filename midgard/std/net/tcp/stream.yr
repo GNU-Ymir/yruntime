@@ -569,7 +569,8 @@ pub class TcpStream {
                     _yrt_fd_set(self._sockFd, &myset);
 
                     res = select(cast!u32(self._sockFd + 1), null, cast!{*void} (&myset), null, cast!{*void} (&dur));
-                    if (res < 0 && errno() != ErrnoValue::EINTR) {
+                    if (res < 0) {
+                        if errno() == ErrnoValue::EINTR { continue; }
                         break false;
                     }
 
@@ -641,6 +642,7 @@ pub class TcpStream {
         while lenToSend != 0 {
             errno(ErrnoValue::NONE);
             let sent = socket::send(self._sockFd, cast!{*void} (cur), lenToSend, 16384);
+            if sent < 0 && errno() == ErrnoValue::EINTR { continue; }
             if sent <= 0 {
                 let err = errno();
                 self._error = true;
@@ -678,6 +680,7 @@ pub class TcpStream {
         while lenToRecv > 0 {
             errno(ErrnoValue::NONE);
             let recv = socket::recv(self._sockFd, cast!{*void} (cur), lenToRecv, 0);
+            if recv < 0 && errno() == ErrnoValue::EINTR { continue; }
             if recv <= 0 {
                 let err = errno();
                 self._error = true;

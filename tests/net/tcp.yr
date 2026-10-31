@@ -7,6 +7,10 @@ use std::io;
 use etc::c::files;
 use etc::c::socket;
 
+extern (C) fn _yrt_test_interrupt_then_write (fd: i32)-> *void;
+extern (C) fn _yrt_test_interrupt_then_connect (port: u16)-> *void;
+extern (C) fn _yrt_test_interrupter_join (handle: *void)-> void;
+
 /**
  * @returns: true if the O_NONBLOCK flag is set on `fd`
  * */
@@ -50,6 +54,40 @@ __test connectKeepsBlocking { // MID-64: connect() switched the socket to O_NONB
         assert(accepted:.receive!{[c8]} () == "ping", "round trip");
 
         client:.dispose();
+        accepted:.dispose();
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test receiveRetriesWhenInterrupted { // MID-143: an EINTR from recv was taken for a closed connection
+    {
+        let dmut server = listenOnLoopback();
+        let dmut client = TcpStream::connect(server.addr);
+        let dmut accepted = server:.accept();
+
+        let interrupter = _yrt_test_interrupt_then_write(client.getHandle());
+        let byte = accepted:.receive!{u8} ();
+        _yrt_test_interrupter_join(interrupter);
+
+        assert(byte == 42u8, "a");
+
+        client:.dispose();
+        accepted:.dispose();
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test acceptRetriesWhenInterrupted { // MID-143: an EINTR from accept was reported as a failed accept
+    {
+        let dmut server = listenOnLoopback();
+
+        let interrupter = _yrt_test_interrupt_then_connect(server.addr.port);
+        let dmut accepted = server:.accept();
+        _yrt_test_interrupter_join(interrupter);
+
+        assert(accepted.isOpen(), "a");
         accepted:.dispose();
     } catch {
         err => { println(err); assert(false, "threw"); }

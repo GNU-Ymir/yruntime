@@ -1,6 +1,7 @@
 in ipipe;
 
 use etc::c::{files, socket};
+use etc::runtime::errno;
 use core::exception::io;
 
 /**
@@ -108,6 +109,7 @@ pub class IPipe {
         while (lenToRecv > 0) {
             let currentRecv = if (lenToRecv > bufSize) { bufSize } else { lenToRecv };
             let valread = socket::read(self._pipe, cast!{dmut *void} (alias chr.ptr), currentRecv * C::size);
+            if (valread < 0 && errno() == ErrnoValue::EINTR) { continue; }
             if (valread <= 0) {
                 self._error = true;
                 throw copy IOError();
@@ -172,6 +174,7 @@ pub class IPipe {
 
         while (lenToRecv > 0) {
             let valread = socket::read(self._pipe, cast!{*void} (curr), cast!usize(lenToRecv));
+            if (valread < 0 && errno() == ErrnoValue::EINTR) { continue; }
             if (valread <= 0) {
                 self._error = true;
                 throw copy IOError();
