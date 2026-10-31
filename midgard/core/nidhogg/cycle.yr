@@ -1,0 +1,669 @@
+/**
+ * The cycles of the collector, run by a thread of its own: the marking from the roots, the end
+ * of the marking, the finalization of the unreachable objects that have a finalizer, and the
+ * sweep; and the thread running the finalizers.
+ */
+in cycle;
+
+use core::nidhogg::{heap, mark, state, sys, thread};
+
+/**
+ * The longest a waiting collector sleeps before it checks the heap again
+ * */
+def IDLE_NS = 100000000u64;
+
+/**
+ * Run the cycles, when the live heap reaches its goal or a thread asks for one
+ * */
+@nogc
+pub extern (C) fn _yrt_i_nh_collector_main () {
+    let dmut g = G ();
+    loop {
+        _yrt_i_nh_mutex_lock ((*g).lock);
+        while (!shouldCollect ()) {
+            _yrt_i_nh_cond_timedwait ((*g).cond, (*g).lock, IDLE_NS);
+        }
+
+        (*g).collecting = 1u8;
+        let number = (*g).cycle + 1u64;
+        _yrt_i_nh_mutex_unlock ((*g).lock);
+
+        runCycle (number);
+
+        _yrt_i_nh_mutex_lock ((*g).lock);
+        (*g).cycle = number;
+        (*g).collecting = 0u8;
+        _yrt_i_nh_cond_broadcast ((*g).cond);
+        _yrt_i_nh_mutex_unlock ((*g).lock);
+    }
+}
+
+/**
+ * @returns: true iif a cycle is to run
+ * @info: the lock of the cycles is held
+ * */
+@{nogc, unsafe}
+fn shouldCollect ()-> bool {
+    let dmut g = G ();
+    {
+        if ((*g).disabled != 0u64) return false;
+        if ((*g).requested > (*g).cycle) return true;
+
+        liveHeap (_yrt_i_nh_load64 (cast!usize (&((*g).heapLive)))) >= (*g).goal
+    }
+}
+
+/**
+ * Run the cycle `number`
+ * */
+@{nogc, unsafe}
+fn runCycle (number: u64) {
+    let dmut g = G ();
+    let start = _yrt_i_nh_now_ns ();
+
+    // the spans the last cycle left to sweep, the ones of the threads included, are swept before
+    // their marks are forgotten
+    round (ROUND_RECLAIM, number);
+    subLive (sweepAll ());
+    clearAllMarks ();
+
+    // from the end of this round, every thread runs its write barriers and allocates black
+    _yrt_i_nh_store8 (cast!usize (&_yrt_nh_marking), 1u8);
+    _yrt_i_nh_fence ();
+    round (ROUND_ACK, number);
+
+    _yrt_i_nh_data_segments ();
+    scanRoots ();
+    scanFinalizerQueue ();
+    round (ROUND_SCAN, number);
+
+    terminate (number);
+    if (finalize () != 0us) {
+        terminate (number);
+    }
+
+    {
+        if ((*g).verify == 1u8) {
+            verifyMarks ();
+        }
+    }
+
+    // from here, a thread allocating from a span it took hands it back to be swept, and marks
+    // what it allocates in it meanwhile
+    _yrt_i_nh_add64 (cast!usize (&((*g).sweepGen)), 2u64);
+    _yrt_i_nh_fence ();
+
+    toUnswept ();
+    _yrt_i_nh_store8 (cast!usize (&_yrt_nh_marking), 0u8);
+    _yrt_i_nh_fence ();
+    quiesce ();
+
+    {
+        (*g).statMarkNs = (*g).statMarkNs + (_yrt_i_nh_now_ns () - start);
+        (*g).statCycles = (*g).statCycles + 1u64;
+
+        _yrt_i_nh_mutex_lock ((*g).finLock);
+        if ((*g).finLen != 0us) {
+            _yrt_i_nh_cond_broadcast ((*g).finCond);
+        }
+
+        _yrt_i_nh_mutex_unlock ((*g).finLock);
+    }
+
+    subLive (sweepAll ());
+
+    {
+        let live = liveHeap (_yrt_i_nh_load64 (cast!usize (&((*g).heapLive))));
+        (*g).heapMarked = live;
+
+        let goal = live + (live / 100u64) * (*g).gogc;
+        (*g).goal = if (goal < MIN_GOAL) { MIN_GOAL } else { goal };
+    }
+}
+
+/**
+ * Mark until no object is grey: the collector drains its mark stack and the buffers handed to
+ * it, then collects the grey buffers of the threads, until a whole round finds no thread having
+ * shaded anything since the previous one, nor running a barrier or an assist
+ * */
+@{nogc, unsafe}
+fn terminate (number: u64) {
+    let dmut g = G ();
+    loop {
+        drain ();
+
+        let assists = { _yrt_i_nh_load64 (cast!usize (&((*g).assists))) };
+        let mut found = round (ROUND_FLUSH, number);
+        found = found + drain ();
+
+        {
+            if (_yrt_i_nh_load64 (cast!usize (&((*g).assists))) != assists) found = found + 1us;
+            if (_yrt_i_nh_load64 (cast!usize (&((*g).foreignBusy))) != 0u64) found = found + 1us;
+        }
+
+        if (found == 0us) break;
+    }
+}
+
+/**
+ * Shade the objects the roots the runtime registered point to
+ * */
+@{nogc, unsafe}
+fn scanRoots () {
+    let g = G ();
+    {
+        _yrt_i_nh_mutex_lock ((*g).rootsLock);
+        for i in 0us .. (*g).nroots {
+            scanRange (ld ((*g).roots + i * 16us), ld ((*g).roots + i * 16us + 8us));
+        }
+
+        _yrt_i_nh_mutex_unlock ((*g).rootsLock);
+    }
+}
+
+/**
+ * Shade the objects a writable segment of a loaded object points to, or list the segment while
+ * the verification lists them
+ * */
+@nogc
+pub extern (C) fn _yrt_i_nh_add_data_segment (lo: usize, hi: usize) {
+    let dmut g = G ();
+    if ((*g).listSegs == 0u8) {
+        scanRange (lo, hi);
+        return;
+    }
+
+    pushPair (cast!usize (&((*g).segs)), cast!usize (&((*g).nsegs)), cast!usize (&((*g).capSegs)), lo, hi);
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ================================          FINALIZERS          ======================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Register the finalizer `fn_` of the object `obj`, called once the object is unreachable
+ * */
+@{nogc, unsafe}
+pub fn registerFinalizer (obj: usize, fn_: usize) {
+    let dmut g = G ();
+    {
+        _yrt_i_nh_mutex_lock ((*g).finLock);
+        if (((*g).finCount + 1us) * 2us > (*g).finCap) {
+            growFinalizers ();
+        }
+
+        insertFinalizer ((*g).finTable, (*g).finCap, obj, fn_);
+        (*g).finCount = (*g).finCount + 1us;
+        _yrt_i_nh_mutex_unlock ((*g).finLock);
+    }
+}
+
+/**
+ * Insert the pair (obj, fn_) in the open addressing table of `cap` entries at `table`
+ * */
+@{nogc, unsafe}
+fn insertFinalizer (table: usize, cap: usize, obj: usize, fn_: usize) {
+    let mut i = ((obj >> 4us) * 11400714819323198485us) & (cap - 1us);
+    loop {
+        let key = ld (table + i * 16us);
+        if (key == 0us || key == 1us) {
+            st (table + i * 16us, obj);
+            st (table + i * 16us + 8us, fn_);
+            return;
+        }
+
+        i = (i + 1us) & (cap - 1us);
+    }
+}
+
+/**
+ * Double the table of the finalizers, dropping the entries removed from it
+ * @info: the lock of the finalizers is held
+ * */
+@{nogc, unsafe}
+fn growFinalizers () {
+    let dmut g = G ();
+    {
+        let old = (*g).finTable, oldCap = (*g).finCap;
+        let mut live = 0us;
+        for i in 0us .. oldCap {
+            if (ld (old + i * 16us) > 1us) live = live + 1us;
+        }
+
+        let mut cap = oldCap;
+        while ((live + 1us) * 4us > cap) {
+            cap = cap * 2us;
+        }
+
+        let table = words (cap * 2us);
+        for i in 0us .. oldCap {
+            let key = ld (old + i * 16us);
+            if (key > 1us) {
+                insertFinalizer (table, cap, key, ld (old + i * 16us + 8us));
+            }
+        }
+
+        free (old);
+        (*g).finTable = table;
+        (*g).finCap = cap;
+        (*g).finCount = live;
+    }
+}
+
+/**
+ * Queue the finalizers of the objects left unmarked, the objects being marked from, so that what
+ * they point to is still there when their finalizer runs
+ * @returns: the number of finalizers queued
+ * */
+@{nogc, unsafe}
+fn finalize ()-> usize {
+    let g = G ();
+    let mut queued = 0us;
+    {
+        _yrt_i_nh_mutex_lock ((*g).finLock);
+        let table = (*g).finTable;
+        for i in 0us .. (*g).finCap {
+            let key = ld (table + i * 16us);
+            if (key > 1us && !isMarked (key)) {
+                enqueue (key, ld (table + i * 16us + 8us));
+                st (table + i * 16us, 1us);
+                markGrey (key);
+                queued = queued + 1us;
+            }
+        }
+
+        _yrt_i_nh_mutex_unlock ((*g).finLock);
+    }
+
+    queued
+}
+
+/**
+ * Queue the finalizer `fn_` of the object `obj`
+ * @info: the lock of the finalizers is held
+ * */
+@{nogc, unsafe}
+fn enqueue (obj: usize, fn_: usize) {
+    let dmut g = G ();
+    pushPair (cast!usize (&((*g).finQueue)), cast!usize (&((*g).finLen)), cast!usize (&((*g).finQueueCap)), obj, fn_);
+}
+
+/**
+ * Shade the objects whose finalizer is queued, which are roots until it runs
+ * */
+@{nogc, unsafe}
+fn scanFinalizerQueue () {
+    let g = G ();
+    {
+        _yrt_i_nh_mutex_lock ((*g).finLock);
+        for i in 0us .. (*g).finLen {
+            markGrey (ld ((*g).finQueue + i * 16us));
+        }
+
+        _yrt_i_nh_mutex_unlock ((*g).finLock);
+    }
+}
+
+/**
+ * Run the finalizers queued, one at a time
+ * */
+@nogc
+pub extern (C) fn _yrt_i_nh_finalizer_main () {
+    let dmut g = G ();
+    register ();
+    _yrt_i_nh_unblock_handshake ();
+
+    loop {
+        _yrt_i_nh_mutex_lock ((*g).finLock);
+        while ((*g).finLen == 0us) {
+            _yrt_i_nh_cond_wait ((*g).finCond, (*g).finLock);
+        }
+
+        (*g).finLen = (*g).finLen - 1us;
+        let obj = ld ((*g).finQueue + (*g).finLen * 16us);
+        let fn_ = ld ((*g).finQueue + (*g).finLen * 16us + 8us);
+        (*g).finRunning = (*g).finRunning + 1u64;
+        _yrt_i_nh_mutex_unlock ((*g).finLock);
+
+        _yrt_i_nh_call_finalizer (fn_, obj);
+
+        _yrt_i_nh_mutex_lock ((*g).finLock);
+        (*g).finRunning = (*g).finRunning - 1u64;
+        _yrt_i_nh_cond_broadcast ((*g).finCond);
+        _yrt_i_nh_mutex_unlock ((*g).finLock);
+    }
+}
+
+/**
+ * Wait until no finalizer is queued or running
+ * */
+@{nogc, unsafe}
+pub fn waitFinalizers () {
+    let g = G ();
+    {
+        if ((*g).forked == 1u8) return;
+
+        _yrt_i_nh_mutex_lock ((*g).finLock);
+        while ((*g).finLen != 0us || (*g).finRunning != 0u64) {
+            _yrt_i_nh_cond_wait ((*g).finCond, (*g).finLock);
+        }
+
+        _yrt_i_nh_mutex_unlock ((*g).finLock);
+    }
+}
+
+/**
+ * Run a whole cycle, and wait until it is over
+ * */
+@{nogc, unsafe}
+pub fn collect () {
+    let dmut g = G ();
+    startCollector ();
+    {
+        _yrt_i_nh_mutex_lock ((*g).lock);
+        if ((*g).disabled != 0u64) {
+            _yrt_i_nh_mutex_unlock ((*g).lock);
+            return;
+        }
+
+        // a cycle already running may have marked before the caller dropped what it wants freed
+        let target = (*g).cycle + (if ((*g).collecting == 1u8) { 2u64 } else { 1u64 });
+        if ((*g).requested < target) {
+            (*g).requested = target;
+        }
+
+        _yrt_i_nh_cond_broadcast ((*g).cond);
+        while ((*g).cycle < target && (*g).disabled == 0u64) {
+            _yrt_i_nh_cond_wait ((*g).cond, (*g).lock);
+        }
+
+        _yrt_i_nh_mutex_unlock ((*g).lock);
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ================================          VERIFICATION          ====================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Check that the marking left no marked object pointing to an unmarked one: every thread parked
+ * at once, every word of the marked objects, of the roots, of the queued finalizers and of the
+ * data segments that points into an allocated object must point into a marked one, the process
+ * aborting otherwise. Under the hybrid barrier, such a word is a store that skipped its barrier.
+ * The stacks are not checked: scanned conservatively, they keep stale words, copies of dead
+ * pointers the program never reads again.
+ * @info: a debugging aid (NIDHOGG_VERIFY=1), the only time the collector stops every thread
+ * */
+@{nogc, unsafe}
+fn verifyMarks () {
+    let dmut g = G ();
+
+    // the loader lock dl_iterate_phdr takes, and the locks of the collector a thread may hold
+    // out of a barrier and of an allocation, could be held by a thread about to be parked: they
+    // are taken first; the work queue is only locked in a barrier or an allocation
+    (*g).listSegs = 1u8;
+    (*g).nsegs = 0us;
+    _yrt_i_nh_data_segments ();
+    (*g).listSegs = 0u8;
+
+    _yrt_i_nh_mutex_lock ((*g).rootsLock);
+    _yrt_i_nh_mutex_lock ((*g).finLock);
+    _yrt_i_nh_mutex_lock ((*g).threadsLock);
+    while (!parkAll ()) {
+        resumeAll ();
+        _yrt_i_nh_yield ();
+    }
+
+    _yrt_i_nh_mutex_lock ((*g).workLock);
+
+    // what a barrier shaded since the end of the marking, storing stale words, is scanned as the
+    // collector would; the buffers are freed once the threads go, one of them may hold the lock
+    // of the C allocator
+    let mut ts = ld ((*g).threads);
+    while (ts != 0us) {
+        takeGrey (ts);
+        ts = (*thread (ts)).next;
+    }
+
+    let mut bufs = ld ((*g).work);
+    st ((*g).work, 0us);
+    let mut buf = bufs;
+    while (buf != 0us) {
+        for i in 0us .. ld (buf + 8us) {
+            markPush (ld (buf + (2us + i) * 8us));
+        }
+
+        buf = ld (buf);
+    }
+
+    while ((*g).markTop != 0us) {
+        (*g).markTop = (*g).markTop - 1us;
+        scanObject (ld ((*g).markStack + (*g).markTop * 8us));
+    }
+
+    let mut bad = 0us;
+    for i in 0us .. (*g).nsegs {
+        bad = bad + verifyRange (ld ((*g).segs + i * 16us), ld ((*g).segs + i * 16us + 8us), "a data segment");
+    }
+
+    for i in 0us .. (*g).nroots {
+        bad = bad + verifyRange (ld ((*g).roots + i * 16us), ld ((*g).roots + i * 16us + 8us), "a root");
+    }
+
+    for i in 0us .. (*g).finLen {
+        bad = bad + verifyRange ((*g).finQueue + i * 16us, (*g).finQueue + i * 16us + 8us, "the finalizer queue");
+    }
+
+    bad = bad + verifyHeap ();
+    resumeAll ();
+
+    _yrt_i_nh_mutex_unlock ((*g).threadsLock);
+    _yrt_i_nh_mutex_unlock ((*g).finLock);
+    _yrt_i_nh_mutex_unlock ((*g).rootsLock);
+    _yrt_i_nh_mutex_unlock ((*g).workLock);
+    while (bufs != 0us) {
+        let next = ld (bufs);
+        free (bufs);
+        bufs = next;
+    }
+
+    if (bad != 0us) {
+        fatal ("nidhogg: verification failed, aborting\n");
+    }
+}
+
+/**
+ * Park every thread
+ * @returns: false iif one of them runs a barrier or an assist, whose shaded objects may not be in
+ * its grey buffer yet, or allocates, an object being marked before it is zeroed or holding the
+ * lock of the work queue
+ * @info: the lock of the threads is held
+ * */
+@{nogc, unsafe}
+fn parkAll ()-> bool {
+    let g = G ();
+    let mut quiet = true;
+    let mut ts = ld ({ (*g).threads });
+    while (ts != 0us) {
+        if (suspend (ts)) {
+            let t = thread (ts);
+            if (_yrt_i_nh_load8 (cast!usize (&((*t).busy))) != 0u8 || _yrt_i_nh_load8 (cast!usize (&((*t).inAlloc))) != 0u8) {
+                quiet = false;
+            }
+        }
+
+        ts = { (*thread (ts)).next };
+    }
+
+    {
+        quiet && _yrt_i_nh_load64 (cast!usize (&((*g).foreignBusy))) == 0u64
+    }
+}
+
+/**
+ * Let every thread parked by parkAll go
+ * @info: the lock of the threads is held
+ * */
+@{nogc, unsafe}
+fn resumeAll () {
+    let g = G ();
+    let mut ts = ld ({ (*g).threads });
+    while (ts != 0us) {
+        if (_yrt_i_nh_load8 (cast!usize (&((*thread (ts)).parked))) == 1u8) {
+            resume (ts);
+        }
+
+        ts = { (*thread (ts)).next };
+    }
+}
+
+/**
+ * Check the words of the range [lo, hi) of `what`, which is not an object of the heap
+ * @returns: the number of words pointing into an unmarked object
+ * */
+@{nogc, unsafe}
+fn verifyRange (lo: usize, hi: usize, what: [c8])-> usize {
+    let mut bad = 0us;
+    let mut a = ((lo + 7us) / 8us) * 8us;
+    while (a + 8us <= hi) {
+        if (!verifyWord (ld (a))) {
+            bad = bad + 1us;
+            if (bad <= 4us) {
+                print ("nidhogg: verification failed, the word "); printHex (cast!u64 (a));
+                print (" of "); print (what);
+                print (" points into an unmarked object\n");
+                describe (ld (a));
+            }
+        }
+
+        a = a + 8us;
+    }
+
+    bad
+}
+
+/**
+ * Check the words of every marked object of the heap holding pointers
+ * @returns: the number of words pointing into an unmarked object
+ * */
+@{nogc, unsafe}
+fn verifyHeap ()-> usize {
+    let g = G ();
+    let mut bad = 0us;
+    {
+        for c in 0us .. (*g).nchunks {
+            let chunk = ld ((*g).chunks + c * 8us);
+            let mut page = 0us;
+            while (page < CHUNK_PAGES) {
+                let s = spanAt (chunk, page);
+                if (s != 0us) {
+                    let x = span (s);
+                    if ((*x).state != SPAN_FREE && (*x).noscan == 0u8) {
+                        for i in 0us .. (*x).nelems {
+                            if (ld8 ((*x).alloc + i) == 0u8 || ld8 ((*x).marks + i) == 0u8) continue;
+
+                            let obj = (*x).base + i * (*x).elemSize;
+                            let mut w = obj;
+                            while (w + 8us <= obj + (*x).elemSize) {
+                                if (!verifyWord (ld (w))) {
+                                    bad = bad + 1us;
+                                    if (bad <= 4us) {
+                                        print ("nidhogg: verification failed, the word at offset ");
+                                        printNum (cast!u64 (w - obj));
+                                        print (" of a marked object\n");
+                                        describe (obj);
+                                        print ("  points into an unmarked object\n");
+                                        describe (ld (w));
+                                    }
+                                }
+
+                                w = w + 8us;
+                            }
+                        }
+                    }
+
+                    page = page + (*x).npages;
+                } else {
+                    page = page + 1us;
+                }
+            }
+        }
+    }
+
+    bad
+}
+
+/**
+ * @returns: false iif `p` points into an allocated object of the heap left unmarked
+ * */
+@{nogc, unsafe}
+fn verifyWord (p: usize)-> bool {
+    let g = G ();
+    {
+        if (p < (*g).heapLo || p >= (*g).heapHi) return true;
+    }
+
+    let (s, i) = findObject (p);
+    if (s == 0us) return true;
+
+    {
+        ld8 ((*span (s)).marks + i) != 0u8
+    }
+}
+
+/**
+ * Write the object `p` points into: its address, its size, and its two first words, the first
+ * one being the vtable of a class
+ * */
+@{nogc, unsafe}
+fn describe (p: usize) {
+    let (s, i) = findObject (p);
+    let x = span (s);
+    {
+        let obj = (*x).base + i * (*x).elemSize;
+        print ("  object "); printHex (cast!u64 (obj));
+        print (" of "); printNum (cast!u64 ((*x).elemSize));
+        print (" bytes, noscan "); printNum (cast!u64 ((*x).noscan));
+        print (", words "); printHex (cast!u64 (ld (obj)));
+        print (" "); printHex (cast!u64 (ld (obj + 8us))); print ("\n");
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ===================================          STATS          ========================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Print the statistics of the collector on the standard error, if NIDHOGG_STATS is set
+ * */
+@{nogc, unsafe}
+pub fn printStats () {
+    let g = G ();
+    {
+        if ((*g).stats == 0u8) return;
+
+        print ("nidhogg: cycles ");
+        printNum ((*g).statCycles);
+        print (", allocated ");
+        printNum ((*g).statAllocated);
+        print (" bytes, peak live ");
+        printNum ((*g).statPeak);
+        print (" bytes, collector time ");
+        printNum ((*g).statMarkNs / 1000u64);
+        print (" us, longest thread pause ");
+        printNum ((*g).statLongestPark / 1000u64);
+        print (" us\n");
+    }
+}

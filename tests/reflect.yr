@@ -2,9 +2,8 @@ in reflect;
 
 use core::concurrency::sync::mutex;
 use core::reflect::factory;
+use etc::runtime::gc;
 
-extern (C) fn GC_gcollect();
-extern (C) fn GC_invoke_finalizers()-> i32;
 
 lazy dmut __DTOR_MUTEX__ = copy Mutex();
 
@@ -114,8 +113,8 @@ fn dtors()-> (usize, usize) {
 }
 
 fn collect() {
-    GC_gcollect();
-    GC_invoke_finalizers();
+    _yrt_gc_collect();
+    _yrt_gc_wait_finalizers();
 }
 
 __test registeredByTag {

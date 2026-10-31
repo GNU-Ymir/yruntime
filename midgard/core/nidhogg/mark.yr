@@ -1,0 +1,273 @@
+/**
+ * The marking: the shading of an object, by the collector onto its mark stack or by a thread
+ * into its grey buffer, the scanning of the words of a range or of an object, and the grey
+ * buffers the threads hand over to the collector.
+ */
+in mark;
+
+use core::nidhogg::{heap, state, sys};
+
+/**
+ * Mark the object `p` points into, if it is an allocated object of the heap not marked yet
+ * @returns: the address of the object if it must be scanned, 0 otherwise
+ * */
+@{nogc, unsafe}
+pub fn shade (p: usize)-> usize {
+    let g = G ();
+    {
+        if (p < (*g).heapLo || p >= (*g).heapHi) return 0us;
+    }
+
+    let (s, i) = findObject (p);
+    if (s == 0us) return 0us;
+
+    let x = span (s);
+    {
+        if (_yrt_i_nh_xchg8 ((*x).marks + i, 1u8) != 0u8) return 0us;
+        if ((*x).noscan == 1u8) return 0us;
+
+        (*x).base + i * (*x).elemSize
+    }
+}
+
+/**
+ * @returns: true iif the object at `p` is marked, or is not one of the heap
+ * */
+@{nogc, unsafe}
+pub fn isMarked (p: usize)-> bool {
+    let (s, i) = findObject (p);
+    if (s == 0us) return true;
+
+    {
+        (_yrt_i_nh_load8 ((*span (s)).marks + i) & 1u8) != 0u8
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ================================          COLLECTOR          =======================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Push the object `obj` on the mark stack of the collector
+ * */
+@{nogc, unsafe}
+pub fn markPush (obj: usize) {
+    let dmut g = G ();
+    {
+        if ((*g).markTop >= MARK_CAP) {
+            fatal ("nidhogg: mark stack overflow\n");
+        }
+
+        st ((*g).markStack + (*g).markTop * 8us, obj);
+        (*g).markTop = (*g).markTop + 1us;
+    }
+}
+
+/**
+ * Shade the object `p` points into, pushing it on the mark stack of the collector
+ * */
+@{nogc, unsafe}
+pub fn markGrey (p: usize) {
+    let obj = shade (p);
+    if (obj != 0us) {
+        markPush (obj);
+    }
+}
+
+/**
+ * Shade every object a word of the range [lo, hi) points into, onto the mark stack
+ * */
+@{nogc, unsafe}
+pub fn scanRange (lo: usize, hi: usize) {
+    let mut a = ((lo + 7us) / 8us) * 8us;
+    while (a + 8us <= hi) {
+        markGrey (ld (a));
+        a = a + 8us;
+    }
+}
+
+/**
+ * Shade every object the object `obj` points to, onto the mark stack
+ * */
+@{nogc, unsafe}
+pub fn scanObject (obj: usize) {
+    let s = spanOf (obj);
+    if (s == 0us) return;
+
+    scanRange (obj, obj + { (*span (s)).elemSize });
+}
+
+/**
+ * Scan the objects of the mark stack, and of the grey buffers handed over, until there is none
+ * @returns: the number of grey buffers taken
+ * */
+@{nogc, unsafe}
+pub fn drain ()-> usize {
+    let dmut g = G ();
+    let mut taken = 0us;
+    loop {
+        {
+            while ((*g).markTop != 0us) {
+                (*g).markTop = (*g).markTop - 1us;
+                scanObject (ld ((*g).markStack + (*g).markTop * 8us));
+            }
+        }
+
+        if (!takeWork ()) break;
+        taken = taken + 1us;
+    }
+
+    taken
+}
+
+/**
+ * Move the objects of a grey buffer handed over to the mark stack
+ * @returns: false iif there was none
+ * */
+@{nogc, unsafe}
+pub fn takeWork ()-> bool {
+    let g = G ();
+    let lock = { (*g).workLock };
+    _yrt_i_nh_mutex_lock (lock);
+    let buf = ld ({ (*g).work });
+    if (buf != 0us) {
+        st ({ (*g).work }, ld (buf));
+    }
+
+    _yrt_i_nh_mutex_unlock (lock);
+    if (buf == 0us) return false;
+
+    let n = ld (buf + 8us);
+    for i in 0us .. n {
+        markPush (ld (buf + (2us + i) * 8us));
+    }
+
+    free (buf);
+    true
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ==================================          THREADS          =======================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Shade the object `p` points into from a thread, into its grey buffer
+ * @info: the thread is busy, the collector marking
+ * */
+@{nogc, unsafe}
+pub fn shadeFromThread (p: usize) {
+    let obj = shade (p);
+    if (obj == 0us) return;
+
+    let ts = _yrt_i_nh_get_self ();
+    if (ts == 0us) {
+        handOver (obj);
+        return;
+    }
+
+    let dmut t = thread (ts);
+    {
+        let n = (*t).greyLen;
+        st ((*t).grey + (2us + n) * 8us, obj);
+        (*t).greyLen = n + 1us;
+        if (n + 1us == GREY_CAP) {
+            flushGrey (ts);
+        }
+    }
+}
+
+/**
+ * Shade every object a word of the range [lo, hi) points to, from a thread
+ * */
+@{nogc, unsafe}
+pub fn scanRangeFromThread (lo: usize, hi: usize) {
+    let mut a = ((lo + 7us) / 8us) * 8us;
+    while (a + 8us <= hi) {
+        shadeFromThread (ld (a));
+        a = a + 8us;
+    }
+}
+
+/**
+ * Hand the grey buffer of the thread `ts` over to the collector, and give it a new one
+ * */
+@{nogc, unsafe}
+pub fn flushGrey (ts: usize) {
+    let dmut t = thread (ts);
+    {
+        let n = (*t).greyLen;
+        if (n == 0us) return;
+
+        let buf = (*t).grey;
+        (*t).grey = words (GREY_WORDS);
+        (*t).greyLen = 0us;
+        st (buf + 8us, n);
+        link (buf);
+    }
+}
+
+/**
+ * Hand the object `obj` shaded by a thread the collector does not know over to the collector
+ * */
+@{nogc, unsafe}
+fn handOver (obj: usize) {
+    let buf = words (3us);
+    st (buf + 8us, 1us);
+    st (buf + 16us, obj);
+    link (buf);
+}
+
+/**
+ * Link the grey buffer `buf` into the ones handed over to the collector
+ * */
+@{nogc, unsafe}
+fn link (buf: usize) {
+    let g = G ();
+    {
+        _yrt_i_nh_mutex_lock ((*g).workLock);
+        st (buf, ld ((*g).work));
+        st ((*g).work, buf);
+        _yrt_i_nh_mutex_unlock ((*g).workLock);
+    }
+}
+
+/**
+ * Scan the objects of one grey buffer handed over to the collector, for a thread that allocates
+ * while the collector marks
+ * @info: the thread is busy
+ * */
+@{nogc, unsafe}
+pub fn assist () {
+    let dmut g = G ();
+    let lock = { (*g).workLock };
+    _yrt_i_nh_mutex_lock (lock);
+    let buf = ld ({ (*g).work });
+    if (buf != 0us) {
+        st ({ (*g).work }, ld (buf));
+        {
+            _yrt_i_nh_add64 (cast!usize (&((*g).assists)), 1u64);
+        }
+    }
+
+    _yrt_i_nh_mutex_unlock (lock);
+    if (buf == 0us) return;
+
+    let n = ld (buf + 8us);
+    for i in 0us .. n {
+        let obj = ld (buf + (2us + i) * 8us);
+        let s = spanOf (obj);
+        if (s != 0us) {
+            scanRangeFromThread (obj, obj + { (*span (s)).elemSize });
+        }
+    }
+
+    free (buf);
+}

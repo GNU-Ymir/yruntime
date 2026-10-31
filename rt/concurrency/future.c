@@ -8,16 +8,12 @@ thread_local _yrt_thread_t _yrt_i_self_id;
 _yrt_future_t _yrt_spawn_future (_yrt_lazy_closure_t closure, uint32_t valueSize) {
     _yrt_future_t result;
 
-    result.content = GC_malloc (sizeof (_yrt_future_content_t));
+    result.content = _yrt_i_gc_alloc (sizeof (_yrt_future_content_t));
     _yrt_thread_sem_init (&result.content-> wait, 0, 0);
     _yrt_thread_mutex_init (&result.content-> mutex, NULL);
 
-    result.content-> finished = 0;
-    result.content-> closure = closure;
+    _yrt_i_gc_copy_new (&result.content-> closure, &closure, sizeof (_yrt_lazy_closure_t));
     result.content-> valueSize = valueSize;
-    result.content-> value = NULL;
-    result.content-> waker.closure = NULL;
-    result.content-> waker.func = NULL;
 
     _yrt_i_thread_create (&result.id, NULL, &_yrt_i_future_main, result.content);
     _yrt_thread_sem_wait (&result.content-> wait);
@@ -51,11 +47,11 @@ void* _yrt_i_future_main (void * data) {
 
     if (content-> valueSize != 0) {
         // printf ("Here ?%d\n", content-> valueSize);
-        void* data = GC_malloc (content-> valueSize);
+        void* data = _yrt_i_gc_alloc (content-> valueSize);
         // printf ("Call ?%d\n", content-> closure.func);
 
         content-> closure.func (content-> closure.closure, data);
-        content-> value = data;
+        _yrt_i_gc_store_ptr (&(content-> value), data);
     } else {
         void (*fptr) (void*) = (void(*)(void*)) content-> closure.func;
         fptr (content-> closure.closure);
@@ -87,7 +83,7 @@ uint8_t _yrt_future_await (_yrt_future_t f, _yrt_delegate_t waker) {
     _yrt_thread_mutex_lock (&f.content-> mutex);
     uint8_t finished = f.content-> finished;
     if (!finished) {
-        f.content-> waker = waker;
+        _yrt_i_gc_store (&(f.content-> waker), &waker, sizeof (_yrt_delegate_t));
     }
     _yrt_thread_mutex_unlock (&f.content-> mutex);
 

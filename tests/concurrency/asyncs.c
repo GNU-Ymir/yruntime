@@ -49,7 +49,7 @@ typedef struct test_frame_t {
 
 static _yrt_delegate_t test_handle (resume_t resume) {
   _yrt_delegate_t handle;
-  handle.closure = GC_malloc (sizeof (test_frame_t));
+  handle.closure = _yrt_i_gc_alloc (sizeof (test_frame_t));
   handle.func = (void*) resume;
 
   return handle;
@@ -82,7 +82,7 @@ static uint8_t threaded_resume (void * frame, void * out, _yrt_delegate_t waker)
   test_frame_t * f = frame;
   f-> resumes += 1;
   if (f-> resumes == 1) {
-    f-> waker = waker;
+    _yrt_i_gc_store (&f-> waker, &waker, sizeof (waker));
     f-> hasThread = 1;
     _yrt_i_thread_create (&f-> thread, NULL, &wake_later, f);
     return 1;
@@ -101,8 +101,9 @@ static uint8_t awaiting_resume (void * frame, void * out, _yrt_delegate_t waker)
   test_frame_t * f = frame;
   f-> resumes += 1;
   if (f-> resumes == 1) {
+    _yrt_future_t future = spawn_sleeping (20000);
     f-> hasFuture = 1;
-    f-> future = spawn_sleeping (20000);
+    _yrt_i_gc_store (&f-> future, &future, sizeof (future));
   }
 
   if (!_yrt_future_await (f-> future, waker)) return 1;
@@ -141,7 +142,7 @@ static void sleeping_value (void * closure, void * ret) {
 }
 
 static _yrt_future_t spawn_sleeping (uint32_t micros) {
-  uint32_t * duration = GC_malloc (sizeof (uint32_t));
+  uint32_t * duration = _yrt_i_gc_alloc_atomic (sizeof (uint32_t));
   *duration = micros;
 
   _yrt_lazy_closure_t closure = { duration, &sleeping_value };

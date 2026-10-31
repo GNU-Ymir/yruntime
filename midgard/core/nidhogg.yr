@@ -1,0 +1,24 @@
+/**
+ * Níðhöggr, the garbage collector of Ymir: a concurrent, non-moving mark and sweep collector.
+ *
+ * The collector marks while the program runs. The only threads it ever interrupts are the ones
+ * whose stack it scans or whose grey objects it collects, one at a time, through a handshake:
+ * the world is never stopped as a whole. Compiled code keeps the marking sound with the write
+ * barriers the compiler inserts before every store of a pointer out of a frame, which shade both
+ * the overwritten value and the stored one while the collector marks.
+ *
+ * Stacks, registers and the heap are scanned conservatively, any word looking like the address
+ * of an object, interior pointers included, keeping it alive.
+ *
+ * Everything here is `@nogc`: the collector never allocates on its own heap. Its memory comes
+ * from the C allocator and from `mmap`, its global state from the C shim of `rt/nidhogg`.
+ */
+in nidhogg;
+
+pub mod ::api;
+pub mod ::cycle;
+pub mod ::heap;
+pub mod ::mark;
+pub mod ::state;
+pub mod ::sys;
+pub mod ::thread;

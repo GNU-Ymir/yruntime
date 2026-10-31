@@ -18,7 +18,7 @@
 #define MAP_SLAB_MAX_BYTES 4096
 
 // All entry nodes are aligned on this boundary within a slab, so hash/next/key/value
-// fields keep the same alignment they would get from a standalone GC_malloc
+// fields keep the same alignment they would get from a standalone allocation
 #define MAP_ENTRY_ALIGN (sizeof (void*))
 
 // cap is always 0 or a power of two (see _yrt_map_fit/_yrt_i_next_pow2), so bucket index
@@ -34,21 +34,15 @@
  */
 
 void _yrt_map_empty (_yrt_map_t * mp, _yrt_map_info_t * info) {
-    mp-> data = (_yrt_map_content_t*) GC_malloc (sizeof (_yrt_map_content_t));
-    mp-> data-> len = 0;
-    mp-> data-> minfo = info;
-    mp-> data-> loaded = 0;
-    mp-> data-> cap = 0;
-    mp-> data-> entries = NULL;
-    mp-> data-> slabCur = NULL;
-    mp-> data-> slabEnd = NULL;
-    mp-> data-> slabSize = 0;
+    _yrt_map_content_t * data = (_yrt_map_content_t*) _yrt_i_gc_alloc (sizeof (_yrt_map_content_t));
+    data-> minfo = info;
+    _yrt_i_gc_store_ptr ((void**) &(mp-> data), data);
 }
 
 /**
  * Carve `nodeSize` bytes for a new entry out of `data`'s bump-allocated slab,
  * allocating a fresh slab first if the current one does not have enough room left.
- * This turns what used to be one GC_malloc per entry into one GC_malloc per slab,
+ * This turns what used to be one allocation per entry into one allocation per slab,
  * with slabs growing geometrically (like a vector) instead of a single fixed size,
  * so a map with few entries does not over-allocate.
  */
@@ -65,13 +59,14 @@ static uint8_t * _map_entry_alloc (_yrt_map_content_t * data, uint64_t nodeSize)
         }
         slabSize = ((slabSize + stride - 1) / stride) * stride;
 
-        data-> slabCur = (uint8_t *) GC_malloc (slabSize);
-        data-> slabEnd = data-> slabCur + slabSize;
+        uint8_t * slab = (uint8_t *) _yrt_i_gc_alloc (slabSize);
+        _yrt_i_gc_store_ptr ((void**) &(data-> slabCur), slab);
+        _yrt_i_gc_store_ptr ((void**) &(data-> slabEnd), slab + slabSize);
         data-> slabSize = slabSize;
     }
 
     uint8_t * result = data-> slabCur;
-    data-> slabCur += stride;
+    _yrt_i_gc_store_ptr ((void**) &(data-> slabCur), result + stride);
 
     return result;
 }
@@ -83,8 +78,8 @@ void _yrt_dup_map (_yrt_map_t * result, _yrt_map_info_t * info, _yrt_map_t * old
     }
 
     result-> data-> cap = old-> data-> cap;
-    result-> data-> entries = (_yrt_map_entry_t**) GC_malloc ((old-> data-> cap) * sizeof (_yrt_map_entry_t*));
-    memset (result-> data-> entries, 0, (old-> data-> cap) * sizeof (_yrt_map_entry_t*));
+    _yrt_map_entry_t ** entries = (_yrt_map_entry_t**) _yrt_i_gc_alloc ((old-> data-> cap) * sizeof (_yrt_map_entry_t*));
+    _yrt_i_gc_store_ptr ((void**) &(result-> data-> entries), entries);
 
     _yrt_i_map_copy_entries (result, old);
 }
@@ -121,7 +116,7 @@ uint8_t _yrt_i_map_entry_insert (_yrt_map_content_t * data, _yrt_map_entry_t * m
     uint8_t * keyEntry = ((uint8_t*) mp) + sizeof (_yrt_map_entry_t);
     if (mp-> hash == hash && minfo-> cmp (key, keyEntry) == 1) {
         uint8_t * valEntry = keyEntry + minfo-> keySize;
-        memcpy (valEntry, value, minfo-> valueSize);
+        _yrt_i_gc_store (valEntry, value, minfo-> valueSize);
         return 0;
     }
 
@@ -143,10 +138,11 @@ void _yrt_i_map_create_entry (_yrt_map_content_t * data, _yrt_map_entry_t ** ent
     ((_yrt_map_entry_t*) newEntry)-> hash = hash;
     ((_yrt_map_entry_t*) newEntry)-> next = NULL;
 
-    memcpy (keyEntry, key, minfo-> keySize);
-    memcpy (valueEntry, value, minfo-> valueSize);
+    // the slab may be an old one, scanned already: the entry is stored as into any object
+    _yrt_i_gc_store (keyEntry, key, minfo-> keySize);
+    _yrt_i_gc_store (valueEntry, value, minfo-> valueSize);
 
-    *entry = (_yrt_map_entry_t*) newEntry;
+    _yrt_i_gc_store_ptr ((void**) entry, newEntry);
 }
 
 void _yrt_map_erase (_yrt_map_t * mp, uint8_t * key) {
@@ -177,8 +173,8 @@ uint8_t _yrt_i_map_erase_entry (_yrt_map_entry_t ** en, uint64_t hash, uint8_t *
     uint8_t * keyEntry = ((uint8_t*) (*en)) + sizeof (_yrt_map_entry_t);
     if ((*en)-> hash == hash && minfo-> cmp (key, keyEntry) == 1) {
         _yrt_map_entry_t * removed = *en;
-        *en = removed-> next;
-        memset (removed, 0, sizeof (_yrt_map_entry_t) + minfo-> keySize + minfo-> valueSize);
+        _yrt_i_gc_store_ptr ((void**) en, removed-> next);
+        _yrt_i_gc_clear (removed, sizeof (_yrt_map_entry_t) + minfo-> keySize + minfo-> valueSize);
 
         return 1;
     }
@@ -229,8 +225,7 @@ void _yrt_i_map_fit (_yrt_map_t * mp, uint64_t newSize) {
 
     result.data = &data;
     result.data-> cap = newSize;
-    result.data-> entries = (_yrt_map_entry_t**) GC_malloc (newSize * sizeof (_yrt_map_entry_t*));
-    memset (result.data-> entries, 0, newSize * sizeof (_yrt_map_entry_t*));
+    result.data-> entries = (_yrt_map_entry_t**) _yrt_i_gc_alloc (newSize * sizeof (_yrt_map_entry_t*));
 
     result.data-> minfo = mp-> data-> minfo;
     result.data-> loaded = 0;
@@ -240,7 +235,7 @@ void _yrt_i_map_fit (_yrt_map_t * mp, uint64_t newSize) {
     mp-> data-> loaded = data.loaded;
     mp-> data-> len = data.len;
     mp-> data-> cap = data.cap;
-    mp-> data-> entries = data.entries;
+    _yrt_i_gc_store_ptr ((void**) &(mp-> data-> entries), data.entries);
 }
 
 void _yrt_i_map_copy_entries (_yrt_map_t * result, _yrt_map_t * old) {
@@ -270,8 +265,8 @@ void _yrt_i_map_relink_entries (_yrt_map_t * result, _yrt_map_t * old) {
                 result-> data-> loaded += 1;
             }
 
-            head-> next = result-> data-> entries [index];
-            result-> data-> entries [index] = head;
+            _yrt_i_gc_store_ptr ((void**) &(head-> next), result-> data-> entries [index]);
+            _yrt_i_gc_store_ptr ((void**) &(result-> data-> entries [index]), head);
             result-> data-> len += 1;
 
             head = next;
@@ -295,11 +290,11 @@ _yrt_map_iterator_t * _yrt_map_iter_begin (_yrt_map_t * mp) {
 
     for (uint64_t i = 0 ; i < mp-> data-> cap ; i++) {
         if (mp-> data-> entries [i] != NULL) { // return the first allocated node found in the map
-            _yrt_map_iterator_t * result = (_yrt_map_iterator_t*) GC_malloc (sizeof (_yrt_map_iterator_t));
+            _yrt_map_iterator_t * result = (_yrt_map_iterator_t*) _yrt_i_gc_alloc (sizeof (_yrt_map_iterator_t));
 
-            result-> mp = mp;
+            _yrt_i_gc_store_ptr ((void**) &(result-> mp), mp);
             result-> rootIndex = i;
-            result-> current = mp-> data-> entries [i];
+            _yrt_i_gc_store_ptr ((void**) &(result-> current), mp-> data-> entries [i]);
             result-> notEnd = 1;
 
             return result;
@@ -330,7 +325,7 @@ void _yrt_map_iter_next (_yrt_map_iterator_t * iter) {
     if (iter == NULL || iter-> current == NULL || !iter-> notEnd) return;
 
     if (iter-> current != NULL && iter-> current-> next != NULL) {
-        iter-> current = iter-> current-> next;
+        _yrt_i_gc_store_ptr ((void**) &(iter-> current), iter-> current-> next);
         return;
     }
 
@@ -340,7 +335,7 @@ void _yrt_map_iter_next (_yrt_map_iterator_t * iter) {
         for (uint64_t i = iter-> rootIndex + 1 ; i < iter-> mp-> data-> cap ; i++) {
             if (iter-> mp-> data-> entries [i] != NULL) {
                 iter-> rootIndex = i;
-                iter-> current = iter-> mp-> data-> entries [i];
+                _yrt_i_gc_store_ptr ((void**) &(iter-> current), iter-> mp-> data-> entries [i]);
                 iter-> notEnd = 1;
 
                 return;
@@ -348,13 +343,11 @@ void _yrt_map_iter_next (_yrt_map_iterator_t * iter) {
         }
     }
 
-    iter-> current = NULL;
+    _yrt_i_gc_store_ptr ((void**) &(iter-> current), NULL);
     iter-> rootIndex = iter-> mp-> data-> cap;
     iter-> notEnd = 0;
 }
 
 void _yrt_map_iter_del (_yrt_map_iterator_t * iter) {
-    if (iter != NULL) {
-        GC_free (iter);
-    }
+    (void) iter; // the collector frees it once unreachable
 }

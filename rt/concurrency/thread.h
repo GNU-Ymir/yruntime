@@ -242,9 +242,9 @@ void _yrt_atomic_monitor_exit (void * lock);
 void _yrt_i_atomic_init ();
 
 /**
- * fork() the calling process, quiescing the GC around the call (GC_atfork_prepare/parent/child)
- * so that a fork() racing a concurrent GC_malloc() in a sibling thread cannot corrupt the
- * allocator's internal state (see YMI-104)
+ * fork() the calling process, the locks of the allocations of the collector held around the call
+ * so that a fork() racing an allocation in a sibling thread cannot leave one held in the child
+ * (see YMI-104); the child collects no more
  * @returns: 0 in the child, the child's pid in the parent -- same semantics as libc fork()
  */
 uint32_t _yrt_fork ();
