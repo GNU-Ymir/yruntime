@@ -4,7 +4,9 @@
  *
  * In a handshake the thread parks in the handler of the handshake signal, the top of its stack
  * recorded, until the collector, which reads its stack and its grey buffer meanwhile, lets it go.
- * A thread parked may hold any lock: the collector takes none until it lets it go.
+ * A thread parked may hold any lock: the collector takes none until it lets it go. A thread
+ * interrupted in a write barrier or an assist parks once it is done, so that none is ever parked
+ * with an object shaded but not in its grey buffer yet.
  */
 in thread;
 
@@ -137,6 +139,11 @@ pub extern (C) fn _yrt_i_nh_handshake (sp: usize) {
     if (ts == 0us) return;
 
     let dmut t = thread (ts);
+    if (_yrt_i_nh_load8 (cast!usize (&((*t).busy))) != 0u8) {
+        _yrt_i_nh_store8 (cast!usize (&((*t).deferred)), 1u8);
+        return;
+    }
+
     (*t).sp = sp;
     _yrt_i_nh_store8 (cast!usize (&((*t).parked)), 1u8);
     while (_yrt_i_nh_load8 (cast!usize (&((*t).go))) == 0u8) {
@@ -247,8 +254,7 @@ pub def ROUND_RECLAIM = 3u8;
  * @params:
  *    - kind: the work of the round
  *    - cycle: the number of the cycle
- * @returns: the number of grey objects found, the stacks scanned during a flush, and the threads
- * found running a barrier or an assist
+ * @returns: the number of grey objects found, and the stacks scanned during a flush
  * */
 @{nogc, unsafe}
 pub fn round (kind: u8, cycle: u64)-> usize {
@@ -272,10 +278,6 @@ pub fn round (kind: u8, cycle: u64)-> usize {
                 if ((*t).scanned != cycle) {
                     scanThread (ts);
                     (*t).scanned = cycle;
-                    found = found + 1us;
-                }
-
-                if (_yrt_i_nh_load8 (cast!usize (&((*t).busy))) != 0u8) {
                     found = found + 1us;
                 }
             }
@@ -356,12 +358,18 @@ pub fn enterBusy ()-> usize {
 }
 
 /**
- * Mark the thread `ts` returned by enterBusy as done
+ * Mark the thread `ts` returned by enterBusy as done, parking it if a handshake interrupted it
+ * meanwhile
  * */
 @{nogc, unsafe}
 pub fn leaveBusy (ts: usize) {
     if (ts != 0us) {
-        _yrt_i_nh_store8 (cast!usize (&((*thread (ts)).busy)), 0u8);
+        let dmut t = thread (ts);
+        _yrt_i_nh_store8 (cast!usize (&((*t).busy)), 0u8);
+        if (_yrt_i_nh_load8 (cast!usize (&((*t).deferred))) != 0u8) {
+            _yrt_i_nh_store8 (cast!usize (&((*t).deferred)), 0u8);
+            _yrt_i_nh_park ();
+        }
     } else {
         _yrt_i_nh_sub64 (cast!usize (&((*G ()).foreignBusy)), 1u64);
     }

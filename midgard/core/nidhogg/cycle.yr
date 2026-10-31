@@ -482,9 +482,8 @@ fn verifyMarks () {
 
 /**
  * Park every thread
- * @returns: false iif one of them runs a barrier or an assist, whose shaded objects may not be in
- * its grey buffer yet, or allocates, an object being marked before it is zeroed or holding the
- * lock of the work queue
+ * @returns: false iif one of them allocates, an object being marked before it is zeroed or
+ * holding the lock of the work queue
  * @info: the lock of the threads is held
  * */
 @{nogc, unsafe}
@@ -495,7 +494,7 @@ fn parkAll ()-> bool {
     while (ts != 0us) {
         if (suspend (ts)) {
             let t = thread (ts);
-            if (_yrt_i_nh_load8 (cast!usize (&((*t).busy))) != 0u8 || _yrt_i_nh_load8 (cast!usize (&((*t).inAlloc))) != 0u8) {
+            if (_yrt_i_nh_load8 (cast!usize (&((*t).inAlloc))) != 0u8) {
                 quiet = false;
             }
         }

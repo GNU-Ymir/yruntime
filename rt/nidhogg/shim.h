@@ -120,6 +120,12 @@ void     _yrt_i_nh_spawn (uint8_t which);
 void     _yrt_i_nh_install_handshake (void);
 
 /**
+ * Park the calling thread as the handler of the handshake signal does, a handshake having
+ * interrupted it in a write barrier or an assist
+ * */
+void     _yrt_i_nh_park (void);
+
+/**
  * Unblock the handshake signal in the calling thread
  * */
 void     _yrt_i_nh_unblock_handshake (void);

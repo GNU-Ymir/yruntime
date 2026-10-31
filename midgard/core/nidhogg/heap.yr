@@ -351,11 +351,13 @@ fn newSpan (k: usize)-> usize {
     let npages = ld ({ (*g).classPages } + c * 8us);
     let lock = { (*g).heapLock };
 
+    // initialized under the lock: until then it reads as free, and freePages would merge it with
+    // a neighbour it frees
     _yrt_i_nh_mutex_lock (lock);
     let s = allocPages (npages);
+    initSpan (s, size, (npages * PAGE) / size, k);
     _yrt_i_nh_mutex_unlock (lock);
 
-    initSpan (s, size, (npages * PAGE) / size, k);
     s
 }
 
