@@ -301,6 +301,14 @@ static void _handshake_handler (int sig, siginfo_t * info, void * uctx) {
     errno = saved;
 }
 
+__attribute__ ((noinline)) void _yrt_i_nh_park (void) {
+    // the callee saved registers, which may hold the pointers of the frames above, are pushed
+    // in this frame
+    __builtin_unwind_init ();
+    volatile uint64_t marker = 0;
+    _yrt_i_nh_handshake ((uint64_t) &marker);
+}
+
 void _yrt_i_nh_install_handshake (void) {
     struct sigaction sa;
     memset (&sa, 0, sizeof (sa));
