@@ -313,6 +313,14 @@ and its handler (no fence); `quiesce` waits for the barriers with a `ROUND_ACK` 
 `_yrt_nh_wb` and `_yrt_nh_wb_range` remain for code testing the flag itself, which leaves that gap.
 Stacks, registers and objects are scanned conservatively, interior pointers included.
 
+- `doc/nidhogg.md` is the proof that it never frees a reachable object, step by step against the
+  functions it relies on: a change to the barriers, the handshakes, the allocation or the sweep
+  has to keep the lemma that names it true, or say which one it breaks. It assumes the program
+  has no data race on a pointer field (A6). Its §8 is the gap of a store testing the flag before
+  calling the barrier, which the stores through `_yrt_nh_store_ptr` close. `formal/Nidhogg.tla`
+  models the same algorithm for TLC (`java -cp tla2tools.jar tlc2.TLC -config formal/Small2T.cfg
+  formal/Nidhogg.tla`). A change to the protocol goes into the model too: the passing
+  configurations must still pass, and each failing one must still fail.
 - It is written in Ymir, every function `@nogc` (no barrier, no coverage hook, no GC allocation,
   no call to a non-`@nogc` function — the frontend checks it), its memory coming from `calloc` and
   `mmap`; `rt/nidhogg/shim.c` holds only what Ymir cannot express (atomics, locks, the signal
