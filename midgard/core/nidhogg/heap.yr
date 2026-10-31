@@ -486,16 +486,17 @@ pub fn subLive (freed: u64) {
 
 /**
  * @returns: a span of the list `k` with free objects, for the calling thread to allocate from
+ * @info: the generation is read under the lock of the list, as in release
  * */
 @{nogc, unsafe}
 pub fn refill (k: usize)-> usize {
     let g = G ();
     let lock = ld ({ (*g).listLocks } + k * 8us);
-    let gen = sweepGen ();
     let mut freed = 0u64;
     let mut s = 0us;
 
     _yrt_i_nh_mutex_lock (lock);
+    let gen = sweepGen ();
     {
         loop {
             s = pop ((*g).avail + k * 8us);
@@ -527,17 +528,20 @@ pub fn refill (k: usize)-> usize {
 }
 
 /**
- * Hand the span `s` a thread allocated from back to its list
+ * Hand the span `s` a thread allocated from back to its list. The generation is read under the
+ * lock of the list: read before, it could predate the end of a marking, and the span, from the
+ * generation before, would land in its spans with free objects after toUnswept moved them, to be
+ * swept during the next marking with the marks of that marking, not finished yet
  * */
 @{nogc, unsafe}
 pub fn release (s: usize) {
     let g = G ();
     let dmut x = span (s);
-    let gen = sweepGen ();
     {
         let k = (*x).list;
         let lock = ld ((*g).listLocks + k * 8us);
         _yrt_i_nh_mutex_lock (lock);
+        let gen = sweepGen ();
 
         if ((*x).sweepGen != gen) {
             (*x).state = SPAN_UNSWEPT;
