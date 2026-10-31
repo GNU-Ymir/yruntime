@@ -577,8 +577,10 @@ fn verifyHeap ()-> usize {
 
                             let obj = (*x).base + i * (*x).elemSize;
                             let mut w = obj;
+                            let mut last = 0us;
                             while (w + 8us <= obj + (*x).elemSize) {
-                                if (!verifyWord (ld (w))) {
+                                let v = ld (w);
+                                if (v != last && !verifyWord (v)) {
                                     bad = bad + 1us;
                                     if (bad <= 4us) {
                                         print ("nidhogg: verification failed, the word at offset ");
@@ -590,6 +592,7 @@ fn verifyHeap ()-> usize {
                                     }
                                 }
 
+                                last = v;
                                 w = w + 8us;
                             }
                         }
