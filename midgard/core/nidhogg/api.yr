@@ -20,34 +20,39 @@ pub extern (C) fn _yrt_nh_alloc (size: usize, flags: u8)-> usize {
 
 /**
  * The write barrier of a store of the pointer `val` into the slot `slot`, shading the pointer it
- * overwrites and the one it stores
+ * overwrites and the one it stores. A handshake that parked the thread once the shading was done
+ * may have started a marking the shading was not part of: the shading is done again
  * */
 @nogc
 pub extern (C) fn _yrt_nh_wb (slot: usize, val: usize) {
-    let ts = enterBusy ();
-    if (marking ()) {
-        shadeFromThread (ld (slot));
-        shadeFromThread (val);
-    }
+    loop {
+        let ts = enterBusy ();
+        if (marking ()) {
+            shadeFromThread (ld (slot));
+            shadeFromThread (val);
+        }
 
-    leaveBusy (ts);
+        if (!leaveBusy (ts)) break;
+    }
 }
 
 /**
  * The write barrier of a store of the `size` bytes at `src` into the ones at `dst`, shading what
- * both point to
+ * both point to, again if a handshake parked the thread once it was done (see _yrt_nh_wb)
  * */
 @nogc
 pub extern (C) fn _yrt_nh_wb_range (dst: usize, src: usize, size: usize) {
-    let ts = enterBusy ();
-    if (marking ()) {
-        scanRangeFromThread (dst, dst + size);
-        if (src != 0us) {
-            scanRangeFromThread (src, src + size);
+    loop {
+        let ts = enterBusy ();
+        if (marking ()) {
+            scanRangeFromThread (dst, dst + size);
+            if (src != 0us) {
+                scanRangeFromThread (src, src + size);
+            }
         }
-    }
 
-    leaveBusy (ts);
+        if (!leaveBusy (ts)) break;
+    }
 }
 
 /**

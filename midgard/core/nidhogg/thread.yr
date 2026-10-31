@@ -469,19 +469,23 @@ pub fn enterBusy ()-> usize {
 /**
  * Mark the thread `ts` returned by enterBusy as done, parking it if a handshake interrupted it
  * meanwhile
+ * @returns: true iif it parked
  * */
 @{nogc, unsafe}
-pub fn leaveBusy (ts: usize) {
+pub fn leaveBusy (ts: usize)-> bool {
     if (ts != 0us) {
         let dmut t = thread (ts);
         _yrt_i_nh_store8 (cast!usize (&((*t).busy)), 0u8);
         if (_yrt_i_nh_load8 (cast!usize (&((*t).deferred))) != 0u8) {
             _yrt_i_nh_store8 (cast!usize (&((*t).deferred)), 0u8);
             _yrt_i_nh_park ();
+            return true;
         }
     } else {
         _yrt_i_nh_sub64 (cast!usize (&((*G ()).foreignBusy)), 1u64);
     }
+
+    false
 }
 
 /*!
