@@ -567,25 +567,34 @@ pub fn allocate (size: usize, flags: u8)-> usize {
         real = ((need + PAGE - 1us) / PAGE) * PAGE;
     }
 
-    account (ts, cast!u64 (real));
+    let over = account (ts, cast!u64 (real));
     (*t).inAlloc = 0u8;
+    if (over) {
+        pace ();
+    }
+
     obj
 }
 
 /**
  * Account for `bytes` the thread `ts` allocated: the live heap, its assists while the collector
  * marks, and the trigger of the next cycle
+ * @returns: true iif the live heap reached its hard limit while a cycle runs
  * */
 @{nogc, unsafe}
-fn account (ts: usize, bytes: u64) {
+fn account (ts: usize, bytes: u64)-> bool {
     let g = G ();
     let dmut t = thread (ts);
+    let mut over = false;
 
     (*t).allocated = (*t).allocated + bytes;
     if ((*t).allocated >= ALLOC_BATCH) {
-        if (flushAllocated (ts) >= (*g).goal) {
+        let live = flushAllocated (ts);
+        if (live >= (*g).goal) {
             trigger ();
         }
+
+        over = live >= (*g).hard && collecting ();
     }
 
     if (marking ()) {
@@ -599,6 +608,38 @@ fn account (ts: usize, bytes: u64) {
 
             leaveBusy (b);
         }
+    }
+
+    over
+}
+
+/**
+ * @returns: true while the collector runs a cycle
+ * */
+@{nogc, unsafe}
+fn collecting ()-> bool {
+    {
+        _yrt_i_nh_load8 (cast!usize (&((*G ()).collecting))) != 0u8
+    }
+}
+
+/**
+ * Hold the calling thread, out of any allocation, until the cycle running ends or frees enough
+ * for the live heap to go back under its hard limit: the objects allocated while the collector
+ * marks are kept until the next cycle, a thread allocating faster than it marks would make the
+ * heap grow without bound
+ * */
+@{nogc, unsafe}
+fn pace () {
+    let g = G ();
+    {
+        _yrt_i_nh_mutex_lock ((*g).lock);
+        let cycle = (*g).cycle;
+        while ((*g).collecting != 0u8 && (*g).cycle == cycle && liveHeap (_yrt_i_nh_load64 (cast!usize (&((*g).heapLive)))) >= (*g).hard) {
+            _yrt_i_nh_cond_timedwait ((*g).cond, (*g).lock, PACE_NS);
+        }
+
+        _yrt_i_nh_mutex_unlock ((*g).lock);
     }
 }
 

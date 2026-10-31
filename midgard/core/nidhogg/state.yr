@@ -59,6 +59,11 @@ pub def ALLOC_BATCH = 65536u64;
 pub def MIN_GOAL = 4194304u64;
 
 /**
+ * The longest a thread held past the hard limit of the heap sleeps before it checks it again
+ * */
+pub def PACE_NS = 1000000u64;
+
+/**
  * The states of a span
  * */
 pub def SPAN_FREE    = 0u8;
@@ -207,6 +212,9 @@ pub record Globals {
     pub let mut heapLive : u64;
     pub let mut heapMarked : u64;
     pub let mut goal : u64;
+
+    // the live heap past which a thread allocating while a cycle runs waits for it to end
+    pub let mut hard : u64;
     pub let mut gogc : u64;
 
     // the lock and the condition of the cycles, the number of completed ones and of the one waited for
@@ -373,6 +381,7 @@ fn init () {
         (*g).sweepGen = 2u64;
         (*g).gogc = envNum ("NIDHOGG_GOGC\u{0}", 100u64);
         (*g).goal = MIN_GOAL;
+        (*g).hard = hardLimit (0u64, MIN_GOAL);
         (*g).verify = cast!u8 (envNum ("NIDHOGG_VERIFY\u{0}", 0u64) != 0u64);
         (*g).stats = cast!u8 (envNum ("NIDHOGG_STATS\u{0}", 0u64) != 0u64);
 
@@ -449,4 +458,14 @@ pub fn classOf (size: usize)-> usize {
     }
 
     c
+}
+
+/**
+ * @returns: the hard limit of a heap whose last cycle left `live` bytes and whose next one starts
+ * at `goal`: the growth allowed past the goal once more, and at least the smallest goal
+ * */
+@nogc
+pub fn hardLimit (live: u64, goal: u64)-> u64 {
+    let slack = goal - live;
+    goal + (if (slack < MIN_GOAL) { MIN_GOAL } else { slack })
 }

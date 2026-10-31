@@ -66,6 +66,7 @@ fn runCycle (number: u64) {
     round (ROUND_RECLAIM, number);
     subLive (sweepAll ());
     clearAllMarks ();
+    let before = liveHeap (_yrt_i_nh_load64 (cast!usize (&((*g).heapLive))));
 
     // from the end of this round, every thread runs its write barriers and allocates black
     _yrt_i_nh_store8 (cast!usize (&_yrt_nh_marking), 1u8);
@@ -110,14 +111,19 @@ fn runCycle (number: u64) {
         _yrt_i_nh_mutex_unlock ((*g).finLock);
     }
 
-    subLive (sweepAll ());
+    // what the sweep frees was all allocated before the marking, what was allocated since is
+    // black: the goal grows from what the marking found reachable, not from the objects allocated
+    // meanwhile, which would raise it at each cycle a thread allocates faster than it marks
+    let freed = sweepAll ();
+    subLive (freed);
 
     {
-        let live = liveHeap (_yrt_i_nh_load64 (cast!usize (&((*g).heapLive))));
-        (*g).heapMarked = live;
+        let marked = if (freed < before) { before - freed } else { 0u64 };
+        (*g).heapMarked = marked;
 
-        let goal = live + (live / 100u64) * (*g).gogc;
+        let goal = marked + (marked / 100u64) * (*g).gogc;
         (*g).goal = if (goal < MIN_GOAL) { MIN_GOAL } else { goal };
+        (*g).hard = hardLimit (marked, (*g).goal);
     }
 }
 
