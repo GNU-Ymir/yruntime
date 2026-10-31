@@ -555,11 +555,14 @@ pub fn release (s: usize) {
 }
 
 /**
- * Allocate a large object of `size` bytes in a span of its own, marked if `black`
+ * Allocate a large object of `size` bytes in a span of its own, marked if the collector marks or
+ * the end of a cycle came across it. Whether it is marked is read once it is allocated, under the
+ * lock of the heap: read before, a handshake could scan the stack of the thread before the object
+ * is there, and the sweep at the end of the cycle could free it before it is marked
  * @returns: the address of the object, zeroed as every free page is
  * */
 @{nogc, unsafe}
-pub fn allocLarge (size: usize, noscan: bool, black: bool)-> usize {
+pub fn allocLarge (size: usize, noscan: bool)-> usize {
     let g = G ();
     let npages = (size + PAGE - 1us) / PAGE;
     let lock = { (*g).heapLock };
@@ -575,7 +578,13 @@ pub fn allocLarge (size: usize, noscan: bool, black: bool)-> usize {
         push ((*g).large, s);
     }
 
-    let obj = spanAlloc (s, black);
+    let obj = spanAlloc (s, false);
+    {
+        if (_yrt_i_nh_load8 (cast!usize (&_yrt_nh_marking)) == 1u8 || (*x).sweepGen != sweepGen ()) {
+            st8 ((*x).marks, 1u8);
+        }
+    }
+
     _yrt_i_nh_mutex_unlock (lock);
     obj
 }
