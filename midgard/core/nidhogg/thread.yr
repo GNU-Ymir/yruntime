@@ -146,7 +146,7 @@ pub extern (C) fn _yrt_i_nh_handshake (sp: usize) {
     }
 
     let seq = _yrt_i_nh_load32 (cast!usize (&((*t).req)));
-    if (_yrt_i_nh_load32 (cast!usize (&((*t).go))) == seq) return;
+    if (_yrt_i_nh_load32 (cast!usize (&((*t).go))) == seq || crashing ()) return;
 
     let parks = cast!usize (&((*G ()).parks));
     (*t).sp = sp;
@@ -497,6 +497,16 @@ pub fn leaveBusy (ts: usize)-> bool {
  */
 
 /**
+ * @returns: true iif the calling thread prints the trace of a crash: it allocates from the C
+ * allocator, and never parks, the collector or a parked thread may hold a lock it needs
+ * */
+@{nogc, unsafe}
+pub fn crashing ()-> bool {
+    let crashed = { _yrt_i_nh_load64 (cast!usize (&((*G ()).crashed))) };
+    crashed != 0u64 && crashed == _yrt_i_nh_thread_self ()
+}
+
+/**
  * @returns: true while the collector marks
  * */
 @{nogc, unsafe}
@@ -513,6 +523,10 @@ pub fn marking ()-> bool {
  * */
 @{nogc, unsafe}
 pub fn allocate (size: usize, flags: u8)-> usize {
+    if (crashing ()) {
+        return calloc (1us, size + 1us);
+    }
+
     let mut ts = _yrt_i_nh_get_self ();
     if (ts == 0us) {
         ts = register ();

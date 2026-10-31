@@ -24,9 +24,22 @@ void _yrt_exit (int i) {
     exit (i);
 }
 
+// the seconds the trace of a segfault has to be printed in before the process aborts without it
+#define _YRT_CRASH_TIMEOUT 5
+
+static void _yrt_i_crash_timeout (int sig) {
+    (void) sig;
+    static const char msg [] = "\nthe stack trace could not be resolved in time\n";
+    ssize_t r = write (2, msg, sizeof (msg) - 1);
+    (void) r;
+    signal (SIGABRT, SIG_DFL);
+    abort ();
+}
+
 /**
  * Aborts on the first segfault with a stack trace; a segfault of another thread meanwhile waits
- * for that abort, one of the owner's while resolving the trace aborts without trace
+ * for that abort, one of the owner's while resolving the trace aborts without trace. The trace may
+ * need a lock the faulty code held: the process aborts anyway once _YRT_CRASH_TIMEOUT has passed
  */
 void _yrt_i_bt_sighandler(int sig
 #ifdef __linux__
@@ -38,6 +51,9 @@ void _yrt_i_bt_sighandler(int sig
     pid_t self = (pid_t) syscall (SYS_gettid);
     pid_t expected = 0;
     if (__atomic_compare_exchange_n (&owner, &expected, self, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        signal (SIGALRM, &_yrt_i_crash_timeout);
+        alarm (_YRT_CRASH_TIMEOUT);
+        _yrt_nh_crash ();
         _yrt_i_exc_panic_seg_fault ();
     } else if (expected == self) {
         _yrt_exc_panic_no_trace ();

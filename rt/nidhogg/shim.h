@@ -201,6 +201,7 @@ void     _yrt_nh_register_thread (void);
 void     _yrt_nh_collect (void);
 void     _yrt_nh_wait_finalizers (void);
 void     _yrt_nh_exit (void);
+void     _yrt_nh_crash (void);
 void     _yrt_nh_disable (void);
 void     _yrt_nh_enable (void);
 uint8_t  _yrt_nh_is_enabled (void);

@@ -149,6 +149,16 @@ pub extern (C) fn _yrt_nh_exit () {
 }
 
 /**
+ * Leave the calling thread, which crashed and prints its trace before it aborts, out of the
+ * collector: it allocates from the C allocator, and never parks in a handshake
+ * */
+@nogc
+pub extern (C) fn _yrt_nh_crash () {
+    let dmut g = G ();
+    _yrt_i_nh_store64 (cast!usize (&((*g).crashed)), _yrt_i_nh_thread_self ());
+}
+
+/**
  * Prevent the cycles from starting, until _yrt_nh_enable is called as many times
  * */
 @nogc
