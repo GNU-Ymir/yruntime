@@ -302,7 +302,8 @@ release note, and anything gymir calls has to be changed there in the same breat
 Níðhöggr replaced Boehm: a concurrent, non-moving tri-color mark and sweep collector, close to
 Go's, that never stops all the threads at once. It marks while the program runs, interrupts one
 thread at a time through a handshake (`SIGPWR`, the thread parking in the handler while the
-collector reads its stack and its TLS block), and relies on the write barriers the compiler emits
+collector reads its stack and its TLS block; a thread caught in a barrier or an assist parks once it
+is done, from `leaveBusy`), and relies on the write barriers the compiler emits
 before every store of a pointer out of a frame (`_yrt_nh_wb`, `_yrt_nh_wb_range`,
 `_yrt_nh_store`, tested on `_yrt_nh_marking`), which shade both the overwritten and the stored
 pointer. Stacks, registers and objects are scanned conservatively, interior pointers included.
@@ -322,7 +323,13 @@ pointer. Stacks, registers and objects are scanned conservatively, interior poin
   allocations, peak, collector time and longest per-thread pause at exit) and `NIDHOGG_VERIFY=1`
   (after each mark, every thread parked at once, aborts if a marked object, root or data segment
   points into an unmarked object — the stacks are not checked, their stale words would be false
-  positives) are read at the first allocation.
+  positives) are read at the first allocation. The `nidhogg verify` CI job runs the suite under
+  `NIDHOGG_VERIFY=1 NIDHOGG_GOGC=10`.
+- The verification cannot see a corrupted heap (a span used twice, a page map naming the wrong
+  span), nor a pointer held by a stack only: the stress tests of the collector are the
+  `tests/nidhogg/` cases of the ymir-dev workspace (`uv run tests nidhogg`), threads moving
+  pointers, growing slices and maps, large objects, finalizers, forks and short-lived threads,
+  each run again at `NIDHOGG_GOGC=1` and under the verification (their `.env`).
 - `etc::runtime::gc` exposes `_yrt_gc_collect` (a whole cycle, waited for) and
   `_yrt_gc_wait_finalizers`; finalizers run unordered on a thread of their own, and once more at
   exit.
