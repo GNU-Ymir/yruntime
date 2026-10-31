@@ -320,6 +320,13 @@ both the overwritten and the stored pointer. Stacks, registers and objects are s
   object can free what it points to; memory out of the collector holding collected pointers is
   registered as a root (`_yrt_nh_add_roots`, as the exception headers are).
 - A thread the runtime creates registers before any Ymir code runs on it (`_yrt_i_thread_create`).
+- A thread allocating while a cycle runs, the live heap past its hard limit (the goal plus as much
+  again, grown from what the last marking found reachable), waits for the cycle to end (`pace`):
+  what is allocated during a marking is black, nothing else bounds a thread allocating faster
+  than the collector marks.
+- The segfault handler leaves the faulty thread out of the collector (`_yrt_nh_crash`: it
+  allocates from `calloc` and never parks, the fault may have left a lock of the collector held)
+  and aborts anyway after 5 seconds (`alarm`), if the trace cannot be resolved.
 - `NIDHOGG_GOGC` (heap growth before the next cycle, 100 by default), `NIDHOGG_STATS=1` (cycles,
   allocations, peak, collector time and longest per-thread pause at exit) and `NIDHOGG_VERIFY=1`
   (after each mark, every thread parked at once, aborts if a marked object, root or data segment
