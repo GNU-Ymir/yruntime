@@ -127,9 +127,15 @@ pub record ThreadState {
     // the top of its stack while it is parked in a handshake
     pub let mut sp : usize;
 
-    // 1 while it is parked in a handshake, and when the collector lets it go
-    pub let mut parked : u8;
-    pub let mut go : u8;
+    // the number of the last handshake the collector asked for, of the last one the thread parked
+    // in, and of the last one the collector let it go from; futex words
+    pub let mut req : u32;
+    pub let mut parked : u32;
+    pub let mut go : u32;
+
+    // 1 iif the handshake signal of the current round reached it, and when it was sent
+    pub let mut signaled : u8;
+    pub let mut since : u64;
 
     // the cycle its stack was last scanned in
     pub let mut scanned : u64;
@@ -218,6 +224,9 @@ pub record Globals {
     // the threads, and their lock
     pub let mut threadsLock : usize;
     pub let mut threads : usize;
+
+    // the number of handshakes a thread parked in, a futex word the collector waits on
+    pub let mut parks : u32;
 
     // the full grey buffers the threads handed to the collector, and their lock
     pub let mut workLock : usize;

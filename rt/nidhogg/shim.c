@@ -12,6 +12,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <limits.h>
+#include <linux/futex.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 #if defined(__linux__) && (defined(__x86_64__) || defined(__i386__))
@@ -50,6 +53,18 @@ void _yrt_i_nh_store8 (uint8_t * p, uint8_t v) {
 
 uint8_t _yrt_i_nh_xchg8 (uint8_t * p, uint8_t v) {
     return __atomic_exchange_n (p, v, __ATOMIC_ACQ_REL);
+}
+
+uint32_t _yrt_i_nh_load32 (uint32_t * p) {
+    return __atomic_load_n (p, __ATOMIC_ACQUIRE);
+}
+
+void _yrt_i_nh_store32 (uint32_t * p, uint32_t v) {
+    __atomic_store_n (p, v, __ATOMIC_RELEASE);
+}
+
+uint32_t _yrt_i_nh_add32 (uint32_t * p, uint32_t v) {
+    return __atomic_add_fetch (p, v, __ATOMIC_ACQ_REL);
 }
 
 uint64_t _yrt_i_nh_load64 (uint64_t * p) {
@@ -125,6 +140,14 @@ void _yrt_i_nh_cond_timedwait (void * c, void * m, uint64_t ns) {
 
 void _yrt_i_nh_cond_broadcast (void * c) {
     pthread_cond_broadcast ((pthread_cond_t*) c);
+}
+
+void _yrt_i_nh_futex_wait (uint32_t * p, uint32_t v) {
+    syscall (SYS_futex, p, FUTEX_WAIT_PRIVATE, v, NULL, NULL, 0);
+}
+
+void _yrt_i_nh_futex_wake (uint32_t * p) {
+    syscall (SYS_futex, p, FUTEX_WAKE_PRIVATE, INT_MAX, NULL, NULL, 0);
 }
 
 void _yrt_i_nh_sleep_ns (uint64_t ns) {

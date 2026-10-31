@@ -300,13 +300,14 @@ release note, and anything gymir calls has to be changed there in the same breat
 ### `core::nidhogg` — the garbage collector
 
 Níðhöggr replaced Boehm: a concurrent, non-moving tri-color mark and sweep collector, close to
-Go's, that never stops all the threads at once. It marks while the program runs, interrupts one
-thread at a time through a handshake (`SIGPWR`, the thread parking in the handler while the
-collector reads its stack and its TLS block; a thread caught in a barrier or an assist parks once it
-is done, from `leaveBusy`), and relies on the write barriers the compiler emits
-before every store of a pointer out of a frame (`_yrt_nh_wb`, `_yrt_nh_wb_range`,
-`_yrt_nh_store`, tested on `_yrt_nh_marking`), which shade both the overwritten and the stored
-pointer. Stacks, registers and objects are scanned conservatively, interior pointers included.
+Go's, that never stops all the threads at once. It marks while the program runs, interrupts a few
+threads at a time through a handshake (`SIGPWR`, the thread parking on a futex in the handler while
+the collector reads its stack and its TLS block; a thread caught in a barrier or an assist parks
+once it is done, from `leaveBusy`; a round signals `WINDOW` threads ahead and serves them in the
+order they park, since a thread in a barrier can wait for a lock a parked one holds), and relies
+on the write barriers the compiler emits before every store of a pointer out of a frame
+(`_yrt_nh_wb`, `_yrt_nh_wb_range`, `_yrt_nh_store`, tested on `_yrt_nh_marking`), which shade
+both the overwritten and the stored pointer. Stacks, registers and objects are scanned conservatively, interior pointers included.
 
 - It is written in Ymir, every function `@nogc` (no barrier, no coverage hook, no GC allocation,
   no call to a non-`@nogc` function — the frontend checks it), its memory coming from `calloc` and

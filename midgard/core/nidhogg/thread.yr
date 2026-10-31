@@ -1,10 +1,11 @@
 /**
- * The threads: their registration, the handshake through which the collector interrupts one of
+ * The threads: their registration, the handshake through which the collector interrupts a few of
  * them at a time, the rounds the collector makes over them, and their allocations.
  *
  * In a handshake the thread parks in the handler of the handshake signal, the top of its stack
- * recorded, until the collector, which reads its stack and its grey buffer meanwhile, lets it go.
- * A thread parked may hold any lock: the collector takes none until it lets it go. A thread
+ * recorded, sleeping on a futex until the collector, which reads its stack and its grey buffer
+ * meanwhile, lets it go. A thread parked may hold any lock: the collector takes none until it lets
+ * it go, and never waits for one thread while another is parked. A thread
  * interrupted in a write barrier or an assist parks once it is done, so that none is ever parked
  * with an object shaded but not in its grey buffer yet.
  */
@@ -144,14 +145,85 @@ pub extern (C) fn _yrt_i_nh_handshake (sp: usize) {
         return;
     }
 
+    let seq = _yrt_i_nh_load32 (cast!usize (&((*t).req)));
+    if (_yrt_i_nh_load32 (cast!usize (&((*t).go))) == seq) return;
+
+    let parks = cast!usize (&((*G ()).parks));
     (*t).sp = sp;
-    _yrt_i_nh_store8 (cast!usize (&((*t).parked)), 1u8);
-    while (_yrt_i_nh_load8 (cast!usize (&((*t).go))) == 0u8) {
-        _yrt_i_nh_yield ();
+    _yrt_i_nh_store32 (cast!usize (&((*t).parked)), seq);
+    _yrt_i_nh_add32 (parks, 1u32);
+    _yrt_i_nh_futex_wake (parks);
+
+    // a handshake nested in the park of leaveBusy can let `go` past `seq` before it is read here
+    let go = cast!usize (&((*t).go));
+    while (_yrt_i_nh_load32 (go) == seq - 1u32) {
+        _yrt_i_nh_futex_wait (go, seq - 1u32);
+    }
+}
+
+/**
+ * Ask the thread `ts` to park, sending it the handshake signal
+ * @returns: false iif the thread could not be signaled
+ * */
+@{nogc, unsafe}
+fn request (ts: usize)-> bool {
+    let dmut t = thread (ts);
+    {
+        let seq = _yrt_i_nh_load32 (cast!usize (&((*t).req))) + 1u32;
+        _yrt_i_nh_store32 (cast!usize (&((*t).req)), seq);
+        (*t).since = _yrt_i_nh_now_ns ();
+        if (_yrt_i_nh_signal ((*t).thread) != 0) {
+            _yrt_i_nh_store32 (cast!usize (&((*t).go)), seq);
+            (*t).signaled = 0u8;
+            return false;
+        }
+
+        (*t).signaled = 1u8;
     }
 
-    (*t).sp = 0us;
-    _yrt_i_nh_store8 (cast!usize (&((*t).parked)), 0u8);
+    true
+}
+
+/**
+ * @returns: true iif the thread `ts` parked in the handshake it was last asked for
+ * */
+@{nogc, unsafe}
+fn isParked (ts: usize)-> bool {
+    let t = thread (ts);
+    {
+        _yrt_i_nh_load32 (cast!usize (&((*t).parked))) == _yrt_i_nh_load32 (cast!usize (&((*t).req)))
+    }
+}
+
+/**
+ * @returns: true iif the thread `ts` is parked, and was not let go yet
+ * */
+@{nogc, unsafe}
+pub fn isHeld (ts: usize)-> bool {
+    let t = thread (ts);
+    {
+        isParked (ts) && _yrt_i_nh_load32 (cast!usize (&((*t).go))) != _yrt_i_nh_load32 (cast!usize (&((*t).req)))
+    }
+}
+
+/**
+ * Wait until a thread parks, if none did since `seen` was read from the number of parks
+ * */
+@{nogc, unsafe}
+fn awaitPark (seen: u32) {
+    {
+        _yrt_i_nh_futex_wait (cast!usize (&((*G ()).parks)), seen);
+    }
+}
+
+/**
+ * @returns: the number of handshakes a thread parked in
+ * */
+@{nogc, unsafe}
+fn parks ()-> u32 {
+    {
+        _yrt_i_nh_load32 (cast!usize (&((*G ()).parks)))
+    }
 }
 
 /**
@@ -160,14 +232,11 @@ pub extern (C) fn _yrt_i_nh_handshake (sp: usize) {
  * */
 @{nogc, unsafe}
 pub fn suspend (ts: usize)-> bool {
-    let dmut t = thread (ts);
-    {
-        _yrt_i_nh_store8 (cast!usize (&((*t).go)), 0u8);
-        if (_yrt_i_nh_signal ((*t).thread) != 0) return false;
-
-        while (_yrt_i_nh_load8 (cast!usize (&((*t).parked))) == 0u8) {
-            _yrt_i_nh_yield ();
-        }
+    if (!request (ts)) return false;
+    loop {
+        let seen = parks ();
+        if (isParked (ts)) break;
+        awaitPark (seen);
     }
 
     true
@@ -180,12 +249,10 @@ pub fn suspend (ts: usize)-> bool {
 pub fn resume (ts: usize) {
     let dmut t = thread (ts);
     {
-        _yrt_i_nh_store8 (cast!usize (&((*t).go)), 1u8);
-        while (_yrt_i_nh_load8 (cast!usize (&((*t).parked))) == 1u8) {
-            _yrt_i_nh_yield ();
-        }
-
-        _yrt_i_nh_store8 (cast!usize (&((*t).go)), 0u8);
+        (*t).signaled = 0u8;
+        _yrt_i_nh_store32 (cast!usize (&((*t).go)), _yrt_i_nh_load32 (cast!usize (&((*t).req))));
+        _yrt_i_nh_futex_wake (cast!usize (&((*t).go)));
+        parked ((*t).since);
     }
 }
 
@@ -250,11 +317,18 @@ pub def ROUND_FLUSH   = 2u8;
 pub def ROUND_RECLAIM = 3u8;
 
 /**
- * Interrupt every thread, one at a time, doing the work of the round on it
+ * The number of threads a round signals ahead of the ones it works on
+ * */
+pub def WINDOW = 8us;
+
+/**
+ * Interrupt every thread, doing the work of the round on it
  * @params:
  *    - kind: the work of the round
  *    - cycle: the number of the cycle
  * @returns: the number of grey objects found, and the stacks scanned during a flush
+ * @info: a round other than a reclaim signals up to WINDOW threads at once, and works on them in
+ * the order they park: one of them can wait, in a write barrier, for a lock another one holds
  * */
 @{nogc, unsafe}
 pub fn round (kind: u8, cycle: u64)-> usize {
@@ -262,31 +336,65 @@ pub fn round (kind: u8, cycle: u64)-> usize {
     let mut found = 0us;
 
     _yrt_i_nh_mutex_lock ((*g).threadsLock);
-    let mut ts = ld ((*g).threads);
-    while (ts != 0us) {
-        let dmut t = thread (ts);
-        let since = _yrt_i_nh_now_ns ();
-        if (kind == ROUND_RECLAIM) {
+    if (kind == ROUND_RECLAIM) {
+        let mut ts = ld ((*g).threads);
+        while (ts != 0us) {
             reclaim (ts);
-        } else if (suspend (ts)) {
-            if (kind == ROUND_SCAN) {
-                scanThread (ts);
-                (*t).scanned = cycle;
-                found = found + takeGrey (ts);
-            } else if (kind == ROUND_FLUSH) {
-                found = found + takeGrey (ts);
-                if ((*t).scanned != cycle) {
-                    scanThread (ts);
-                    (*t).scanned = cycle;
-                    found = found + 1us;
-                }
-            }
-
-            resume (ts);
-            parked (since);
+            ts = (*thread (ts)).next;
         }
 
-        ts = (*t).next;
+        _yrt_i_nh_mutex_unlock ((*g).threadsLock);
+        return 0us;
+    }
+
+    let mut first = ld ((*g).threads);
+    let mut ahead = first;
+    let mut inflight = 0us;
+    loop {
+        while (ahead != 0us && inflight < WINDOW) {
+            if (request (ahead)) {
+                inflight = inflight + 1us;
+            }
+
+            ahead = (*thread (ahead)).next;
+        }
+
+        if (inflight == 0us) break;
+
+        let seen = parks ();
+        let mut served = 0us;
+        let mut ts = first;
+        while (ts != ahead) {
+            let dmut t = thread (ts);
+            if ((*t).signaled == 1u8 && isParked (ts)) {
+                if (kind == ROUND_SCAN) {
+                    scanThread (ts);
+                    (*t).scanned = cycle;
+                    found = found + takeGrey (ts);
+                } else if (kind == ROUND_FLUSH) {
+                    found = found + takeGrey (ts);
+                    if ((*t).scanned != cycle) {
+                        scanThread (ts);
+                        (*t).scanned = cycle;
+                        found = found + 1us;
+                    }
+                }
+
+                resume (ts);
+                served = served + 1us;
+            }
+
+            ts = (*t).next;
+        }
+
+        inflight = inflight - served;
+        while (first != ahead && (*thread (first)).signaled == 0u8) {
+            first = (*thread (first)).next;
+        }
+
+        if (served == 0us) {
+            awaitPark (seen);
+        }
     }
 
     _yrt_i_nh_mutex_unlock ((*g).threadsLock);
@@ -301,20 +409,21 @@ pub fn round (kind: u8, cycle: u64)-> usize {
  * */
 @{nogc, unsafe}
 fn reclaim (ts: usize) {
+    let inAlloc = cast!usize (&((*thread (ts)).inAlloc));
     loop {
-        let since = _yrt_i_nh_now_ns ();
+        while (_yrt_i_nh_load8 (inAlloc) != 0u8) {
+            _yrt_i_nh_yield ();
+        }
+
         if (!suspend (ts)) return;
-        if (_yrt_i_nh_load8 (cast!usize (&((*thread (ts)).inAlloc))) == 0u8) {
+        if (_yrt_i_nh_load8 (inAlloc) == 0u8) {
             releaseCache (ts);
             flushAllocated (ts);
             resume (ts);
-            parked (since);
             return;
         }
 
         resume (ts);
-        parked (since);
-        _yrt_i_nh_yield ();
     }
 }
 

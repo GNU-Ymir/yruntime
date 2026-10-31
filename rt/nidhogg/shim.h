@@ -41,6 +41,14 @@ void     _yrt_i_nh_store8 (uint8_t * p, uint8_t v);
  * */
 uint8_t  _yrt_i_nh_xchg8 (uint8_t * p, uint8_t v);
 
+uint32_t _yrt_i_nh_load32 (uint32_t * p);
+void     _yrt_i_nh_store32 (uint32_t * p, uint32_t v);
+
+/**
+ * @returns: the value of '*p' after 'v' was added to it
+ * */
+uint32_t _yrt_i_nh_add32 (uint32_t * p, uint32_t v);
+
 uint64_t _yrt_i_nh_load64 (uint64_t * p);
 void     _yrt_i_nh_store64 (uint64_t * p, uint64_t v);
 
@@ -79,6 +87,16 @@ void     _yrt_i_nh_cond_wait (void * c, void * m);
  * */
 void     _yrt_i_nh_cond_timedwait (void * c, void * m, uint64_t ns);
 void     _yrt_i_nh_cond_broadcast (void * c);
+
+/**
+ * Sleep until '*p' is woken up, if it is still 'v'
+ * */
+void     _yrt_i_nh_futex_wait (uint32_t * p, uint32_t v);
+
+/**
+ * Wake up every thread sleeping on '*p'
+ * */
+void     _yrt_i_nh_futex_wake (uint32_t * p);
 
 void     _yrt_i_nh_sleep_ns (uint64_t ns);
 void     _yrt_i_nh_yield (void);
