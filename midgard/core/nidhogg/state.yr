@@ -49,6 +49,13 @@ pub def GREY_WORDS = 1024us;
 pub def MARK_CAP = 67108864us;
 
 /**
+ * The bytes reserved for the copies of the stacks of the parked threads, reserved but not
+ * committed, and the bytes of them left committed between two rounds
+ * */
+pub def COPY_CAP = 67108864us;
+pub def COPY_KEEP = 1048576us;
+
+/**
  * The bytes a thread allocates between two updates of the live heap, and two assists
  * */
 pub def ALLOC_BATCH = 65536u64;
@@ -255,6 +262,10 @@ pub record Globals {
     pub let mut markStack : usize;
     pub let mut markTop : usize;
 
+    // the copies of the stacks of the threads a round served, to scan, and their bytes
+    pub let mut copies : usize;
+    pub let mut copiesLen : usize;
+
     // the roots registered by the runtime, as pairs of bounds
     pub let mut rootsLock : usize;
     pub let mut roots : usize;
@@ -416,6 +427,13 @@ fn init () {
         }
 
         (*g).markStack = stack;
+
+        let copies = mmap (0us, COPY_CAP, PROT_RW, MAP_ANON_PRIVATE | MAP_NORESERVE, -1, 0i64);
+        if (copies == MAP_FAILED) {
+            fatal ("nidhogg: cannot reserve the copies of the stacks\n");
+        }
+
+        (*g).copies = copies;
         _yrt_i_nh_globals = addr;
     }
 

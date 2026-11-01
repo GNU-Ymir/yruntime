@@ -316,15 +316,53 @@ fn parked (ts: usize) {
 }
 
 /**
- * Scan the stack and the TLS block of the thread `ts`, parked
+ * Copy the stack and the TLS block of the thread `ts`, parked, to be scanned once it goes
+ * (scanCopies), or scan them at once if the copies have no room for them
  * */
 @{nogc, unsafe}
-fn scanThread (ts: usize) {
+fn copyThread (ts: usize) {
+    let dmut g = G ();
     let dmut t = thread (ts);
     {
-        scanRange ((*t).sp, (*t).stackHi);
-        scanRange ((*t).tlsLo, (*t).tlsHi);
-        (*t).parkWords = cast!u64 (((*t).stackHi - (*t).sp) / 8us + ((*t).tlsHi - (*t).tlsLo) / 8us);
+        let stackLo = (((*t).sp + 7us) / 8us) * 8us;
+        let stackLen = if ((*t).stackHi > stackLo) { (((*t).stackHi - stackLo) / 8us) * 8us } else { 0us };
+        let tlsLo = (((*t).tlsLo + 7us) / 8us) * 8us;
+        let tlsLen = if ((*t).tlsHi > tlsLo) { (((*t).tlsHi - tlsLo) / 8us) * 8us } else { 0us };
+        let need = stackLen + tlsLen;
+        (*t).parkWords = cast!u64 (need / 8us);
+
+        if ((*g).copiesLen + need > COPY_CAP) {
+            scanCopies ();
+        }
+
+        if (need > COPY_CAP) {
+            scanRange (stackLo, stackLo + stackLen);
+            scanRange (tlsLo, tlsLo + tlsLen);
+            return;
+        }
+
+        memmove ((*g).copies + (*g).copiesLen, stackLo, stackLen);
+        memmove ((*g).copies + (*g).copiesLen + stackLen, tlsLo, tlsLen);
+        (*g).copiesLen = (*g).copiesLen + need;
+    }
+}
+
+/**
+ * Scan the copies of the stacks made since the last time, and decommit what they took past COPY_KEEP
+ * */
+@{nogc, unsafe}
+fn scanCopies () {
+    let dmut g = G ();
+    {
+        let len = (*g).copiesLen;
+        if (len == 0us) return;
+
+        scanRange ((*g).copies, (*g).copies + len);
+        if (len > COPY_KEEP) {
+            madvise ((*g).copies + COPY_KEEP, len - COPY_KEEP, MADV_DONTNEED);
+        }
+
+        (*g).copiesLen = 0us;
     }
 }
 
@@ -377,7 +415,8 @@ pub def WINDOW = 8us;
  * the order they park: one of them can wait, in a write barrier, for a lock another one holds.
  * The threads served in a pass are woken at once at its end, so that the first one woken taking
  * the processor of the collector leaves none of the others parked. A thread acknowledging a
- * ROUND_ACK does not wait for the collector
+ * ROUND_ACK does not wait for the collector, and the stacks are scanned from their copies once
+ * every thread went
  * */
 @{nogc, unsafe}
 pub fn round (kind: u8, cycle: u64)-> usize {
@@ -418,13 +457,13 @@ pub fn round (kind: u8, cycle: u64)-> usize {
             if ((*t).signaled == 1u8 && isParked (ts)) {
                 (*t).servedAt = _yrt_i_nh_now_ns ();
                 if (kind == ROUND_SCAN) {
-                    scanThread (ts);
+                    copyThread (ts);
                     (*t).scanned = cycle;
                     found = found + takeGrey (ts);
                 } else if (kind == ROUND_FLUSH) {
                     found = found + takeGrey (ts);
                     if ((*t).scanned != cycle) {
-                        scanThread (ts);
+                        copyThread (ts);
                         (*t).scanned = cycle;
                         found = found + 1us;
                     }
@@ -451,6 +490,7 @@ pub fn round (kind: u8, cycle: u64)-> usize {
         }
     }
 
+    scanCopies ();
     _yrt_i_nh_mutex_unlock ((*g).threadsLock);
     found
 }

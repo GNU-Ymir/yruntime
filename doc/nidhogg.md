@@ -23,19 +23,21 @@ interior pointers included, one byte past its end too (`allocate` adds that byte
 **Roots.** The writable segments of the loaded objects (`_yrt_i_nh_data_segments`), the ranges the
 runtime registers (`_yrt_nh_add_roots`), the objects whose finalizer is queued
 (`scanFinalizerQueue`), and for every registered thread its stack from the address it parked at up
-to its top, its registers, and its static TLS block (`scanThread`). An object is *reachable* when a
+to its top, its registers, and its static TLS block (`copyThread`). An object is *reachable* when a
 chain of pointers leads to it from a root.
 
 **Colors during the marking of cycle *N*.** An object is *white* while unmarked, *grey* while
 marked and in a set of objects to scan (the mark stack of the collector, a grey buffer of a thread,
 a buffer handed over in `work`), *black* while marked and not grey. A thread is *grey* until its
-stack is scanned in the cycle (`ROUND_SCAN`, or `ROUND_FLUSH` for a thread registered since),
-*black* afterwards.
+stack is copied in the cycle (`copyThread`, in `ROUND_SCAN`, or `ROUND_FLUSH` for a thread
+registered since), *black* afterwards. The *copy* holds the words of its stack, registers and TLS
+block at its park, and is scanned once the round let the threads go (`scanCopies`), before the
+round ends.
 
 **Times of cycle *N*.**
 - *M*: `_yrt_nh_marking` is set to 1, followed by a fence (`runCycle`).
 - *a(T)*: thread *T* acknowledges the handshake of the `ROUND_ACK` round.
-- *s(T)*: the collector scans *T*'s stack.
+- *s(T)*: the collector copies *T*'s stack.
 - *E*: the `ROUND_FLUSH` round after which `terminate` stops (the last one, after `finalize`).
 - *G*: `sweepGen` is increased by 2, then `toUnswept`, `_yrt_nh_marking` is set to 0, `quiesce`
   (a `ROUND_ACK` round), and `sweepAll`.
@@ -104,8 +106,8 @@ fence: `quiesce` waits for the barriers with a round, not by reading it. ∎
 **Lemma 2 (liveness).** A round ends.
 
 *Proof.* A thread is parked only between its request and its release, and the collector takes no
-lock while one is parked: the work of `ROUND_SCAN`, `ROUND_FLUSH` and `ROUND_ACK` is lock free
-(`scanThread`, `takeGrey`, `markPush`). A thread the collector waits for can be blocked by a parked
+lock while one is parked: the work of `ROUND_SCAN` and `ROUND_FLUSH` is lock free (`copyThread`,
+`takeGrey`, `markPush`), and a `ROUND_ACK` does no work. A thread the collector waits for can be blocked by a parked
 one: a barrier of *T* calling `link`, which takes `workLock`, while a parked *U* holds it. That is
 why `round` never waits for one given thread. It waits until any thread in its window parks
 (`awaitPark` on the futex `parks`), and serves every parked thread it finds, so *U* is released
@@ -117,8 +119,8 @@ list locks (`releaseCache`), so it parks one thread at a time, and it parks *T* 
 
 ## 3. What the barriers keep
 
-Write *P(W)*, "*W* is protected", for: *W* is reachable from a grey object or from the stack of a
-grey thread through white objects only.
+Write *P(W)*, "*W* is protected", for: *W* is reachable from a grey object, from a copy not scanned
+yet, or from the stack of a grey thread, through white objects only.
 
 **Invariant WT (weak tricolor), on [*s₀*, *G*], where *s₀* is the first stack scan of the
 cycle.** Every white object pointed to by a black object, by a root other than a stack, or by the
@@ -132,8 +134,14 @@ apart from what was stored into them through a barrier, and the roots were scann
 
 - **Shading** (`shade`) turns a white object grey. That only removes white objects and adds grey
   ones, which can only protect more.
-- **Scanning an object or a stack** (`scanObject`, `scanThread`) shades every word of it before
-  making it black, so no white object is left pointed to by it.
+- **Scanning an object or a copy** (`scanObject`, `scanCopies`) shades every word of it before
+  making it black or dropping it, so no white object is left pointed to by it.
+- **Copying a stack** (`copyThread`), its thread parked, makes the thread black. Every white
+  object its stack, registers or TLS block point to is then pointed to by the copy, which nothing
+  writes to until it is scanned, so it is protected. A stack scanned in place once its thread went
+  would not do: no barrier sees a store into the thread's own frame, so a pointer moved from a slot
+  not scanned yet to one already scanned would be missed. A stack scanned in place while its
+  thread is parked, when the copies have no room for it, is the step above.
 - **A thread loads a pointer to *W***, white, from a location *L* it already holds. If *L* is in a
   black object, *W* is protected by WT. If *L* is in a grey object, *W* is reachable from it. If
   *L* is in a white object *O*, *O* is held by the thread: a black thread's *O* is protected, so
@@ -195,16 +203,17 @@ run in about ten. ∎
 white.
 
 *Proof.* `terminate` drains the mark stack and the buffers in `work` (`drain`), then runs a
-`ROUND_FLUSH`. That round moves every thread's grey buffer onto the mark stack (`takeGrey`) and
-scans every stack not scanned yet in the cycle, then drains again. The loop stops when nothing was
-found: no buffer held an object, no stack was left to scan, no buffer was handed over, no assist
+`ROUND_FLUSH`. That round moves every thread's grey buffer onto the mark stack (`takeGrey`),
+copies every stack not copied yet in the cycle and scans the copies, then drains again. The loop
+stops when nothing was found: no buffer held an object, no stack was left to copy, no buffer was
+handed over, no assist
 started (`assists` unchanged), and no thread unknown to the collector was in a barrier
 (`foreignBusy`).
 
 Suppose a thread shaded a white object after its own flush in that round. Take the first such
 shade, at time *t*, of *W*. By Lemma 3, *W* was protected just before *t*. Every stack had already
-been scanned (by `ROUND_SCAN`, or by this round for a thread registered since), so the protection
-came from a grey object *Q*. *Q* became grey in a buffer, the mark stack, or `work`. If before the
+been copied (by `ROUND_SCAN`, or by an earlier round for a thread registered since), and every copy
+scanned by the round that made it, so the protection came from a grey object *Q*. *Q* became grey in a buffer, the mark stack, or `work`. If before the
 round, *Q* was drained or found in a thread's buffer (that round then finds something, a
 contradiction). If during the round, it came from a shade before the shading thread's flush (found)
 or after it (earlier than *t*, against the choice of *t*). Assists move buffers out of `work`
@@ -263,31 +272,35 @@ the body of the barrier, and the store. A handshake parks a thread before the te
 or between the body and the store, after which the body runs again (`_yrt_nh_wb`). The stores of
 `_yrt_nh_store_ptr` never park there, so they are one of the behaviors the model checks. The collector clears
 the marks, sets the flag, and runs the `ROUND_ACK`, root and `ROUND_SCAN` rounds (serving the
-threads in the order they park, a thread acknowledging the `ROUND_ACK` going on at once). It then drains and runs `ROUND_FLUSH` rounds until one finds
+threads in the order they park, a thread acknowledging the `ROUND_ACK` going on at once, the stack
+of a thread served being copied, and the copy scanned in a step of its own, before the round ends,
+while the threads run). It then drains and runs `ROUND_FLUSH` rounds until one finds
 nothing, and sweeps. `Safe` states that every object reachable from the global, a stack or the heap
 is allocated. TLC explores every interleaving of an instance. With `Lifecycle`, threads are also
 spawned (the parent keeping what it hands over on its stack until the child registered), register
 outside the rounds, and exit (their grey buffer handed over, their stack no longer a root). The
 model leaves out the arithmetic (the page map, the size classes), the span lists and the lazy
-sweeping (its sweep is one atomic step), assists, and finalizers. The race of `release` in Lemma 6
+sweeping (its sweep is one atomic step), assists, and finalizers. A stack being a set scanned in
+one step, the model cannot show why it is copied: scanning it in place once its thread went holds
+there too. The race of `release` in Lemma 6
 lived in that gap: the stress tests found it, and assertions in the collector located it.
 
 | configuration | threads, objects | what it changes | result |
 |---|---|---|---|
-| `Small1T.cfg` | 1, 3 | nothing | holds: 801,579 states, the whole graph |
-| `Small2T.cfg` | 2, 2 | nothing | holds: 1,713,169 states, the whole graph |
+| `Small1T.cfg` | 1, 3 | nothing | holds: 1,920,549 states, the whole graph |
+| `Small2T.cfg` | 2, 2 | nothing | holds: 6,823,054 states, the whole graph |
 | `Nidhogg.cfg` | 2, 3 | nothing | holds: 133,420,992 states, the whole graph (21 minutes on 8 cores) |
-| `Life2T.cfg` | 2, 2 | with `Lifecycle` | holds: 3,220,293 states, the whole graph |
+| `Life2T.cfg` | 2, 2 | with `Lifecycle` | holds: 12,244,929 states, the whole graph |
 | `Life3T.cfg` | 3, 2 | with `Lifecycle` | holds: 153,415,832 states, the whole graph (78 minutes on 8 cores) |
 | `Life.cfg` | 2, 3 | with `Lifecycle` | holds: 255,134,049 states, the whole graph (57 minutes on 8 cores) |
-| `NoScanNew.cfg` | 2, 2 | with `Lifecycle`, a flush round no longer scans a thread registered since the SCAN round | holds: 3,219,597 states, the whole graph |
-| `LargeEarly.cfg` | 2, 2 | black decided before the object exists (`allocLarge` before the fix) | fails in 19 steps |
-| `NoRedo.cfg` | 1, 2 | `leaveBusy` parks without shading again (the barrier before the fix) | fails in 29 steps |
-| `TestStoreGap.cfg` | 2, 2 | a handshake between a test of the flag before `_yrt_nh_wb` and the store (A5 dropped) | fails in 23 steps |
-| `Racy.cfg` | 2, 2 | two threads storing into one slot at once (A6 dropped) | fails in 34 steps |
-| `NoShadeOld.cfg` | 1, 2 | the barrier without its deletion half | fails in 25 steps |
-| `NoShadeNew.cfg` | 2, 2 | the barrier without its insertion half | fails in 23 steps |
-| `ExitDropsGrey.cfg` | 2, 3 | with `Lifecycle`, a thread exiting drops its grey buffer | fails in 30 steps |
+| `NoScanNew.cfg` | 2, 2 | with `Lifecycle`, a flush round no longer scans a thread registered since the SCAN round | holds: 9,563,069 states, the whole graph |
+| `LargeEarly.cfg` | 2, 2 | black decided before the object exists (`allocLarge` before the fix) | fails in 21 steps |
+| `NoRedo.cfg` | 1, 2 | `leaveBusy` parks without shading again (the barrier before the fix) | fails in 31 steps |
+| `TestStoreGap.cfg` | 2, 2 | a handshake between a test of the flag before `_yrt_nh_wb` and the store (A5 dropped) | fails in 25 steps |
+| `Racy.cfg` | 2, 2 | two threads storing into one slot at once (A6 dropped) | fails in 36 steps |
+| `NoShadeOld.cfg` | 1, 2 | the barrier without its deletion half | fails in 26 steps |
+| `NoShadeNew.cfg` | 2, 2 | the barrier without its insertion half | fails in 25 steps |
+| `ExitDropsGrey.cfg` | 2, 3 | with `Lifecycle`, a thread exiting drops its grey buffer | fails in 23 steps |
 
 The failing configurations are what make the passing ones mean something: the model notices every
 defect it is given, and each trace is a scenario the code allows, in the same steps.
