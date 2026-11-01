@@ -113,9 +113,9 @@ why `round` never waits for one given thread. It waits until any thread in its w
 (`awaitPark` on the futex `parks`), and serves every parked thread it finds, so *U* is released
 and *T* can go on. A thread blocked in a lock, in `pace`, or in a system call takes the signal and
 parks (A4). The handler wakes `parks` after storing `parked`, and `awaitPark` sleeps only while
-`parks` still holds the value read before the check, so no wake-up is lost. `ROUND_RECLAIM` takes
-list locks (`releaseCache`), so it parks one thread at a time, and it parks *T* only after reading
-`inAlloc == 0`. ∎
+`parks` still holds the value read before the check, so no wake-up is lost. `ROUND_RECLAIM` parks
+one thread at a time, and *T* only after reading `inAlloc == 0`: it takes the spans of *T*'s cache
+while *T* is parked, and hands them back to their lists, which takes their locks, once *T* went. ∎
 
 ## 3. What the barriers keep
 

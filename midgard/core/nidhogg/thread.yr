@@ -499,11 +499,13 @@ pub fn round (kind: u8, cycle: u64)-> usize {
  * Take back the spans the thread `ts` allocates from, so that every span is swept before the
  * collector forgets the marks of the last cycle, and add what it allocated to the live heap. The
  * thread is parked out of an allocation and of a fork, when it holds no lock of a list and no span
- * but the ones of its cache.
+ * but the ones of its cache; the spans are handed back to their lists once it went, the lock of a
+ * list being held by a thread sweeping a span.
  * */
 @{nogc, unsafe}
 fn reclaim (ts: usize) {
     let inAlloc = cast!usize (&((*thread (ts)).inAlloc));
+    let taken = { (*G ()).reclaimed };
     loop {
         while (_yrt_i_nh_load8 (inAlloc) != 0u8) {
             _yrt_i_nh_yield ();
@@ -511,9 +513,22 @@ fn reclaim (ts: usize) {
 
         if (!suspend (ts)) return;
         if (_yrt_i_nh_load8 (inAlloc) == 0u8) {
-            releaseCache (ts);
+            let cache = { (*thread (ts)).cache };
+            for k in 0us .. NLISTS {
+                st (taken + k * 8us, ld (cache + k * 8us));
+                st (cache + k * 8us, 0us);
+            }
+
             flushAllocated (ts);
             resume (ts);
+
+            for k in 0us .. NLISTS {
+                let s = ld (taken + k * 8us);
+                if (s != 0us) {
+                    release (s);
+                }
+            }
+
             return;
         }
 

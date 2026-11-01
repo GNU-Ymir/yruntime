@@ -262,6 +262,9 @@ pub record Globals {
     pub let mut markStack : usize;
     pub let mut markTop : usize;
 
+    // the address of NLISTS words, the spans a reclaim took from the cache of a thread
+    pub let mut reclaimed : usize;
+
     // the copies of the stacks of the threads a round served, to scan, and their bytes
     pub let mut copies : usize;
     pub let mut copiesLen : usize;
@@ -304,6 +307,7 @@ pub record Globals {
     pub let mut statParks : u64;
     pub let mut statParkNs : u64;
     pub let mut statLongestSignal : u64;
+
     pub let mut statMarkNs : u64;
     pub let mut statPeak : u64;
 }
@@ -393,6 +397,7 @@ fn init () {
         (*g).classPages = words (NCLASSES);
         initClasses ((*g).classSize, (*g).classPages);
 
+        (*g).reclaimed = words (NLISTS);
         (*g).listLocks = words (NLISTS);
         (*g).avail = words (NLISTS);
         (*g).full = words (NLISTS);
