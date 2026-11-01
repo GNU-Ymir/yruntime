@@ -148,6 +148,7 @@ pub extern (C) fn _yrt_i_nh_handshake (sp: usize) {
 
     let parks = cast!usize (&((*G ()).parks));
     (*t).sp = sp;
+    (*t).parkedAt = _yrt_i_nh_now_ns ();
     _yrt_i_nh_store32 (cast!usize (&((*t).parked)), seq);
     _yrt_i_nh_add32 (parks, 1u32);
     _yrt_i_nh_futex_wake (parks);
@@ -170,6 +171,7 @@ fn request (ts: usize)-> bool {
         let seq = _yrt_i_nh_load32 (cast!usize (&((*t).req))) + 1u32;
         _yrt_i_nh_store32 (cast!usize (&((*t).req)), seq);
         (*t).since = _yrt_i_nh_now_ns ();
+        (*t).parkWords = 0u64;
         if (_yrt_i_nh_signal ((*t).thread) != 0) {
             _yrt_i_nh_store32 (cast!usize (&((*t).go)), seq);
             (*t).signaled = 0u8;
@@ -237,6 +239,9 @@ pub fn suspend (ts: usize)-> bool {
         awaitPark (seen);
     }
 
+    let dmut t = thread (ts);
+    (*t).servedAt = _yrt_i_nh_now_ns ();
+
     true
 }
 
@@ -250,20 +255,31 @@ pub fn resume (ts: usize) {
         (*t).signaled = 0u8;
         _yrt_i_nh_store32 (cast!usize (&((*t).go)), _yrt_i_nh_load32 (cast!usize (&((*t).req))));
         _yrt_i_nh_futex_wake (cast!usize (&((*t).go)));
-        parked ((*t).since);
+        parked (ts);
     }
 }
 
 /**
- * Record how long a thread was parked
+ * Record how long the thread `ts` was parked, from its park to its release, and how long its
+ * handshake signal took to reach it
  * */
 @{nogc, unsafe}
-fn parked (since: u64) {
+fn parked (ts: usize) {
     let dmut g = G ();
-    let d = _yrt_i_nh_now_ns () - since;
+    let t = thread (ts);
     {
+        let d = _yrt_i_nh_now_ns () - (*t).parkedAt;
+        let signal = (*t).parkedAt - (*t).since;
+        if (signal > (*g).statLongestSignal) {
+            (*g).statLongestSignal = signal;
+        }
+
+        (*g).statParks = (*g).statParks + 1u64;
+        (*g).statParkNs = (*g).statParkNs + d;
         if (d > (*g).statLongestPark) {
             (*g).statLongestPark = d;
+            (*g).statParkWait = (*t).servedAt - (*t).parkedAt;
+            (*g).statParkWords = (*t).parkWords;
         }
     }
 }
@@ -273,10 +289,11 @@ fn parked (since: u64) {
  * */
 @{nogc, unsafe}
 fn scanThread (ts: usize) {
-    let t = thread (ts);
+    let dmut t = thread (ts);
     {
         scanRange ((*t).sp, (*t).stackHi);
         scanRange ((*t).tlsLo, (*t).tlsHi);
+        (*t).parkWords = cast!u64 (((*t).stackHi - (*t).sp) / 8us + ((*t).tlsHi - (*t).tlsLo) / 8us);
     }
 }
 
@@ -365,6 +382,7 @@ pub fn round (kind: u8, cycle: u64)-> usize {
         while (ts != ahead) {
             let dmut t = thread (ts);
             if ((*t).signaled == 1u8 && isParked (ts)) {
+                (*t).servedAt = _yrt_i_nh_now_ns ();
                 if (kind == ROUND_SCAN) {
                     scanThread (ts);
                     (*t).scanned = cycle;
