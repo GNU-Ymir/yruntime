@@ -89,6 +89,11 @@ pub def MAX_RATIO = 4194304u64;
 pub def PUBLISH_EVERY = 256us;
 
 /**
+ * The number of cycles in a row at whose end a chunk is entirely free before it is unmapped
+ * */
+pub def IDLE_CYCLES = 2us;
+
+/**
  * The longest a thread held past the hard limit of the heap sleeps before it checks it again
  * */
 pub def PACE_NS = 1000000u64;
@@ -216,9 +221,11 @@ pub record ThreadState {
  * The global state of the collector
  * */
 pub record Globals {
-    // the first level of the page map, and the chunks of the heap
+    // the first level of the page map, the chunks of the heap, and for each the number of cycles in
+    // a row at whose end it was entirely free
     pub let mut l1 : usize;
     pub let mut chunks : usize;
+    pub let mut chunkIdle : usize;
     pub let mut nchunks : usize;
     pub let mut capChunks : usize;
 
@@ -372,6 +379,7 @@ pub record Globals {
     pub let mut statRescans : u64;
     pub let mut statAssistWork : u64;
     pub let mut statShared : u64;
+    pub let mut statUnmapped : u64;
 
     pub let mut statMarkNs : u64;
     pub let mut statPeak : u64;
@@ -455,6 +463,7 @@ fn init () {
         (*g).work = words (1us);
         (*g).capChunks = 64us;
         (*g).chunks = words (64us);
+        (*g).chunkIdle = words (64us);
         (*g).heapLo = 18446744073709551615us;
         (*g).heapLock = _yrt_i_nh_mutex_new ();
 
