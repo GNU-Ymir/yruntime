@@ -81,7 +81,10 @@ handles request *k*, `go` is `k - 1` or `k`. The handler reads `seq = req`. It r
 `parked = seq` with release ordering, then wakes the futex `parks`. The collector reads `parked`
 with acquire ordering, so `sp` and *T*'s earlier writes happen before what the collector does next.
 *T* then sleeps while `go == seq - 1`. That is the only value `go` can hold before the collector
-releases *T*. If a handshake nested in a park started from `leaveBusy` has already pushed `go` past
+releases *T*. It sleeps on the futex `releases`, which the collector increments after each store
+of a `go` (`letGo`) and wakes once a pass is done (`wakeReleased`): *T* reads `releases` before
+`go`, so a release falling between its read of `go` and its sleep has changed `releases`, and the
+sleep returns at once. If a handshake nested in a park started from `leaveBusy` has already pushed `go` past
 `seq`, the loop still ends: it waits for `go` to leave `seq - 1`, not for `go == seq`, and waiting
 for equality was the deadlock found in this branch. The collector stores `go` with release
 ordering, so its writes are visible to *T* after it resumes.

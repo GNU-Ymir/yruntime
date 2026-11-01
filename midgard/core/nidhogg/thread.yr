@@ -155,8 +155,11 @@ pub extern (C) fn _yrt_i_nh_handshake (sp: usize) {
 
     // a handshake nested in the park of leaveBusy can let `go` past `seq` before it is read here
     let go = cast!usize (&((*t).go));
-    while (_yrt_i_nh_load32 (go) == seq - 1u32) {
-        _yrt_i_nh_futex_wait (go, seq - 1u32);
+    let releases = cast!usize (&((*G ()).releases));
+    loop {
+        let r = _yrt_i_nh_load32 (releases);
+        if (_yrt_i_nh_load32 (go) != seq - 1u32) break;
+        _yrt_i_nh_futex_wait (releases, r);
     }
 }
 
@@ -250,12 +253,32 @@ pub fn suspend (ts: usize)-> bool {
  * */
 @{nogc, unsafe}
 pub fn resume (ts: usize) {
+    letGo (ts);
+    wakeReleased ();
+}
+
+/**
+ * Let the parked thread `ts` go, without waking it if it sleeps: a thread not asleep yet goes on
+ * at once, wakeReleased wakes the others
+ * */
+@{nogc, unsafe}
+pub fn letGo (ts: usize) {
     let dmut t = thread (ts);
     {
         (*t).signaled = 0u8;
         _yrt_i_nh_store32 (cast!usize (&((*t).go)), _yrt_i_nh_load32 (cast!usize (&((*t).req))));
-        _yrt_i_nh_futex_wake (cast!usize (&((*t).go)));
+        _yrt_i_nh_add32 (cast!usize (&((*G ()).releases)), 1u32);
         parked (ts);
+    }
+}
+
+/**
+ * Wake every parked thread up, the ones released since going on, the others sleeping again
+ * */
+@{nogc, unsafe}
+pub fn wakeReleased () {
+    {
+        _yrt_i_nh_futex_wake (cast!usize (&((*G ()).releases)));
     }
 }
 
@@ -343,7 +366,9 @@ pub def WINDOW = 8us;
  *    - cycle: the number of the cycle
  * @returns: the number of grey objects found, and the stacks scanned during a flush
  * @info: a round other than a reclaim signals up to WINDOW threads at once, and works on them in
- * the order they park: one of them can wait, in a write barrier, for a lock another one holds
+ * the order they park: one of them can wait, in a write barrier, for a lock another one holds.
+ * The threads served in a pass are woken at once at its end, so that the first one woken taking
+ * the processor of the collector leaves none of the others parked
  * */
 @{nogc, unsafe}
 pub fn round (kind: u8, cycle: u64)-> usize {
@@ -396,11 +421,15 @@ pub fn round (kind: u8, cycle: u64)-> usize {
                     }
                 }
 
-                resume (ts);
+                letGo (ts);
                 served = served + 1us;
             }
 
             ts = (*t).next;
+        }
+
+        if (served != 0us) {
+            wakeReleased ();
         }
 
         inflight = inflight - served;
