@@ -130,7 +130,8 @@ pub fn releaseCache (ts: usize) {
  */
 
 /**
- * Park the calling thread, in the handler of the handshake signal, until the collector lets it go
+ * Park the calling thread, in the handler of the handshake signal, until the collector lets it go,
+ * or only acknowledge the handshake if the collector asked for nothing more
  * @params:
  *    - sp: the lowest address of its stack in use, the registers it was interrupted with included
  * */
@@ -147,11 +148,13 @@ pub extern (C) fn _yrt_i_nh_handshake (sp: usize) {
     if (_yrt_i_nh_load32 (cast!usize (&((*t).go))) == seq || crashing ()) return;
 
     let parks = cast!usize (&((*G ()).parks));
+    let ack = (*t).ack;
     (*t).sp = sp;
     (*t).parkedAt = _yrt_i_nh_now_ns ();
     _yrt_i_nh_store32 (cast!usize (&((*t).parked)), seq);
     _yrt_i_nh_add32 (parks, 1u32);
     _yrt_i_nh_futex_wake (parks);
+    if (ack == 1u8) return;
 
     // a handshake nested in the park of leaveBusy can let `go` past `seq` before it is read here
     let go = cast!usize (&((*t).go));
@@ -165,13 +168,16 @@ pub extern (C) fn _yrt_i_nh_handshake (sp: usize) {
 
 /**
  * Ask the thread `ts` to park, sending it the handshake signal
+ * @params:
+ *    - ack: true if the thread is only to acknowledge the handshake, and go on without waiting
  * @returns: false iif the thread could not be signaled
  * */
 @{nogc, unsafe}
-fn request (ts: usize)-> bool {
+fn request (ts: usize, ack: bool)-> bool {
     let dmut t = thread (ts);
     {
         let seq = _yrt_i_nh_load32 (cast!usize (&((*t).req))) + 1u32;
+        (*t).ack = if (ack) { 1u8 } else { 0u8 };
         _yrt_i_nh_store32 (cast!usize (&((*t).req)), seq);
         (*t).since = _yrt_i_nh_now_ns ();
         (*t).parkWords = 0u64;
@@ -235,7 +241,7 @@ fn parks ()-> u32 {
  * */
 @{nogc, unsafe}
 pub fn suspend (ts: usize)-> bool {
-    if (!request (ts)) return false;
+    if (!request (ts, false)) return false;
     loop {
         let seen = parks ();
         if (isParked (ts)) break;
@@ -268,7 +274,9 @@ pub fn letGo (ts: usize) {
         (*t).signaled = 0u8;
         _yrt_i_nh_store32 (cast!usize (&((*t).go)), _yrt_i_nh_load32 (cast!usize (&((*t).req))));
         _yrt_i_nh_add32 (cast!usize (&((*G ()).releases)), 1u32);
-        parked (ts);
+        if ((*t).ack == 0u8) {
+            parked (ts);
+        }
     }
 }
 
@@ -368,7 +376,8 @@ pub def WINDOW = 8us;
  * @info: a round other than a reclaim signals up to WINDOW threads at once, and works on them in
  * the order they park: one of them can wait, in a write barrier, for a lock another one holds.
  * The threads served in a pass are woken at once at its end, so that the first one woken taking
- * the processor of the collector leaves none of the others parked
+ * the processor of the collector leaves none of the others parked. A thread acknowledging a
+ * ROUND_ACK does not wait for the collector
  * */
 @{nogc, unsafe}
 pub fn round (kind: u8, cycle: u64)-> usize {
@@ -392,7 +401,7 @@ pub fn round (kind: u8, cycle: u64)-> usize {
     let mut inflight = 0us;
     loop {
         while (ahead != 0us && inflight < WINDOW) {
-            if (request (ahead)) {
+            if (request (ahead, kind == ROUND_ACK)) {
                 inflight = inflight + 1us;
             }
 
@@ -428,7 +437,7 @@ pub fn round (kind: u8, cycle: u64)-> usize {
             ts = (*t).next;
         }
 
-        if (served != 0us) {
+        if (served != 0us && kind != ROUND_ACK) {
             wakeReleased ();
         }
 

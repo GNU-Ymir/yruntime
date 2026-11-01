@@ -34,7 +34,7 @@ stack is scanned in the cycle (`ROUND_SCAN`, or `ROUND_FLUSH` for a thread regis
 
 **Times of cycle *N*.**
 - *M*: `_yrt_nh_marking` is set to 1, followed by a fence (`runCycle`).
-- *a(T)*: thread *T* parks in the `ROUND_ACK` round.
+- *a(T)*: thread *T* acknowledges the handshake of the `ROUND_ACK` round.
 - *s(T)*: the collector scans *T*'s stack.
 - *E*: the `ROUND_FLUSH` round after which `terminate` stops (the last one, after `finalize`).
 - *G*: `sweepGen` is increased by 2, then `toUnswept`, `_yrt_nh_marking` is set to 0, `quiesce`
@@ -69,25 +69,31 @@ Then *M* < *a(T)* < *s(T)* < *E* < *G* for every thread registered at *M*.
 ## 2. The handshake is a rendezvous
 
 **Lemma 1.** When the collector returns from waiting for thread *T* to park in handshake *k*
-(`suspend`, or `isParked` in `round`), *T* is in `_yrt_i_nh_handshake`, has published `sp`, has
-finished every write barrier and assist it started, and stays there until the collector stores
-`go = k`. Everything *T* wrote before parking is visible to the collector, and everything the
-collector wrote before `go = k` is visible to *T* once it resumes.
+(`suspend`, or `isParked` in `round`), *T* has been in `_yrt_i_nh_handshake`, has published `sp`,
+and has finished every write barrier and assist it started. Unless *k* is only to be acknowledged
+(a `ROUND_ACK`), *T* stays there until the collector stores `go = k`. Everything *T* wrote before
+parking is visible to the collector, everything the collector wrote before `req = k` is visible to
+*T* from its park on, and everything it wrote before `go = k` is visible to *T* once it resumes.
 
 *Proof.* Requests to one thread are serialized: the collector stores `req = k` only once it has
-stored `go = k - 1` (in `resume`, or in `request` when the signal could not be sent), so while *T*
-handles request *k*, `go` is `k - 1` or `k`. The handler reads `seq = req`. It returns at once if
-`go == seq`, which means request *k* is already served. Otherwise it stores `sp`, then
-`parked = seq` with release ordering, then wakes the futex `parks`. The collector reads `parked`
-with acquire ordering, so `sp` and *T*'s earlier writes happen before what the collector does next.
-*T* then sleeps while `go == seq - 1`. That is the only value `go` can hold before the collector
-releases *T*. It sleeps on the futex `releases`, which the collector increments after each store
-of a `go` (`letGo`) and wakes once a pass is done (`wakeReleased`): *T* reads `releases` before
-`go`, so a release falling between its read of `go` and its sleep has changed `releases`, and the
-sleep returns at once. If a handshake nested in a park started from `leaveBusy` has already pushed `go` past
-`seq`, the loop still ends: it waits for `go` to leave `seq - 1`, not for `go == seq`, and waiting
-for equality was the deadlock found in this branch. The collector stores `go` with release
-ordering, so its writes are visible to *T* after it resumes.
+stored `go = k - 1` (in `letGo`, or in `request` when the signal could not be sent), so while *T*
+handles request *k*, `go` is `k - 1` or `k`. The handler reads `seq = req` with acquire ordering,
+which the collector stored with release ordering. It returns at once if `go == seq`, which means
+request *k* is already served. Otherwise it reads `ack`, stored by `request` before `req`, then
+stores `sp`, then `parked = seq` with release ordering, then wakes the futex `parks`. The collector
+reads `parked` with acquire ordering, so `sp` and *T*'s earlier writes happen before what the
+collector does next. An acknowledgment returns there: the collector does nothing to *T*, and what
+the round needs of it, that *T* reads `_yrt_nh_marking` as the collector stored it before the
+request and that no barrier of *T* started before is still running, holds from the park on.
+
+Otherwise *T* then sleeps while `go == seq - 1`. That is the only value `go` can hold before the
+collector releases *T*. It sleeps on the futex `releases`, which the collector increments after
+each store of a `go` (`letGo`) and wakes once a pass is done (`wakeReleased`): *T* reads `releases`
+before `go`, so a release falling between its read of `go` and its sleep has changed `releases`,
+and the sleep returns at once. If a handshake nested in a park started from `leaveBusy` has
+already pushed `go` past `seq`, the loop still ends: it waits for `go` to leave `seq - 1`, not for
+`go == seq`, and waiting for equality was the deadlock found in this branch. The collector stores
+`go` with release ordering, so its writes are visible to *T* after it resumes.
 
 *T* never parks inside a barrier or an assist. `_yrt_i_nh_enter_busy` sets `busy`, a thread local,
 then a signal fence. The handler runs on *T* itself, so it sees the stores of *T* in program order:
@@ -222,7 +228,7 @@ flag is read with acquire ordering. So an object from a span not swept since *G*
 but that span is swept next only at the end of cycle *N + 1*, after its own marking.
 
 A span is swept when its generation is older than the current one: by `sweepAll` (after
-`quiesce`, whose `ROUND_ACK` round parks every thread out of its barriers once the flag is 0, so
+`quiesce`, whose `ROUND_ACK` round reaches every thread out of its barriers once the flag is 0, so
 that no barrier still reads the span), or by `refill`, both under the lock of its list. That
 is right only with the marks of a finished marking, so between *G* and the `clearAllMarks` of cycle
 *N + 1*, which requires that no span of an older generation is still in a list or a cache once those
@@ -257,7 +263,7 @@ the body of the barrier, and the store. A handshake parks a thread before the te
 or between the body and the store, after which the body runs again (`_yrt_nh_wb`). The stores of
 `_yrt_nh_store_ptr` never park there, so they are one of the behaviors the model checks. The collector clears
 the marks, sets the flag, and runs the `ROUND_ACK`, root and `ROUND_SCAN` rounds (serving the
-threads in the order they park). It then drains and runs `ROUND_FLUSH` rounds until one finds
+threads in the order they park, a thread acknowledging the `ROUND_ACK` going on at once). It then drains and runs `ROUND_FLUSH` rounds until one finds
 nothing, and sweeps. `Safe` states that every object reachable from the global, a stack or the heap
 is allocated. TLC explores every interleaving of an instance. With `Lifecycle`, threads are also
 spawned (the parent keeping what it hands over on its stack until the child registered), register
@@ -268,20 +274,20 @@ lived in that gap: the stress tests found it, and assertions in the collector lo
 
 | configuration | threads, objects | what it changes | result |
 |---|---|---|---|
-| `Small1T.cfg` | 1, 3 | nothing | holds: 837,181 states, the whole graph |
-| `Small2T.cfg` | 2, 2 | nothing | holds: 2,010,948 states, the whole graph |
+| `Small1T.cfg` | 1, 3 | nothing | holds: 801,579 states, the whole graph |
+| `Small2T.cfg` | 2, 2 | nothing | holds: 1,713,169 states, the whole graph |
 | `Nidhogg.cfg` | 2, 3 | nothing | holds: 133,420,992 states, the whole graph (21 minutes on 8 cores) |
-| `Life2T.cfg` | 2, 2 | with `Lifecycle` | holds: 3,547,715 states, the whole graph |
+| `Life2T.cfg` | 2, 2 | with `Lifecycle` | holds: 3,220,293 states, the whole graph |
 | `Life3T.cfg` | 3, 2 | with `Lifecycle` | holds: 153,415,832 states, the whole graph (78 minutes on 8 cores) |
 | `Life.cfg` | 2, 3 | with `Lifecycle` | holds: 255,134,049 states, the whole graph (57 minutes on 8 cores) |
-| `NoScanNew.cfg` | 2, 2 | with `Lifecycle`, a flush round no longer scans a thread registered since the SCAN round | holds: 3,547,019 states, the whole graph |
-| `LargeEarly.cfg` | 2, 2 | black decided before the object exists (`allocLarge` before the fix) | fails in 21 steps |
-| `NoRedo.cfg` | 1, 2 | `leaveBusy` parks without shading again (the barrier before the fix) | fails in 31 steps |
-| `TestStoreGap.cfg` | 2, 2 | a handshake between a test of the flag before `_yrt_nh_wb` and the store (A5 dropped) | fails in 25 steps |
-| `Racy.cfg` | 2, 2 | two threads storing into one slot at once (A6 dropped) | fails in 36 steps |
-| `NoShadeOld.cfg` | 1, 2 | the barrier without its deletion half | fails in 26 steps |
-| `NoShadeNew.cfg` | 2, 2 | the barrier without its insertion half | fails in 25 steps |
-| `ExitDropsGrey.cfg` | 2, 3 | with `Lifecycle`, a thread exiting drops its grey buffer | fails in 31 steps |
+| `NoScanNew.cfg` | 2, 2 | with `Lifecycle`, a flush round no longer scans a thread registered since the SCAN round | holds: 3,219,597 states, the whole graph |
+| `LargeEarly.cfg` | 2, 2 | black decided before the object exists (`allocLarge` before the fix) | fails in 19 steps |
+| `NoRedo.cfg` | 1, 2 | `leaveBusy` parks without shading again (the barrier before the fix) | fails in 29 steps |
+| `TestStoreGap.cfg` | 2, 2 | a handshake between a test of the flag before `_yrt_nh_wb` and the store (A5 dropped) | fails in 23 steps |
+| `Racy.cfg` | 2, 2 | two threads storing into one slot at once (A6 dropped) | fails in 34 steps |
+| `NoShadeOld.cfg` | 1, 2 | the barrier without its deletion half | fails in 25 steps |
+| `NoShadeNew.cfg` | 2, 2 | the barrier without its insertion half | fails in 23 steps |
+| `ExitDropsGrey.cfg` | 2, 3 | with `Lifecycle`, a thread exiting drops its grey buffer | fails in 30 steps |
 
 The failing configurations are what make the passing ones mean something: the model notices every
 defect it is given, and each trace is a scenario the code allows, in the same steps.
@@ -308,8 +314,8 @@ they cover what the model leaves out. `large` was the one that broke when Lemma 
 ## 8. The barrier test and its store
 
 A store testing `_yrt_nh_marking` itself, then calling `_yrt_nh_wb` and storing (what compiled code
-did before `_yrt_nh_store_ptr`), can be parked by `ROUND_ACK` between a test that read 0 and its
-store. It resumes after *a(T)* and stores without a barrier. The same happens after a test that
+did before `_yrt_nh_store_ptr`), can acknowledge `ROUND_ACK` between a test that read 0 and its
+store. It goes on after *a(T)* and stores without a barrier. The same happens after a test that
 read 1, if the barrier body ran before *M*: once the barrier has returned, a plain handshake (not
 the park of `leaveBusy`, which shades again) leaves the store unshaded. Either way the store step
 of Lemma 3 breaks:

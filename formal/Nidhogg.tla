@@ -117,13 +117,20 @@ PlainParkOK(t) ==
     \/ ~AtomicTestStore
     \/ DeferredPark(t) /\ ~RedoBarrier
 
+\* A handshake of an ACK round is only acknowledged: the thread goes on at once, and the collector
+\* has nothing more to do on it
 Park(t) ==
     /\ req[t] /\ ~parked[t]
-    /\ parked' = [parked EXCEPT ![t] = TRUE]
     /\ \/ PlainParkOK(t) /\ UNCHANGED tpc
        \/ DeferredPark(t) /\ RedoBarrier /\ tpc' = [tpc EXCEPT ![t] = "barrier"]
+    /\ IF cpc = "ack"
+       THEN /\ req' = [req EXCEPT ![t] = FALSE]
+            /\ pending' = pending \ {t}
+            /\ UNCHANGED parked
+       ELSE /\ parked' = [parked EXCEPT ![t] = TRUE]
+            /\ UNCHANGED << req, pending >>
     /\ UNCHANGED << heap, glob, alloc, mark, stack, tdst, tval, tm, tobj, grey, marking,
-                    sweeping, markStack, req, cpc, pending, found >>
+                    sweeping, markStack, cpc, found >>
     /\ LifeUnchanged
 
 Running(t) == reg[t] = "running" /\ ~parked[t]
@@ -315,11 +322,9 @@ Start ==
 
 \* the work of a round on a parked thread, served in the order the threads park
 Serve(t) ==
-    /\ cpc \in {"ack", "scan", "flush"}
+    /\ cpc \in {"scan", "flush"}
     /\ t \in pending /\ parked[t]
-    /\ CASE cpc = "ack" ->
-              UNCHANGED << mark, markStack, grey, found, scanned >>
-         [] cpc = "scan" ->
+    /\ CASE cpc = "scan" ->
               LET G == ShadeSet(Held(t)) IN
               /\ mark' = MarkAll(G)
               /\ markStack' = markStack \cup G \cup grey[t]
