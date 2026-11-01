@@ -72,6 +72,9 @@ fn runCycle (number: u64) {
     _yrt_i_nh_store8 (cast!usize (&_yrt_nh_marking), 1u8);
     _yrt_i_nh_fence ();
     round (ROUND_ACK, number);
+    {
+        _yrt_i_nh_store8 (cast!usize (&((*g).assistOn)), 1u8);
+    }
 
     _yrt_i_nh_data_segments ();
     scanRoots ();
@@ -95,6 +98,10 @@ fn runCycle (number: u64) {
     _yrt_i_nh_fence ();
 
     toUnswept ();
+    {
+        _yrt_i_nh_store8 (cast!usize (&((*g).assistOn)), 0u8);
+    }
+
     _yrt_i_nh_store8 (cast!usize (&_yrt_nh_marking), 0u8);
     _yrt_i_nh_fence ();
     quiesce (number);

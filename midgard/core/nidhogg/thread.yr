@@ -729,6 +729,15 @@ pub fn marking ()-> bool {
 }
 
 /**
+ * @returns: true while the collector marks and every thread acknowledged it: an assist making an
+ * object black before then could miss the store of a thread that read the flag at 0 into it
+ * */
+@{nogc, unsafe}
+pub fn assisting ()-> bool {
+    marking () && { _yrt_i_nh_load8 (cast!usize (&((*G ()).assistOn))) == 1u8 }
+}
+
+/**
  * Allocate a zeroed object of `size` bytes from the calling thread
  * @params:
  *    - size: the size of the object
@@ -830,7 +839,7 @@ fn account (ts: usize, bytes: u64)-> bool {
         if ((*t).sinceAssist >= ALLOC_BATCH) {
             (*t).sinceAssist = 0u64;
             let b = enterBusy ();
-            if (marking ()) {
+            if (assisting ()) {
                 assist ();
             }
 
