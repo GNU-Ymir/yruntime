@@ -72,6 +72,23 @@ pub def MIN_GOAL = 4194304u64;
 pub def LIMIT_SLACK = 1048576u64;
 
 /**
+ * The scan work a thread may owe the marking, in bytes, before it waits for the collector, and the
+ * longest it waits before it tries to pay again
+ * */
+pub def DEBT_MAX = 262144i64;
+pub def ASSIST_WAIT_NS = 100000u64;
+
+/**
+ * The most scan work an allocated byte calls for, in 1/65536 of a byte
+ * */
+pub def MAX_RATIO = 4194304u64;
+
+/**
+ * The objects the collector scans between two publications of its work
+ * */
+pub def PUBLISH_EVERY = 256us;
+
+/**
  * The longest a thread held past the hard limit of the heap sleeps before it checks it again
  * */
 pub def PACE_NS = 1000000u64;
@@ -182,9 +199,13 @@ pub record ThreadState {
     pub let mut grey : usize;
     pub let mut greyLen : usize;
 
-    // the bytes it allocated since it last updated the live heap, and since it last assisted
+    // the bytes it allocated since it last updated the live heap, and since it last updated its debt
     pub let mut allocated : u64;
     pub let mut sinceAssist : u64;
+
+    // the scan work it owes the marking of the cycle `debtCycle`, negative when it did more
+    pub let mut debt : i64;
+    pub let mut debtCycle : u64;
 
     // the links of the list of the threads
     pub let mut prev : usize;
@@ -274,11 +295,29 @@ pub record Globals {
     pub let mut workLock : usize;
     pub let mut work : usize;
 
-    // the assists running, the number of the ones that started, and 1 once every thread
+    // the assists running, the number of the grey buffers they took, and 1 once every thread
     // acknowledged the marking, no assist scanning anything before
     pub let mut assisting : u64;
     pub let mut assists : u64;
     pub let mut assistOn : u8;
+
+    // the cycle marking, the bytes of objects scanned in its marking and the ones expected, the live
+    // heap it started from, and the bytes the last marking scanned
+    pub let mut markCycle : u64;
+    pub let mut scanWork : u64;
+    pub let mut scanExpected : u64;
+    pub let mut markBase : u64;
+    pub let mut lastWork : u64;
+
+    // the bytes the collector scanned since it last published them, and the ones it published that
+    // no assist took as credit yet
+    pub let mut markWork : u64;
+    pub let mut bgCredit : u64;
+
+    // 1 iif an assist found no grey buffer to scan, and 1 while the collector hands part of its
+    // mark stack over to the assists then
+    pub let mut assistWanted : u8;
+    pub let mut sharing : u8;
 
     // the mark stack of the collector, the number of its entries, and 1 iif it had no room for an
     // object since its last rescan
@@ -331,6 +370,8 @@ pub record Globals {
     pub let mut statParkNs : u64;
     pub let mut statLongestSignal : u64;
     pub let mut statRescans : u64;
+    pub let mut statAssistWork : u64;
+    pub let mut statShared : u64;
 
     pub let mut statMarkNs : u64;
     pub let mut statPeak : u64;

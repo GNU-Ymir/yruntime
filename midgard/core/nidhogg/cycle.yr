@@ -67,6 +67,7 @@ fn runCycle (number: u64) {
     subLive (sweepAll ());
     clearAllMarks ();
     let before = liveHeap (_yrt_i_nh_load64 (cast!usize (&((*g).heapLive))));
+    startPacing (number, before);
 
     // from the end of this round, every thread runs its write barriers and allocates black
     _yrt_i_nh_store8 (cast!usize (&_yrt_nh_marking), 1u8);
@@ -87,6 +88,8 @@ fn runCycle (number: u64) {
     }
 
     {
+        (*g).sharing = 0u8;
+        (*g).lastWork = _yrt_i_nh_load64 (cast!usize (&((*g).scanWork)));
         let after = liveHeap (_yrt_i_nh_load64 (cast!usize (&((*g).heapLive))));
         (*g).runway = if (after > before) { after - before } else { 0u64 };
         if ((*g).verify == 1u8) {
@@ -134,6 +137,27 @@ fn runCycle (number: u64) {
         (*g).goal = goal;
         (*g).hard = hard;
         (*g).trigger = triggerOf (marked, goal, (*g).runway);
+    }
+}
+
+/**
+ * Prepare the pacing of the assists of the marking of the cycle `number`, starting from a live
+ * heap of `live` bytes: it expects to scan as much as the last marking did, the whole live heap if
+ * none ran yet
+ * @info: called before the marking starts
+ * */
+@{nogc, unsafe}
+fn startPacing (number: u64, live: u64) {
+    let dmut g = G ();
+    {
+        _yrt_i_nh_store64 (cast!usize (&((*g).scanWork)), 0u64);
+        _yrt_i_nh_store64 (cast!usize (&((*g).bgCredit)), 0u64);
+        _yrt_i_nh_store64 (cast!usize (&((*g).scanExpected)), if ((*g).lastWork != 0u64) { (*g).lastWork } else { live });
+        _yrt_i_nh_store64 (cast!usize (&((*g).markBase)), live);
+        _yrt_i_nh_store64 (cast!usize (&((*g).markCycle)), number);
+        _yrt_i_nh_store8 (cast!usize (&((*g).assistWanted)), 0u8);
+        (*g).markWork = 0u64;
+        (*g).sharing = 1u8;
     }
 }
 
@@ -693,6 +717,10 @@ pub fn printStats () {
         printNum ((*g).statLongestSignal / 1000u64);
         print (" us, ");
         printNum ((*g).statRescans);
-        print (" rescans of the heap\n");
+        print (" rescans of the heap, assists scanned ");
+        printNum ((*g).statAssistWork);
+        print (" bytes, ");
+        printNum ((*g).statShared);
+        print (" grey buffers handed to them\n");
     }
 }
