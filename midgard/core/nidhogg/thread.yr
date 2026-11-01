@@ -2,12 +2,13 @@
  * The threads: their registration, the handshake through which the collector interrupts a few of
  * them at a time, the rounds the collector makes over them, and their allocations.
  *
- * In a handshake the thread parks in the handler of the handshake signal, the top of its stack
- * recorded, sleeping on a futex until the collector, which reads its stack and its grey buffer
- * meanwhile, lets it go. A thread parked may hold any lock: the collector takes none until it lets
- * it go, and never waits for one thread while another is parked. A thread
- * interrupted in a write barrier or an assist parks once it is done, so that none is ever parked
- * with an object shaded but not in its grey buffer yet.
+ * In a handshake the thread does what the collector asks of it in the handler of the handshake
+ * signal, the top of its stack recorded: it copies its stack and its grey objects for the collector
+ * to scan, or hands its spans back, taking no lock, then goes on. Only when it cannot does it park,
+ * sleeping on a futex until the collector, which does it meanwhile, lets it go. A thread parked may
+ * hold any lock: the collector takes none until it lets it go, and never waits for one thread while
+ * another is parked. A thread interrupted in a write barrier or an assist parks once it is done, so
+ * that none is ever parked with an object shaded but not in its grey buffer yet.
  */
 in thread;
 
@@ -48,6 +49,7 @@ pub fn register ()-> usize {
         _yrt_i_nh_stack_bounds (cast!usize (&((*t).stackLo)), cast!usize (&((*t).stackHi)));
         _yrt_i_nh_tls_bounds (cast!usize (&((*t).tlsLo)), cast!usize (&((*t).tlsHi)));
         (*t).cache = words (NLISTS);
+        (*t).returned = words (NLISTS);
         (*t).grey = words (GREY_WORDS);
 
         _yrt_i_nh_mutex_lock ((*g).threadsLock);
@@ -102,6 +104,7 @@ pub extern (C) fn _yrt_i_nh_thread_exit (ts: usize) {
     _yrt_i_nh_mutex_unlock ((*g).threadsLock);
 
     free ((*t).cache);
+    free ((*t).returned);
     free ((*t).grey);
     free (ts);
 }
@@ -130,8 +133,27 @@ pub fn releaseCache (ts: usize) {
  */
 
 /**
- * Park the calling thread, in the handler of the handshake signal, until the collector lets it go,
- * or only acknowledge the handshake if the collector asked for nothing more
+ * What a handshake asks of a thread: to wait until the collector lets it go, to acknowledge it, to
+ * hand its grey objects over, to hand them over with a copy of its stack, or to hand the spans of
+ * its cache back
+ * */
+pub def TASK_PARK    = 0u8;
+pub def TASK_ACK     = 1u8;
+pub def TASK_GREY    = 2u8;
+pub def TASK_STACK   = 3u8;
+pub def TASK_RECLAIM = 4u8;
+
+/**
+ * What came of the task of a handshake: the thread waits for the collector to do it, it did it,
+ * or it could not and went on, to be asked again
+ * */
+pub def OUT_WAIT  = 0u8;
+pub def OUT_DONE  = 1u8;
+pub def OUT_RETRY = 2u8;
+
+/**
+ * Do the task of the handshake the collector asked for, in the handler of the handshake signal,
+ * then park the calling thread until the collector lets it go if it could not
  * @params:
  *    - sp: the lowest address of its stack in use, the registers it was interrupted with included
  * */
@@ -148,13 +170,16 @@ pub extern (C) fn _yrt_i_nh_handshake (sp: usize) {
     if (_yrt_i_nh_load32 (cast!usize (&((*t).go))) == seq || crashing ()) return;
 
     let parks = cast!usize (&((*G ()).parks));
-    let ack = (*t).ack;
+    let start = _yrt_i_nh_now_ns ();
     (*t).sp = sp;
-    (*t).parkedAt = _yrt_i_nh_now_ns ();
+    (*t).parkedAt = start;
+    let outcome = doTask (ts);
+    (*t).outcome = outcome;
+    (*t).pauseNs = _yrt_i_nh_now_ns () - start;
     _yrt_i_nh_store32 (cast!usize (&((*t).parked)), seq);
     _yrt_i_nh_add32 (parks, 1u32);
     _yrt_i_nh_futex_wake (parks);
-    if (ack == 1u8) return;
+    if (outcome != OUT_WAIT) return;
 
     // a handshake nested in the park of leaveBusy can let `go` past `seq` before it is read here
     let go = cast!usize (&((*t).go));
@@ -167,20 +192,50 @@ pub extern (C) fn _yrt_i_nh_handshake (sp: usize) {
 }
 
 /**
- * Ask the thread `ts` to park, sending it the handshake signal
- * @params:
- *    - ack: true if the thread is only to acknowledge the handshake, and go on without waiting
+ * Do the task of the handshake the thread `ts`, the calling one, was asked for
+ * @returns: what came of it
+ * @info: run in the handler of the handshake signal, out of a write barrier and of an assist: it
+ * takes no lock and allocates nothing
+ * */
+@{nogc, unsafe}
+fn doTask (ts: usize)-> u8 {
+    let dmut t = thread (ts);
+    let task = (*t).task;
+    if (task == TASK_ACK) return OUT_DONE;
+    if (task == TASK_GREY || task == TASK_STACK) {
+        return if (copyThread (ts, task == TASK_STACK)) { OUT_DONE } else { OUT_WAIT };
+    }
+
+    if (task == TASK_RECLAIM) {
+        if (_yrt_i_nh_load8 (cast!usize (&((*t).inAlloc))) != 0u8) return OUT_RETRY;
+
+        let cache = (*t).cache;
+        for k in 0us .. NLISTS {
+            st ((*t).returned + k * 8us, ld (cache + k * 8us));
+            st (cache + k * 8us, 0us);
+        }
+
+        flushAllocated (ts);
+        return OUT_DONE;
+    }
+
+    OUT_WAIT
+}
+
+/**
+ * Ask the thread `ts` to do the task `task`, sending it the handshake signal
  * @returns: false iif the thread could not be signaled
  * */
 @{nogc, unsafe}
-fn request (ts: usize, ack: bool)-> bool {
+fn request (ts: usize, task: u8)-> bool {
     let dmut t = thread (ts);
     {
         let seq = _yrt_i_nh_load32 (cast!usize (&((*t).req))) + 1u32;
-        (*t).ack = if (ack) { 1u8 } else { 0u8 };
+        (*t).task = task;
+        (*t).handed = 0us;
+        (*t).parkWords = 0u64;
         _yrt_i_nh_store32 (cast!usize (&((*t).req)), seq);
         (*t).since = _yrt_i_nh_now_ns ();
-        (*t).parkWords = 0u64;
         if (_yrt_i_nh_signal ((*t).thread) != 0) {
             _yrt_i_nh_store32 (cast!usize (&((*t).go)), seq);
             (*t).signaled = 0u8;
@@ -211,7 +266,7 @@ fn isParked (ts: usize)-> bool {
 pub fn isHeld (ts: usize)-> bool {
     let t = thread (ts);
     {
-        isParked (ts) && _yrt_i_nh_load32 (cast!usize (&((*t).go))) != _yrt_i_nh_load32 (cast!usize (&((*t).req)))
+        isParked (ts) && (*t).outcome == OUT_WAIT && _yrt_i_nh_load32 (cast!usize (&((*t).go))) != _yrt_i_nh_load32 (cast!usize (&((*t).req)))
     }
 }
 
@@ -236,12 +291,10 @@ fn parks ()-> u32 {
 }
 
 /**
- * Interrupt the thread `ts`, until resume is called
- * @returns: false iif the thread could not be signaled
+ * Wait until the thread `ts`, asked for a handshake, parks in it
  * */
 @{nogc, unsafe}
-pub fn suspend (ts: usize)-> bool {
-    if (!request (ts, false)) return false;
+fn awaitParked (ts: usize) {
     loop {
         let seen = parks ();
         if (isParked (ts)) break;
@@ -250,7 +303,16 @@ pub fn suspend (ts: usize)-> bool {
 
     let dmut t = thread (ts);
     (*t).servedAt = _yrt_i_nh_now_ns ();
+}
 
+/**
+ * Interrupt the thread `ts`, until resume is called
+ * @returns: false iif the thread could not be signaled
+ * */
+@{nogc, unsafe}
+pub fn suspend (ts: usize)-> bool {
+    if (!request (ts, TASK_PARK)) return false;
+    awaitParked (ts);
     true
 }
 
@@ -264,8 +326,8 @@ pub fn resume (ts: usize) {
 }
 
 /**
- * Let the parked thread `ts` go, without waking it if it sleeps: a thread not asleep yet goes on
- * at once, wakeReleased wakes the others
+ * Close the handshake of the thread `ts`, parked: a thread waiting for the collector not asleep yet
+ * goes on at once, wakeReleased wakes the others
  * */
 @{nogc, unsafe}
 pub fn letGo (ts: usize) {
@@ -274,7 +336,7 @@ pub fn letGo (ts: usize) {
         (*t).signaled = 0u8;
         _yrt_i_nh_store32 (cast!usize (&((*t).go)), _yrt_i_nh_load32 (cast!usize (&((*t).req))));
         _yrt_i_nh_add32 (cast!usize (&((*G ()).releases)), 1u32);
-        if ((*t).ack == 0u8) {
+        if ((*t).task != TASK_ACK && (*t).outcome != OUT_RETRY) {
             parked (ts);
         }
     }
@@ -291,15 +353,16 @@ pub fn wakeReleased () {
 }
 
 /**
- * Record how long the thread `ts` was parked, from its park to its release, and how long its
- * handshake signal took to reach it
+ * Record how long the thread `ts` was parked, from its park to its release, or doing its task
+ * itself, and how long its handshake signal took to reach it
  * */
 @{nogc, unsafe}
 fn parked (ts: usize) {
     let dmut g = G ();
     let t = thread (ts);
     {
-        let d = _yrt_i_nh_now_ns () - (*t).parkedAt;
+        let waited = (*t).outcome == OUT_WAIT;
+        let d = if (waited) { _yrt_i_nh_now_ns () - (*t).parkedAt } else { (*t).pauseNs };
         let signal = (*t).parkedAt - (*t).since;
         if (signal > (*g).statLongestSignal) {
             (*g).statLongestSignal = signal;
@@ -309,60 +372,102 @@ fn parked (ts: usize) {
         (*g).statParkNs = (*g).statParkNs + d;
         if (d > (*g).statLongestPark) {
             (*g).statLongestPark = d;
-            (*g).statParkWait = (*t).servedAt - (*t).parkedAt;
+            (*g).statParkWait = if (waited) { (*t).servedAt - (*t).parkedAt } else { 0u64 };
             (*g).statParkWords = (*t).parkWords;
         }
     }
 }
 
 /**
- * Copy the stack and the TLS block of the thread `ts`, parked, to be scanned once it goes
- * (scanCopies), or scan them at once if the copies have no room for them
+ * Copy the grey objects of the thread `ts`, and its stack and its TLS block if `stack` is set,
+ * into a record of the copies, scanned once the round let the threads go (scanCopies)
+ * @returns: false iif the copies have no room for them
+ * @info: called by the thread itself, in the handler of the handshake signal, or by the collector
+ * while it is parked
  * */
 @{nogc, unsafe}
-fn copyThread (ts: usize) {
-    let dmut g = G ();
+fn copyThread (ts: usize, stack: bool)-> bool {
+    let g = G ();
     let dmut t = thread (ts);
     {
+        let ng = (*t).greyLen;
         let stackLo = (((*t).sp + 7us) / 8us) * 8us;
-        let stackLen = if ((*t).stackHi > stackLo) { (((*t).stackHi - stackLo) / 8us) * 8us } else { 0us };
         let tlsLo = (((*t).tlsLo + 7us) / 8us) * 8us;
-        let tlsLen = if ((*t).tlsHi > tlsLo) { (((*t).tlsHi - tlsLo) / 8us) * 8us } else { 0us };
-        let need = stackLen + tlsLen;
-        (*t).parkWords = cast!u64 (need / 8us);
-
-        if ((*g).copiesLen + need > COPY_CAP) {
-            scanCopies ();
+        let mut stackLen = 0us, mut tlsLen = 0us;
+        if (stack) {
+            stackLen = if ((*t).stackHi > stackLo) { (((*t).stackHi - stackLo) / 8us) * 8us } else { 0us };
+            tlsLen = if ((*t).tlsHi > tlsLo) { (((*t).tlsHi - tlsLo) / 8us) * 8us } else { 0us };
         }
 
-        if (need > COPY_CAP) {
-            scanRange (stackLo, stackLo + stackLen);
-            scanRange (tlsLo, tlsLo + tlsLen);
-            return;
+        let ns = (stackLen + tlsLen) / 8us;
+        if (ng == 0us && ns == 0us) return true;
+
+        let size = (2us + ng + ns) * 8us;
+        let len = cast!usize (&((*g).copiesLen));
+        let mut at = 0u64;
+        loop {
+            at = _yrt_i_nh_load64 (len);
+            if (cast!usize (at) + size > COPY_CAP) return false;
+            if (_yrt_i_nh_cas64 (len, at, at + cast!u64 (size)) == 1u8) break;
         }
 
-        memmove ((*g).copies + (*g).copiesLen, stackLo, stackLen);
-        memmove ((*g).copies + (*g).copiesLen + stackLen, tlsLo, tlsLen);
-        (*g).copiesLen = (*g).copiesLen + need;
+        let rec = (*g).copies + cast!usize (at);
+        st (rec, ng);
+        st (rec + 8us, ns);
+        memmove (rec + 16us, (*t).grey + 16us, ng * 8us);
+        memmove (rec + 16us + ng * 8us, stackLo, stackLen);
+        memmove (rec + 16us + ng * 8us + stackLen, tlsLo, tlsLen);
+
+        (*t).greyLen = 0us;
+        (*t).handed = ng;
+        (*t).parkWords = cast!u64 (ns);
+    }
+
+    true
+}
+
+/**
+ * Scan the stack and the TLS block of the thread `ts` in place, while it is parked
+ * */
+@{nogc, unsafe}
+fn scanThread (ts: usize) {
+    let dmut t = thread (ts);
+    {
+        scanRange ((*t).sp, (*t).stackHi);
+        scanRange ((*t).tlsLo, (*t).tlsHi);
+        (*t).parkWords = cast!u64 (((*t).stackHi - (*t).sp) / 8us + ((*t).tlsHi - (*t).tlsLo) / 8us);
     }
 }
 
 /**
- * Scan the copies of the stacks made since the last time, and decommit what they took past COPY_KEEP
+ * Push the grey objects of the records of the copies on the mark stack, scan the copies of the
+ * stacks, and decommit what they took past COPY_KEEP
+ * @info: no thread writes a record: every thread asked for a handshake by the round parked in it
  * */
 @{nogc, unsafe}
 fn scanCopies () {
     let dmut g = G ();
     {
-        let len = (*g).copiesLen;
+        let len = cast!usize ((*g).copiesLen);
         if (len == 0us) return;
 
-        scanRange ((*g).copies, (*g).copies + len);
+        let mut rec = (*g).copies;
+        while (rec < (*g).copies + len) {
+            let ng = ld (rec), ns = ld (rec + 8us);
+            for i in 0us .. ng {
+                markPush (ld (rec + (2us + i) * 8us));
+            }
+
+            let words = rec + (2us + ng) * 8us;
+            scanRange (words, words + ns * 8us);
+            rec = words + ns * 8us;
+        }
+
         if (len > COPY_KEEP) {
             madvise ((*g).copies + COPY_KEEP, len - COPY_KEEP, MADV_DONTNEED);
         }
 
-        (*g).copiesLen = 0us;
+        (*g).copiesLen = 0u64;
     }
 }
 
@@ -406,17 +511,16 @@ pub def ROUND_RECLAIM = 3u8;
 pub def WINDOW = 8us;
 
 /**
- * Interrupt every thread, doing the work of the round on it
+ * Interrupt every thread, the work of the round done on it
  * @params:
  *    - kind: the work of the round
  *    - cycle: the number of the cycle
  * @returns: the number of grey objects found, and the stacks scanned during a flush
- * @info: a round other than a reclaim signals up to WINDOW threads at once, and works on them in
- * the order they park: one of them can wait, in a write barrier, for a lock another one holds.
- * The threads served in a pass are woken at once at its end, so that the first one woken taking
- * the processor of the collector leaves none of the others parked. A thread acknowledging a
- * ROUND_ACK does not wait for the collector, and the stacks are scanned from their copies once
- * every thread went
+ * @info: a round other than a reclaim signals up to WINDOW threads at once, and serves them in the
+ * order they park: one of them can wait, in a write barrier, for a lock another one holds. A thread
+ * does the work of an ACK, SCAN or FLUSH round itself, in its handler, and goes on: it waits for the
+ * collector only if the copies have no room for what it hands over, and the threads that do are
+ * woken at once at the end of a pass. The copies are scanned once every thread went
  * */
 @{nogc, unsafe}
 pub fn round (kind: u8, cycle: u64)-> usize {
@@ -440,7 +544,7 @@ pub fn round (kind: u8, cycle: u64)-> usize {
     let mut inflight = 0us;
     loop {
         while (ahead != 0us && inflight < WINDOW) {
-            if (request (ahead, kind == ROUND_ACK)) {
+            if (request (ahead, taskOf (ahead, kind, cycle))) {
                 inflight = inflight + 1us;
             }
 
@@ -451,20 +555,27 @@ pub fn round (kind: u8, cycle: u64)-> usize {
 
         let seen = parks ();
         let mut served = 0us;
+        let mut waiting = 0us;
         let mut ts = first;
         while (ts != ahead) {
             let dmut t = thread (ts);
             if ((*t).signaled == 1u8 && isParked (ts)) {
                 (*t).servedAt = _yrt_i_nh_now_ns ();
-                if (kind == ROUND_SCAN) {
-                    copyThread (ts);
+                let task = (*t).task;
+                if ((*t).outcome == OUT_WAIT) {
+                    waiting = waiting + 1us;
+                    if (!copyThread (ts, task == TASK_STACK)) {
+                        (*t).handed = takeGrey (ts);
+                        if (task == TASK_STACK) {
+                            scanThread (ts);
+                        }
+                    }
+                }
+
+                found = found + (*t).handed;
+                if (task == TASK_STACK) {
                     (*t).scanned = cycle;
-                    found = found + takeGrey (ts);
-                } else if (kind == ROUND_FLUSH) {
-                    found = found + takeGrey (ts);
-                    if ((*t).scanned != cycle) {
-                        copyThread (ts);
-                        (*t).scanned = cycle;
+                    if (kind == ROUND_FLUSH) {
                         found = found + 1us;
                     }
                 }
@@ -476,7 +587,7 @@ pub fn round (kind: u8, cycle: u64)-> usize {
             ts = (*t).next;
         }
 
-        if (served != 0us && kind != ROUND_ACK) {
+        if (waiting != 0us) {
             wakeReleased ();
         }
 
@@ -496,43 +607,53 @@ pub fn round (kind: u8, cycle: u64)-> usize {
 }
 
 /**
+ * @returns: the task a round of kind `kind` of the cycle `cycle` asks of the thread `ts`
+ * */
+@{nogc, unsafe}
+fn taskOf (ts: usize, kind: u8, cycle: u64)-> u8 {
+    if (kind == ROUND_ACK) return TASK_ACK;
+    if (kind == ROUND_SCAN) return TASK_STACK;
+
+    {
+        if ((*thread (ts)).scanned != cycle) return TASK_STACK;
+    }
+
+    TASK_GREY
+}
+
+/**
  * Take back the spans the thread `ts` allocates from, so that every span is swept before the
  * collector forgets the marks of the last cycle, and add what it allocated to the live heap. The
- * thread is parked out of an allocation and of a fork, when it holds no lock of a list and no span
- * but the ones of its cache; the spans are handed back to their lists once it went, the lock of a
- * list being held by a thread sweeping a span.
+ * thread hands them over in its handler if it is out of an allocation and of a fork, when it holds
+ * no lock of a list and no span but the ones of its cache, and is asked again otherwise; the
+ * spans are handed back to their lists once it went, the lock of a list being held by a thread
+ * sweeping a span.
  * */
 @{nogc, unsafe}
 fn reclaim (ts: usize) {
     let inAlloc = cast!usize (&((*thread (ts)).inAlloc));
-    let taken = { (*G ()).reclaimed };
     loop {
         while (_yrt_i_nh_load8 (inAlloc) != 0u8) {
             _yrt_i_nh_yield ();
         }
 
-        if (!suspend (ts)) return;
-        if (_yrt_i_nh_load8 (inAlloc) == 0u8) {
-            let cache = { (*thread (ts)).cache };
-            for k in 0us .. NLISTS {
-                st (taken + k * 8us, ld (cache + k * 8us));
-                st (cache + k * 8us, 0us);
-            }
+        if (!request (ts, TASK_RECLAIM)) return;
+        awaitParked (ts);
 
-            flushAllocated (ts);
-            resume (ts);
-
+        let done = { (*thread (ts)).outcome == OUT_DONE };
+        letGo (ts);
+        if (done) {
+            let returned = { (*thread (ts)).returned };
             for k in 0us .. NLISTS {
-                let s = ld (taken + k * 8us);
+                let s = ld (returned + k * 8us);
                 if (s != 0us) {
                     release (s);
+                    st (returned + k * 8us, 0us);
                 }
             }
 
             return;
         }
-
-        resume (ts);
     }
 }
 

@@ -49,8 +49,8 @@ pub def GREY_WORDS = 1024us;
 pub def MARK_CAP = 67108864us;
 
 /**
- * The bytes reserved for the copies of the stacks of the parked threads, reserved but not
- * committed, and the bytes of them left committed between two rounds
+ * The bytes reserved for the grey objects and the copies of the stacks the threads hand over in a
+ * round, reserved but not committed, and the bytes of them left committed between two rounds
  * */
 pub def COPY_CAP = 67108864us;
 pub def COPY_KEEP = 1048576us;
@@ -145,8 +145,15 @@ pub record ThreadState {
     pub let mut parked : u32;
     pub let mut go : u32;
 
-    // 1 iif the last handshake asked for is only to be acknowledged, the thread going on at once
-    pub let mut ack : u8;
+    // the task of the last handshake asked for (a TASK_), and what came of it (an OUT_)
+    pub let mut task : u8;
+    pub let mut outcome : u8;
+
+    // the grey objects it handed over in the copies in its last handshake, the time it spent doing
+    // its task, and the address of NLISTS words, the spans of its cache it handed back
+    pub let mut handed : usize;
+    pub let mut pauseNs : u64;
+    pub let mut returned : usize;
 
     // 1 iif the handshake signal of the current round reached it, when it was sent, when the
     // thread parked, when the collector came to it, and the words it read from it meanwhile
@@ -262,12 +269,10 @@ pub record Globals {
     pub let mut markStack : usize;
     pub let mut markTop : usize;
 
-    // the address of NLISTS words, the spans a reclaim took from the cache of a thread
-    pub let mut reclaimed : usize;
-
-    // the copies of the stacks of the threads a round served, to scan, and their bytes
+    // the grey objects and the copies of the stacks the threads of a round handed over, as records
+    // of two words, their numbers, followed by them, and the bytes of the records
     pub let mut copies : usize;
-    pub let mut copiesLen : usize;
+    pub let mut copiesLen : u64;
 
     // the roots registered by the runtime, as pairs of bounds
     pub let mut rootsLock : usize;
@@ -397,7 +402,6 @@ fn init () {
         (*g).classPages = words (NCLASSES);
         initClasses ((*g).classSize, (*g).classPages);
 
-        (*g).reclaimed = words (NLISTS);
         (*g).listLocks = words (NLISTS);
         (*g).avail = words (NLISTS);
         (*g).full = words (NLISTS);

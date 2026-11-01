@@ -26,13 +26,13 @@ runtime registers (`_yrt_nh_add_roots`), the objects whose finalizer is queued
 to its top, its registers, and its static TLS block (`copyThread`). An object is *reachable* when a
 chain of pointers leads to it from a root.
 
-**Colors during the marking of cycle *N*.** An object is *white* while unmarked, *grey* while
-marked and in a set of objects to scan (the mark stack of the collector, a grey buffer of a thread,
-a buffer handed over in `work`), *black* while marked and not grey. A thread is *grey* until its
-stack is copied in the cycle (`copyThread`, in `ROUND_SCAN`, or `ROUND_FLUSH` for a thread
-registered since), *black* afterwards. The *copy* holds the words of its stack, registers and TLS
-block at its park, and is scanned once the round let the threads go (`scanCopies`), before the
-round ends.
+**Colors during the marking of cycle *N*.** An object is *white* while unmarked, *grey* while marked
+and in a set of objects to scan (the mark stack of the collector, a grey buffer of a thread, a
+buffer handed over in `work`, a record of the copies), *black* while marked and not grey. A thread
+is *grey* until its stack is copied in the cycle (`copyThread`, in `ROUND_SCAN`, or `ROUND_FLUSH`
+for a thread registered since), *black* afterwards. The *copy*, made by the thread itself in its
+handler or by the collector while it waits, holds the words of its stack, registers and TLS block at
+its park, and is scanned once the round let the threads go (`scanCopies`), before the round ends.
 
 **Times of cycle *N*.**
 - *M*: `_yrt_nh_marking` is set to 1, followed by a fence (`runCycle`).
@@ -71,22 +71,36 @@ Then *M* < *a(T)* < *s(T)* < *E* < *G* for every thread registered at *M*.
 ## 2. The handshake is a rendezvous
 
 **Lemma 1.** When the collector returns from waiting for thread *T* to park in handshake *k*
-(`suspend`, or `isParked` in `round`), *T* has been in `_yrt_i_nh_handshake`, has published `sp`,
-and has finished every write barrier and assist it started. Unless *k* is only to be acknowledged
-(a `ROUND_ACK`), *T* stays there until the collector stores `go = k`. Everything *T* wrote before
-parking is visible to the collector, everything the collector wrote before `req = k` is visible to
-*T* from its park on, and everything it wrote before `go = k` is visible to *T* once it resumes.
+(`awaitParked`, or `isParked` in `round`), *T* has been in `_yrt_i_nh_handshake`, has published
+`sp`, has finished every write barrier and assist it started, and has done the task of *k*
+(`doTask`), or found it could not. If it could not, and the task is not a reclaim, which is asked
+again (`OUT_RETRY`), *T* stays there until the collector stores `go = k` (`OUT_WAIT`). Everything
+*T* wrote before parking, its task included, is visible to the collector, everything the collector
+wrote before `req = k` is visible to *T* from its park on, and everything it wrote before `go = k`
+is visible to *T* once it resumes.
 
 *Proof.* Requests to one thread are serialized: the collector stores `req = k` only once it has
 stored `go = k - 1` (in `letGo`, or in `request` when the signal could not be sent), so while *T*
 handles request *k*, `go` is `k - 1` or `k`. The handler reads `seq = req` with acquire ordering,
 which the collector stored with release ordering. It returns at once if `go == seq`, which means
-request *k* is already served. Otherwise it reads `ack`, stored by `request` before `req`, then
-stores `sp`, then `parked = seq` with release ordering, then wakes the futex `parks`. The collector
-reads `parked` with acquire ordering, so `sp` and *T*'s earlier writes happen before what the
-collector does next. An acknowledgment returns there: the collector does nothing to *T*, and what
-the round needs of it, that *T* reads `_yrt_nh_marking` as the collector stored it before the
-request and that no barrier of *T* started before is still running, holds from the park on.
+request *k* is already served. Otherwise it stores `sp`, does the task `request` stored before
+`req`, stores its outcome, then `parked = seq` with release ordering, then wakes the futex
+`parks`. The collector reads `parked` with acquire ordering, so `sp`, what the task wrote (a record
+of the copies, the grey buffer emptied, the cache handed back) and *T*'s earlier writes happen
+before what the collector does next. A thread that did its task, or is to be asked again, returns
+there: the collector has nothing more to do on *T*, and what the round needs of it, that *T* reads
+`_yrt_nh_marking` as the collector stored it before the request, that no barrier of *T* started
+before is still running, and that its task is done, holds from the park on.
+
+The task runs on *T*'s own stack, below `sp`: copying the stack from `sp` up does not read the
+frames doing it. It takes no lock and allocates nothing (*T* may hold any lock, the one of the C
+allocator included): a record of the copies is reserved by a compare and swap on `copiesLen`, and a
+thread finding no room leaves it, to wait for the collector, which then scans *T* in place
+(`scanThread`). The grey buffer of *T* is written by *T* in a barrier or an assist, which the
+handler never interrupts (below), and by `flushGrey` as *T* exits: interrupted there, the handler
+hands over the objects of the buffer, which `link` hands over again, or the zeros of the new one,
+which shade nothing. The cache of *T* is written in an allocation, as *T* exits and around a fork,
+all three with `inAlloc` set, which a reclaim reads first.
 
 Otherwise *T* then sleeps while `go == seq - 1`. That is the only value `go` can hold before the
 collector releases *T*. It sleeps on the futex `releases`, which the collector increments after
@@ -105,17 +119,20 @@ fence: `quiesce` waits for the barriers with a round, not by reading it. ∎
 
 **Lemma 2 (liveness).** A round ends.
 
-*Proof.* A thread is parked only between its request and its release, and the collector takes no
-lock while one is parked: the work of `ROUND_SCAN` and `ROUND_FLUSH` is lock free (`copyThread`,
-`takeGrey`, `markPush`), and a `ROUND_ACK` does no work. A thread the collector waits for can be blocked by a parked
-one: a barrier of *T* calling `link`, which takes `workLock`, while a parked *U* holds it. That is
-why `round` never waits for one given thread. It waits until any thread in its window parks
+*Proof.* A thread doing its task in its handler takes no lock, and its compare and swap fails only
+when another thread's succeeds. A thread waits for the collector only between its request and its
+release, when the copies had no room for it, and the collector takes no lock while one waits: the
+work of `ROUND_SCAN` and `ROUND_FLUSH` on it is lock free (`copyThread`, `scanThread`, `takeGrey`,
+`markPush`). A thread the collector waits for can be blocked by a waiting one: a barrier of *T*
+calling `link`, which takes `workLock`, while a waiting *U* holds it. That is why `round` never
+waits for one given thread. It waits until any thread in its window parks
 (`awaitPark` on the futex `parks`), and serves every parked thread it finds, so *U* is released
 and *T* can go on. A thread blocked in a lock, in `pace`, or in a system call takes the signal and
 parks (A4). The handler wakes `parks` after storing `parked`, and `awaitPark` sleeps only while
-`parks` still holds the value read before the check, so no wake-up is lost. `ROUND_RECLAIM` parks
-one thread at a time, and *T* only after reading `inAlloc == 0`: it takes the spans of *T*'s cache
-while *T* is parked, and hands them back to their lists, which takes their locks, once *T* went. ∎
+`parks` still holds the value read before the check, so no wake-up is lost. `ROUND_RECLAIM` asks
+one thread at a time, *T* only after reading `inAlloc == 0`, and again if *T* was allocating when
+it took the signal; *T* hands its cache over itself, and the collector hands the spans back to their
+lists, which takes their locks, once *T* went. ∎
 
 ## 3. What the barriers keep
 
@@ -136,7 +153,7 @@ apart from what was stored into them through a barrier, and the roots were scann
   ones, which can only protect more.
 - **Scanning an object or a copy** (`scanObject`, `scanCopies`) shades every word of it before
   making it black or dropping it, so no white object is left pointed to by it.
-- **Copying a stack** (`copyThread`), its thread parked, makes the thread black. Every white
+- **Copying a stack** (`copyThread`), its thread in its handler, makes the thread black. Every white
   object its stack, registers or TLS block point to is then pointed to by the copy, which nothing
   writes to until it is scanned, so it is protected. A stack scanned in place once its thread went
   would not do: no barrier sees a store into the thread's own frame, so a pointer moved from a slot
@@ -176,7 +193,7 @@ apart from what was stored into them through a barrier, and the roots were scann
 allocation came before *M* and its span is swept only after the marking of cycle *N*.
 
 *Proof.* *Small objects* (`allocate`) come from a span cached by *T*. Only *T* allocates from it,
-and no sweep touches it while it is cached: `reclaim` takes it back only when `inAlloc == 0`. *T*
+and no sweep touches it while it is cached: a reclaim takes it back only when `inAlloc == 0`. *T*
 sets the `alloc` byte (`spanAlloc`) and zeroes the object, and only then reads
 `marking() || sweepGen != sweepGen()`. If that read gives 1, the object is marked. If it gives 0,
 then either *M* is not visible to *T* yet, so *T* has not passed *a(T)* (after the handshake *T*
@@ -203,25 +220,26 @@ run in about ten. ∎
 white.
 
 *Proof.* `terminate` drains the mark stack and the buffers in `work` (`drain`), then runs a
-`ROUND_FLUSH`. That round moves every thread's grey buffer onto the mark stack (`takeGrey`),
-copies every stack not copied yet in the cycle and scans the copies, then drains again. The loop
+`ROUND_FLUSH`. That round moves every thread's grey buffer into the copies (`copyThread`, or onto
+the mark stack, `takeGrey`, when they have no room), copies every stack not copied yet in the cycle
+and scans the copies, pushing their grey objects on the mark stack, then drains again. The loop
 stops when nothing was found: no buffer held an object, no stack was left to copy, no buffer was
 handed over, no assist
 started (`assists` unchanged), and no thread unknown to the collector was in a barrier
 (`foreignBusy`).
 
-Suppose a thread shaded a white object after its own flush in that round. Take the first such
-shade, at time *t*, of *W*. By Lemma 3, *W* was protected just before *t*. Every stack had already
-been copied (by `ROUND_SCAN`, or by an earlier round for a thread registered since), and every copy
-scanned by the round that made it, so the protection came from a grey object *Q*. *Q* became grey in a buffer, the mark stack, or `work`. If before the
-round, *Q* was drained or found in a thread's buffer (that round then finds something, a
-contradiction). If during the round, it came from a shade before the shading thread's flush (found)
-or after it (earlier than *t*, against the choice of *t*). Assists move buffers out of `work`
-(counted by `assists`), and threads in a barrier park only once done (Lemma 1), so no shade escapes
-the count. Hence no thread shades a white object between its flush and *E*, no grey object exists
-at *E*, and by WT no black object, root or stack points to a white object. Every reachable object
-is therefore black. `finalize` then marks what queued finalizers point to and runs `terminate`
-again, which ends the same way. ∎
+Suppose a thread shaded a white object after its own flush in that round. Take the first such shade,
+at time *t*, of *W*. By Lemma 3, *W* was protected just before *t*. Every stack had already been
+copied (by `ROUND_SCAN`, or by an earlier round for a thread registered since), and every copy
+scanned by the round that made it, so the protection came from a grey object *Q*. *Q* became grey in
+a buffer, the mark stack, the copies, or `work`. If before the round, *Q* was drained or found in a
+thread's buffer (that round then finds something, a contradiction). If during the round, it came
+from a shade before the shading thread's flush (found) or after it (earlier than *t*, against the
+choice of *t*). Assists move buffers out of `work` (counted by `assists`), and threads in a barrier
+park only once done (Lemma 1), so no shade escapes the count. Hence no thread shades a white object
+between its flush and *E*, no grey object exists at *E*, and by WT no black object, root or stack
+points to a white object. Every reachable object is therefore black. `finalize` then marks what
+queued finalizers point to and runs `terminate` again, which ends the same way. ∎
 
 ## 6. The sweep
 
@@ -270,20 +288,23 @@ alive, and never frees anything. ∎
 Threads load, drop, allocate, and store through the barrier in three steps: the test of the flag,
 the body of the barrier, and the store. A handshake parks a thread before the test, after the store,
 or between the body and the store, after which the body runs again (`_yrt_nh_wb`). The stores of
-`_yrt_nh_store_ptr` never park there, so they are one of the behaviors the model checks. The collector clears
-the marks, sets the flag, and runs the `ROUND_ACK`, root and `ROUND_SCAN` rounds (serving the
-threads in the order they park, a thread acknowledging the `ROUND_ACK` going on at once, the stack
-of a thread served being copied, and the copy scanned in a step of its own, before the round ends,
-while the threads run). It then drains and runs `ROUND_FLUSH` rounds until one finds
+`_yrt_nh_store_ptr` never park there, so they are one of the behaviors the model checks. The
+collector clears the marks, sets the flag, and runs the `ROUND_ACK`, root and `ROUND_SCAN` rounds
+(serving the threads in the order they park, a thread acknowledging the `ROUND_ACK` going on at
+once, the stack of a thread served being copied, and the copy scanned in a step of its own, before
+the round ends, while the threads run). It then drains and runs `ROUND_FLUSH` rounds until one finds
 nothing, and sweeps. `Safe` states that every object reachable from the global, a stack or the heap
-is allocated. TLC explores every interleaving of an instance. With `Lifecycle`, threads are also
-spawned (the parent keeping what it hands over on its stack until the child registered), register
-outside the rounds, and exit (their grey buffer handed over, their stack no longer a root). The
-model leaves out the arithmetic (the page map, the size classes), the span lists and the lazy
-sweeping (its sweep is one atomic step), assists, and finalizers. A stack being a set scanned in
-one step, the model cannot show why it is copied: scanning it in place once its thread went holds
-there too. The race of `release` in Lemma 6
-lived in that gap: the stress tests found it, and assertions in the collector located it.
+is allocated. TLC explores every interleaving of an instance. A thread stays parked from its park to
+its serve: a thread doing the work of the round in its handler is the interleaving where its serve
+follows its park at once, the grey objects it hands over in the copies being on the mark stack
+before the round ends, as `Serve` puts them; one waiting for the collector, the others. With
+`Lifecycle`, threads are also spawned (the parent keeping what it hands over on its stack until the
+child registered), register outside the rounds, and exit (their grey buffer handed over, their stack
+no longer a root). The model leaves out the arithmetic (the page map, the size classes), the span
+lists and the lazy sweeping (its sweep is one atomic step), assists, and finalizers. A stack being a
+set scanned in one step, the model cannot show why it is copied: scanning it in place once its
+thread went holds there too. The race of `release` in Lemma 6 lived in that gap: the stress tests
+found it, and assertions in the collector located it.
 
 | configuration | threads, objects | what it changes | result |
 |---|---|---|---|
