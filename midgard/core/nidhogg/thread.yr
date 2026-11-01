@@ -139,11 +139,9 @@ pub extern (C) fn _yrt_i_nh_handshake (sp: usize) {
     let ts = _yrt_i_nh_get_self ();
     if (ts == 0us) return;
 
+    if (_yrt_i_nh_defer () != 0u8) return;
+
     let dmut t = thread (ts);
-    if (_yrt_i_nh_load8 (cast!usize (&((*t).busy))) != 0u8) {
-        _yrt_i_nh_store8 (cast!usize (&((*t).deferred)), 1u8);
-        return;
-    }
 
     let seq = _yrt_i_nh_load32 (cast!usize (&((*t).req)));
     if (_yrt_i_nh_load32 (cast!usize (&((*t).go))) == seq || crashing ()) return;
@@ -428,22 +426,13 @@ fn reclaim (ts: usize) {
 }
 
 /**
- * Wait until no thread runs a write barrier or an assist anymore, the collector no longer marking
+ * Wait until no thread runs a write barrier or an assist anymore, the collector no longer marking:
+ * a round parks each thread once it is out of them
  * */
 @{nogc, unsafe}
-pub fn quiesce () {
-    let dmut g = G ();
-    _yrt_i_nh_mutex_lock ((*g).threadsLock);
-    let mut ts = ld ((*g).threads);
-    while (ts != 0us) {
-        while (_yrt_i_nh_load8 (cast!usize (&((*thread (ts)).busy))) != 0u8) {
-            _yrt_i_nh_yield ();
-        }
-
-        ts = (*thread (ts)).next;
-    }
-
-    _yrt_i_nh_mutex_unlock ((*g).threadsLock);
+pub fn quiesce (cycle: u64) {
+    let g = G ();
+    round (ROUND_ACK, cycle);
     while (_yrt_i_nh_load64 (cast!usize (&((*g).foreignBusy))) != 0u64) {
         _yrt_i_nh_yield ();
     }
@@ -457,12 +446,12 @@ pub fn quiesce () {
 pub fn enterBusy ()-> usize {
     let ts = _yrt_i_nh_get_self ();
     if (ts != 0us) {
-        _yrt_i_nh_store8 (cast!usize (&((*thread (ts)).busy)), 1u8);
+        _yrt_i_nh_enter_busy ();
     } else {
         _yrt_i_nh_add64 (cast!usize (&((*G ()).foreignBusy)), 1u64);
+        _yrt_i_nh_fence ();
     }
 
-    _yrt_i_nh_fence ();
     ts
 }
 
@@ -474,17 +463,10 @@ pub fn enterBusy ()-> usize {
 @{nogc, unsafe}
 pub fn leaveBusy (ts: usize)-> bool {
     if (ts != 0us) {
-        let dmut t = thread (ts);
-        _yrt_i_nh_store8 (cast!usize (&((*t).busy)), 0u8);
-        if (_yrt_i_nh_load8 (cast!usize (&((*t).deferred))) != 0u8) {
-            _yrt_i_nh_store8 (cast!usize (&((*t).deferred)), 0u8);
-            _yrt_i_nh_park ();
-            return true;
-        }
-    } else {
-        _yrt_i_nh_sub64 (cast!usize (&((*G ()).foreignBusy)), 1u64);
+        return _yrt_i_nh_leave_busy () != 0u8;
     }
 
+    _yrt_i_nh_sub64 (cast!usize (&((*G ()).foreignBusy)), 1u64);
     false
 }
 

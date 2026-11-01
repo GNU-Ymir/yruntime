@@ -32,6 +32,11 @@ uint64_t _yrt_i_nh_globals = 0;
 // the state of the calling thread in the collector, 0 until it is registered
 static __thread uint64_t __NH_SELF__ = 0;
 
+// 1 while the calling thread runs a store through the barrier or an assist, and when a handshake
+// waits for it to be done to park it. Only the thread and its signal handler read them
+static __thread uint8_t __NH_BUSY__ = 0;
+static __thread uint8_t __NH_DEFERRED__ = 0;
+
 static pthread_key_t __NH_THREAD_KEY__;
 static pthread_once_t __NH_THREAD_KEY_ONCE__ = PTHREAD_ONCE_INIT;
 
@@ -330,6 +335,42 @@ __attribute__ ((noinline)) void _yrt_i_nh_park (void) {
     __builtin_unwind_init ();
     volatile uint64_t marker = 0;
     _yrt_i_nh_handshake ((uint64_t) &marker);
+}
+
+static inline __attribute__ ((always_inline)) void _nh_enter_busy (void) {
+    __atomic_store_n (&__NH_BUSY__, 1, __ATOMIC_RELAXED);
+    __atomic_signal_fence (__ATOMIC_SEQ_CST);
+}
+
+static __attribute__ ((noinline, cold)) void _nh_park_deferred (void) {
+    __atomic_store_n (&__NH_DEFERRED__, 0, __ATOMIC_RELAXED);
+    _yrt_i_nh_park ();
+}
+
+static inline __attribute__ ((always_inline)) uint8_t _nh_leave_busy (void) {
+    __atomic_signal_fence (__ATOMIC_SEQ_CST);
+    __atomic_store_n (&__NH_BUSY__, 0, __ATOMIC_RELAXED);
+    __atomic_signal_fence (__ATOMIC_SEQ_CST);
+    if (__builtin_expect (__atomic_load_n (&__NH_DEFERRED__, __ATOMIC_RELAXED), 0)) {
+        _nh_park_deferred ();
+        return 1;
+    }
+
+    return 0;
+}
+
+void _yrt_i_nh_enter_busy (void) {
+    _nh_enter_busy ();
+}
+
+uint8_t _yrt_i_nh_leave_busy (void) {
+    return _nh_leave_busy ();
+}
+
+uint8_t _yrt_i_nh_defer (void) {
+    if (!__atomic_load_n (&__NH_BUSY__, __ATOMIC_RELAXED)) return 0;
+    __atomic_store_n (&__NH_DEFERRED__, 1, __ATOMIC_RELAXED);
+    return 1;
 }
 
 void _yrt_i_nh_install_handshake (void) {

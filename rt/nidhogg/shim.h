@@ -144,6 +144,24 @@ void     _yrt_i_nh_install_handshake (void);
 void     _yrt_i_nh_park (void);
 
 /**
+ * Mark the calling thread as running a store through the barrier or an assist, a handshake then
+ * deferring its park to _yrt_i_nh_leave_busy
+ * */
+void     _yrt_i_nh_enter_busy (void);
+
+/**
+ * Mark the calling thread as done, parking it if a handshake interrupted it meanwhile
+ * @returns: 1 iif it parked
+ * */
+uint8_t  _yrt_i_nh_leave_busy (void);
+
+/**
+ * Record that a handshake interrupted the calling thread while it was busy
+ * @returns: 1 iif it was busy, the handshake leaving it to park once it is done
+ * */
+uint8_t  _yrt_i_nh_defer (void);
+
+/**
  * Unblock the handshake signal in the calling thread
  * */
 void     _yrt_i_nh_unblock_handshake (void);
