@@ -11,8 +11,9 @@
 (* between the body and the store only from leaveBusy, as _yrt_nh_wb lets  *)
 (* it, and shades again; _yrt_nh_store_ptr never parks there, one of the   *)
 (* behaviors checked. Threads are spawned, register and exit as the        *)
-(* runtime has them do. The toggles below put the defects back, so that    *)
-(* the model is shown to catch them.                                       *)
+(* runtime has them do, and assist the collector from the grey buffers     *)
+(* handed over. The toggles below put the defects back, so that the model  *)
+(* is shown to catch them.                                                 *)
 (***************************************************************************)
 EXTENDS Naturals, FiniteSets, TLC
 
@@ -30,7 +31,10 @@ CONSTANTS
     ShadeNew,         \* FALSE: the barrier does not shade the stored pointer
     Lifecycle,        \* FALSE: every thread is registered from the start and never exits
     ScanNewThreads,   \* FALSE: a flush round does not scan a thread registered since the SCAN round
-    ExitHandsGrey     \* FALSE: a thread exiting drops its grey buffer instead of handing it over
+    ExitHandsGrey,    \* FALSE: a thread exiting drops its grey buffer instead of handing it over
+    Assists,          \* TRUE: grey buffers overflow into work, and threads assist from it
+    AssistAfterAck,   \* FALSE: a thread assists once it reads the flag at 1, before the ACK round ended
+    CountAssists      \* FALSE: terminate ignores the assists that took a buffer during its round
 
 VARIABLES
     heap,       \* the pointer field of each object
@@ -57,12 +61,16 @@ VARIABLES
     work,       \* the grey buffers handed over to the collector, by the threads that exited
     tchild,     \* the thread a thread spawned and waits for, until it registered
     copy,       \* the copy of the stack of each thread the round served, to scan
-    copied      \* the threads whose copy is not scanned yet
+    copied,     \* the threads whose copy is not scanned yet
+    assisted    \* an assist took a buffer since the last drain ended (`assists` changed)
 
 vars == << heap, glob, alloc, mark, stack, tpc, tdst, tval, tm, tobj, grey, marking, sweeping,
-           markStack, req, parked, cpc, pending, found, reg, scanned, work, tchild, copy, copied >>
+           markStack, req, parked, cpc, pending, found, reg, scanned, work, tchild, copy, copied,
+           assisted >>
 
-LifeUnchanged == UNCHANGED << reg, scanned, work, tchild, copy, copied >>
+LifeUnchanged == UNCHANGED << reg, scanned, work, tchild, copy, copied, assisted >>
+
+NoAssist == UNCHANGED assisted
 
 Ptr == Obj \cup {Null}
 
@@ -87,7 +95,7 @@ TypeOK ==
     /\ alloc \in [Obj -> BOOLEAN]
     /\ mark \in [Obj -> BOOLEAN]
     /\ stack \in [Thr -> SUBSET Obj]
-    /\ tpc \in [Thr -> {"idle", "barrier", "store", "decide", "large", "spawnwait"}]
+    /\ tpc \in [Thr -> {"idle", "barrier", "store", "decide", "large", "spawnwait", "assist"}]
     /\ grey \in [Thr -> SUBSET Obj]
     /\ markStack \in SUBSET Obj
     /\ cpc \in {"idle", "ack", "scan", "drain", "flush", "sweep"}
@@ -95,6 +103,7 @@ TypeOK ==
     /\ work \in SUBSET Obj
     /\ copy \in [Thr -> SUBSET Obj]
     /\ copied \in SUBSET Thr
+    /\ assisted \in BOOLEAN
 
 -----------------------------------------------------------------------------
 (* Shading: mark a white allocated object, and put it where it will be scanned *)
@@ -110,16 +119,17 @@ MarkAll(S) == [o \in Obj |-> mark[o] \/ o \in S]
 
 Held(t) == stack[t]
 
-\* A thread parks at any step but inside the body of a barrier (a single step here). Between the
-\* test of compiled code and its store, two parks are possible: the one leaveBusy makes once the
-\* body is done (tpc = "store" after a test that read 1), which RedoBarrier follows with the body
-\* again, and a plain one, which AtomicTestStore rules out.
+\* A thread parks at any step but inside the body of a barrier (a single step here) or an assist.
+\* Between the test of compiled code and its store, two parks are possible: the one leaveBusy makes
+\* once the body is done (tpc = "store" after a test that read 1), which RedoBarrier follows with the
+\* body again, and a plain one, which AtomicTestStore rules out.
 DeferredPark(t) == tpc[t] = "store" /\ tm[t]
 
 PlainParkOK(t) ==
-    \/ tpc[t] \notin {"barrier", "store"}
-    \/ ~AtomicTestStore
-    \/ DeferredPark(t) /\ ~RedoBarrier
+    /\ tpc[t] # "assist"
+    /\ \/ tpc[t] \notin {"barrier", "store"}
+       \/ ~AtomicTestStore
+       \/ DeferredPark(t) /\ ~RedoBarrier
 
 \* A handshake of an ACK round is only acknowledged: the thread goes on at once, and the collector
 \* has nothing more to do on it
@@ -253,7 +263,7 @@ InRound == cpc \in {"ack", "scan", "flush"}
 Live == {t \in Thr : reg[t] = "running"}
 
 UnchangedButLife == UNCHANGED << heap, glob, alloc, mark, tdst, tval, tm, tobj, marking, sweeping,
-                                markStack, req, parked, cpc, pending, found, copy, copied >>
+                                markStack, req, parked, cpc, pending, found, copy, copied, assisted >>
 
 \* _yrt_i_thread_create: the child gets an object of the parent (the closure, the content of a
 \* future), which the parent keeps on its stack until the child registered
@@ -300,10 +310,47 @@ Exit(t) ==
     /\ UNCHANGED << tpc, scanned, tchild >>
     /\ UnchangedButLife
 
+\* flushGrey, a barrier or an assist filling the grey buffer: the buffer is handed over
+Overflow(t) ==
+    /\ Assists
+    /\ Running(t) /\ grey[t] # {}
+    /\ work' = work \cup grey[t]
+    /\ grey' = [grey EXCEPT ![t] = {}]
+    /\ UNCHANGED << heap, glob, alloc, mark, stack, tpc, tdst, tval, tm, tobj >>
+    /\ UNCHANGED << marking, sweeping, markStack, req, parked, cpc, pending, found >>
+    /\ UNCHANGED << reg, scanned, tchild, copy, copied, assisted >>
+
+\* assist, busy from an allocation while the collector marks, once every thread acknowledged it
+\* (assistOn): it takes a buffer handed over, counted by `assists`, and scans it in a later step,
+\* no handshake parking it in between
+AssistTake(t) ==
+    /\ Assists
+    /\ Running(t) /\ tpc[t] = "idle" /\ marking
+    /\ AssistAfterAck => cpc \in {"scan", "drain", "flush"}
+    /\ \E o \in work :
+         /\ work' = work \ {o}
+         /\ tobj' = [tobj EXCEPT ![t] = o]
+    /\ tpc' = [tpc EXCEPT ![t] = "assist"]
+    /\ assisted' = TRUE
+    /\ UNCHANGED << heap, glob, alloc, mark, stack, tdst, tval, tm, grey >>
+    /\ UNCHANGED << marking, sweeping, markStack, req, parked, cpc, pending, found >>
+    /\ UNCHANGED << reg, scanned, tchild, copy, copied >>
+
+AssistScan(t) ==
+    /\ Running(t) /\ tpc[t] = "assist"
+    /\ LET G == ShadeSet({heap[tobj[t]]}) IN
+       /\ mark' = MarkAll(G)
+       /\ grey' = [grey EXCEPT ![t] = @ \cup G]
+    /\ tpc' = [tpc EXCEPT ![t] = "idle"]
+    /\ tobj' = [tobj EXCEPT ![t] = Null]
+    /\ UNCHANGED << heap, glob, alloc, stack, tdst, tval, tm >>
+    /\ ThreadVarsUnchanged
+
 ThreadStep(t) ==
     \/ Park(t) \/ Load(t) \/ Drop(t) \/ StoreTest(t) \/ Barrier(t) \/ Store(t)
     \/ AllocObj(t) \/ Decide(t) \/ LargeRead(t) \/ LargeAlloc(t)
     \/ (\E c \in Thr \ {t} : Spawn(t, c)) \/ Register(t) \/ SpawnDone(t) \/ Exit(t)
+    \/ Overflow(t) \/ AssistTake(t) \/ AssistScan(t)
 
 -----------------------------------------------------------------------------
 (* The collector *)
@@ -324,7 +371,7 @@ Start ==
     /\ scanned' = [t \in Thr |-> FALSE]
     /\ cpc' = "ack"
     /\ UNCHANGED << grey, sweeping, markStack, parked, found, work >>
-    /\ CollectorThreadVarsUnchanged /\ CopiesUnchanged
+    /\ CollectorThreadVarsUnchanged /\ CopiesUnchanged /\ NoAssist
 
 \* the work of a round on a parked thread, served in the order the threads park: its stack is
 \* copied (copyThread), to be scanned once it went
@@ -351,7 +398,7 @@ Serve(t) ==
     /\ req' = [req EXCEPT ![t] = FALSE]
     /\ pending' = pending \ {t}
     /\ UNCHANGED << mark, marking, sweeping, cpc, work >>
-    /\ CollectorThreadVarsUnchanged
+    /\ CollectorThreadVarsUnchanged /\ NoAssist
 
 \* scanCopies: the copy of a stack is scanned, its thread running meanwhile
 ScanCopy(t) ==
@@ -363,7 +410,7 @@ ScanCopy(t) ==
     /\ copy' = [copy EXCEPT ![t] = {}]
     /\ copied' = copied \ {t}
     /\ UNCHANGED << grey, marking, sweeping, req, parked, cpc, pending, found, scanned, work >>
-    /\ CollectorThreadVarsUnchanged
+    /\ CollectorThreadVarsUnchanged /\ NoAssist
 
 \* the end of a round, once the copies of the stacks are scanned
 RoundDone ==
@@ -382,7 +429,7 @@ RoundDone ==
               /\ cpc' = "drain"
               /\ UNCHANGED << mark, markStack, req, pending, found, marking, sweeping >>
          [] cpc = "flush" ->
-              IF found \/ markStack # {} \/ work # {}
+              IF found \/ (CountAssists /\ assisted) \/ markStack # {} \/ work # {}
               THEN /\ cpc' = "drain"
                    /\ UNCHANGED << mark, markStack, req, pending, found, marking, sweeping >>
               ELSE \* the end of the marking: sweepGen += 2, then _yrt_nh_marking = 0
@@ -391,7 +438,7 @@ RoundDone ==
                    /\ cpc' = "sweep"
                    /\ UNCHANGED << mark, markStack, req, pending, found >>
     /\ UNCHANGED << grey, parked, scanned, work >>
-    /\ CollectorThreadVarsUnchanged /\ CopiesUnchanged
+    /\ CollectorThreadVarsUnchanged /\ CopiesUnchanged /\ NoAssist
 
 \* scan an object of the mark stack
 DrainOne ==
@@ -401,7 +448,7 @@ DrainOne ==
          /\ mark' = MarkAll(G)
          /\ markStack' = (markStack \ {o}) \cup G
     /\ UNCHANGED << grey, marking, sweeping, req, parked, cpc, pending, found, scanned, work >>
-    /\ CollectorThreadVarsUnchanged /\ CopiesUnchanged
+    /\ CollectorThreadVarsUnchanged /\ CopiesUnchanged /\ NoAssist
 
 \* takeWork: the buffers handed over go to the mark stack
 TakeWork ==
@@ -410,15 +457,26 @@ TakeWork ==
     /\ markStack' = markStack \cup work
     /\ work' = {}
     /\ UNCHANGED << mark, grey, marking, sweeping, req, parked, cpc, pending, found, scanned >>
-    /\ CollectorThreadVarsUnchanged /\ CopiesUnchanged
+    /\ CollectorThreadVarsUnchanged /\ CopiesUnchanged /\ NoAssist
 
-\* the mark stack is empty and no buffer is handed over: a FLUSH round
+\* publishWork: an assist found no buffer, the collector hands objects of its mark stack over
+Share ==
+    /\ Assists
+    /\ cpc = "drain"
+    /\ \E o \in markStack :
+         /\ markStack' = markStack \ {o}
+         /\ work' = work \cup {o}
+    /\ UNCHANGED << mark, grey, marking, sweeping, req, parked, cpc, pending, found, scanned >>
+    /\ CollectorThreadVarsUnchanged /\ CopiesUnchanged /\ NoAssist
+
+\* the mark stack is empty and no buffer is handed over: terminate reads `assists`, then a FLUSH round
 DrainDone ==
     /\ cpc = "drain"
     /\ markStack = {} /\ work = {}
     /\ req' = [t \in Thr |-> t \in Live]
     /\ pending' = Live
     /\ found' = FALSE
+    /\ assisted' = FALSE
     /\ cpc' = "flush"
     /\ UNCHANGED << mark, markStack, grey, marking, sweeping, parked, scanned, work >>
     /\ CollectorThreadVarsUnchanged /\ CopiesUnchanged
@@ -439,7 +497,7 @@ Sweep ==
 
 CollectorStep ==
     Start \/ (\E t \in Thr : Serve(t) \/ ScanCopy(t)) \/ RoundDone \/ DrainOne \/ TakeWork
-    \/ DrainDone \/ Sweep
+    \/ Share \/ DrainDone \/ Sweep
 
 -----------------------------------------------------------------------------
 
@@ -470,6 +528,7 @@ Init ==
     /\ tchild = [t \in Thr |-> Null]
     /\ copy = [t \in Thr |-> {}]
     /\ copied = {}
+    /\ assisted = FALSE
 
 Next == CollectorStep \/ (\E t \in Thr : ThreadStep(t))
 
