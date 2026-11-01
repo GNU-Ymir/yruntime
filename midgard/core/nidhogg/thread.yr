@@ -827,7 +827,7 @@ fn account (ts: usize, bytes: u64)-> bool {
     (*t).allocated = (*t).allocated + bytes;
     if ((*t).allocated >= ALLOC_BATCH) {
         let live = flushAllocated (ts);
-        if (live >= (*g).goal) {
+        if (live >= (*g).trigger) {
             trigger ();
         }
 
@@ -901,7 +901,7 @@ fn flushAllocated (ts: usize)-> u64 {
 }
 
 /**
- * Wake the collector up, the live heap having reached its goal
+ * Wake the collector up, the live heap having reached its trigger
  * */
 @{nogc, unsafe}
 pub fn trigger () {

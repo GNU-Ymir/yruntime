@@ -13,7 +13,7 @@ use core::nidhogg::{heap, mark, state, sys, thread};
 def IDLE_NS = 100000000u64;
 
 /**
- * Run the cycles, when the live heap reaches its goal or a thread asks for one
+ * Run the cycles, when the live heap reaches its trigger or a thread asks for one
  * */
 @nogc
 pub extern (C) fn _yrt_i_nh_collector_main () {
@@ -49,7 +49,7 @@ fn shouldCollect ()-> bool {
         if ((*g).disabled != 0u64) return false;
         if ((*g).requested > (*g).cycle) return true;
 
-        liveHeap (_yrt_i_nh_load64 (cast!usize (&((*g).heapLive)))) >= (*g).goal
+        liveHeap (_yrt_i_nh_load64 (cast!usize (&((*g).heapLive)))) >= (*g).trigger
     }
 }
 
@@ -87,6 +87,8 @@ fn runCycle (number: u64) {
     }
 
     {
+        let after = liveHeap (_yrt_i_nh_load64 (cast!usize (&((*g).heapLive))));
+        (*g).runway = if (after > before) { after - before } else { 0u64 };
         if ((*g).verify == 1u8) {
             verifyMarks ();
         }
@@ -128,9 +130,10 @@ fn runCycle (number: u64) {
         let marked = if (freed < before) { before - freed } else { 0u64 };
         (*g).heapMarked = marked;
 
-        let goal = marked + (marked / 100u64) * (*g).gogc;
-        (*g).goal = if (goal < MIN_GOAL) { MIN_GOAL } else { goal };
-        (*g).hard = hardLimit (marked, (*g).goal);
+        let (goal, hard) = limits (marked, (*g).gogc, (*g).memLimit);
+        (*g).goal = goal;
+        (*g).hard = hard;
+        (*g).trigger = triggerOf (marked, goal, (*g).runway);
     }
 }
 

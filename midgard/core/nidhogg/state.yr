@@ -62,9 +62,14 @@ pub def COPY_KEEP = 1048576us;
 pub def ALLOC_BATCH = 65536u64;
 
 /**
- * The heap below which no cycle is triggered
+ * The smallest goal of a cycle
  * */
 pub def MIN_GOAL = 4194304u64;
+
+/**
+ * The growth a memory limit always leaves past the heap the last marking found reachable
+ * */
+pub def LIMIT_SLACK = 1048576u64;
 
 /**
  * The longest a thread held past the hard limit of the heap sleeps before it checks it again
@@ -225,14 +230,21 @@ pub record Globals {
     // the current sweep generation, increased by 2 at the end of each cycle
     pub let mut sweepGen : u64;
 
-    // the bytes of the live objects, of the ones the last cycle marked, and the next trigger
+    // the bytes of the live objects, of the ones the last cycle marked, the live heap at which the
+    // next cycle starts, the one its marking is to end at, and the growth of the heap during the
+    // last marking
     pub let mut heapLive : u64;
     pub let mut heapMarked : u64;
+    pub let mut trigger : u64;
     pub let mut goal : u64;
+    pub let mut runway : u64;
 
     // the live heap past which a thread allocating while a cycle runs waits for it to end
     pub let mut hard : u64;
     pub let mut gogc : u64;
+
+    // the bytes the heap may map, 0 if unbounded
+    pub let mut memLimit : u64;
 
     // the lock and the condition of the cycles, the number of completed ones and of the one waited for
     pub let mut lock : usize;
@@ -419,8 +431,11 @@ fn init () {
 
         (*g).sweepGen = 2u64;
         (*g).gogc = envNum ("NIDHOGG_GOGC\u{0}", 100u64);
-        (*g).goal = MIN_GOAL;
-        (*g).hard = hardLimit (0u64, MIN_GOAL);
+        (*g).memLimit = envBytes ("NIDHOGG_MEMLIMIT\u{0}", 0u64);
+        let (goal, hard) = limits (0u64, (*g).gogc, (*g).memLimit);
+        (*g).goal = goal;
+        (*g).hard = hard;
+        (*g).trigger = triggerOf (0u64, goal, 0u64);
         (*g).verify = cast!u8 (envNum ("NIDHOGG_VERIFY\u{0}", 0u64) != 0u64);
         (*g).stats = cast!u8 (envNum ("NIDHOGG_STATS\u{0}", 0u64) != 0u64);
 
@@ -516,4 +531,42 @@ pub fn classOf (size: usize)-> usize {
 pub fn hardLimit (live: u64, goal: u64)-> u64 {
     let slack = goal - live;
     goal + (if (slack < MIN_GOAL) { MIN_GOAL } else { slack })
+}
+
+/**
+ * @returns: the goal and the hard limit after a marking found `marked` bytes reachable, `gogc`
+ * percent more (MIN_GOAL at least) and that growth once more; a memory limit `limit` (0 if none)
+ * lowers them to 15/16 of it and to it, leaving LIMIT_SLACK or `marked` / 16 of growth at least
+ * */
+@nogc
+pub fn limits (marked: u64, gogc: u64, limit: u64)-> (u64, u64) {
+    let mut goal = marked + (marked / 100u64) * gogc;
+    if (goal < MIN_GOAL) goal = MIN_GOAL;
+
+    let mut hard = hardLimit (marked, goal);
+    if (limit != 0u64) {
+        let slack = if (marked / 16u64 < LIMIT_SLACK) { LIMIT_SLACK } else { marked / 16u64 };
+        let room = limit - limit / 16u64;
+        let capped = if (room < marked + slack) { marked + slack } else { room };
+        if (goal > capped) goal = capped;
+
+        let cap = if (limit < goal + slack) { goal + slack } else { limit };
+        if (hard > cap) hard = cap;
+    }
+
+    (goal, hard)
+}
+
+/**
+ * @returns: the live heap at which the cycle after a marking that found `marked` bytes reachable
+ * starts, the heap growing by `runway` bytes during a marking: soon enough for the marking to end
+ * at `goal`, between 60% and 95% of the way from `marked` to it
+ * */
+@nogc
+pub fn triggerOf (marked: u64, goal: u64, runway: u64)-> u64 {
+    let span = goal - marked;
+    let lo = marked + (span / 10u64) * 6u64;
+    let hi = goal - span / 20u64;
+    let t = if (runway >= goal - lo) { lo } else { goal - runway };
+    if (t > hi) { hi } else { t }
 }
