@@ -305,17 +305,23 @@ threads at a time through a handshake (`SIGPWR`, the thread parking on a futex i
 the collector reads its stack and its TLS block; a thread caught in a barrier or an assist parks
 once it is done, from `leaveBusy`; a round signals `WINDOW` threads ahead and serves them in the
 order they park, since a thread in a barrier can wait for a lock a parked one holds), and relies
-on the write barriers the compiler emits before every store of a pointer out of a frame
-(`_yrt_nh_wb`, `_yrt_nh_wb_range`, `_yrt_nh_store`, tested on `_yrt_nh_marking`), which shade
-both the overwritten and the stored pointer. Stacks, registers and objects are scanned conservatively, interior pointers included.
+on the write barrier the compiler makes every store of a pointer out of a frame go through
+(`_yrt_nh_store_ptr`, `_yrt_nh_store` for an aggregate): it tests `_yrt_nh_marking`, shades both
+the overwritten and the stored pointer, and stores while the thread is busy, so that no handshake
+falls between the test and the store. `busy` is a thread local of the shim, read only by the thread
+and its handler (no fence); `quiesce` waits for the barriers with a `ROUND_ACK` round.
+`_yrt_nh_wb` and `_yrt_nh_wb_range` remain for code testing the flag itself, which leaves that gap.
+Stacks, registers and objects are scanned conservatively, interior pointers included.
 
 - It is written in Ymir, every function `@nogc` (no barrier, no coverage hook, no GC allocation,
   no call to a non-`@nogc` function — the frontend checks it), its memory coming from `calloc` and
   `mmap`; `rt/nidhogg/shim.c` holds only what Ymir cannot express (atomics, locks, the signal
-  handler, threads, `dl_iterate_phdr`). Building midgard therefore needs a `gyc` that knows
+  handler, threads, `dl_iterate_phdr`, and the stores through the barrier, built on its thread
+  locals and inlined there, since a call per store of a pointer is what they cost). Building midgard therefore needs a `gyc` that knows
   `@nogc` and emits the barriers (YMI-269).
-- C code storing a pointer into collected memory goes through the barrier too: the inline helpers
-  of `rt/utils/gc.h` (`_yrt_i_gc_store`, `_yrt_i_gc_store_ptr`, `_yrt_i_gc_clear`, and
+- C code storing a pointer into collected memory goes through the barrier too: the helpers of
+  `rt/utils/gc.h` (`_yrt_i_gc_store`, `_yrt_i_gc_store_ptr`, `_yrt_i_gc_clear`, calling the stores
+  of the shim, and
   `_yrt_i_gc_copy_new` to copy into a fresh block). A plain store of a pointer into a collected
   object can free what it points to; memory out of the collector holding collected pointers is
   registered as a root (`_yrt_nh_add_roots`, as the exception headers are).

@@ -20,16 +20,16 @@ pub extern (C) fn _yrt_nh_alloc (size: usize, flags: u8)-> usize {
 
 /**
  * The write barrier of a store of the pointer `val` into the slot `slot`, shading the pointer it
- * overwrites and the one it stores. A handshake that parked the thread once the shading was done
- * may have started a marking the shading was not part of: the shading is done again
+ * overwrites and the one it stores, for code making the store itself. A handshake that parked the
+ * thread once the shading was done may have started a marking the shading was not part of: the
+ * shading is done again. The stores of _yrt_nh_store_ptr leave no such gap
  * */
 @nogc
 pub extern (C) fn _yrt_nh_wb (slot: usize, val: usize) {
     loop {
         let ts = enterBusy ();
         if (marking ()) {
-            shadeFromThread (ld (slot));
-            shadeFromThread (val);
+            _yrt_i_nh_shade_pair (ld (slot), val);
         }
 
         if (!leaveBusy (ts)) break;
@@ -45,10 +45,7 @@ pub extern (C) fn _yrt_nh_wb_range (dst: usize, src: usize, size: usize) {
     loop {
         let ts = enterBusy ();
         if (marking ()) {
-            scanRangeFromThread (dst, dst + size);
-            if (src != 0us) {
-                scanRangeFromThread (src, src + size);
-            }
+            _yrt_i_nh_shade_ranges (dst, src, size);
         }
 
         if (!leaveBusy (ts)) break;
@@ -56,12 +53,45 @@ pub extern (C) fn _yrt_nh_wb_range (dst: usize, src: usize, size: usize) {
 }
 
 /**
- * Store the `size` bytes at `src` into the ones at `dst`, through the write barrier
+ * Shade the pointer `old` a store overwrites and the one `val` it stores, the thread being busy
+ * and the collector marking (see _yrt_nh_store_ptr)
  * */
 @nogc
-pub extern (C) fn _yrt_nh_store (dst: usize, src: usize, size: usize) {
-    _yrt_nh_wb_range (dst, src, size);
-    memmove (dst, src, size);
+pub extern (C) fn _yrt_i_nh_shade_pair (old: usize, val: usize) {
+    shadeFromThread (old);
+    shadeFromThread (val);
+}
+
+/**
+ * Shade what the `size` bytes at `dst` and the ones at `src` (unless it is 0) point to, the thread
+ * being busy and the collector marking (see _yrt_nh_store)
+ * */
+@nogc
+pub extern (C) fn _yrt_i_nh_shade_ranges (dst: usize, src: usize, size: usize) {
+    scanRangeFromThread (dst, dst + size);
+    if (src != 0us) {
+        scanRangeFromThread (src, src + size);
+    }
+}
+
+/**
+ * Store the `size` bytes at `src` (zeros if it is 0) into the ones at `dst` through the write
+ * barrier, from a thread unknown to the collector
+ * */
+@nogc
+pub extern (C) fn _yrt_i_nh_store_foreign (dst: usize, src: usize, size: usize) {
+    let ts = enterBusy ();
+    if (marking ()) {
+        _yrt_i_nh_shade_ranges (dst, src, size);
+    }
+
+    if (src != 0us) {
+        memmove (dst, src, size);
+    } else {
+        memset (dst, 0, size);
+    }
+
+    leaveBusy (ts);
 }
 
 /**

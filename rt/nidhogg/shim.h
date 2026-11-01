@@ -203,6 +203,9 @@ void _yrt_i_nh_collector_main (void);
 void _yrt_i_nh_finalizer_main (void);
 void _yrt_i_nh_thread_exit (void * state);
 void _yrt_i_nh_add_data_segment (uint64_t lo, uint64_t hi);
+void _yrt_i_nh_shade_pair (uint64_t old, uint64_t val);
+void _yrt_i_nh_shade_ranges (uint64_t dst, uint64_t src, uint64_t size);
+void _yrt_i_nh_store_foreign (uint64_t dst, uint64_t src, uint64_t size);
 
 /**
  * The entry points of core::nidhogg the runtime calls
@@ -212,6 +215,8 @@ void     _yrt_nh_register_finalizer (void * obj, void * fn);
 void     _yrt_nh_wb (void ** slot, void * val);
 void     _yrt_nh_wb_range (void * dst, void * src, uint64_t size);
 void     _yrt_nh_store (void * dst, void * src, uint64_t size);
+void     _yrt_nh_store_ptr (void ** slot, void * val);
+void     _yrt_nh_clear (void * dst, uint64_t size);
 void     _yrt_nh_shade_range (void * src, uint64_t size);
 void     _yrt_nh_add_roots (void * lo, void * hi);
 void     _yrt_nh_remove_roots (void * lo, void * hi);

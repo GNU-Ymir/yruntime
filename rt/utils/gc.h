@@ -51,8 +51,7 @@ static inline void * _yrt_i_gc_alloc_atomic (uint64_t size) {
  * barrier
  * */
 static inline void _yrt_i_gc_store (void * dst, const void * src, uint64_t size) {
-    if (_yrt_i_gc_marking ()) _yrt_nh_wb_range (dst, (void*) src, size);
-    memmove (dst, src, size);
+    _yrt_nh_store (dst, (void*) src, size);
 }
 
 /**
@@ -60,16 +59,14 @@ static inline void _yrt_i_gc_store (void * dst, const void * src, uint64_t size)
  * barrier
  * */
 static inline void _yrt_i_gc_store_ptr (void ** slot, void * val) {
-    if (_yrt_i_gc_marking ()) _yrt_nh_wb (slot, val);
-    *slot = val;
+    _yrt_nh_store_ptr (slot, val);
 }
 
 /**
  * Zero the 'size' bytes at 'dst' of the memory of the collector, through the write barrier
  * */
 static inline void _yrt_i_gc_clear (void * dst, uint64_t size) {
-    if (_yrt_i_gc_marking ()) _yrt_nh_wb_range (dst, NULL, size);
-    memset (dst, 0, size);
+    _yrt_nh_clear (dst, size);
 }
 
 /**

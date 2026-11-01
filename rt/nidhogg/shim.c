@@ -359,6 +359,10 @@ static inline __attribute__ ((always_inline)) uint8_t _nh_leave_busy (void) {
     return 0;
 }
 
+static inline __attribute__ ((always_inline)) uint8_t _nh_marking (void) {
+    return __atomic_load_n (&_yrt_nh_marking, __ATOMIC_RELAXED);
+}
+
 void _yrt_i_nh_enter_busy (void) {
     _nh_enter_busy ();
 }
@@ -371,6 +375,44 @@ uint8_t _yrt_i_nh_defer (void) {
     if (!__atomic_load_n (&__NH_BUSY__, __ATOMIC_RELAXED)) return 0;
     __atomic_store_n (&__NH_DEFERRED__, 1, __ATOMIC_RELAXED);
     return 1;
+}
+
+// The stores through the barrier: the test of the flag, the shading and the store are made while
+// the thread is busy, so that no handshake parks it between the test and the store
+__attribute__ ((optimize ("O2"))) void _yrt_nh_store_ptr (void ** slot, void * val) {
+    if (__builtin_expect (__NH_SELF__ == 0, 0)) {
+        _yrt_i_nh_store_foreign ((uint64_t) slot, (uint64_t) &val, sizeof (void*));
+        return;
+    }
+
+    _nh_enter_busy ();
+    if (__builtin_expect (_nh_marking (), 0)) _yrt_i_nh_shade_pair ((uint64_t) *slot, (uint64_t) val);
+    *slot = val;
+    _nh_leave_busy ();
+}
+
+__attribute__ ((optimize ("O2"))) void _yrt_nh_store (void * dst, void * src, uint64_t size) {
+    if (__builtin_expect (__NH_SELF__ == 0, 0)) {
+        _yrt_i_nh_store_foreign ((uint64_t) dst, (uint64_t) src, size);
+        return;
+    }
+
+    _nh_enter_busy ();
+    if (__builtin_expect (_nh_marking (), 0)) _yrt_i_nh_shade_ranges ((uint64_t) dst, (uint64_t) src, size);
+    memmove (dst, src, size);
+    _nh_leave_busy ();
+}
+
+__attribute__ ((optimize ("O2"))) void _yrt_nh_clear (void * dst, uint64_t size) {
+    if (__builtin_expect (__NH_SELF__ == 0, 0)) {
+        _yrt_i_nh_store_foreign ((uint64_t) dst, 0, size);
+        return;
+    }
+
+    _nh_enter_busy ();
+    if (__builtin_expect (_nh_marking (), 0)) _yrt_i_nh_shade_ranges ((uint64_t) dst, 0, size);
+    memset (dst, 0, size);
+    _nh_leave_busy ();
 }
 
 void _yrt_i_nh_install_handshake (void) {
