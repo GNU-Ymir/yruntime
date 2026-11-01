@@ -278,12 +278,14 @@ void _yrt_i_nh_set_thread_key (void * state) {
 
 static void * _collector_main (void * data) {
     (void) data;
+    pthread_setname_np (pthread_self (), "nidhogg");
     _yrt_i_nh_collector_main ();
     return NULL;
 }
 
 static void * _finalizer_main (void * data) {
     (void) data;
+    pthread_setname_np (pthread_self (), "nidhogg-fin");
     _yrt_i_nh_finalizer_main ();
     return NULL;
 }
