@@ -51,6 +51,10 @@ pub class SubProcess {
     // The pid of the spawned command
     let mut _pid: u32 = 0;
 
+    // The exit code of the command, once it was waited for
+    let mut _code: i32 = -1;
+    let mut _reaped: bool = false;
+
     let dmut _stdin: (&IOPipe)? = none;
     let dmut _stdout: (&IOPipe)? = none;
     let dmut _stderr: (&IOPipe)? = none;
@@ -125,26 +129,44 @@ pub class SubProcess {
 
     /**
      * Wait for the subprocess to be finished
-     * @returns: the return code of the subprocess
+     * @returns: the exit code of the subprocess, `128 + n` if the signal `n` killed it (the way a
+     *    shell reports it), -1 if it could not be waited for
      * */
     pub fn wait(mut self)-> i32 {
         if let Ok(dmut stdin) = alias self._stdin {
             stdin:.dispose();
         }
 
-        let mut status: i32 = 0;
-        process::waitpid(self._pid, &status, 0);
-        return status;
+        self:.reap(0);
+        self._code
     }
 
     /**
-     * @returns: true if the subprocess is finished
+     * @returns: true if the subprocess is finished, its exit code being kept for wait
      * */
-    pub fn isFinished(self)-> bool {
-        process::waitpid(self._pid, null, 1);
-        if (process::kill(self._pid, 0) == -1) return true;
+    pub fn isFinished(mut self)-> bool {
+        self:.reap(1) // WNOHANG
+    }
 
-        false
+    /**
+     * Collect the subprocess if it is finished, and keep its exit code
+     * @params:
+     *    - flags: the options of waitpid
+     * @returns: true iif it is finished, or cannot be waited for
+     * */
+    prv fn reap(mut self, flags: i32)-> bool {
+        if (self._reaped || self._pid == 0) return true;
+
+        let mut status: i32 = 0;
+        let r = process::waitpid(self._pid, &status, flags);
+        if (r == 0) return false;
+
+        self._reaped = true;
+        if (r > 0) {
+            self._code = exitCode(status);
+        }
+
+        true
     }
 
     /*!
@@ -274,4 +296,14 @@ pub class SubProcess {
         }
     }
 
+}
+
+/**
+ * @returns: the exit code a status of waitpid holds, `128 + n` if the signal `n` killed the process
+ * */
+fn exitCode(status: i32)-> i32 {
+    let signal = status & 0x7f;
+    if (signal != 0) return 128 + signal;
+
+    (status >> 8) & 0xff
 }

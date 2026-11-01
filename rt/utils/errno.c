@@ -14,7 +14,7 @@ void _yrt_set_errno (int err) {
 _yrt_slice_t _yrt_str_get_errno (int err) {
     char * errstr = strerror (err);
     uint64_t len = strlen (errstr);
-    char * result = (char*) (GC_malloc (len + 1));
+    char * result = (char*) (_yrt_i_gc_alloc_atomic (len + 1));
 
     memcpy (result, errstr, len);
     result [len] = 0;

@@ -8,6 +8,7 @@
 
 #include <rt/except/stacktrace.h>
 #include <rt/except/panic.h>
+#include <rt/utils/gc.h>
 
 
 // The local stack of chained exceptions
@@ -58,6 +59,9 @@ _yrt_exc_thread_stack_t* _yrt_i_exc_insert_thread (pthread_t id) {
     head-> stack = NULL;
     head-> next = NULL;
 
+    // the exception in flight is only held here, out of the memory of the collector
+    _yrt_nh_add_roots (head, head + 1);
+
     _yrt_thread_mutex_lock (&_yrt_exc_mutex);
     _yrt_exc_thread_stack_t* current = &_yrt_i_global_stack;
     while (current != NULL) {
@@ -83,6 +87,7 @@ void _yrt_i_exc_remove_thread (_yrt_exc_thread_stack_t* stack) {
         while (current != NULL) {
             if (current-> next == stack) {
                 current-> next = current-> next-> next;
+                _yrt_nh_remove_roots (stack, stack + 1);
                 __builtin_free (stack);
                 break;
             }
@@ -120,9 +125,11 @@ _yrt_exception_header_t* _yrt_i_exc_create_header (void* object, _yrt_exc_thread
         if (!eh) {
             _yrt_i_exc_terminate ("out of memory\n", __FILE__, __FUNCTION__, __LINE__);
         }
+
+        _yrt_nh_add_roots (eh, eh + 1);
     }
 
-    eh-> object = object;
+    _yrt_i_gc_store_ptr (&(eh-> object), object);
     eh-> thread_id = stack-> id;
 
     return eh;
@@ -132,8 +139,9 @@ _yrt_exception_header_t* _yrt_i_exc_create_header (void* object, _yrt_exc_thread
  * Free exception created by create ()
  */
 void _yrt_i_exc_free_header (_yrt_exception_header_t* head, _yrt_exc_thread_stack_t* stack) {
-    memset (head, 0, sizeof (_yrt_exception_header_t));
+    _yrt_i_gc_clear (head, sizeof (_yrt_exception_header_t));
     if (head != &(stack-> ehstorage)) {
+        _yrt_nh_remove_roots (head, head + 1);
         __builtin_free (head);
     }
 

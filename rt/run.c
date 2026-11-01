@@ -20,12 +20,26 @@ _yrt_slice_t __MAIN_ARGS__;
 
 
 void _yrt_exit (int i) {
+    _yrt_nh_exit ();
     exit (i);
+}
+
+// the seconds the trace of a segfault has to be printed in before the process aborts without it
+#define _YRT_CRASH_TIMEOUT 5
+
+static void _yrt_i_crash_timeout (int sig) {
+    (void) sig;
+    static const char msg [] = "\nthe stack trace could not be resolved in time\n";
+    ssize_t r = write (2, msg, sizeof (msg) - 1);
+    (void) r;
+    signal (SIGABRT, SIG_DFL);
+    abort ();
 }
 
 /**
  * Aborts on the first segfault with a stack trace; a segfault of another thread meanwhile waits
- * for that abort, one of the owner's while resolving the trace aborts without trace
+ * for that abort, one of the owner's while resolving the trace aborts without trace. The trace may
+ * need a lock the faulty code held: the process aborts anyway once _YRT_CRASH_TIMEOUT has passed
  */
 void _yrt_i_bt_sighandler(int sig
 #ifdef __linux__
@@ -37,6 +51,9 @@ void _yrt_i_bt_sighandler(int sig
     pid_t self = (pid_t) syscall (SYS_gettid);
     pid_t expected = 0;
     if (__atomic_compare_exchange_n (&owner, &expected, self, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        signal (SIGALRM, &_yrt_i_crash_timeout);
+        alarm (_YRT_CRASH_TIMEOUT);
+        _yrt_nh_crash ();
         _yrt_i_exc_panic_seg_fault ();
     } else if (expected == self) {
         _yrt_exc_panic_no_trace ();
@@ -67,8 +84,7 @@ void _yrt_i_install_handler () {
 void _yrt_init_runtime (int isDebug) {
     __YRT_DEBUG__ = isDebug;
 
-    GC_INIT ();
-    _yrt_i_gc_add_tls_roots (); // spawned threads get theirs in _yrt_i_thread_create
+    _yrt_nh_register_thread (); // spawned threads register in _yrt_i_thread_create
 
     _yrt_i_atomic_init ();
     _yrt_i_install_handler ();
@@ -85,13 +101,15 @@ void _yrt_force_debug (int act) {
 
 _yrt_slice_t _yrt_create_args_slice (int len, char ** argv) {
     _yrt_slice_t arr;
-    arr.data = GC_malloc (sizeof (_yrt_slice_t) * len);
+    arr.data = _yrt_i_gc_alloc (sizeof (_yrt_slice_t) * len);
     arr.len = (unsigned long) len;
+    arr.blk_info = NULL;
 
     for (int i = 0 ; i < len ; i++) {
         _yrt_slice_t inner;
         inner.data = argv[i];
         inner.len = strlen (argv [i]);
+        inner.blk_info = NULL;
         ((_yrt_slice_t*) arr.data)[i] = inner;
     }
 
@@ -115,6 +133,7 @@ int _yrt_run_main_debug (int argc, char ** argv, int(* y_main)(_yrt_slice_t)) {
     _yrt_init_runtime (1);
 
     int ret = y_main (_yrt_create_args_slice (argc, argv));
+    _yrt_nh_exit ();
     return ret;
 }
 
@@ -122,5 +141,6 @@ int _yrt_run_main (int argc, char ** argv, int(* y_main)(_yrt_slice_t)) {
     _yrt_init_runtime (0);
 
     int ret = y_main (_yrt_create_args_slice (argc, argv));
+    _yrt_nh_exit ();
     return ret;
 }

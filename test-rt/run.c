@@ -8,8 +8,8 @@
 #include <string.h>
 #include <sys/ioctl.h>
 
-#include <gc/gc.h>
 #include "../rt/memory/types.h"
+#include <rt/utils/gc.h>
 
 void _yrt_init_runtime (int isDebug);
 _yrt_slice_t _yrt_create_args_slice (int len, char ** argv);
@@ -25,11 +25,12 @@ void _yrt_register_parameterized_unittest_impl (_yrt_slice_t name,
 void _yrt_unittest_coverage_hit_call (void * caller, void * callee);
 void _yrt_unittest_coverage_hit_enter (void * func);
 
-// Build the GC-allocated, '\0'-terminated name slice a registration entry point is given.
+// Build the collected, '\0'-terminated name slice a registration entry point is given.
 static _yrt_slice_t test_name_slice (char * func) {
   _yrt_slice_t arr;
   arr.len = strlen (func) + 1;
-  arr.data = GC_malloc (arr.len);
+  arr.data = _yrt_i_gc_alloc_atomic (arr.len);
+  arr.blk_info = NULL;
   memcpy (arr.data, func, arr.len - 1);
 
   return arr;
@@ -61,7 +62,9 @@ int _yrt_run_unittests (int argc, char ** argv) {
   // isDebug argument, which is what makes stack traces available in tests.
   _yrt_init_runtime (1);
 
-  return _yrt_run_unittests_impl (_yrt_create_args_slice (argc, argv));
+  int ret = _yrt_run_unittests_impl (_yrt_create_args_slice (argc, argv));
+  _yrt_nh_exit ();
+  return ret;
 }
 
 // The number of columns of the terminal stdout is, 0 if it is not a terminal

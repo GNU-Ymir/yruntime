@@ -267,16 +267,17 @@ Three top-level modules declared in `midgard/__lib__.yr`:
   checks the tag and the sequence number before any of the payload is read (`Verifier`). Whether
   a packet must be signed is the receiver's choice, never a header flag.
 - `core` (`midgard/core.yr`): language-support types — `atom`, `exception`, `concurrency`,
-  `math`, `types`, `reflect`. `core::exception::Exception` is the root of the exception
-  hierarchy; in `DEBUG_LIB` builds it captures a stack trace at construction.
+  `math`, `nidhogg`, `types`, `reflect`. `core::exception::Exception` is the root of the exception
+  hierarchy; in `DEBUG_LIB` builds it captures a stack trace at construction. `core::nidhogg` is
+  the garbage collector (see below).
 - `etc` (`midgard/etc.yr`): externals — `etc::c` (raw C bindings) and `etc::runtime::*`
   (`dwarf`, `elf`, `env`, `errno`, `exception`, `files`, `gc`, `memory`, `threads` — thin
   Ymir wrappers around `rt/`).
 
 ### `rt/` — the C runtime
 
-Backs the language runtime independent of Ymir compilation: `rt/memory` (GC, allocation,
-class/type info, printing), `rt/except` (exception raising, stack unwinding, DWARF-based
+Backs the language runtime independent of Ymir compilation: `rt/memory` (allocation,
+class/type info, printing), `rt/nidhogg` (the C shim of the collector), `rt/except` (exception raising, stack unwinding, DWARF-based
 stacktraces), `rt/concurrency` (threads, futures), `rt/utils` (demangling, env, errno, files,
 math, string helpers), `rt/run.c` (process entry glue). Built once as `libruntime.a` and also
 folded into both `gymidgard-*` static libs.
@@ -295,6 +296,65 @@ after touching `rt/`. MID-62 is what it exists to prevent: YMI-141 dropped the `
 `binding/binding/parser.yr` actually calls, and the breakage shipped in a patch release as a bare
 link failure. **A rename inside `_yrt_*` is an ABI change** — it belongs in a minor release with a
 release note, and anything gymir calls has to be changed there in the same breath.
+
+### `core::nidhogg` — the garbage collector
+
+Níðhöggr replaced Boehm: a concurrent, non-moving tri-color mark and sweep collector, close to
+Go's, that never stops all the threads at once. It marks while the program runs, interrupts a few
+threads at a time through a handshake (`SIGPWR`, the thread parking on a futex in the handler while
+the collector reads its stack and its TLS block; a thread caught in a barrier or an assist parks
+once it is done, from `leaveBusy`; a round signals `WINDOW` threads ahead and serves them in the
+order they park, since a thread in a barrier can wait for a lock a parked one holds), and relies
+on the write barrier the compiler makes every store of a pointer out of a frame go through
+(`_yrt_nh_store_ptr`, `_yrt_nh_store` for an aggregate): it tests `_yrt_nh_marking`, shades both
+the overwritten and the stored pointer, and stores while the thread is busy, so that no handshake
+falls between the test and the store. `busy` is a thread local of the shim, read only by the thread
+and its handler (no fence); `quiesce` waits for the barriers with a `ROUND_ACK` round.
+`_yrt_nh_wb` and `_yrt_nh_wb_range` remain for code testing the flag itself, which leaves that gap.
+Stacks, registers and objects are scanned conservatively, interior pointers included.
+
+- `doc/nidhogg.md` is the proof that it never frees a reachable object, step by step against the
+  functions it relies on: a change to the barriers, the handshakes, the allocation or the sweep
+  has to keep the lemma that names it true, or say which one it breaks. It assumes the program
+  has no data race on a pointer field (A6). Its §8 is the gap of a store testing the flag before
+  calling the barrier, which the stores through `_yrt_nh_store_ptr` close. `formal/Nidhogg.tla`
+  models the same algorithm for TLC (`java -cp tla2tools.jar tlc2.TLC -config formal/Small2T.cfg
+  formal/Nidhogg.tla`). A change to the protocol goes into the model too: the passing
+  configurations must still pass, and each failing one must still fail.
+- It is written in Ymir, every function `@nogc` (no barrier, no coverage hook, no GC allocation,
+  no call to a non-`@nogc` function — the frontend checks it), its memory coming from `calloc` and
+  `mmap`; `rt/nidhogg/shim.c` holds only what Ymir cannot express (atomics, locks, the signal
+  handler, threads, `dl_iterate_phdr`, and the stores through the barrier, built on its thread
+  locals and inlined there, since a call per store of a pointer is what they cost). Building midgard therefore needs a `gyc` that knows
+  `@nogc` and emits the barriers (YMI-269).
+- C code storing a pointer into collected memory goes through the barrier too: the helpers of
+  `rt/utils/gc.h` (`_yrt_i_gc_store`, `_yrt_i_gc_store_ptr`, `_yrt_i_gc_clear`, calling the stores
+  of the shim, and
+  `_yrt_i_gc_copy_new` to copy into a fresh block). A plain store of a pointer into a collected
+  object can free what it points to; memory out of the collector holding collected pointers is
+  registered as a root (`_yrt_nh_add_roots`, as the exception headers are).
+- A thread the runtime creates registers before any Ymir code runs on it (`_yrt_i_thread_create`).
+- A thread allocating while a cycle runs, the live heap past its hard limit (the goal plus as much
+  again, grown from what the last marking found reachable), waits for the cycle to end (`pace`):
+  what is allocated during a marking is black, nothing else bounds a thread allocating faster
+  than the collector marks.
+- The segfault handler leaves the faulty thread out of the collector (`_yrt_nh_crash`: it
+  allocates from `calloc` and never parks, the fault may have left a lock of the collector held)
+  and aborts anyway after 5 seconds (`alarm`), if the trace cannot be resolved.
+- `NIDHOGG_GOGC` (heap growth before the next cycle, 100 by default), `NIDHOGG_STATS=1` (cycles,
+  allocations, peak, collector time and longest per-thread pause at exit) and `NIDHOGG_VERIFY=1`
+  (after each mark, every thread parked at once, aborts if a marked object, root or data segment
+  points into an unmarked object — the stacks are not checked, their stale words would be false
+  positives) are read at the first allocation. The `nidhogg verify` CI job runs the suite under
+  `NIDHOGG_VERIFY=1 NIDHOGG_GOGC=10`.
+- The verification cannot see a corrupted heap (a span used twice, a page map naming the wrong
+  span), nor a pointer held by a stack only: the stress tests of the collector are the
+  `tests/nidhogg/` cases of the ymir-dev workspace (`uv run tests nidhogg`), threads moving
+  pointers, growing slices and maps, large objects, finalizers, forks and short-lived threads,
+  each run again at `NIDHOGG_GOGC=1` and under the verification (their `.env`).
+- `etc::runtime::gc` exposes `_yrt_gc_collect` (a whole cycle, waited for) and
+  `_yrt_gc_wait_finalizers`; finalizers run unordered on a thread of their own, and once more at
+  exit.
 
 ### `tests/` — the test suite
 

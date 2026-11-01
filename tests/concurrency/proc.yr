@@ -22,3 +22,30 @@ __test readOutput {
 
     println(result);
 }
+
+__test exitCode {
+    let dmut proc = copy SubProcess("sh"s8, copy ["-c"s8, "exit 3"s8]);
+    proc:.start(redirect-> false);
+    assert(proc:.wait() == 3);
+    assert(proc:.wait() == 3);
+}
+
+__test killedBySignal {
+    let dmut proc = copy SubProcess("sh"s8, copy ["-c"s8, "kill -9 $$"s8]);
+    proc:.start(redirect-> false);
+    assert(proc:.wait() == 128 + 9);
+}
+
+__test finishedThenWaited {
+    let dmut proc = copy SubProcess("sh"s8, copy ["-c"s8, "exit 5"s8]);
+    proc:.start(redirect-> false);
+    while !proc:.isFinished() {}
+    assert(proc:.wait() == 5);
+}
+
+__test neverStarted {
+    let dmut proc = copy SubProcess("true"s8, []);
+    assert(proc:.isFinished());
+    assert(proc:.wait() == -1);
+}
+

@@ -52,6 +52,25 @@ jobs:
       - name: Check the exported symbols of the archives
         run: docker run --rm "$IMAGE" bash .github/scripts/check-symbols.sh
 
+  # The whole suite under the heap verification of the collector, cycles running about as often as
+  # the heap grows by a tenth: after each mark, every marked object, root and data segment pointing
+  # into an unmarked object aborts the run.
+  nidhogg:
+    name: nidhogg verify
+    needs: build
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/build-image
+        with:
+          tag: ${{ env.IMAGE }}
+
+      - name: Run the tests with NIDHOGG_VERIFY=1 NIDHOGG_GOGC=10
+        run: |
+          docker run --rm -e NIDHOGG_VERIFY=1 -e NIDHOGG_GOGC=10 -e NIDHOGG_STATS=1 "$IMAGE" \
+              ./midgard_tests -sf -j 8
+
   shard:
     name: ${{ matrix.shard }}
     needs: build
@@ -200,7 +219,7 @@ jobs:
   cleanup:
     name: Cleanup
     if: always()
-    needs: [build, examples, symbols, shard, coverage]
+    needs: [build, examples, symbols, nidhogg, shard, coverage]
     runs-on: [self-hosted, linux, x64]
     steps:
       - name: Drop this run's image tag

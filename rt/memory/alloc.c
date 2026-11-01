@@ -15,31 +15,38 @@ uint64_t _yrt_i_next_pow2 (uint64_t x) {
 }
 
 uint8_t* _yrt_alloc_block(uint64_t size) {
-    return (uint8_t*) GC_malloc(size);
+    return (uint8_t*) _yrt_i_gc_alloc (size);
 }
 
 void _yrt_alloc_slice_no_set (_yrt_slice_t * result, uint64_t len, uint64_t size) {
+	_yrt_slice_t res;
 	if (len == 0) {
-		memset (result, 0, sizeof (_yrt_slice_t));
+		memset (&res, 0, sizeof (_yrt_slice_t));
+		_yrt_i_gc_store (result, &res, sizeof (_yrt_slice_t));
 		return;
 	}
 
 	size_t allocLen = _yrt_i_next_pow2 (len);
 	size_t allocSize = allocLen * size;
-	uint8_t* x = (uint8_t*) GC_malloc (allocSize + sizeof (_yrt_slice_blk_info_t));
+	uint8_t* x = (uint8_t*) _yrt_i_gc_alloc (allocSize + sizeof (_yrt_slice_blk_info_t));
 	_yrt_slice_blk_info_t * blk = (_yrt_slice_blk_info_t*) (x);
 
 	blk-> cap = allocLen;
 	blk-> len = len;
 
-	result-> len = len;
-	result-> data = x + sizeof (_yrt_slice_blk_info_t);
-	result-> blk_info = blk;
+	res.len = len;
+	res.data = x + sizeof (_yrt_slice_blk_info_t);
+	res.blk_info = blk;
+	_yrt_i_gc_store (result, &res, sizeof (_yrt_slice_t));
 }
 
 void _yrt_alloc_slice (_yrt_slice_t * result, uint8_t * addr, uint64_t len, uint64_t size) {
 	_yrt_alloc_slice_no_set (result, len, size);
 	uint8_t * x = result-> data;
+
+	// every element is a copy of the one at 'addr', and a block allocated while the collector
+	// marks is never scanned
+	if (_yrt_i_gc_marking ()) _yrt_nh_shade_range (addr, size);
 
     if (len <= 1024 || size > 1024) {
         for (uint64_t i = 0 ; i < len ; i++) {
@@ -67,9 +74,12 @@ void _yrt_alloc_slice (_yrt_slice_t * result, uint8_t * addr, uint64_t len, uint
 }
 
 void _yrt_concat_slices (_yrt_slice_t * result, _yrt_slice_t * left, _yrt_slice_t * right, uint64_t size) {
-	_yrt_alloc_slice_no_set (result, left-> len + right-> len, size);
-	memcpy (result-> data, left-> data, left-> len * size);
-	memcpy (result-> data + (left-> len * size), right-> data, right-> len * size);
+	// filled aside: 'result' may be one of the parts
+	_yrt_slice_t res;
+	_yrt_alloc_slice_no_set (&res, left-> len + right-> len, size);
+	_yrt_i_gc_copy_new (res.data, left-> data, left-> len * size);
+	_yrt_i_gc_copy_new ((uint8_t*) res.data + (left-> len * size), right-> data, right-> len * size);
+	_yrt_i_gc_store (result, &res, sizeof (_yrt_slice_t));
 }
 
 void _yrt_concat_slices_n (_yrt_slice_t * result, _yrt_slice_t * parts, uint64_t nb, uint64_t size) {
@@ -85,11 +95,11 @@ void _yrt_concat_slices_n (_yrt_slice_t * result, _yrt_slice_t * parts, uint64_t
 	uint8_t * out = (uint8_t*) res.data;
 	for (uint64_t i = 0 ; i < nb ; i++) {
 		if (parts [i].len == 0) continue;
-		memcpy (out, parts [i].data, parts [i].len * size);
+		_yrt_i_gc_copy_new (out, parts [i].data, parts [i].len * size);
 		out += parts [i].len * size;
 	}
 
-	*result = res;
+	_yrt_i_gc_store (result, &res, sizeof (_yrt_slice_t));
 }
 
 void _yrt_append_slice (_yrt_slice_t * result, _yrt_slice_t * right, uint64_t size) {
@@ -98,7 +108,7 @@ void _yrt_append_slice (_yrt_slice_t * result, _yrt_slice_t * right, uint64_t si
 	void * rdata = right-> data;
 
 	uint8_t * out = _yrt_i_grow_slice (result, rlen, size);
-	memcpy (out, rdata, rlen * size);
+	_yrt_i_gc_store (out, rdata, rlen * size);
 }
 
 uint8_t* _yrt_i_grow_slice (_yrt_slice_t * result, uint64_t len, uint64_t size) {
@@ -116,7 +126,7 @@ uint8_t* _yrt_i_grow_slice (_yrt_slice_t * result, uint64_t len, uint64_t size) 
 	if (!inPlace) {
 		void * oldData = result-> data;
 		_yrt_alloc_slice_no_set (result, oldLen + len, size);
-		memcpy (result-> data, oldData, oldLen * size);
+		_yrt_i_gc_copy_new (result-> data, oldData, oldLen * size);
 
 		return (uint8_t*) result-> data + (oldLen * size);
 	}
@@ -130,7 +140,9 @@ uint8_t* _yrt_i_grow_slice (_yrt_slice_t * result, uint64_t len, uint64_t size) 
 void _yrt_grow_slice (_yrt_slice_t * result, _yrt_slice_t * appended, uint64_t len, uint64_t size) {
 	uint8_t * out = _yrt_i_grow_slice (result, len, size);
 
-	appended-> len = len;
-	appended-> data = out;
-	appended-> blk_info = result-> blk_info;
+	_yrt_slice_t res;
+	res.len = len;
+	res.data = out;
+	res.blk_info = result-> blk_info;
+	_yrt_i_gc_store (appended, &res, sizeof (_yrt_slice_t));
 }

@@ -6,7 +6,7 @@ typedef uint8_t (*_yrt_async_resume_t) (void * frame, void * out, _yrt_delegate_
 
 void _yrt_async_run (_yrt_delegate_t handle, void * out) {
     // in GC memory, a waker kept after the run returned can still be called
-    sem_t * sem = GC_malloc (sizeof (sem_t));
+    sem_t * sem = _yrt_i_gc_alloc_atomic (sizeof (sem_t));
     _yrt_thread_sem_init (sem, 0, 0);
 
     _yrt_delegate_t waker;

@@ -46,14 +46,10 @@ void _yrt_i_write_pipe (int stream, void * data, unsigned long long size) {
 #endif
 
 
-int GC_pthread_create (_yrt_thread_t * id, _yrt_attr_t* attr, void*(*call)(void*), void* data);
-int GC_pthread_join (_yrt_thread_t p, void** retval);
-void GC_pthread_detach (_yrt_thread_t p);
-
 /**
  * What a spawned thread needs to know to get going. It is left in the frame of the thread that
  * spawns it rather than allocated: 'data' is usually a GC pointer, and the collector scans the
- * spawning thread's stack -- it would not scan a malloc'ed struct, and a GC_malloc'ed one would
+ * spawning thread's stack -- it would not scan a malloc'ed struct, and a collected one would
  * itself be unreachable during the hand-over. The spawning thread waits on 'copied' so that its
  * frame outlives the read.
  * */
@@ -64,11 +60,10 @@ typedef struct {
     sem_t copied;
 } _yrt_thread_start_t;
 
-static void _thread_remove_tls_roots (void * unused) {
+static void _thread_cleanup (void * unused) {
     (void) unused;
 
     _yrt_i_capture_drop ();
-    _yrt_i_gc_remove_tls_roots ();
 }
 
 static void * _thread_main (void * raw) {
@@ -77,18 +72,19 @@ static void * _thread_main (void * raw) {
     void * data = start-> data;
     _yrt_i_capture_adopt (start-> capture);
 
-    // '@thread' globals of this thread are unreachable for the collector until this call, so it
-    // has to come before any Ymir code runs
-    _yrt_i_gc_add_tls_roots ();
+    // the stack and the '@thread' globals of this thread are unreachable for the collector until
+    // this call, so it has to come before any Ymir code runs; the collector forgets the thread
+    // when it ends
+    _yrt_nh_register_thread ();
 
     // 'start' belongs to the spawning thread's frame and must not be touched from here on
     sem_post (&start-> copied);
 
     void * result = NULL;
 
-    // a cleanup handler rather than a plain call after 'call', so that the roots also go away
+    // a cleanup handler rather than a plain call after 'call', so that the capture also goes away
     // when the thread is cancelled(see _yrt_i_thread_cancel) or exits early
-    pthread_cleanup_push (&_thread_remove_tls_roots, NULL);
+    pthread_cleanup_push (&_thread_cleanup, NULL);
     result = call (data);
     pthread_cleanup_pop (1);
 
@@ -102,7 +98,7 @@ void _yrt_i_thread_create (_yrt_thread_t * id, _yrt_attr_t* attr, void*(*call)(v
     start.capture = _yrt_i_capture_retain ();
     sem_init (&start.copied, 0, 0);
 
-    if (GC_pthread_create (id, attr, &_thread_main, &start) == 0) {
+    if (pthread_create (id, attr, &_thread_main, &start) == 0) {
         sem_wait (&start.copied);
     } else {
         _yrt_i_capture_release (start.capture);
@@ -112,24 +108,21 @@ void _yrt_i_thread_create (_yrt_thread_t * id, _yrt_attr_t* attr, void*(*call)(v
 }
 
 void _yrt_i_thread_join (_yrt_thread_t p, void** retval) {
-    (void) GC_pthread_join (p, retval);
+    (void) pthread_join (p, retval);
 }
 
 void _yrt_i_thread_detach (_yrt_thread_t p) {
-    GC_pthread_detach (p);
+    pthread_detach (p);
 }
 
 #ifdef __linux__
 
-void GC_pthread_cancel (_yrt_thread_t p);
-void GC_pthread_exit (_yrt_thread_t p);
-
 void _yrt_i_thread_cancel (_yrt_thread_t p) {
-    GC_pthread_cancel (p);
+    pthread_cancel (p);
 }
 
 void _yrt_i_thread_exit (_yrt_thread_t p) {
-    GC_pthread_exit (p);
+    pthread_exit ((void*) p);
 }
 #endif
 
@@ -253,13 +246,13 @@ _yrt_mutex_t * _yrt_i_ensure_monitor (void* object) {
     pthread_mutex_lock (&__monitor_mutex__);
     mut = *((_yrt_mutex_t**) object + 1); // skip the vtable
     if (mut == NULL) {
-        mut = GC_malloc (sizeof (_yrt_mutex_t));
+        mut = _yrt_i_gc_alloc_atomic (sizeof (_yrt_mutex_t));
         pthread_mutexattr_t attr;
         pthread_mutexattr_init(&attr);
         pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
         pthread_mutex_init (mut, &attr);
 
-        *((_yrt_mutex_t**)object+1) = mut;
+        _yrt_i_gc_store_ptr ((void**) object + 1, mut);
     }
     pthread_mutex_unlock (&__monitor_mutex__);
 
@@ -299,20 +292,16 @@ uint64_t _yrt_thread_self_id () {
     return pthread_self ();
 }
 
-// Boehm GC registers pthread_atfork handlers automatically, but that automatic protection is not
-// reliable enough on its own (see the intermittent segfaults in CoverageTree::hitEnter racing
-// SubProcess::start's fork() under concurrent TaskPool compilation, YMI-104): calling
-// GC_atfork_prepare/parent/child explicitly around every fork() is the pattern the GC itself
-// documents (gc.h) for programs that call fork() directly rather than through a GC-provided
-// wrapper. This makes fork() quiesce all other threads (so none of them are mid-GC_malloc) before
-// forking, and resume them right after.
+// The collector takes all of its locks before the fork, so that the child, which only has the
+// thread that forked, never finds one held by a thread it does not have (YMI-104). The child
+// collects no more: it is about to exec.
 uint32_t _yrt_fork () {
-    GC_atfork_prepare ();
+    _yrt_nh_atfork_prepare ();
     pid_t pid = fork ();
     if (pid == 0) {
-        GC_atfork_child ();
+        _yrt_nh_atfork_child ();
     } else {
-        GC_atfork_parent ();
+        _yrt_nh_atfork_parent ();
     }
 
     return (uint32_t) pid;

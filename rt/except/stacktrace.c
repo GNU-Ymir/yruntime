@@ -9,7 +9,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <gc/gc.h>
+#include <rt/utils/gc.h>
 #include <libdwarf/dwarf.h>
 #include <libdwarf/libdwarf.h>
 #include <stdint.h>
@@ -165,7 +165,7 @@ _yrt_slice_t _yrt_exc_get_stack_trace () {
 
     int trace_size = backtrace (trace, __YRT_MAXIMUM_TRACE_LEN__);
 
-    void** res = GC_malloc (trace_size * sizeof (void*));
+    void** res = _yrt_i_gc_alloc_atomic (trace_size * sizeof (void*));
     memcpy (res, trace, sizeof (void*) * trace_size);
     free (trace);
 
