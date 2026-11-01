@@ -28,11 +28,14 @@ chain of pointers leads to it from a root.
 
 **Colors during the marking of cycle *N*.** An object is *white* while unmarked, *grey* while marked
 and in a set of objects to scan (the mark stack of the collector, a grey buffer of a thread, a
-buffer handed over in `work`, a record of the copies), *black* while marked and not grey. A thread
-is *grey* until its stack is copied in the cycle (`copyThread`, in `ROUND_SCAN`, or `ROUND_FLUSH`
-for a thread registered since), *black* afterwards. The *copy*, made by the thread itself in its
-handler or by the collector while it waits, holds the words of its stack, registers and TLS block at
-its park, and is scanned once the round let the threads go (`scanCopies`), before the round ends.
+buffer handed over in `work`, a record of the copies), *black* while marked and not grey. An object
+the mark stack had no room for (`markPush` past `markCap`) is marked and in no such set: it counts
+as grey until the rescan that `drainStack` runs once the stack is empty, which pushes every marked
+object of the heap holding pointers back on it (`rescan`). A thread is *grey* until its stack is
+copied in the cycle (`copyThread`, in `ROUND_SCAN`, or `ROUND_FLUSH` for a thread registered since),
+*black* afterwards. The *copy*, made by the thread itself in its handler or by the collector while
+it waits, holds the words of its stack, registers and TLS block at its park, and is scanned once the
+round let the threads go (`scanCopies`), before the round ends.
 
 **Times of cycle *N*.**
 - *M*: `_yrt_nh_marking` is set to 1, followed by a fence (`runCycle`).
@@ -222,11 +225,11 @@ white.
 *Proof.* `terminate` drains the mark stack and the buffers in `work` (`drain`), then runs a
 `ROUND_FLUSH`. That round moves every thread's grey buffer into the copies (`copyThread`, or onto
 the mark stack, `takeGrey`, when they have no room), copies every stack not copied yet in the cycle
-and scans the copies, pushing their grey objects on the mark stack, then drains again. The loop
-stops when nothing was found: no buffer held an object, no stack was left to copy, no buffer was
-handed over, no assist
-started (`assists` unchanged), and no thread unknown to the collector was in a barrier
-(`foreignBusy`).
+and scans the copies, pushing their grey objects on the mark stack, then drains again. A drain
+returns only once the mark stack is empty and no object was left out of it since its last rescan, a
+rescan counting as something found. The loop stops when nothing was found: no buffer held an object,
+no stack was left to copy, no buffer was handed over, no assist started (`assists` unchanged), and
+no thread unknown to the collector was in a barrier (`foreignBusy`).
 
 Suppose a thread shaded a white object after its own flush in that round. Take the first such shade,
 at time *t*, of *W*. By Lemma 3, *W* was protected just before *t*. Every stack had already been
@@ -301,10 +304,10 @@ before the round ends, as `Serve` puts them; one waiting for the collector, the 
 `Lifecycle`, threads are also spawned (the parent keeping what it hands over on its stack until the
 child registered), register outside the rounds, and exit (their grey buffer handed over, their stack
 no longer a root). The model leaves out the arithmetic (the page map, the size classes), the span
-lists and the lazy sweeping (its sweep is one atomic step), assists, and finalizers. A stack being a
-set scanned in one step, the model cannot show why it is copied: scanning it in place once its
-thread went holds there too. The race of `release` in Lemma 6 lived in that gap: the stress tests
-found it, and assertions in the collector located it.
+lists and the lazy sweeping (its sweep is one atomic step), assists, finalizers, and the capacity of
+the mark stack. A stack being a set scanned in one step, the model cannot show why it is copied:
+scanning it in place once its thread went holds there too. The race of `release` in Lemma 6 lived in
+that gap: the stress tests found it, and assertions in the collector located it.
 
 | configuration | threads, objects | what it changes | result |
 |---|---|---|---|

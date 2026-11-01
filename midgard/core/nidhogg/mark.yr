@@ -53,14 +53,16 @@ pub fn isMarked (p: usize)-> bool {
  */
 
 /**
- * Push the object `obj` on the mark stack of the collector
+ * Push the object `obj`, marked, on the mark stack of the collector, or leave it to the next
+ * rescan if the stack has no room for it
  * */
 @{nogc, unsafe}
 pub fn markPush (obj: usize) {
     let dmut g = G ();
     {
-        if ((*g).markTop >= MARK_CAP) {
-            fatal ("nidhogg: mark stack overflow\n");
+        if ((*g).markTop >= (*g).markCap) {
+            (*g).markOverflow = 1u8;
+            return;
         }
 
         st ((*g).markStack + (*g).markTop * 8us, obj);
@@ -111,25 +113,97 @@ pub fn scanObject (obj: usize) {
 
 /**
  * Scan the objects of the mark stack, and of the grey buffers handed over, until there is none
- * @returns: the number of grey buffers taken
+ * @returns: the number of grey buffers taken, and of rescans
  * */
 @{nogc, unsafe}
 pub fn drain ()-> usize {
-    let dmut g = G ();
     let mut taken = 0us;
+    loop {
+        taken = taken + drainStack ();
+        if (!takeWork ()) break;
+        taken = taken + 1us;
+    }
+
+    taken
+}
+
+/**
+ * Scan the objects of the mark stack until there is none, rescanning the heap each time it had no
+ * room for an object
+ * @returns: the number of rescans
+ * */
+@{nogc, unsafe}
+pub fn drainStack ()-> usize {
+    let dmut g = G ();
+    let mut rescans = 0us;
     loop {
         {
             while ((*g).markTop != 0us) {
                 (*g).markTop = (*g).markTop - 1us;
                 scanObject (ld ((*g).markStack + (*g).markTop * 8us));
             }
+
+            if ((*g).markOverflow == 0u8) break;
+            (*g).markOverflow = 0u8;
         }
 
-        if (!takeWork ()) break;
-        taken = taken + 1us;
+        rescan ();
+        rescans = rescans + 1us;
+        (*g).statRescans = (*g).statRescans + 1u64;
     }
 
-    taken
+    rescans
+}
+
+/**
+ * Push every marked object of the heap holding pointers on the mark stack, scanning it whenever
+ * it is full: an object the stack had no room for is marked, and nothing else scans it
+ * @info: the page heap is locked while its spans are walked, but not while the stack is scanned;
+ * a span in use is only freed by the sweep, and a free one only split under the lock
+ * */
+@{nogc, unsafe}
+fn rescan () {
+    let dmut g = G ();
+    let lock = { (*g).heapLock };
+    _yrt_i_nh_mutex_lock (lock);
+    let mut c = 0us;
+    while (c < { (*g).nchunks }) {
+        let chunk = ld ({ (*g).chunks } + c * 8us);
+        let mut page = 0us;
+        while (page < CHUNK_PAGES) {
+            let s = spanAt (chunk, page);
+            if (s == 0us) {
+                page = page + 1us;
+                continue;
+            }
+
+            let x = span (s);
+            {
+                if ((*x).state != SPAN_FREE && (*x).noscan == 0u8) {
+                    for i in 0us .. (*x).nelems {
+                        if (_yrt_i_nh_load8 ((*x).alloc + i) == 0u8 || _yrt_i_nh_load8 ((*x).marks + i) == 0u8) continue;
+                        if ((*g).markTop >= (*g).markCap) {
+                            _yrt_i_nh_mutex_unlock (lock);
+                            while ((*g).markTop != 0us) {
+                                (*g).markTop = (*g).markTop - 1us;
+                                scanObject (ld ((*g).markStack + (*g).markTop * 8us));
+                            }
+
+                            _yrt_i_nh_mutex_lock (lock);
+                        }
+
+                        markPush ((*x).base + i * (*x).elemSize);
+                    }
+                }
+
+                page = page + (*x).npages;
+            }
+        }
+
+        c = c + 1us;
+    }
+
+    _yrt_i_nh_mutex_unlock (lock);
 }
 
 /**

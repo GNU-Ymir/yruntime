@@ -44,7 +44,8 @@ pub def GREY_CAP = 1022us;
 pub def GREY_WORDS = 1024us;
 
 /**
- * The number of entries of the mark stack of the collector, reserved but not committed
+ * The number of entries of the mark stack of the collector, reserved but not committed, the most
+ * NIDHOGG_MARK_STACK can set
  * */
 pub def MARK_CAP = 67108864us;
 
@@ -265,9 +266,12 @@ pub record Globals {
     pub let mut assisting : u64;
     pub let mut assists : u64;
 
-    // the mark stack of the collector
+    // the mark stack of the collector, the number of its entries, and 1 iif it had no room for an
+    // object since its last rescan
     pub let mut markStack : usize;
     pub let mut markTop : usize;
+    pub let mut markCap : usize;
+    pub let mut markOverflow : u8;
 
     // the grey objects and the copies of the stacks the threads of a round handed over, as records
     // of two words, their numbers, followed by them, and the bytes of the records
@@ -312,6 +316,7 @@ pub record Globals {
     pub let mut statParks : u64;
     pub let mut statParkNs : u64;
     pub let mut statLongestSignal : u64;
+    pub let mut statRescans : u64;
 
     pub let mut statMarkNs : u64;
     pub let mut statPeak : u64;
@@ -436,6 +441,8 @@ fn init () {
         }
 
         (*g).markStack = stack;
+        let cap = cast!usize (envNum ("NIDHOGG_MARK_STACK\u{0}", cast!u64 (MARK_CAP)));
+        (*g).markCap = if (cap == 0us || cap > MARK_CAP) { MARK_CAP } else { cap };
 
         let copies = mmap (0us, COPY_CAP, PROT_RW, MAP_ANON_PRIVATE | MAP_NORESERVE, -1, 0i64);
         if (copies == MAP_FAILED) {

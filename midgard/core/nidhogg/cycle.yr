@@ -450,10 +450,7 @@ fn verifyMarks () {
         buf = ld (buf);
     }
 
-    while ((*g).markTop != 0us) {
-        (*g).markTop = (*g).markTop - 1us;
-        scanObject (ld ((*g).markStack + (*g).markTop * 8us));
-    }
+    drainStack ();
 
     let mut bad = 0us;
     for i in 0us .. (*g).nsegs {
@@ -684,6 +681,8 @@ pub fn printStats () {
         printNum (if ((*g).statParks == 0u64) { 0u64 } else { (*g).statParkNs / (*g).statParks / 1000u64 });
         print (" us on average, longest handshake signal ");
         printNum ((*g).statLongestSignal / 1000u64);
-        print (" us\n");
+        print (" us, ");
+        printNum ((*g).statRescans);
+        print (" rescans of the heap\n");
     }
 }
