@@ -55,12 +55,14 @@ VARIABLES
     reg,        \* "none", "starting" (created, not registered yet) or "running" (registered)
     scanned,    \* the stack of the thread was scanned in the current cycle
     work,       \* the grey buffers handed over to the collector, by the threads that exited
-    tchild      \* the thread a thread spawned and waits for, until it registered
+    tchild,     \* the thread a thread spawned and waits for, until it registered
+    copy,       \* the copy of the stack of each thread the round served, to scan
+    copied      \* the threads whose copy is not scanned yet
 
 vars == << heap, glob, alloc, mark, stack, tpc, tdst, tval, tm, tobj, grey, marking, sweeping,
-           markStack, req, parked, cpc, pending, found, reg, scanned, work, tchild >>
+           markStack, req, parked, cpc, pending, found, reg, scanned, work, tchild, copy, copied >>
 
-LifeUnchanged == UNCHANGED << reg, scanned, work, tchild >>
+LifeUnchanged == UNCHANGED << reg, scanned, work, tchild, copy, copied >>
 
 Ptr == Obj \cup {Null}
 
@@ -91,6 +93,8 @@ TypeOK ==
     /\ cpc \in {"idle", "ack", "scan", "drain", "flush", "sweep"}
     /\ reg \in [Thr -> {"none", "starting", "running"}]
     /\ work \in SUBSET Obj
+    /\ copy \in [Thr -> SUBSET Obj]
+    /\ copied \in SUBSET Thr
 
 -----------------------------------------------------------------------------
 (* Shading: mark a white allocated object, and put it where it will be scanned *)
@@ -117,13 +121,20 @@ PlainParkOK(t) ==
     \/ ~AtomicTestStore
     \/ DeferredPark(t) /\ ~RedoBarrier
 
+\* A handshake of an ACK round is only acknowledged: the thread goes on at once, and the collector
+\* has nothing more to do on it
 Park(t) ==
     /\ req[t] /\ ~parked[t]
-    /\ parked' = [parked EXCEPT ![t] = TRUE]
     /\ \/ PlainParkOK(t) /\ UNCHANGED tpc
        \/ DeferredPark(t) /\ RedoBarrier /\ tpc' = [tpc EXCEPT ![t] = "barrier"]
+    /\ IF cpc = "ack"
+       THEN /\ req' = [req EXCEPT ![t] = FALSE]
+            /\ pending' = pending \ {t}
+            /\ UNCHANGED parked
+       ELSE /\ parked' = [parked EXCEPT ![t] = TRUE]
+            /\ UNCHANGED << req, pending >>
     /\ UNCHANGED << heap, glob, alloc, mark, stack, tdst, tval, tm, tobj, grey, marking,
-                    sweeping, markStack, req, cpc, pending, found >>
+                    sweeping, markStack, cpc, found >>
     /\ LifeUnchanged
 
 Running(t) == reg[t] = "running" /\ ~parked[t]
@@ -242,7 +253,7 @@ InRound == cpc \in {"ack", "scan", "flush"}
 Live == {t \in Thr : reg[t] = "running"}
 
 UnchangedButLife == UNCHANGED << heap, glob, alloc, mark, tdst, tval, tm, tobj, marking, sweeping,
-                                markStack, req, parked, cpc, pending, found >>
+                                markStack, req, parked, cpc, pending, found, copy, copied >>
 
 \* _yrt_i_thread_create: the child gets an object of the parent (the closure, the content of a
 \* future), which the parent keeps on its stack until the child registered
@@ -301,6 +312,8 @@ CollectorThreadVarsUnchanged ==
     /\ UNCHANGED << heap, glob, alloc, stack, tpc, tdst, tval, tm, tobj >>
     /\ UNCHANGED << reg, tchild >>
 
+CopiesUnchanged == UNCHANGED << copy, copied >>
+
 \* reclaim, sweep the rest and clearAllMarks, then _yrt_nh_marking = 1 and the ACK round
 Start ==
     /\ cpc = "idle"
@@ -311,40 +324,51 @@ Start ==
     /\ scanned' = [t \in Thr |-> FALSE]
     /\ cpc' = "ack"
     /\ UNCHANGED << grey, sweeping, markStack, parked, found, work >>
-    /\ CollectorThreadVarsUnchanged
+    /\ CollectorThreadVarsUnchanged /\ CopiesUnchanged
 
-\* the work of a round on a parked thread, served in the order the threads park
+\* the work of a round on a parked thread, served in the order the threads park: its stack is
+\* copied (copyThread), to be scanned once it went
+CopyStack(t) ==
+    /\ copy' = [copy EXCEPT ![t] = Held(t)]
+    /\ copied' = copied \cup {t}
+
 Serve(t) ==
-    /\ cpc \in {"ack", "scan", "flush"}
+    /\ cpc \in {"scan", "flush"}
     /\ t \in pending /\ parked[t]
-    /\ CASE cpc = "ack" ->
-              UNCHANGED << mark, markStack, grey, found, scanned >>
-         [] cpc = "scan" ->
-              LET G == ShadeSet(Held(t)) IN
-              /\ mark' = MarkAll(G)
-              /\ markStack' = markStack \cup G \cup grey[t]
-              /\ grey' = [grey EXCEPT ![t] = {}]
+    /\ markStack' = markStack \cup grey[t]
+    /\ grey' = [grey EXCEPT ![t] = {}]
+    /\ CASE cpc = "scan" ->
+              /\ CopyStack(t)
               /\ scanned' = [scanned EXCEPT ![t] = TRUE]
               /\ UNCHANGED found
          [] cpc = "flush" ->
-              \* a thread registered since the SCAN round has its stack scanned now, which counts
+              \* a thread registered since the SCAN round has its stack copied now, which counts
               \* as something found
-              LET G == IF scanned[t] \/ ~ScanNewThreads THEN {} ELSE ShadeSet(Held(t)) IN
-              /\ mark' = MarkAll(G)
-              /\ markStack' = markStack \cup G \cup grey[t]
-              /\ grey' = [grey EXCEPT ![t] = {}]
+              /\ IF scanned[t] \/ ~ScanNewThreads THEN CopiesUnchanged ELSE CopyStack(t)
               /\ found' = (found \/ grey[t] # {} \/ ~scanned[t])
               /\ scanned' = [scanned EXCEPT ![t] = TRUE]
     /\ parked' = [parked EXCEPT ![t] = FALSE]
     /\ req' = [req EXCEPT ![t] = FALSE]
     /\ pending' = pending \ {t}
-    /\ UNCHANGED << marking, sweeping, cpc, work >>
+    /\ UNCHANGED << mark, marking, sweeping, cpc, work >>
     /\ CollectorThreadVarsUnchanged
 
-\* the end of a round
+\* scanCopies: the copy of a stack is scanned, its thread running meanwhile
+ScanCopy(t) ==
+    /\ cpc \in {"scan", "flush"}
+    /\ t \in copied
+    /\ LET G == ShadeSet(copy[t]) IN
+       /\ mark' = MarkAll(G)
+       /\ markStack' = markStack \cup G
+    /\ copy' = [copy EXCEPT ![t] = {}]
+    /\ copied' = copied \ {t}
+    /\ UNCHANGED << grey, marking, sweeping, req, parked, cpc, pending, found, scanned, work >>
+    /\ CollectorThreadVarsUnchanged
+
+\* the end of a round, once the copies of the stacks are scanned
 RoundDone ==
     /\ cpc \in {"ack", "scan", "flush"}
-    /\ pending = {}
+    /\ pending = {} /\ copied = {}
     /\ CASE cpc = "ack" ->
               \* scanRoots and the data segments, then the SCAN round
               LET G == ShadeSet({glob}) IN
@@ -367,7 +391,7 @@ RoundDone ==
                    /\ cpc' = "sweep"
                    /\ UNCHANGED << mark, markStack, req, pending, found >>
     /\ UNCHANGED << grey, parked, scanned, work >>
-    /\ CollectorThreadVarsUnchanged
+    /\ CollectorThreadVarsUnchanged /\ CopiesUnchanged
 
 \* scan an object of the mark stack
 DrainOne ==
@@ -377,7 +401,7 @@ DrainOne ==
          /\ mark' = MarkAll(G)
          /\ markStack' = (markStack \ {o}) \cup G
     /\ UNCHANGED << grey, marking, sweeping, req, parked, cpc, pending, found, scanned, work >>
-    /\ CollectorThreadVarsUnchanged
+    /\ CollectorThreadVarsUnchanged /\ CopiesUnchanged
 
 \* takeWork: the buffers handed over go to the mark stack
 TakeWork ==
@@ -386,7 +410,7 @@ TakeWork ==
     /\ markStack' = markStack \cup work
     /\ work' = {}
     /\ UNCHANGED << mark, grey, marking, sweeping, req, parked, cpc, pending, found, scanned >>
-    /\ CollectorThreadVarsUnchanged
+    /\ CollectorThreadVarsUnchanged /\ CopiesUnchanged
 
 \* the mark stack is empty and no buffer is handed over: a FLUSH round
 DrainDone ==
@@ -397,7 +421,7 @@ DrainDone ==
     /\ found' = FALSE
     /\ cpc' = "flush"
     /\ UNCHANGED << mark, markStack, grey, marking, sweeping, parked, scanned, work >>
-    /\ CollectorThreadVarsUnchanged
+    /\ CollectorThreadVarsUnchanged /\ CopiesUnchanged
 
 \* sweepAll: never while a thread is between an allocation and its decision, which holds the span
 \* in its cache (a small object) or the lock of the heap (a large one)
@@ -414,7 +438,8 @@ Sweep ==
     /\ LifeUnchanged
 
 CollectorStep ==
-    Start \/ (\E t \in Thr : Serve(t)) \/ RoundDone \/ DrainOne \/ TakeWork \/ DrainDone \/ Sweep
+    Start \/ (\E t \in Thr : Serve(t) \/ ScanCopy(t)) \/ RoundDone \/ DrainOne \/ TakeWork
+    \/ DrainDone \/ Sweep
 
 -----------------------------------------------------------------------------
 
@@ -443,6 +468,8 @@ Init ==
     /\ scanned = [t \in Thr |-> FALSE]
     /\ work = {}
     /\ tchild = [t \in Thr |-> Null]
+    /\ copy = [t \in Thr |-> {}]
+    /\ copied = {}
 
 Next == CollectorStep \/ (\E t \in Thr : ThreadStep(t))
 

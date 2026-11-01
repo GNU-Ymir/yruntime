@@ -44,9 +44,17 @@ pub def GREY_CAP = 1022us;
 pub def GREY_WORDS = 1024us;
 
 /**
- * The number of entries of the mark stack of the collector, reserved but not committed
+ * The number of entries of the mark stack of the collector, reserved but not committed, the most
+ * NIDHOGG_MARK_STACK can set
  * */
 pub def MARK_CAP = 67108864us;
+
+/**
+ * The bytes reserved for the grey objects and the copies of the stacks the threads hand over in a
+ * round, reserved but not committed, and the bytes of them left committed between two rounds
+ * */
+pub def COPY_CAP = 67108864us;
+pub def COPY_KEEP = 1048576us;
 
 /**
  * The bytes a thread allocates between two updates of the live heap, and two assists
@@ -133,14 +141,28 @@ pub record ThreadState {
     pub let mut sp : usize;
 
     // the number of the last handshake the collector asked for, of the last one the thread parked
-    // in, and of the last one the collector let it go from; futex words
+    // in, and of the last one the collector let it go from
     pub let mut req : u32;
     pub let mut parked : u32;
     pub let mut go : u32;
 
-    // 1 iif the handshake signal of the current round reached it, and when it was sent
+    // the task of the last handshake asked for (a TASK_), and what came of it (an OUT_)
+    pub let mut task : u8;
+    pub let mut outcome : u8;
+
+    // the grey objects it handed over in the copies in its last handshake, the time it spent doing
+    // its task, and the address of NLISTS words, the spans of its cache it handed back
+    pub let mut handed : usize;
+    pub let mut pauseNs : u64;
+    pub let mut returned : usize;
+
+    // 1 iif the handshake signal of the current round reached it, when it was sent, when the
+    // thread parked, when the collector came to it, and the words it read from it meanwhile
     pub let mut signaled : u8;
     pub let mut since : u64;
+    pub let mut parkedAt : u64;
+    pub let mut servedAt : u64;
+    pub let mut parkWords : u64;
 
     // the cycle its stack was last scanned in
     pub let mut scanned : u64;
@@ -231,8 +253,10 @@ pub record Globals {
     pub let mut threadsLock : usize;
     pub let mut threads : usize;
 
-    // the number of handshakes a thread parked in, a futex word the collector waits on
+    // the number of handshakes a thread parked in, a futex word the collector waits on, and the
+    // number of releases, the one parked threads wait on
     pub let mut parks : u32;
+    pub let mut releases : u32;
 
     // the full grey buffers the threads handed to the collector, and their lock
     pub let mut workLock : usize;
@@ -242,9 +266,17 @@ pub record Globals {
     pub let mut assisting : u64;
     pub let mut assists : u64;
 
-    // the mark stack of the collector
+    // the mark stack of the collector, the number of its entries, and 1 iif it had no room for an
+    // object since its last rescan
     pub let mut markStack : usize;
     pub let mut markTop : usize;
+    pub let mut markCap : usize;
+    pub let mut markOverflow : u8;
+
+    // the grey objects and the copies of the stacks the threads of a round handed over, as records
+    // of two words, their numbers, followed by them, and the bytes of the records
+    pub let mut copies : usize;
+    pub let mut copiesLen : u64;
 
     // the roots registered by the runtime, as pairs of bounds
     pub let mut rootsLock : usize;
@@ -279,6 +311,13 @@ pub record Globals {
     pub let mut statCycles : u64;
     pub let mut statAllocated : u64;
     pub let mut statLongestPark : u64;
+    pub let mut statParkWait : u64;
+    pub let mut statParkWords : u64;
+    pub let mut statParks : u64;
+    pub let mut statParkNs : u64;
+    pub let mut statLongestSignal : u64;
+    pub let mut statRescans : u64;
+
     pub let mut statMarkNs : u64;
     pub let mut statPeak : u64;
 }
@@ -402,6 +441,15 @@ fn init () {
         }
 
         (*g).markStack = stack;
+        let cap = cast!usize (envNum ("NIDHOGG_MARK_STACK\u{0}", cast!u64 (MARK_CAP)));
+        (*g).markCap = if (cap == 0us || cap > MARK_CAP) { MARK_CAP } else { cap };
+
+        let copies = mmap (0us, COPY_CAP, PROT_RW, MAP_ANON_PRIVATE | MAP_NORESERVE, -1, 0i64);
+        if (copies == MAP_FAILED) {
+            fatal ("nidhogg: cannot reserve the copies of the stacks\n");
+        }
+
+        (*g).copies = copies;
         _yrt_i_nh_globals = addr;
     }
 

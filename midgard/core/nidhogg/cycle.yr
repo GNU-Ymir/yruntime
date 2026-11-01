@@ -450,10 +450,7 @@ fn verifyMarks () {
         buf = ld (buf);
     }
 
-    while ((*g).markTop != 0us) {
-        (*g).markTop = (*g).markTop - 1us;
-        scanObject (ld ((*g).markStack + (*g).markTop * 8us));
-    }
+    drainStack ();
 
     let mut bad = 0us;
     for i in 0us .. (*g).nsegs {
@@ -523,11 +520,13 @@ fn resumeAll () {
     let mut ts = ld ({ (*g).threads });
     while (ts != 0us) {
         if (isHeld (ts)) {
-            resume (ts);
+            letGo (ts);
         }
 
         ts = { (*thread (ts)).next };
     }
+
+    wakeReleased ();
 }
 
 /**
@@ -672,6 +671,18 @@ pub fn printStats () {
         printNum ((*g).statMarkNs / 1000u64);
         print (" us, longest thread pause ");
         printNum ((*g).statLongestPark / 1000u64);
-        print (" us\n");
+        print (" us (");
+        printNum ((*g).statParkWait / 1000u64);
+        print (" us before the collector came to it, ");
+        printNum ((*g).statParkWords);
+        print (" words read from it), ");
+        printNum ((*g).statParks);
+        print (" pauses of ");
+        printNum (if ((*g).statParks == 0u64) { 0u64 } else { (*g).statParkNs / (*g).statParks / 1000u64 });
+        print (" us on average, longest handshake signal ");
+        printNum ((*g).statLongestSignal / 1000u64);
+        print (" us, ");
+        printNum ((*g).statRescans);
+        print (" rescans of the heap\n");
     }
 }

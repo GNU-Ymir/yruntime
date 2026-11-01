@@ -301,10 +301,14 @@ release note, and anything gymir calls has to be changed there in the same breat
 
 Níðhöggr replaced Boehm: a concurrent, non-moving tri-color mark and sweep collector, close to
 Go's, that never stops all the threads at once. It marks while the program runs, interrupts a few
-threads at a time through a handshake (`SIGPWR`, the thread parking on a futex in the handler while
-the collector reads its stack and its TLS block; a thread caught in a barrier or an assist parks
-once it is done, from `leaveBusy`; a round signals `WINDOW` threads ahead and serves them in the
-order they park, since a thread in a barrier can wait for a lock a parked one holds), and relies
+threads at a time through a handshake (`SIGPWR`: the thread does the task of the round itself in
+the handler, `doTask`, copying its stack, TLS block and grey objects into a record of the copies the
+collector scans once the round let the threads go, or handing the spans of its cache back, and goes
+on; it parks on a futex for the collector to do it only when the copies, 64MiB reserved, have no
+room for it; a thread caught in a barrier or an assist does it once it is done, from `leaveBusy`; a
+round signals `WINDOW` threads ahead and serves them in the order they park, since a thread in a
+barrier can wait for a lock a parked one holds). A pause is therefore the time a thread takes to
+copy its own stack, microseconds, not the time the collector takes to get a processor. It relies
 on the write barrier the compiler makes every store of a pointer out of a frame go through
 (`_yrt_nh_store_ptr`, `_yrt_nh_store` for an aggregate): it tests `_yrt_nh_marking`, shades both
 the overwritten and the stored pointer, and stores while the thread is busy, so that no handshake
@@ -341,11 +345,17 @@ Stacks, registers and objects are scanned conservatively, interior pointers incl
 - The segfault handler leaves the faulty thread out of the collector (`_yrt_nh_crash`: it
   allocates from `calloc` and never parks, the fault may have left a lock of the collector held)
   and aborts anyway after 5 seconds (`alarm`), if the trace cannot be resolved.
+- The mark stack (64Mi entries reserved) never aborts the process when full: `markPush` leaves the
+  object marked and sets `markOverflow`, and `drainStack` then rescans every marked object of the
+  heap (`rescan`).
 - `NIDHOGG_GOGC` (heap growth before the next cycle, 100 by default), `NIDHOGG_STATS=1` (cycles,
-  allocations, peak, collector time and longest per-thread pause at exit) and `NIDHOGG_VERIFY=1`
-  (after each mark, every thread parked at once, aborts if a marked object, root or data segment
-  points into an unmarked object — the stacks are not checked, their stale words would be false
-  positives) are read at the first allocation. The `nidhogg verify` CI job runs the suite under
+  allocations, peak, collector time, the longest per-thread pause, from the handshake to the
+  release, with what it was made of, the average one, the longest time a handshake signal took to
+  reach a thread, not a pause, and the rescans of the heap, at exit), `NIDHOGG_MARK_STACK=N` (a mark
+  stack of N entries, to exercise its rescans) and `NIDHOGG_VERIFY=1` (after each mark, every thread
+  parked at once, aborts if a marked object, root or data segment points into an unmarked object —
+  the stacks are not checked, their stale words would be false positives) are read at the first
+  allocation. The `nidhogg verify` CI job runs the suite under
   `NIDHOGG_VERIFY=1 NIDHOGG_GOGC=10`.
 - The verification cannot see a corrupted heap (a span used twice, a page map naming the wrong
   span), nor a pointer held by a stack only: the stress tests of the collector are the
