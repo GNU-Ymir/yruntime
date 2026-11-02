@@ -1,0 +1,1392 @@
+/**
+ * This module implements combinators on option values. An option `T?` holds either a value, an
+ * error (a `&Exception`), or nothing, and the functions of this module transform, recover,
+ * convert and extract it without spelling out a pattern matching each time.
+ * <br>
+ * Every function takes the option as its first parameter, so they chain with UFCS. Unless stated
+ * otherwise, an error goes through a function unchanged, and so does an empty option. The
+ * functions taking a callable come in three forms: a template (`o.map!{|x| => x + 1} ()`), a
+ * function pointer and a delegate (`o.map(|x| => x + 1)`).
+ * <br>
+ * The functions handing a mutable value to their callable (`map`, `andThen`) have an overload
+ * taking a `dmut` option, called as `map(alias o, f)`.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @example:
+ * ```
+ * use std::option;
+ * use std::config::json;
+ *
+ * let j = json#{"port" : 8080, "timeout" : -1};
+ *
+ * let port = j.int("port").filter(|p| => p > 0i64).map(|p| => cast!u16 (p));
+ * assert(port == (8080u16)?);
+ *
+ * let timeout = j.int("timeout").filter(|t| => t > 0i64).orElse(|| => (30i64)?);
+ * assert(timeout == (30i64)?);
+ * ```
+ */
+
+in option;
+
+use core::exception;
+use core::exception::option;
+use etc::runtime::exception;
+use etc::runtime::memory;
+
+/**
+ * Throw `e` as it is, whatever its static type, which `throw e` refuses for a `&Exception` (YMI-274).
+ * @throws:
+ *    - &Exception: `e`
+ */
+fn raise (e: &Exception)
+    throws Exception
+{
+    _yrt_exc_throw ("std/option.yr\u{0}".ptr, "std::option::raise\u{0}".ptr, 0u32, e);
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ====================================          CONSTRUCTING          ===================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Build an option holding an error.
+ * @returns: an option of `T` holding the error `e`
+ * @templates:
+ *    - T: the type of the value the option could have held
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::assertion;
+ *
+ * let o = failure!{i32} (copy AssertError ("no value"));
+ * assert(o.hasError);
+ * ```
+ */
+pub fn failure {T} (e: &Exception)-> dmut T? {
+    {
+        raise (e);
+        // never reached, raise does not return: the dereference only gives the block the type T
+        let dmut p = Runtime!{*void, *T}::_yrt_unsafe_cast (null);
+        if (cast!(*void) (p) == null) panic;
+        cte if (__pragma!compile({ unsafe { let dmut _b_: T = alias *p; } })) {
+            unsafe { alias *p }
+        } else {
+            unsafe { *p }
+        }
+    }?
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =======================================          MAP          ======================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Apply a transformation to the value of an option.
+ * @returns: the transformed value, the error of `o` if it has one, none otherwise
+ * @templates:
+ *    - F: the transformation to apply
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * let o = (2)?;
+ * assert(o.map!{|x| => x * 3} () == (6)?);
+ * ```
+ */
+pub fn map {F: fn (T)-> U, T, U} (o: T?)-> U? {
+    match o {
+        Ok(x) => return F(x)?;
+        Err(e: &Exception) => return failure!{U} (e);
+    }
+    none
+}
+
+/**
+ * Apply a transformation to the value of an option.
+ * @returns: the transformed value, the error of `o` if it has one, none otherwise
+ * @params:
+ *    - f: the transformation to apply
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * fn twice (x: i32)-> i32 { x * 2 }
+ *
+ * let o = (2)?;
+ * assert(o.map(&twice) == (4)?);
+ * ```
+ */
+pub fn map {T, U} (o: T?, f: fn (T)-> U)-> U? {
+    match o {
+        Ok(x) => return f(x)?;
+        Err(e: &Exception) => return failure!{U} (e);
+    }
+    none
+}
+
+/**
+ * Apply a transformation to the value of an option.
+ * @returns: the transformed value, the error of `o` if it has one, none otherwise
+ * @params:
+ *    - f: the transformation to apply
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * let z = 10;
+ * let o = (2)?;
+ * assert(o.map(copy |x| => x + z) == (12)?);
+ * ```
+ */
+pub fn map {T, U} (o: T?, f: dg (T)-> U)-> U? {
+    match o {
+        Ok(x) => return f(x)?;
+        Err(e: &Exception) => return failure!{U} (e);
+    }
+    none
+}
+
+/**
+ * Apply a transformation to the mutable value of an option.
+ * @returns: the transformed value, the error of `o` if it has one, none otherwise
+ * @templates:
+ *    - F: the transformation to apply
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * let dmut o = (copy [1, 2, 3])?;
+ * let dmut tail = map!{|dmut x| => alias x[1 .. $]} (alias o);
+ * if let Ok(dmut t) = alias tail {
+ *     t[0] = 9;
+ * }
+ *
+ * assert(o == (copy [1, 9, 3])?);
+ * ```
+ */
+pub fn map {F: fn (dmut T)-> dmut U, T, U} (dmut o: T?)-> dmut U? {
+    match alias o {
+        Ok(dmut x) => return (alias F(alias x))?;
+        Err(e: &Exception) => return failure!{U} (e);
+    }
+    none
+}
+
+/**
+ * Apply a transformation to the mutable value of an option.
+ * @returns: the transformed value, the error of `o` if it has one, none otherwise
+ * @params:
+ *    - f: the transformation to apply
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * fn tail (dmut x: [i32])-> dmut [i32] { alias x[1 .. $] }
+ *
+ * let dmut o = (copy [1, 2, 3])?;
+ * let dmut t = map(alias o, &tail);
+ * if let Ok(dmut s) = alias t {
+ *     s[0] = 9;
+ * }
+ *
+ * assert(o == (copy [1, 9, 3])?);
+ * ```
+ */
+pub fn map {T, U} (dmut o: T?, f: fn (dmut T)-> dmut U)-> dmut U? {
+    match alias o {
+        Ok(dmut x) => return (alias f(alias x))?;
+        Err(e: &Exception) => return failure!{U} (e);
+    }
+    none
+}
+
+/**
+ * Apply a transformation to the mutable value of an option.
+ * @returns: the transformed value, the error of `o` if it has one, none otherwise
+ * @params:
+ *    - f: the transformation to apply
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * let dmut o = (copy [1, 2, 3])?;
+ * let dmut t = map(alias o, |dmut x| => alias x[1 .. $]);
+ * if let Ok(dmut s) = alias t {
+ *     s[0] = 9;
+ * }
+ *
+ * assert(o == (copy [1, 9, 3])?);
+ * ```
+ */
+pub fn map {T, U} (dmut o: T?, f: dg (dmut T)-> dmut U)-> dmut U? {
+    match alias o {
+        Ok(dmut x) => return (alias f(alias x))?;
+        Err(e: &Exception) => return failure!{U} (e);
+    }
+    none
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =====================================          MAP ERR          ====================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Replace the error of an option, for example to add context to it.
+ * @returns: `o` with its error transformed by `F`, `o` itself if it has no error
+ * @templates:
+ *    - F: the transformation of the error, returning an exception
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::assertion;
+ *
+ * let o = failure!{i32} (copy AssertError ("disk full"));
+ * let w = o.mapErr!{|_| => copy AssertError ("cannot save")} ();
+ *
+ * if let Err(e: &AssertError) = w {
+ *     assert(e.msg == "cannot save");
+ * }
+ * ```
+ */
+pub fn mapErr {F: fn (&Exception)-> E, T, E} (o: T?)-> T? {
+    if let Err(e: &Exception) = o return failure!{T} (F(e));
+    o
+}
+
+/**
+ * Replace the error of an option, for example to add context to it.
+ * @returns: `o` with its error transformed by `f`, `o` itself if it has no error
+ * @params:
+ *    - f: the transformation of the error, returning an exception
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::assertion;
+ * use core::exception;
+ *
+ * fn wrap (_: &Exception)-> &AssertError { copy AssertError ("cannot save") }
+ *
+ * let o = failure!{i32} (copy AssertError ("disk full"));
+ * assert(o.mapErr(&wrap).hasError);
+ * ```
+ */
+pub fn mapErr {T, E} (o: T?, f: fn (&Exception)-> E)-> T? {
+    if let Err(e: &Exception) = o return failure!{T} (f(e));
+    o
+}
+
+/**
+ * Replace the error of an option, for example to add context to it.
+ * @returns: `o` with its error transformed by `f`, `o` itself if it has no error
+ * @params:
+ *    - f: the transformation of the error, returning an exception
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::assertion;
+ *
+ * let file = "conf.json";
+ * let o = failure!{i32} (copy AssertError ("disk full"));
+ * let w = o.mapErr(copy |_| => copy AssertError ("cannot save " ~ file));
+ *
+ * if let Err(e: &AssertError) = w {
+ *     assert(e.msg == "cannot save conf.json");
+ * }
+ * ```
+ */
+pub fn mapErr {T, E} (o: T?, f: dg (&Exception)-> E)-> T? {
+    if let Err(e: &Exception) = o return failure!{T} (f(e));
+    o
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =====================================          AND THEN          ===================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Chain a step that can fail to the value of an option.
+ * @returns: the option returned by `F` called on the value, the error of `o` if it has one, none otherwise
+ * @templates:
+ *    - F: the step to chain, returning an option
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * let o = (8)?;
+ * let half = o.andThen!{|x| => { if (x % 2 == 0) { (x / 2)? } else { none } }} ();
+ * assert(half == (4)?);
+ * ```
+ */
+pub fn andThen {F: fn (T)-> (U)?, T, U} (o: T?)-> U? {
+    match o {
+        Ok(x) => return F(x);
+        Err(e: &Exception) => return failure!{U} (e);
+    }
+    none
+}
+
+/**
+ * Chain a step that can fail to the value of an option.
+ * @returns: the option returned by `f` called on the value, the error of `o` if it has one, none otherwise
+ * @params:
+ *    - f: the step to chain, returning an option
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * fn half (x: i32)-> i32? { if (x % 2 == 0) { (x / 2)? } else { none } }
+ *
+ * let a = (8)?, b = (6)?;
+ * assert(a.andThen(&half).andThen(&half) == (2)?);
+ * assert(b.andThen(&half).andThen(&half) == none);
+ * ```
+ */
+pub fn andThen {T, U} (o: T?, f: fn (T)-> (U)?)-> U? {
+    match o {
+        Ok(x) => return f(x);
+        Err(e: &Exception) => return failure!{U} (e);
+    }
+    none
+}
+
+/**
+ * Chain a step that can fail to the value of an option.
+ * @returns: the option returned by `f` called on the value, the error of `o` if it has one, none otherwise
+ * @params:
+ *    - f: the step to chain, returning an option
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * let a = copy [10, 20, 30];
+ * let i = (1us)?;
+ * let at = i.andThen(copy |j| => { if (j < a.len) { (a[j])? } else { none } });
+ * assert(at == (20)?);
+ * ```
+ */
+pub fn andThen {T, U} (o: T?, f: dg (T)-> (U)?)-> U? {
+    match o {
+        Ok(x) => return f(x);
+        Err(e: &Exception) => return failure!{U} (e);
+    }
+    none
+}
+
+/**
+ * Chain a step that can fail to the mutable value of an option.
+ * @returns: the option returned by `F` called on the value, the error of `o` if it has one, none otherwise
+ * @templates:
+ *    - F: the step to chain, returning a mutable option
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * let dmut o = (copy [1, 2, 3])?;
+ * let dmut t = andThen!{|dmut x| => (alias x[1 .. $])?} (alias o);
+ * if let Ok(dmut s) = alias t {
+ *     s[0] = 9;
+ * }
+ *
+ * assert(o == (copy [1, 9, 3])?);
+ * ```
+ */
+pub fn andThen {F: fn (dmut T)-> dmut (U)?, T, U} (dmut o: T?)-> dmut U? {
+    match alias o {
+        Ok(dmut x) => return alias F(alias x);
+        Err(e: &Exception) => return failure!{U} (e);
+    }
+    none
+}
+
+/**
+ * Chain a step that can fail to the mutable value of an option.
+ * @returns: the option returned by `f` called on the value, the error of `o` if it has one, none otherwise
+ * @params:
+ *    - f: the step to chain, returning a mutable option
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * fn tail (dmut x: [i32])-> dmut ([i32])? { if (x.len > 0us) { (alias x[1 .. $])? } else { none } }
+ *
+ * let dmut o = (copy [1, 2, 3])?;
+ * let dmut t = andThen(alias o, &tail);
+ * if let Ok(dmut s) = alias t {
+ *     s[0] = 9;
+ * }
+ *
+ * assert(o == (copy [1, 9, 3])?);
+ * ```
+ */
+pub fn andThen {T, U} (dmut o: T?, f: fn (dmut T)-> dmut (U)?)-> dmut U? {
+    match alias o {
+        Ok(dmut x) => return alias f(alias x);
+        Err(e: &Exception) => return failure!{U} (e);
+    }
+    none
+}
+
+/**
+ * Chain a step that can fail to the mutable value of an option.
+ * @returns: the option returned by `f` called on the value, the error of `o` if it has one, none otherwise
+ * @params:
+ *    - f: the step to chain, returning a mutable option
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * let dmut o = (copy [1, 2, 3])?;
+ * let dmut t = andThen(alias o, |dmut x| => (alias x[1 .. $])?);
+ * if let Ok(dmut s) = alias t {
+ *     s[0] = 9;
+ * }
+ *
+ * assert(o == (copy [1, 9, 3])?);
+ * ```
+ */
+pub fn andThen {T, U} (dmut o: T?, f: dg (dmut T)-> dmut (U)?)-> dmut U? {
+    match alias o {
+        Ok(dmut x) => return alias f(alias x);
+        Err(e: &Exception) => return failure!{U} (e);
+    }
+    none
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ======================================          FILTER          ====================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Drop the value of an option that does not verify a predicate.
+ * @returns: `o` if its value verifies `F` or if it has no value, none otherwise
+ * @templates:
+ *    - F: the predicate to verify
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * let a = (4)?, b = (-4)?;
+ * assert(a.filter!{|x| => x > 0} () == (4)?);
+ * assert(b.filter!{|x| => x > 0} () == none);
+ * ```
+ */
+pub fn filter {F: fn (T)-> bool, T} (o: T?)-> T? {
+    if let Ok(x) = o {
+        if (!F(x)) return none;
+    }
+    o
+}
+
+/**
+ * Drop the value of an option that does not verify a predicate.
+ * @returns: `o` if its value verifies `f` or if it has no value, none otherwise
+ * @params:
+ *    - f: the predicate to verify
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * fn positive (x: i32)-> bool { x > 0 }
+ *
+ * let a = (4)?, b = (-4)?;
+ * assert(a.filter(&positive) == (4)?);
+ * assert(b.filter(&positive) == none);
+ * ```
+ */
+pub fn filter {T} (o: T?, f: fn (T)-> bool)-> T? {
+    if let Ok(x) = o {
+        if (!f(x)) return none;
+    }
+    o
+}
+
+/**
+ * Drop the value of an option that does not verify a predicate.
+ * @returns: `o` if its value verifies `f` or if it has no value, none otherwise
+ * @params:
+ *    - f: the predicate to verify
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * let max = 10;
+ * let a = (4)?, b = (40)?;
+ * assert(a.filter(copy |x| => x < max) == (4)?);
+ * assert(b.filter(copy |x| => x < max) == none);
+ * ```
+ */
+pub fn filter {T} (o: T?, f: dg (T)-> bool)-> T? {
+    if let Ok(x) = o {
+        if (!f(x)) return none;
+    }
+    o
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ======================================          FLATTEN / ZIP          =============================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Remove a level of option.
+ * @returns: the inner option of `o`, the error of `o` if it has one, none otherwise
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * let o: ((i32)?)? = ((1)?)?;
+ * assert(o.flatten() == (1)?);
+ * ```
+ */
+pub fn flatten {T} (o: ((T)?)?)-> T? {
+    match o {
+        Ok(x) => return x;
+        Err(e: &Exception) => return failure!{T} (e);
+    }
+    none
+}
+
+/**
+ * Pair the values of two options.
+ * @returns: the pair of the values when both options have one, else the error of `a` if it has
+ * one, the error of `b` if it has one, and none otherwise
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * let a = (1)?, b = ("one")?, c: [c8]? = none;
+ * assert(a.zip(b) == ((1, "one"))?);
+ * assert(a.zip(c) == none);
+ * ```
+ */
+pub fn zip {T, U} (a: T?, b: U?)-> (T, U)? {
+    match (a, b) {
+        (Ok(x), Ok(y)) => return (x, y)?;
+    }
+
+    if let Err(e: &Exception) = a return failure!{(T, U)} (e);
+    if let Err(e: &Exception) = b return failure!{(T, U)} (e);
+    none
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ======================================          OR ELSE          ===================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Fall back on another option when an option has no value.
+ * @returns: `o` if it has a value, the option returned by `F` otherwise
+ * @templates:
+ *    - F: the fallback, only called when `o` has no value
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * let o: i32? = none;
+ * assert(o.orElse!{|| => (3)?} () == (3)?);
+ * ```
+ */
+pub fn orElse {F: fn ()-> (T)?, T} (o: T?)-> T? {
+    if (o.hasValue) return o;
+    F()
+}
+
+/**
+ * Fall back on another option when an option has no value.
+ * @returns: `o` if it has a value, the option returned by `f` otherwise
+ * @params:
+ *    - f: the fallback, only called when `o` has no value
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * fn standard ()-> u16? { (80u16)? }
+ *
+ * let port: u16? = none;
+ * assert(port.orElse(&standard) == (80u16)?);
+ * ```
+ */
+pub fn orElse {T} (o: T?, f: fn ()-> (T)?)-> T? {
+    if (o.hasValue) return o;
+    f()
+}
+
+/**
+ * Fall back on another option when an option has no value.
+ * @returns: `o` if it has a value, the option returned by `f` otherwise
+ * @params:
+ *    - f: the fallback, only called when `o` has no value
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * let defaults = copy [80u16, 443u16];
+ * let port: u16? = none;
+ * assert(port.orElse(copy || => (defaults[0])?) == (80u16)?);
+ * ```
+ */
+pub fn orElse {T} (o: T?, f: dg ()-> (T)?)-> T? {
+    if (o.hasValue) return o;
+    f()
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ======================================          RECOVER          ===================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Turn the error of an option back into a value.
+ * @returns: the value `F` computes from the error of `o` if it has one, `o` itself otherwise
+ * @templates:
+ *    - F: the recovery, only called when `o` has an error
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::assertion;
+ *
+ * let o = failure!{i32} (copy AssertError ("timeout"));
+ * assert(o.recover!{|_| => 0} () == (0)?);
+ * ```
+ */
+pub fn recover {F: fn (&Exception)-> T, T} (o: T?)-> T? {
+    if let Err(e: &Exception) = o return F(e)?;
+    o
+}
+
+/**
+ * Turn the error of an option back into a value.
+ * @returns: the value `f` computes from the error of `o` if it has one, `o` itself otherwise
+ * @params:
+ *    - f: the recovery, only called when `o` has an error
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::assertion;
+ * use core::exception;
+ *
+ * fn zero (_: &Exception)-> i32 { 0 }
+ *
+ * let o = failure!{i32} (copy AssertError ("timeout"));
+ * assert(o.recover(&zero) == (0)?);
+ * ```
+ */
+pub fn recover {T} (o: T?, f: fn (&Exception)-> T)-> T? {
+    if let Err(e: &Exception) = o return f(e)?;
+    o
+}
+
+/**
+ * Turn the error of an option back into a value.
+ * @returns: the value `f` computes from the error of `o` if it has one, `o` itself otherwise
+ * @params:
+ *    - f: the recovery, only called when `o` has an error
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::assertion;
+ *
+ * let fallback = 12;
+ * let o = failure!{i32} (copy AssertError ("timeout"));
+ * assert(o.recover(copy |_| => fallback) == (12)?);
+ * ```
+ */
+pub fn recover {T} (o: T?, f: dg (&Exception)-> T)-> T? {
+    if let Err(e: &Exception) = o return f(e)?;
+    o
+}
+
+/**
+ * Turn the error of an option back into a value, when it is of a given class.
+ * @returns: the value `f` computes from the error of `o` if it is an `E`, `o` itself otherwise
+ * @params:
+ *    - f: the recovery, its parameter type selecting the errors it recovers from
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::assertion;
+ *
+ * fn zero (_: &AssertError)-> i32 { 0 }
+ *
+ * let o = failure!{i32} (copy AssertError ("timeout"));
+ * assert(o.recover(&zero) == (0)?);
+ * ```
+ */
+pub fn recover {E over X, X of &Exception, T} (o: T?, f: fn (E)-> T)-> T? {
+    if let Err(e: E) = o return f(e)?;
+    o
+}
+
+/**
+ * Turn the error of an option back into a value, when it is of a given class.
+ * @returns: the value `f` computes from the error of `o` if it is an `E`, `o` itself otherwise
+ * @params:
+ *    - f: the recovery, its parameter type selecting the errors it recovers from
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::assertion;
+ *
+ * let fallback = 12;
+ * let o = failure!{i32} (copy AssertError ("timeout"));
+ * assert(o.recover(copy |_: &AssertError| => fallback) == (12)?);
+ * ```
+ */
+pub fn recover {E over X, X of &Exception, T} (o: T?, f: dg (E)-> T)-> T? {
+    if let Err(e: E) = o return f(e)?;
+    o
+}
+
+/**
+ * Turn the error of an option into another option.
+ * @returns: the option `F` computes from the error of `o` if it has one, `o` itself otherwise
+ * @templates:
+ *    - F: the recovery, only called when `o` has an error
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::assertion;
+ *
+ * let o = failure!{i32} (copy AssertError ("timeout"));
+ * assert(o.recoverWith!{|_| => (0)?} () == (0)?);
+ * ```
+ */
+pub fn recoverWith {F: fn (&Exception)-> (T)?, T} (o: T?)-> T? {
+    if let Err(e: &Exception) = o return F(e);
+    o
+}
+
+/**
+ * Turn the error of an option into another option.
+ * @returns: the option `f` computes from the error of `o` if it has one, `o` itself otherwise
+ * @params:
+ *    - f: the recovery, only called when `o` has an error
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::assertion;
+ * use core::exception;
+ *
+ * fn retry (_: &Exception)-> i32? { (0)? }
+ *
+ * let o = failure!{i32} (copy AssertError ("timeout"));
+ * assert(o.recoverWith(&retry) == (0)?);
+ * ```
+ */
+pub fn recoverWith {T} (o: T?, f: fn (&Exception)-> (T)?)-> T? {
+    if let Err(e: &Exception) = o return f(e);
+    o
+}
+
+/**
+ * Turn the error of an option into another option.
+ * @returns: the option `f` computes from the error of `o` if it has one, `o` itself otherwise
+ * @params:
+ *    - f: the recovery, only called when `o` has an error
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::assertion;
+ *
+ * let cache = (7)?;
+ * let o = failure!{i32} (copy AssertError ("timeout"));
+ * assert(o.recoverWith(copy |_| => cache) == (7)?);
+ * ```
+ */
+pub fn recoverWith {T} (o: T?, f: dg (&Exception)-> (T)?)-> T? {
+    if let Err(e: &Exception) = o return f(e);
+    o
+}
+
+/**
+ * Turn the error of an option into another option, when it is of a given class.
+ * @returns: the option `f` computes from the error of `o` if it is an `E`, `o` itself otherwise
+ * @params:
+ *    - f: the recovery, its parameter type selecting the errors it recovers from
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::assertion;
+ *
+ * fn retry (_: &AssertError)-> i32? { (0)? }
+ *
+ * let o = failure!{i32} (copy AssertError ("timeout"));
+ * assert(o.recoverWith(&retry) == (0)?);
+ * ```
+ */
+pub fn recoverWith {E over X, X of &Exception, T} (o: T?, f: fn (E)-> (T)?)-> T? {
+    if let Err(e: E) = o return f(e);
+    o
+}
+
+/**
+ * Turn the error of an option into another option, when it is of a given class.
+ * @returns: the option `f` computes from the error of `o` if it is an `E`, `o` itself otherwise
+ * @params:
+ *    - f: the recovery, its parameter type selecting the errors it recovers from
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::assertion;
+ *
+ * let cache = (7)?;
+ * let o = failure!{i32} (copy AssertError ("timeout"));
+ * assert(o.recoverWith(copy |_: &AssertError| => cache) == (7)?);
+ * ```
+ */
+pub fn recoverWith {E over X, X of &Exception, T} (o: T?, f: dg (E)-> (T)?)-> T? {
+    if let Err(e: E) = o return f(e);
+    o
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ==================================          NONE AND ERRORS          ===============================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Explain why an option has no value.
+ * @returns: an option holding the error `e` if `o` is none, `o` itself otherwise
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::assertion;
+ *
+ * let o: i32? = none;
+ * assert(o.orErr(copy AssertError ("missing port")).hasError);
+ * ```
+ */
+pub fn orErr {T} (o: T?, e: &Exception)-> T? {
+    if (o.hasValue || o.hasError) return o;
+    failure!{T} (e)
+}
+
+/**
+ * Explain why an option has no value.
+ * @returns: an option holding the error returned by `F` if `o` is none, `o` itself otherwise
+ * @templates:
+ *    - F: the error to hold, only built when `o` is none
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::assertion;
+ *
+ * let o: i32? = none;
+ * assert(o.orErr!{|| => copy AssertError ("missing port")} ().hasError);
+ * ```
+ */
+pub fn orErr {F: fn ()-> E, T, E} (o: T?)-> T? {
+    if (o.hasValue || o.hasError) return o;
+    failure!{T} (F())
+}
+
+/**
+ * Explain why an option has no value.
+ * @returns: an option holding the error returned by `f` if `o` is none, `o` itself otherwise
+ * @params:
+ *    - f: the error to hold, only built when `o` is none
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::assertion;
+ *
+ * fn missing ()-> &AssertError { copy AssertError ("missing port") }
+ *
+ * let o: i32? = none;
+ * assert(o.orErr(&missing).hasError);
+ * ```
+ */
+pub fn orErr {T, E} (o: T?, f: fn ()-> E)-> T? {
+    if (o.hasValue || o.hasError) return o;
+    failure!{T} (f())
+}
+
+/**
+ * Explain why an option has no value.
+ * @returns: an option holding the error returned by `f` if `o` is none, `o` itself otherwise
+ * @params:
+ *    - f: the error to hold, only built when `o` is none
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::assertion;
+ *
+ * let key = "port";
+ * let o: i32? = none;
+ * assert(o.orErr(copy || => copy AssertError ("missing " ~ key)).hasError);
+ * ```
+ */
+pub fn orErr {T, E} (o: T?, f: dg ()-> E)-> T? {
+    if (o.hasValue || o.hasError) return o;
+    failure!{T} (f())
+}
+
+/**
+ * Forget the error of an option.
+ * @returns: none if `o` has an error, `o` itself otherwise
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::assertion;
+ *
+ * let o = failure!{i32} (copy AssertError ("timeout"));
+ * assert(o.dropErr() == none);
+ * assert(!o.dropErr().hasError);
+ * ```
+ */
+pub fn dropErr {T} (o: T?)-> T? {
+    if (o.hasError) return none;
+    o
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =====================================          EXTRACTING          =================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Get the value of an option, throwing its error if it has one.
+ * Unlike the field `value`, which throws `EmptyValOption` in both cases, the error held by `o` is thrown as it is.
+ * @returns: the value of `o`
+ * @throws:
+ *    - &Exception: the error of `o`
+ *    - &EmptyValOption: if `o` is none
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::assertion;
+ *
+ * let o = failure!{i32} (copy AssertError ("timeout"));
+ * {
+ *     println(o.unwrap());
+ * } catch {
+ *     e: &AssertError => println("failed: ", e.msg);
+ *     _ => println("other error");
+ * }
+ * ```
+ */
+pub fn unwrap {T} (o: T?)-> T
+    throws Exception
+{
+    match o {
+        Ok(x) => return x;
+        Err(e: &Exception) => raise (e);
+    }
+    throw copy EmptyValOption ();
+}
+
+/**
+ * Get the value of an option that is expected to have one.
+ * @returns: the value of `o`
+ * @params:
+ *    - msg: what was expected, the message of the exception thrown
+ * @throws:
+ *    - &ExpectError: if `o` has no value, holding the error of `o` as its cause if it has one
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::option;
+ *
+ * let o: i32? = none;
+ * {
+ *     println(o.expect("the port is set by the configuration"));
+ * } catch {
+ *     e: &ExpectError => println(e.msg);
+ * }
+ * ```
+ */
+pub fn expect {T} (o: T?, msg: [c8])-> T
+    throws ExpectError
+{
+    match o {
+        Ok(x) => return x;
+        Err(e: &Exception) => throw copy ExpectError (msg, cause-> e?);
+    }
+    throw copy ExpectError (msg);
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ===================================          SIDE EFFECTS          =================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Call a function on the value of an option, if it has one.
+ * @templates:
+ *    - F: the function to call
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * let o = (3)?;
+ * o.each!{|x| => println(x)} ();
+ * ```
+ */
+pub fn each {F: fn (T)-> void, T} (o: T?) {
+    if let Ok(x) = o F(x);
+}
+
+/**
+ * Call a function on the value of an option, if it has one.
+ * @params:
+ *    - f: the function to call
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * fn show (x: i32) { println(x); }
+ *
+ * let o = (3)?;
+ * o.each(&show);
+ * ```
+ */
+pub fn each {T} (o: T?, f: fn (T)-> void) {
+    if let Ok(x) = o f(x);
+}
+
+/**
+ * Call a function on the value of an option, if it has one.
+ * @params:
+ *    - f: the function to call
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * let o = (3)?;
+ * o.each(|x| => { println(x); });
+ * ```
+ */
+pub fn each {T} (o: T?, f: dg (T)-> void) {
+    if let Ok(x) = o f(x);
+}
+
+/**
+ * Call a function on the value of an option, if it has one, and go on with the option.
+ * @returns: `o`
+ * @templates:
+ *    - F: the function to call
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * let o = (3)?;
+ * assert(o.inspect!{|x| => println("got ", x)} ().map!{|x| => x * 2} () == (6)?);
+ * ```
+ */
+pub fn inspect {F: fn (T)-> void, T} (o: T?)-> T? {
+    if let Ok(x) = o F(x);
+    o
+}
+
+/**
+ * Call a function on the value of an option, if it has one, and go on with the option.
+ * @returns: `o`
+ * @params:
+ *    - f: the function to call
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * fn show (x: i32) { println("got ", x); }
+ *
+ * let o = (3)?;
+ * assert(o.inspect(&show) == (3)?);
+ * ```
+ */
+pub fn inspect {T} (o: T?, f: fn (T)-> void)-> T? {
+    if let Ok(x) = o f(x);
+    o
+}
+
+/**
+ * Call a function on the value of an option, if it has one, and go on with the option.
+ * @returns: `o`
+ * @params:
+ *    - f: the function to call
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * let o = (3)?;
+ * assert(o.inspect(|x| => { println("got ", x); }) == (3)?);
+ * ```
+ */
+pub fn inspect {T} (o: T?, f: dg (T)-> void)-> T? {
+    if let Ok(x) = o f(x);
+    o
+}
+
+/**
+ * Call a function on the error of an option, if it has one, and go on with the option.
+ * @returns: `o`
+ * @templates:
+ *    - F: the function to call
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::assertion;
+ *
+ * let o = failure!{i32} (copy AssertError ("timeout"));
+ * assert(o.inspectErr!{|e| => println("failed: ", e)} ().recover!{|_| => 0} () == (0)?);
+ * ```
+ */
+pub fn inspectErr {F: fn (&Exception)-> void, T} (o: T?)-> T? {
+    if let Err(e: &Exception) = o F(e);
+    o
+}
+
+/**
+ * Call a function on the error of an option, if it has one, and go on with the option.
+ * @returns: `o`
+ * @params:
+ *    - f: the function to call
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::assertion;
+ * use core::exception;
+ *
+ * fn report (e: &Exception) { println("failed: ", e); }
+ *
+ * let o = failure!{i32} (copy AssertError ("timeout"));
+ * assert(o.inspectErr(&report).hasError);
+ * ```
+ */
+pub fn inspectErr {T} (o: T?, f: fn (&Exception)-> void)-> T? {
+    if let Err(e: &Exception) = o f(e);
+    o
+}
+
+/**
+ * Call a function on the error of an option, if it has one, and go on with the option.
+ * @returns: `o`
+ * @params:
+ *    - f: the function to call
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::assertion;
+ *
+ * let o = failure!{i32} (copy AssertError ("timeout"));
+ * assert(o.inspectErr(|e| => { println("failed: ", e); }).hasError);
+ * ```
+ */
+pub fn inspectErr {T} (o: T?, f: dg (&Exception)-> void)-> T? {
+    if let Err(e: &Exception) = o f(e);
+    o
+}
+
+/**
+ * Turn an option into a slice.
+ * @returns: a slice holding the value of `o`, empty if `o` has no value
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::assertion;
+ *
+ * let a = (3)?, b = failure!{i32} (copy AssertError ("timeout"));
+ * assert(a.collect() == [3]);
+ * assert(b.collect().len == 0us);
+ * ```
+ */
+pub fn collect {T} (o: T?)-> [T] {
+    if let Ok(x) = o return copy [x];
+    []
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =================================          COLLECTIONS OF OPTIONS          =========================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Traverse the values of a slice of options lazily, skipping the errors and the empty ones.
+ * @returns: a generator yielding the values of the options of `a`, in order
+ * @example:
+ * ```
+ * use std::option;
+ * use std::algorithm::iteration;
+ *
+ * let a = copy [(1)?, none, (3)?];
+ * assert(a.flatten().collect() == [1, 3]);
+ * ```
+ * @complexity: O(a.len) to exhaust the generator
+ */
+pub yield flatten {T of [(U)?], U} (a: T)-> U {
+    for o in a {
+        if let Ok(x) = o yield x;
+    }
+}
+
+/**
+ * Traverse the values yielded by a generator of options lazily, skipping the errors and the empty ones.
+ * @returns: a generator yielding the values of the options yielded by `a`, in order
+ * @example:
+ * ```
+ * use std::option;
+ * use std::algorithm::iteration;
+ *
+ * let a = copy [1, -2, 3];
+ * let pos = a.map!{|x| => { if (x > 0) { (x)? } else { none } }} ();
+ * assert(pos.flatten().collect() == [1, 3]);
+ * ```
+ * @complexity: O(n) to exhaust the generator, with n the number of values yielded by a
+ */
+pub yield flatten {T of (yield-> (U)?), U} (a: T)-> U {
+    for o in a {
+        if let Ok(x) = o yield x;
+    }
+}
+
+/**
+ * Gather the values of a slice of options.
+ * @returns: the values of the options of `a` if they all have one, else the first option of `a`
+ * having an error or being none
+ * @example:
+ * ```
+ * use std::option;
+ *
+ * assert((copy [(1)?, (2)?]).sequence() == (copy [1, 2])?);
+ * assert((copy [(1)?, none]).sequence() == none);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn sequence {T of [(U)?], U} (a: T)-> ([U])? {
+    let mut res: [U] = [];
+    for o in a {
+        match o {
+            Ok(x) => { res ~= [x]; }
+            Err(e: &Exception) => return failure!{[U]} (e);
+            _ => return none;
+        }
+    }
+
+    res?
+}
+
+/**
+ * Gather the values of the options yielded by a generator, stopping at the first one having no value.
+ * @returns: the values of the options yielded by `a` if they all have one, else the first option
+ * having an error or being none
+ * @example:
+ * ```
+ * use std::option;
+ * use std::algorithm::iteration;
+ *
+ * let a = copy [1, 2, 3];
+ * assert(a.map!{|x| => (x * 2)?} ().sequence() == (copy [2, 4, 6])?);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ */
+pub fn sequence {T of (yield-> (U)?), U} (a: T)-> ([U])? {
+    let mut res: [U] = [];
+    for o in a {
+        match o {
+            Ok(x) => { res ~= [x]; }
+            Err(e: &Exception) => return failure!{[U]} (e);
+            _ => return none;
+        }
+    }
+
+    res?
+}
+
+/**
+ * Split the values and the errors of a slice of options, the empty options being dropped.
+ * @returns: the values of the options of `a`, and their errors, both in order
+ * @example:
+ * ```
+ * use std::option;
+ * use core::exception::assertion;
+ *
+ * let a = copy [(1)?, failure!{i32} (copy AssertError ("bad")), none, (4)?];
+ * let (values, errors) = a.partition();
+ * assert(values == [1, 4]);
+ * assert(errors.len == 1us);
+ * ```
+ * @complexity: O(a.len)
+ */
+pub fn partition {T of [(U)?], U} (a: T)-> ([U], [&Exception]) {
+    let mut values: [U] = [];
+    let mut errors: [&Exception] = [];
+    for o in a {
+        match o {
+            Ok(x) => { values ~= [x]; }
+            Err(e: &Exception) => { errors ~= [e]; }
+        }
+    }
+
+    (values, errors)
+}
+
+/**
+ * Split the values and the errors of the options yielded by a generator, the empty options being dropped.
+ * @returns: the values of the options yielded by `a`, and their errors, both in order
+ * @example:
+ * ```
+ * use std::option;
+ * use std::algorithm::iteration;
+ *
+ * let a = copy [1, -2, 3];
+ * let (values, errors) = a.map!{|x| => (x)?} ().partition();
+ * assert(values == [1, -2, 3]);
+ * assert(errors.len == 0us);
+ * ```
+ * @complexity: O(n), with n the number of values yielded by a
+ */
+pub fn partition {T of (yield-> (U)?), U} (a: T)-> ([U], [&Exception]) {
+    let mut values: [U] = [];
+    let mut errors: [&Exception] = [];
+    for o in a {
+        match o {
+            Ok(x) => { values ~= [x]; }
+            Err(e: &Exception) => { errors ~= [e]; }
+        }
+    }
+
+    (values, errors)
+}
