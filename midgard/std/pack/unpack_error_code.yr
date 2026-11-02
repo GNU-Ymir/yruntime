@@ -1,13 +1,9 @@
 /**
- * This module implements the error thrown when a packet cannot be unpacked.
  * @Authors: Emile Cadorel
  * @License: GPLv3
  */
 
-in errors;
-
-use core::exception;
-use std::stream;
+in unpack_error_code;
 
 /**
  * Error code telling why a packet was refused
@@ -35,51 +31,3 @@ pub enum UnpackErrorCode: u8
 | REPLAYED            = 20u8  // the sequence number of the packet was received already, or falls below the window the receiver remembers
 | TOO_LARGE           = 21u8  // the payload is larger than the receiver accepts
 ;
-
-/**
- * Error thrown when a packet cannot be unpacked
- */
-@final
-pub class UnpackError over Exception {
-
-    // Why the packet was refused
-    pub let code: UnpackErrorCode;
-
-    // The index of the byte of the packet the error was found at
-    pub let offset: usize;
-
-    // The message explaining the error
-    pub let msg: [c8];
-
-    /**
-     * @params:
-     *   - code: why the packet was refused
-     *   - offset: the index of the byte of the packet the error was found at
-     *   - msg: the message explaining the error
-     */
-    pub self (code: UnpackErrorCode, offset: usize, msg: [c8])
-        with code = code
-        , offset = offset
-        , msg = msg
-    {}
-
-    /**
-     * An error thrown by the `unpacked` hook of a class, refusing an object whose fields break its invariants
-     * @params:
-     *   - msg: the message explaining the error
-     */
-    pub self (msg: [c8])
-        with code = UnpackErrorCode::INVALID
-        , offset = 0us
-        , msg = msg
-    {}
-
-    impl Streamable {
-        pub over toStream(self, dmut stream: &StringStream) {
-            stream:.write(self.__typeinfo__.name, "(", self.code, " at offset ", self.offset, ": ", self.msg, ")");
-            if (self.hasTrace()) {
-                stream:.write(":\n", self.getStackTrace());
-            }
-        }
-    }
-}

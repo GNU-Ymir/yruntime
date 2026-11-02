@@ -1,0 +1,88 @@
+/**
+ * This module implements the authentication of packets: the `Signer` a sender tags its packets with, and the `Verifier` a receiver checks them with before reading any of their payload.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * A packet is tagged with an HMAC-SHA-256 over every byte before the tag, header included, followed by a context the caller gives on both sides, which is not sent (the actor the packet is addressed to, for example): a packet replayed to another context is refused.
+ * Whether a packet has to be authenticated is decided by the receiver, never by the packet: a `Verifier` refuses the unsigned ones unless it was built to accept them.
+ * @example:
+ * ```
+ * use std::conv;
+ * use std::pack;
+ *
+ * let key = "a secret shared by both sides".to![u8] ();
+ * let dmut signer = copy Signer(1u32, key);
+ * let dmut verifier = copy Verifier();
+ * verifier:.addKey(1u32, key);
+ *
+ * let bytes = pack("hello", alias signer, context-> "greeter".to![u8] ());
+ * assert(unpack!{[c8]} (bytes, alias verifier, context-> "greeter".to![u8] ()) == "hello");
+ *
+ * // the same packet, received again
+ * let replayed = {
+ *     unpack!{[c8]} (bytes, alias verifier, context-> "greeter".to![u8] ());
+ *     false
+ * } catch {
+ *     err: &UnpackError => {
+ *         err.code == UnpackErrorCode::REPLAYED
+ *     }
+ * };
+ *
+ * assert(replayed);
+ * ```
+ */
+
+in signer;
+
+/**
+ * Tags the packets of a sender with an HMAC-SHA-256 of one of its keys, numbering them so a receiver can refuse a packet it already received.
+ */
+@final
+pub class Signer {
+
+    // The identifier of the key, written in the header so the receiver picks the same key
+    let _keyId: u32;
+
+    // The key
+    let _key: [u8];
+
+    // The sequence number of the next packet
+    let mut _sequence: u64;
+
+    /**
+     * @params:
+     *    - keyId: the identifier of the key, under which the receivers hold it
+     *    - key: the secret key
+     *    - sequence: the sequence number of the first packet. A receiver refuses the numbers it already received, so a sender that starts again with a key a receiver still holds has to start above the numbers it used
+     */
+    pub self (keyId: u32, key: [u8], sequence: u64 = 1u64)
+        with _keyId = keyId
+        , _key = copy key
+        , _sequence = sequence
+    {}
+
+    /**
+     * @returns: the identifier of the key
+     */
+    pub fn keyId(self)-> u32 {
+        self._keyId
+    }
+
+    /**
+     * @returns: the sequence number of the next packet, which is reserved for it
+     */
+    pub fn next(mut self)-> u64 {
+        atomic self {
+            let s = self._sequence;
+            self._sequence += 1u64;
+            s
+        }
+    }
+
+    /**
+     * @returns: the tag of the frame `frame` sent in the context `context`
+     */
+    pub fn tag(self, frame: [u8], context: [u8])-> [u8 ; 32us] {
+        utils::tagOf(self._key, frame, context)
+    }
+}
