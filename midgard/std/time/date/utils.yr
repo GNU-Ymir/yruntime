@@ -5,6 +5,7 @@
 
 in utils;
 
+use std::algorithm::comparison;
 use std::stream;
 
 /**
@@ -41,4 +42,141 @@ pub fn writeOffset(dmut stream: &StringStream, offset: i64, colon: bool, zulu: b
     writePadded(alias stream, abs / 3_600i64, 2);
     if colon { stream:.write(':'); }
     writePadded(alias stream, (abs / 60i64) % 60i64, 2);
+}
+
+/**
+ * @params:
+ *    - wday: the day of the week, `0` being sunday, as `DateTime::weekDay` reports it
+ * @returns: the day named by `wday`
+ */
+pub fn dayOf(wday: i32)-> Days {
+    match wday {
+        1 => { Days::MONDAY }
+        2 => { Days::TUESDAY }
+        3 => { Days::WEDNESDAY }
+        4 => { Days::THURSDAY }
+        5 => { Days::FRIDAY }
+        6 => { Days::SATURDAY }
+        _ => { Days::SUNDAY }
+    }
+}
+
+/**
+ * @returns: the abbreviated english name of `day`
+ */
+pub fn shortName(day: Days)-> [c8] {
+    match day {
+        Days::MONDAY    => { Days::MONDAY }
+        Days::TUESDAY   => { Days::TUESDAY }
+        Days::WEDNESDAY => { Days::WEDNESDAY }
+        Days::THURSDAY  => { Days::THURSDAY }
+        Days::FRIDAY    => { Days::FRIDAY }
+        Days::SATURDAY  => { Days::SATURDAY }
+        _               => { Days::SUNDAY }
+    }
+}
+
+/**
+ * @returns: the full english name of `day`
+ */
+pub fn fullName(day: Days)-> [c8] {
+    match day {
+        Days::MONDAY    => { "Monday" }
+        Days::TUESDAY   => { "Tuesday" }
+        Days::WEDNESDAY => { "Wednesday" }
+        Days::THURSDAY  => { "Thursday" }
+        Days::FRIDAY    => { "Friday" }
+        Days::SATURDAY  => { "Saturday" }
+        _               => { "Sunday" }
+    }
+}
+
+/**
+ * @params:
+ *    - name: a full or abbreviated english day name, whatever the case of its letters
+ * @returns: the index of the day, `0` being sunday, or `-1` if `name` names no day
+ */
+pub fn dayIndex(name: [c8])-> i32 {
+    for i in 0 .. 7 {
+        let d = dayOf(i);
+        if eqIgnoreCase(name, shortName(d)) || eqIgnoreCase(name, fullName(d)) return i;
+    }
+
+    return -1;
+}
+
+/**
+ * @params:
+ *    - month: the month of the year, 1-based, as `DateTime::month` reports it
+ * @returns: the month named by `month`
+ */
+pub fn monthOf(month: i32)-> Months {
+    match month {
+        1  => { Months::JANUARY }
+        2  => { Months::FEBRUARY }
+        3  => { Months::MARCH }
+        4  => { Months::APRIL }
+        5  => { Months::MAY }
+        6  => { Months::JUNE }
+        7  => { Months::JULY }
+        8  => { Months::AUGUST }
+        9  => { Months::SEPTEMBER }
+        10 => { Months::OCTOBER }
+        11 => { Months::NOVEMBER }
+        _  => { Months::DECEMBER }
+    }
+}
+
+/**
+ * @returns: the abbreviated english name of `month`
+ */
+pub fn shortName(month: Months)-> [c8] {
+    match month {
+        Months::JANUARY   => { Months::JANUARY }
+        Months::FEBRUARY  => { Months::FEBRUARY }
+        Months::MARCH     => { Months::MARCH }
+        Months::APRIL     => { Months::APRIL }
+        Months::MAY       => { Months::MAY }
+        Months::JUNE      => { Months::JUNE }
+        Months::JULY      => { Months::JULY }
+        Months::AUGUST    => { Months::AUGUST }
+        Months::SEPTEMBER => { Months::SEPTEMBER }
+        Months::OCTOBER   => { Months::OCTOBER }
+        Months::NOVEMBER  => { Months::NOVEMBER }
+        _                 => { Months::DECEMBER }
+    }
+}
+
+/**
+ * @returns: the full english name of `month`
+ */
+pub fn fullName(month: Months)-> [c8] {
+    match month {
+        Months::JANUARY   => { "January" }
+        Months::FEBRUARY  => { "February" }
+        Months::MARCH     => { "March" }
+        Months::APRIL     => { "April" }
+        Months::MAY       => { "May" }
+        Months::JUNE      => { "June" }
+        Months::JULY      => { "July" }
+        Months::AUGUST    => { "August" }
+        Months::SEPTEMBER => { "September" }
+        Months::OCTOBER   => { "October" }
+        Months::NOVEMBER  => { "November" }
+        _                 => { "December" }
+    }
+}
+
+/**
+ * @params:
+ *    - name: a full or abbreviated english month name, whatever the case of its letters
+ * @returns: the number of the month, 1-based, or `-1` if `name` names no month
+ */
+pub fn monthIndex(name: [c8])-> i32 {
+    for i in 1 .. 13 {
+        let m = monthOf(i);
+        if eqIgnoreCase(name, shortName(m)) || eqIgnoreCase(name, fullName(m)) return i;
+    }
+
+    return -1;
 }
