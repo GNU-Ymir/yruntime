@@ -1,0 +1,41 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in window;
+
+/**
+ * The number of sequence numbers below the highest one received that a `Verifier` remembers, for each key and sender
+ */
+pub def REPLAY_WINDOW = 64u64;
+
+/**
+ * The sequence numbers received with one key from one sender: the highest one, and which of the `REPLAY_WINDOW` below it were received
+ */
+pub record Window {
+
+    // The highest sequence number received
+    pub let top: u64;
+
+    // The bit i is set if the number `top - i` was received, none being set before the first one is
+    pub let seen: u64;
+
+    pub self (top: u64, seen: u64) with top = top, seen = seen {}
+
+    /**
+     * @returns: the window once `sequence` is received, none if it was already received or falls below the window
+     */
+    pub fn accept(self, sequence: u64)-> (Window)? {
+        if (self.seen == 0u64 || sequence > self.top) {
+            let shift = sequence - self.top;
+            let seen = if (self.seen == 0u64 || shift >= REPLAY_WINDOW) { 1u64 } else { (self.seen << shift) | 1u64 };
+            return Window(sequence, seen)?;
+        }
+
+        let diff = self.top - sequence;
+        if (diff >= REPLAY_WINDOW || (self.seen & (1u64 << diff)) != 0u64) return none;
+
+        Window(self.top, self.seen | (1u64 << diff))?
+    }
+}

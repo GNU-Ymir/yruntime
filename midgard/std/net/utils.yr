@@ -1,0 +1,185 @@
+/**
+ * This module declares functions to convert strings to ip addresses
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @example:
+ * ```
+ * use std::net;
+ *
+ * let localhost_v4 = copy Ipv4Addr([127u8, 0u8, 0u8, 1u8]);
+ * let localhost_v6 = copy Ipv6Addr([0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 1u16]);
+ *
+ * let ip_v4 = ("127.0.0.1"s8).to!{&IpAddr} ();
+ * assert(ip_v4 == localhost_v4);
+ *
+ * let ip_v6 = ("::1"s8).to!{&IpAddr} ();
+ * assert(ip_v6 == localhost_v6);
+ *
+ * // an address can be associated to a port
+ * let ip_port_v6 = SockAddr(ip_v6, 8080u16);
+ * assert(ip_port_v6.ip == localhost_v6);
+ * assert(ip_port_v6.port == 8080u16);
+ * ```
+ */
+
+in utils;
+
+use std::conv;
+use std::algorithm::searching;
+use std::net::{ipv4_addr, ipv6_addr};
+use std::syntax;
+
+/**
+ * Transform a string into an ip address
+ * @example:
+ * ```
+ * use std::net;
+ *
+ * println(("127.0.0.1"s8).to!{&IpAddr} ());   // 127.0.0.1
+ * println(("::1"s8).to!{&IpAddr} ());         // ::1
+ * println(("fe80:1::8:2"s8).to!{&IpAddr} ()); // fe80:1::8:2
+ * ```
+ * */
+pub fn to {I of &IpAddr, T of [c8]} (addr: T)-> &IpAddr
+    throws CastFailure
+{
+    // ipv6 contains ':', and can contain '.' if an ipv4 is written at its end
+    // So the only way to discriminate is with the find of ':'
+    if let Ok(_) = searching::find(addr, ':') {
+        utils::to!{&Ipv6Addr, [c8]} (addr)
+    } else {
+        utils::to!{&Ipv4Addr, [c8]} (addr)
+    }
+}
+
+/**
+ * Transform a string into an ipv4 address
+ * @example:
+ * ```
+ * use std::net;
+ *
+ * println(("127.0.0.1"s8).to!{&Ipv4Addr} ());      // 127.0.0.1
+ * println(("192.168.128.32"s8).to!{&Ipv4Addr} ()); // 192.168.128.32
+ * ```
+ * */
+pub fn to {I of &Ipv4Addr, T of [c8]} (addr: T)-> &Ipv4Addr
+    throws CastFailure
+{
+    let dmut tzer = Tokenizer!{c8} ();
+    tzer:.insert(".", isSkip-> true);
+
+    let components = tzer.tokenizeWithoutSkips(addr);
+    if (components.len != 4) {
+        throw copy CastFailure(T::__typeinfo__, I::__typeinfo__);
+    }
+
+    {
+        let a = components[0].(std::conv::to)!{u64} ();
+        let b = components[1].(std::conv::to)!{u64} ();
+        let c = components[2].(std::conv::to)!{u64} ();
+        let d = components[3].(std::conv::to)!{u64} ();
+
+        if (a > cast!u64(u8::max) || b > cast!u64(u8::max) || c > cast!u64(u8::max) || d > cast!u64(u8::max)) {
+            throw copy CastFailure(T::__typeinfo__, I::__typeinfo__);
+        }
+
+        return copy Ipv4Addr([cast!u8(a), cast!u8(b), cast!u8(c), cast!u8(d)]);
+    } catch {
+        inE => {
+            throw copy CastFailure(T::__typeinfo__, I::__typeinfo__, subError-> (inE)?);
+        }
+    }
+}
+
+/**
+ * Transform a string into an ipv6 address
+ * @example:
+ * ```
+ * use std::net;
+ *
+ * println(("::1"s8).to!{&Ipv6Addr} ());         // ::1
+ * println(("fe80:1::8:2"s8).to!{&Ipv6Addr} ()); // fe80:1::8:2
+ * ```
+ * */
+pub fn to {I of &Ipv6Addr, T of [c8]} (addr: T)-> &Ipv6Addr
+    throws CastFailure
+{
+    let dmut tzer = Tokenizer!{c8} ();
+    tzer:.insert("::");
+    tzer:.insert(":", isSkip-> true);
+
+    let components = tzer.tokenizeWithoutSkips(addr);
+    let dmut start = [0u16 ; 8], dmut end = [0u16 ; 8];
+
+    let mut startI = 0us, mut endI = 0us;
+    let mut readEnd = false;
+    let mut index = 0us;
+
+    while index < components.len {
+        let v = components[index];
+        index += 1;
+
+        if v == "::" {
+            // Read :: two times already
+            if (readEnd || startI == 8) throw copy CastFailure(T::__typeinfo__, I::__typeinfo__);
+            readEnd = true;
+        } else {
+
+            // Too many components
+            if (startI + endI > 8) || (startI + endI >= 7 && readEnd) {
+                throw copy CastFailure(T::__typeinfo__, I::__typeinfo__);
+            }
+
+            if let Ok(val) = std::conv::to!{u64, 16} (v)? {
+                if (val > cast!u64(u16::max)) throw copy CastFailure(T::__typeinfo__, I::__typeinfo__);
+                if (readEnd) {
+                    end[endI] = cast!u16(val);
+                    endI += 1;
+                } else {
+                    start[startI] = cast!u16(val);
+                    startI += 1;
+                }
+
+                if (startI + endI >= 8us) break;
+            } else { // Maybe we reached an end with an ipv4 addr
+                if let Ok(v4: &Ipv4Addr) = utils::to!{&Ipv4Addr, [c8]} (v)? {
+                    // An ipv4 tail is only legal as the very last component, and only if
+                    // there is room left for the two groups it expands into
+                    if (index != components.len) || (startI + endI + 2 > 8) {
+                        throw copy CastFailure(T::__typeinfo__, I::__typeinfo__);
+                    }
+
+                    let g1 = (cast!u16 (v4[][0]) << 8) | cast!u16 (v4[][1]);
+                    let g2 = (cast!u16 (v4[][2]) << 8) | cast!u16 (v4[][3]);
+
+                    if (readEnd) {
+                        end[endI] = g1;
+                        end[endI + 1] = g2;
+                        endI += 2;
+                    } else {
+                        start[startI] = g1;
+                        start[startI + 1] = g2;
+                        startI += 2;
+                    }
+
+                    break;
+                }
+
+                // No it did not
+                throw copy CastFailure(T::__typeinfo__, I::__typeinfo__);
+            }
+        }
+    }
+
+    if (startI + endI < 8 && !readEnd) || (index != components.len) {
+        throw copy CastFailure(T::__typeinfo__, I::__typeinfo__);
+    }
+
+    let skipped = 8us - (endI + startI);
+    for i in 0 .. endI {
+        start[startI + i + skipped] = end[i];
+    }
+
+    copy Ipv6Addr(start)
+}

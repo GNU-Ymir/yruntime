@@ -1,0 +1,95 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in call_tree_merger;
+
+use utils::coverage::conv::{coverage_callee, coverage_caller};
+
+/**
+ * Accumulates the "callTree" of several `CoverageReport` into a single one, summing the call
+ * count of edges(caller-> callee) that appear in more than one report
+ * */
+pub class CallTreeMerger {
+
+    let mut _callerOrder: [mut ([c8], [c8])] = [];
+    let mut _calleeOrder: [([c8], [c8]) => mut [([c8], [c8])]] = copy [];
+    let dmut _counts: [(([c8], [c8]), ([c8], [c8])) => usize] = copy [];
+
+    pub self () {}
+
+    pub fn add(mut self, caller: CoverageCaller) {
+        let callerKey = (caller.file, caller.func);
+        self:.ensureCaller(callerKey);
+
+        for callee in caller.callees {
+            self:.addCallee(callerKey, callee);
+        }
+    }
+
+    pub fn build(self)-> [CoverageCaller] {
+        let mut result: [CoverageCaller] = [];
+        for callerKey in self._callerOrder {
+            result ~= [self.buildCaller(callerKey)];
+        }
+
+        return result;
+    }
+
+    fn ensureCaller(mut self, callerKey: ([c8], [c8])) {
+        if let Ok(_) = self._calleeOrder[callerKey] {
+            return;
+        }
+
+        self._callerOrder ~= [callerKey];
+        self._calleeOrder[callerKey] = [];
+    }
+
+    fn addCallee(mut self, callerKey: ([c8], [c8]), callee: CoverageCallee) {
+        let calleeKey = (callee.file, callee.func);
+        let edge = (callerKey, calleeKey);
+
+        if let Ok(c) = self._counts[edge] {
+            self._counts[edge] = c + callee.count;
+            return;
+        }
+
+        self._counts[edge] = callee.count;
+        self:.appendCalleeOrder(callerKey, calleeKey);
+    }
+
+    fn appendCalleeOrder(mut self, callerKey: ([c8], [c8]), calleeKey: ([c8], [c8])) {
+        let mut lst: [([c8], [c8])] = if let Ok(l) = self._calleeOrder[callerKey] {
+            l
+        } else {
+            []
+        };
+
+        lst ~= [calleeKey];
+        self._calleeOrder[callerKey] = lst;
+    }
+
+    fn buildCaller(self, callerKey: ([c8], [c8]))-> CoverageCaller {
+        let (file, func) = callerKey;
+        return CoverageCaller(file, func, self.buildCallees(callerKey));
+    }
+
+    fn buildCallees(self, callerKey: ([c8], [c8]))-> [CoverageCallee] {
+        let mut result: [CoverageCallee] = [];
+        if let Ok(order) = self._calleeOrder[callerKey] {
+            for calleeKey in order {
+                result ~= [self.buildCallee(callerKey, calleeKey)];
+            }
+        }
+
+        return result;
+    }
+
+    fn buildCallee(self, callerKey: ([c8], [c8]), calleeKey: ([c8], [c8]))-> CoverageCallee {
+        let (file, func) = calleeKey;
+        let count = if let Ok(c) = self._counts[(callerKey, calleeKey)] { c } else { 0us };
+
+        return CoverageCallee(file, func, count);
+    }
+}

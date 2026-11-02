@@ -1,0 +1,63 @@
+/**
+ * This module implements the envelope of a packet: the header telling how the payload is authenticated, and how long it is.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in header;
+
+/**
+ * The magic bytes every packet starts with, "YPK"
+ */
+pub def MAGIC = [0x59u8, 0x50u8, 0x4Bu8];
+
+/**
+ * The version of the format of the packets written
+ */
+pub def VERSION = 2u8;
+
+/**
+ * The number of bytes of the header: magic, version, auth-alg, key-id, sequence and payload-len
+ */
+pub def HEADER_SIZE = 25us;
+
+/**
+ * The offset of each field of the header
+ */
+pub def ALG_OFFSET = 4us;
+
+pub def KEY_OFFSET = 5us;
+
+pub def SEQUENCE_OFFSET = 9us;
+
+pub def LENGTH_OFFSET = 17us;
+
+/**
+ * The size of the tag of an HMAC-SHA-256 packet
+ */
+pub def HMAC_TAG_SIZE = 32us;
+
+/**
+ * The header of a packet, as it is written
+ */
+pub record Header {
+
+    // The algorithm the packet is authenticated with, as written: it can be none of `AuthAlgorithm`
+    pub let alg: u8;
+
+    // The key the tag is computed with
+    pub let keyId: u32;
+
+    // The number of the packet among those its sender signed with that key
+    pub let sequence: u64;
+
+    // The number of bytes of the payload
+    pub let payloadLen: u64;
+
+    pub self (alg: u8, keyId: u32, sequence: u64, payloadLen: u64)
+        with alg = alg
+        , keyId = keyId
+        , sequence = sequence
+        , payloadLen = payloadLen
+    {}
+}

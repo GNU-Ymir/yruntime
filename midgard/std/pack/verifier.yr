@@ -1,0 +1,142 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in verifier;
+
+use std::conv;
+use std::pack::{unpack_error, utils, window};
+
+/**
+ * The default largest payload a `Verifier` accepts, 16 MiB
+ */
+pub def MAX_PAYLOAD = 16777216us;
+
+/**
+ * Checks the packets a receiver is given before their payload is read: their size, their tag, and that they were not received already.
+ * The keys are looked up by the identifier the packet names, and the sequence numbers are remembered for each key and sender.
+ */
+@final
+pub class Verifier {
+
+    // The keys, by identifier
+    let mut _keys: [u32 => mut [u8]] = copy [];
+
+    // The sequence numbers received, by key and sender
+    let mut _windows: [[c8] => mut Window] = copy [];
+
+    // Whether the packets that are not authenticated are accepted
+    let _allowUnsigned: bool;
+
+    // The largest payload accepted
+    let _maxPayload: usize;
+
+    /**
+     * @params:
+     *    - allowUnsigned: accept the packets that are not authenticated, for a receiver whose packets cannot be forged (in the same process, for example)
+     *    - maxPayload: the largest payload accepted, a packet announcing a larger one being refused from its header
+     */
+    pub self (allowUnsigned: bool = false, maxPayload: usize = MAX_PAYLOAD)
+        with _allowUnsigned = allowUnsigned
+        , _maxPayload = maxPayload
+    {}
+
+    /**
+     * Accept the packets tagged with `key`, under the identifier `keyId`, replacing the key it named
+     */
+    pub fn addKey(mut self, keyId: u32, key: [u8]) {
+        atomic self {
+            self._keys[keyId] = copy key;
+        }
+    }
+
+    /**
+     * Refuse the packets tagged with the key `keyId`. The sequence numbers received with it are still remembered, should it be added again.
+     */
+    pub fn removeKey(mut self, keyId: u32) {
+        atomic self {
+            self._keys:.remove(keyId);
+        }
+    }
+
+    /**
+     * @params:
+     *    - header: the first `HEADER_SIZE` bytes of a packet
+     * @returns: the number of bytes of the whole packet, to read before giving it to `verify`
+     * @throws:
+     *    - &UnpackError: if the header cannot be read (TRUNCATED, BAD_MAGIC, UNSUPPORTED_VERSION), if the packet is not authenticated and has to be (UNAUTHENTICATED), if it is authenticated with an algorithm this program does not implement (UNSUPPORTED_AUTH), or if its payload is larger than the verifier accepts (TOO_LARGE)
+     */
+    pub fn frameSize(self, header: [u8])-> usize
+        throws UnpackError
+    {
+        let h = readHeader(header);
+        let tag = self.check(h);
+        HEADER_SIZE + cast!usize(h.payloadLen) + tag
+    }
+
+    /**
+     * Check the packet `bytes`, received in the context `context` from `sender`, and record its sequence number as received
+     * @params:
+     *    - bytes: the whole packet
+     *    - context: the context the sender tagged the packet in
+     *    - sender: the sender of the packet, the sequence numbers being remembered for each sender
+     * @returns: the header of the packet
+     * @throws:
+     *    - &UnpackError: if `frameSize` refuses its header, if the bytes end before the packet does (TRUNCATED) or go on after it (TRAILING), if it names a key the verifier does not hold (UNKNOWN_KEY), if its tag is not the one of its bytes, key and context (BAD_SIGNATURE), or if its sequence number was received already, or falls below the window (REPLAYED)
+     */
+    pub fn verify(mut self, bytes: [u8], context: [u8] = [], sender: [c8] = "")-> Header
+        throws UnpackError
+    {
+        let h = readHeader(bytes);
+        self.check(h);
+        let tag = checkFrame(h, bytes.len);
+        if (tag == 0us) return h;
+
+        let end = bytes.len - tag;
+        let key = atomic self { self._keys[h.keyId] };
+        if let Ok(k) = key {
+            if (!std::digest::equals(utils::tagOf(k, bytes[0us .. end], context), bytes[end .. $])) {
+                throw copy UnpackError(UnpackErrorCode::BAD_SIGNATURE, end, "the tag does not match the packet");
+            }
+        } else {
+            throw copy UnpackError(UnpackErrorCode::UNKNOWN_KEY, KEY_OFFSET, "key " ~ h.keyId.to![c8] () ~ " is unknown");
+        }
+
+        let accepted = atomic self {
+            let name = h.keyId.to![c8] () ~ "/" ~ sender;
+            let current = if let Ok(w) = self._windows[name] { w } else { Window(0u64, 0u64) };
+            if let Ok(next) = current.accept(h.sequence) {
+                self._windows[name] = next;
+                true
+            } else {
+                false
+            }
+        };
+
+        if (!accepted) {
+            throw copy UnpackError(UnpackErrorCode::REPLAYED, SEQUENCE_OFFSET, "packet " ~ h.sequence.to![c8] () ~ " was already received");
+        }
+
+        h
+    }
+
+    /**
+     * Check the header `h` against the policy of the verifier
+     * @returns: the number of bytes of the tag
+     */
+    fn check(self, h: Header)-> usize
+        throws UnpackError
+    {
+        let tag = tagSize(h.alg);
+        if (tag == 0us && !self._allowUnsigned) {
+            throw copy UnpackError(UnpackErrorCode::UNAUTHENTICATED, ALG_OFFSET, "the packet is not authenticated");
+        }
+
+        if (h.payloadLen > cast!u64(self._maxPayload) || h.payloadLen > cast!u64(usize::max - HEADER_SIZE - tag)) {
+            throw copy UnpackError(UnpackErrorCode::TOO_LARGE, LENGTH_OFFSET, "a payload of " ~ h.payloadLen.to![c8] () ~ " bytes is larger than " ~ self._maxPayload.to![c8] ());
+        }
+
+        tag
+    }
+}

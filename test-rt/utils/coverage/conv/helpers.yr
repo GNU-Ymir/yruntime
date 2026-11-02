@@ -1,0 +1,26 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in helpers;
+
+use utils::coverage::conv::coverage_function_entry;
+
+/**
+ * @returns: `a` and `b`(the same function, seen in two different reports, e.g. one per
+ *           `.ymir_coverage_<pid>.json` file), combined by summing the hit count of each
+ *           location(each report accounts for a disjoint slice of the test run, so hits are
+ *           additive rather than a max/either-or)
+ * */
+pub fn mergeFunctionEntry(a: CoverageFunctionEntry, b: CoverageFunctionEntry)-> CoverageFunctionEntry {
+    let dmut hits: [u32] = copy [0u32 ; a.hits.len];
+    for i, h in a.hits if i < hits.len {
+        hits[i] = h;
+    }
+    for i, h in b.hits if i < hits.len {
+        hits[i] += h;
+    }
+
+    return CoverageFunctionEntry(a.file, a.func, a.locations, hits);
+}

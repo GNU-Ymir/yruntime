@@ -1,0 +1,42 @@
+/**
+ * This module implements the exception classes that can be thrown when error occurs in the management of TCP utilities.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ *
+ * */
+in tcp_error;
+
+/**
+ * Exception that can occur when trying to create a TcpListener, or a TcpStream.
+ * */
+pub class TcpError over core::exception::Exception {
+
+    // The message of the error
+    pub let msg: [c8];
+
+    // The error code to idenfity the error
+    pub let code: TcpErrorCode;
+
+    /**
+     * @params:
+     *    - code: the error code to identify the error
+     *    - msg: the message to explain the reason of the error
+     * */
+    pub self (code: TcpErrorCode, msg: [c8])
+        with msg = msg
+        , code = code
+    {}
+
+    impl std::stream::Streamable {
+        pub over toStream(self, dmut stream: &std::stream::StringStream) {
+            stream:.write(self.__typeinfo__.name);
+            if (self.trace.len != 0u64) {
+                stream:.write(" ("):.write(utils::to![c8] (self.code)):.write(") : "):.writeln(self.msg);
+                stream:.write(self.getStackTrace());
+            } else {
+                stream:.write(" ("):.write(utils::to![c8] (self.code)):.write(") : "):.writeln(self.msg);
+            }
+        }
+    }
+}

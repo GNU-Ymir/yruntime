@@ -1,15 +1,45 @@
 in config;
 
-pub mod ::data;
-pub mod ::conv;
-pub mod ::errors;
-pub mod ::toml;
-pub mod ::json;
 pub mod ::args;
-pub mod ::access;
+pub mod ::json;
+pub mod ::toml;
 
-use std::config::data;
+mod ::access;
+mod ::array_;
+mod ::bool_;
+mod ::config_;
+mod ::config_error;
+mod ::config_key_error;
+mod ::config_out_error;
+mod ::conv;
+mod ::dict_;
+mod ::float_;
+mod ::int_;
+mod ::none_;
+mod ::str_;
 
+pub def Config: config_::Config;
+pub def Array: array_::Array;
+pub def Bool: bool_::Bool;
+pub def Dict: dict_::Dict;
+pub def None: none_::None;
+pub def Float: float_::Float;
+pub def Int: int_::Int;
+pub def Str: str_::Str;
+
+pub def ConfigError: config_error::ConfigError;
+pub def ConfigKeyError: config_key_error::ConfigKeyError;
+pub def ConfigOutError: config_out_error::ConfigOutError;
+
+pub def to = conv::to;
+
+pub def at = access::at;
+pub def str = access::str;
+pub def int = access::int;
+pub def float = access::float;
+pub def boolean = access::boolean;
+pub def elements = access::elements;
+pub def entries = access::entries;
 
 /**
  * The print set stores the list of classes that are already serialized, to avoid infinite loops when a class contains itself
@@ -21,7 +51,7 @@ lazy mut __SERIALIZE_SET__: [*void => mut()] = copy [];
  * @warning: Work in progress, for the moment the trait does not implement a standard behavior, but it is planned to be done.
  * @example:
  * ```
- * use std::{config::_, io};
+ * use std::{config, io};
  *
  * class A {
  *     pub let value: i32;
@@ -58,8 +88,8 @@ pub trait Serializable {
 
         cte for i in 0 .. typeof(self)::field_infos.len {
             let name = cte {typeof(self)::field_infos[i].name};
-            cte if (__pragma!compile({std::config::conv::to!{&Config} (__pragma!field(self, name));})) {
-                dict[name] = std::config::conv::to!{&Config} (__pragma!field(self, name));
+            cte if (__pragma!compile({std::config::to!{&Config} (__pragma!field(self, name));})) {
+                dict[name] = std::config::to!{&Config} (__pragma!field(self, name));
             }
         }
     }

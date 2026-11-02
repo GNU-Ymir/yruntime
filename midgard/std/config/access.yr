@@ -1,5 +1,5 @@
 /**
- * This module implements lenient accessors to read values out of a configuration tree. Where the functions of <a href="./std_config_conv.html">std::config::conv</a> throw when a node is missing or of the wrong type, the accessors return an option, which makes reading optional fields of a configuration short.
+ * This module implements lenient accessors to read values out of a configuration tree. Where the conversions `std::config::to` throw when a node is missing or of the wrong type, the accessors return an option, which makes reading optional fields of a configuration short.
  * Every accessor accepts a `&Config` as well as a `(&Config)?`, and an optional path of keys (strings index dictionnaries, integers index arrays), so they can be chained.
  * @Authors: Emile Cadorel
  * @License: GPLv3
@@ -19,7 +19,6 @@
 
 in access;
 
-use std::config::data;
 use std::traits;
 
 /**
@@ -95,7 +94,6 @@ pub fn at {C, K...} (cfg: C, keys: K)-> (&Config)? {
  * @returns: the string value of `cfg`, none if it is not a `Str`
  * @example:
  * ```
- * use std::config::data;
  *
  * let s: &Config = copy Str("foo");
  * assert(s.str() == ("foo")?);
@@ -120,14 +118,13 @@ pub fn str {C} (cfg: C)-> ([c8])? {
  * ```
  */
 pub fn str {C, K...} (cfg: C, keys: K)-> ([c8])? {
-    str(walk(lift(cfg), keys))
+    access::str(walk(lift(cfg), keys))
 }
 
 /**
  * @returns: the integer value of `cfg`, none if it is not an `Int`
  * @example:
  * ```
- * use std::config::data;
  *
  * let i: &Config = copy Int(12);
  * assert(i.int() == (12i64)?);
@@ -151,14 +148,13 @@ pub fn int {C} (cfg: C)-> (i64)? {
  * ```
  */
 pub fn int {C, K...} (cfg: C, keys: K)-> (i64)? {
-    int(walk(lift(cfg), keys))
+    access::int(walk(lift(cfg), keys))
 }
 
 /**
  * @returns: the float value of `cfg`, none if it is neither a `Float` nor an `Int`
  * @example:
  * ```
- * use std::config::data;
  *
  * let f: &Config = copy Float(1.5);
  * assert(f.float() == (1.5)?);
@@ -185,14 +181,13 @@ pub fn float {C} (cfg: C)-> (f64)? {
  * ```
  */
 pub fn float {C, K...} (cfg: C, keys: K)-> (f64)? {
-    float(walk(lift(cfg), keys))
+    access::float(walk(lift(cfg), keys))
 }
 
 /**
  * @returns: the boolean value of `cfg`, none if it is not a `Bool`
  * @example:
  * ```
- * use std::config::data;
  *
  * let b: &Config = copy Bool(true);
  * assert(b.boolean() == (true)?);
@@ -215,7 +210,7 @@ pub fn boolean {C} (cfg: C)-> (bool)? {
  * ```
  */
 pub fn boolean {C, K...} (cfg: C, keys: K)-> (bool)? {
-    boolean(walk(lift(cfg), keys))
+    access::boolean(walk(lift(cfg), keys))
 }
 
 /**
@@ -247,7 +242,7 @@ pub fn elements {C} (cfg: C)-> [&Config] {
  * ```
  */
 pub fn elements {C, K...} (cfg: C, keys: K)-> [&Config] {
-    elements(walk(lift(cfg), keys))
+    access::elements(walk(lift(cfg), keys))
 }
 
 /**
@@ -279,5 +274,5 @@ pub fn entries {C} (cfg: C)-> [[c8] => &Config] {
  * ```
  */
 pub fn entries {C, K...} (cfg: C, keys: K)-> [[c8] => &Config] {
-    entries(walk(lift(cfg), keys))
+    access::entries(walk(lift(cfg), keys))
 }

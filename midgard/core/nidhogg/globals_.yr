@@ -1,0 +1,174 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in globals_;
+
+/**
+ * The global state of the collector
+ * */
+pub record Globals {
+    // the first level of the page map, the chunks of the heap, and for each the number of cycles in
+    // a row at whose end it was entirely free
+    pub let mut l1 : usize;
+    pub let mut chunks : usize;
+    pub let mut chunkIdle : usize;
+    pub let mut nchunks : usize;
+    pub let mut capChunks : usize;
+
+    // the lowest and highest addresses of the heap, filtering what cannot be one of its objects
+    pub let mut heapLo : usize;
+    pub let mut heapHi : usize;
+
+    // the lock of the pages, the list of the free spans, and the span records to reuse (the lists
+    // of the collector are the addresses of words holding their first element)
+    pub let mut heapLock : usize;
+    pub let mut freeSpans : usize;
+    pub let mut spareSpans : usize;
+
+    // the write barriers run by threads the collector does not know
+    pub let mut foreignBusy : u64;
+
+    // the large spans in use
+    pub let mut large : usize;
+
+    // the size and the number of pages of the objects of each class
+    pub let mut classSize : usize;
+    pub let mut classPages : usize;
+
+    // for each list, its lock, and its spans with free objects, full, and to sweep
+    pub let mut listLocks : usize;
+    pub let mut avail : usize;
+    pub let mut full : usize;
+    pub let mut unswept : usize;
+
+    // the current sweep generation, increased by 2 at the end of each cycle
+    pub let mut sweepGen : u64;
+
+    // the bytes of the live objects, of the ones the last cycle marked, the live heap at which the
+    // next cycle starts, the one its marking is to end at, and the growth of the heap during the
+    // last marking
+    pub let mut heapLive : u64;
+    pub let mut heapMarked : u64;
+    pub let mut trigger : u64;
+    pub let mut goal : u64;
+    pub let mut runway : u64;
+
+    // the live heap past which a thread allocating while a cycle runs waits for it to end
+    pub let mut hard : u64;
+    pub let mut gogc : u64;
+
+    // the bytes the heap may map, 0 if unbounded
+    pub let mut memLimit : u64;
+
+    // the lock and the condition of the cycles, the number of completed ones and of the one waited for
+    pub let mut lock : usize;
+    pub let mut cond : usize;
+    pub let mut cycle : u64;
+    pub let mut requested : u64;
+    pub let mut collecting : u8;
+    pub let mut disabled : u64;
+
+    // 1 once the threads of the collector and of the finalizers are started
+    pub let mut started : u64;
+    pub let mut forked : u8;
+
+    // the identifier of the thread printing the trace of a crash, which the collector leaves alone
+    pub let mut crashed : u64;
+
+    // the threads, and their lock
+    pub let mut threadsLock : usize;
+    pub let mut threads : usize;
+
+    // the number of handshakes a thread parked in, a futex word the collector waits on, and the
+    // number of releases, the one parked threads wait on
+    pub let mut parks : u32;
+    pub let mut releases : u32;
+
+    // the full grey buffers the threads handed to the collector, and their lock
+    pub let mut workLock : usize;
+    pub let mut work : usize;
+
+    // the assists running, the number of the grey buffers they took, and 1 once every thread
+    // acknowledged the marking, no assist scanning anything before
+    pub let mut assisting : u64;
+    pub let mut assists : u64;
+    pub let mut assistOn : u8;
+
+    // the cycle marking, the bytes of objects scanned in its marking and the ones expected, the live
+    // heap it started from, and the bytes the last marking scanned
+    pub let mut markCycle : u64;
+    pub let mut scanWork : u64;
+    pub let mut scanExpected : u64;
+    pub let mut markBase : u64;
+    pub let mut lastWork : u64;
+
+    // the bytes the collector scanned since it last published them, and the ones it published that
+    // no assist took as credit yet
+    pub let mut markWork : u64;
+    pub let mut bgCredit : u64;
+
+    // 1 iif an assist found no grey buffer to scan, and 1 while the collector hands part of its
+    // mark stack over to the assists then
+    pub let mut assistWanted : u8;
+    pub let mut sharing : u8;
+
+    // the mark stack of the collector, the number of its entries, and 1 iif it had no room for an
+    // object since its last rescan
+    pub let mut markStack : usize;
+    pub let mut markTop : usize;
+    pub let mut markCap : usize;
+    pub let mut markOverflow : u8;
+
+    // the grey objects and the copies of the stacks the threads of a round handed over, as records
+    // of two words, their numbers, followed by them, and the bytes of the records
+    pub let mut copies : usize;
+    pub let mut copiesLen : u64;
+
+    // the roots registered by the runtime, as pairs of bounds
+    pub let mut rootsLock : usize;
+    pub let mut roots : usize;
+    pub let mut nroots : usize;
+    pub let mut capRoots : usize;
+
+    // the finalizers registered, an open addressing table of (object, function) pairs
+    pub let mut finLock : usize;
+    pub let mut finCond : usize;
+    pub let mut finTable : usize;
+    pub let mut finCap : usize;
+    pub let mut finCount : usize;
+
+    // the finalizers to run, as (object, function) pairs, and the ones running
+    pub let mut finQueue : usize;
+    pub let mut finLen : usize;
+    pub let mut finQueueCap : usize;
+    pub let mut finRunning : u64;
+
+    // the data segments, listed instead of scanned while `listSegs` is set, as pairs of bounds
+    pub let mut listSegs : u8;
+    pub let mut segs : usize;
+    pub let mut nsegs : usize;
+    pub let mut capSegs : usize;
+
+    // the debugging options
+    pub let mut verify : u8;
+    pub let mut stats : u8;
+
+    // the statistics
+    pub let mut statCycles : u64;
+    pub let mut statAllocated : u64;
+    pub let mut statLongestPark : u64;
+    pub let mut statParkWait : u64;
+    pub let mut statParkWords : u64;
+    pub let mut statParks : u64;
+    pub let mut statParkNs : u64;
+    pub let mut statLongestSignal : u64;
+    pub let mut statRescans : u64;
+    pub let mut statAssistWork : u64;
+    pub let mut statShared : u64;
+    pub let mut statUnmapped : u64;
+
+    pub let mut statMarkNs : u64;
+    pub let mut statPeak : u64;
+}

@@ -1,0 +1,121 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in debug_object;
+
+use etc::runtime::dwarf::{arange_info, bit_64};
+
+/**
+ * Debug object containing dwarf information
+ * */
+@final
+pub class DebugObject {
+
+    // The dwarf handle
+    let _debug: Dwarf_Debug;
+
+    // The list of address range found in the dwarf object
+    let dmut _aranges: [&ArangeInfo] = [];
+
+    pub self (debug: Dwarf_Debug)
+        with _debug = debug
+    {
+        self:.loadAranges();
+    }
+
+    /**
+     * @returns: the dwarf handle associated to the object
+     * */
+    pub fn getHandle(self)-> Dwarf_Debug {
+        self._debug
+    }
+
+    /**
+     * Find the source filename and source line the nearest to the address
+     * @returns: an option containing:
+     *    - .0: the source filename
+     *    - .1: the line number
+     * */
+    pub fn find(mut self, addr: usize)-> ([c8], usize)? {
+        for _, dmut a in alias self._aranges {
+            if addr in a  {
+                return a:.find(addr);
+            }
+        }
+
+        none
+    }
+
+    /**
+     * Find the source filename and source line the nearest to the address
+     * @returns: an option containing:
+     *    - .0: the source filename
+     *    - .1: the line number
+     * */
+    pub fn find(mut self, addr: usize, start: usize, end: usize)-> ([c8], usize)? {
+        for _, dmut a in alias self._aranges {
+            if addr in a  {
+                return a:.find(addr, start, end);
+            }
+        }
+
+        none
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ===================================          CONFIGURE          ====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    /**
+     * Load the list of address range within the dwarf object
+     * */
+    fn loadAranges(mut self) {
+        let mut error: Dwarf_Error = 0;
+        let mut lst: *(Dwarf_Arange) = null;
+        let mut nb: Dwarf_Signed = 0;
+
+        if dwarf_get_aranges(self._debug, ref lst, ref nb, ref error) != 0 {
+            return;
+        }
+
+        let mut start: Dwarf_Addr = 0;
+        let mut len: Dwarf_Signed = 0;
+        let mut off: Dwarf_Off = 0;
+
+        for i in 0 .. nb {
+            unsafe {
+                if dwarf_get_arange_info_b(lst[i], null, null, ref start, ref len, ref off, ref error) == 0 {
+                    self._aranges ~= [copy ArangeInfo(self, lst[i], start, len, off)];
+                }
+            }
+        }
+    }
+
+    /*!
+     * ====================================================================================================
+     * ====================================================================================================
+     * ===================================          DISPOSING          ====================================
+     * ====================================================================================================
+     * ====================================================================================================
+     */
+
+    pub fn dispose(mut self) {
+        let mut error: Dwarf_Error = 0;
+        dwarf_finish(self._debug, ref error);
+    }
+
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * =================================          64 BITS LOADER          =================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */

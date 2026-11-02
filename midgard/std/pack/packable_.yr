@@ -6,9 +6,9 @@
 
 in packable_;
 
-use core::reflect::factory;
+use core::reflect;
 use etc::c::memory;
-use std::pack::{errors, packer, unpacker, utils};
+use std::pack::{packer, unpack_error, unpacker, utils};
 use std::stream;
 
 /**
@@ -52,7 +52,7 @@ pub trait Packable {
  *    - skip: the names of the fields that are not packed, separated by commas, without spaces. A skipped field is set to the `init` value of its type when the value is rebuilt, a type that has none (a class) cannot be skipped.
  * @example:
  * ```
- * use std::pack::_;
+ * use std::pack;
  *
  * #[packable]
  * class Shape {
@@ -97,7 +97,7 @@ pub tag packable (skip: [c8] = "") {
 
     pub class apply {class C} {
 
-        impl Packable {
+        impl std::pack::packable_::Packable {
 
             pub over __pack__write(self, dmut p: &Packer) {
                 cte if (__pragma!has_super(C)) {
@@ -186,7 +186,7 @@ pub tag packable (skip: [c8] = "") {
 
     pub record apply {record R} {
 
-        impl Packable {
+        impl std::pack::packable_::Packable {
 
             pub over __pack__write(self, dmut p: &Packer) {
                 cte for i in 0us .. R::field_infos.len {
@@ -246,7 +246,7 @@ pub tag packable (skip: [c8] = "") {
 
     pub self {class C} () {
         cte if (__pragma!compile(__pragma!vtable(C))) {
-            factory::register!{C} ();
+            core::reflect::register!{C} ();
         }
     }
 

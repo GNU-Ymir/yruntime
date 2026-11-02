@@ -29,7 +29,7 @@
  * Sender and receiver must be built from the same definitions of their classes: a class whose fields differ is refused, as is a class the receiver does not know. A packet whose content does not follow the format is refused with an `UnpackError` telling why, never read out of its bounds.
  * @example:
  * ```
- * use std::pack::_;
+ * use std::pack;
  *
  * #[packable]
  * class Node {
@@ -55,16 +55,48 @@
 
 in pack;
 
-pub mod ::auth;
-pub mod ::envelope;
-pub mod ::errors;
 pub mod ::packable_;
-pub mod ::packer;
-pub mod ::unpacker;
 
+mod ::auth_algorithm;
+mod ::header;
+mod ::packer;
+mod ::signer;
+mod ::unpack_error;
+mod ::unpack_error_code;
+mod ::unpacker;
 mod ::utils;
+mod ::verifier;
+mod ::window;
 
-use std::pack::{auth, envelope, errors, packer, unpacker, utils};
+pub def AuthAlgorithm: auth_algorithm::AuthAlgorithm;
+pub def Header: header::Header;
+pub def Packer: packer::Packer;
+pub def Signer: signer::Signer;
+pub def UnpackError: unpack_error::UnpackError;
+pub def UnpackErrorCode: unpack_error_code::UnpackErrorCode;
+pub def Unpacker: unpacker::Unpacker;
+pub def Verifier: verifier::Verifier;
+
+pub def MAGIC = header::MAGIC;
+pub def VERSION = header::VERSION;
+pub def HEADER_SIZE = header::HEADER_SIZE;
+pub def ALG_OFFSET = header::ALG_OFFSET;
+pub def KEY_OFFSET = header::KEY_OFFSET;
+pub def SEQUENCE_OFFSET = header::SEQUENCE_OFFSET;
+pub def LENGTH_OFFSET = header::LENGTH_OFFSET;
+pub def HMAC_TAG_SIZE = header::HMAC_TAG_SIZE;
+pub def REPLAY_WINDOW = window::REPLAY_WINDOW;
+pub def MAX_PAYLOAD = verifier::MAX_PAYLOAD;
+pub def STACK_MARGIN = unpacker::STACK_MARGIN;
+
+pub def packable = packable_::packable;
+
+pub def readHeader = utils::readHeader;
+pub def writeHeader = utils::writeHeader;
+pub def tagSize = utils::tagSize;
+pub def checkFrame = utils::checkFrame;
+
+use std::pack::utils;
 
 /**
  * @returns: a packet holding `value`
@@ -114,7 +146,7 @@ pub fn pack {T} (value: T, ref dmut into: [u8]) {
  * @example:
  * ```
  * use std::conv;
- * use std::pack::_;
+ * use std::pack;
  *
  * let dmut signer = copy Signer(7u32, "secret".to![u8] ());
  * let bytes = pack(12, alias signer);
@@ -138,7 +170,7 @@ pub fn pack {T} (value: T, dmut signer: &Signer, context: [u8] = [])-> [u8] {
  *    - &UnpackError: if the packet does not hold a value of type `T`, or is authenticated (UNSUPPORTED_AUTH), see `UnpackErrorCode`
  * @example:
  * ```
- * use std::pack::_;
+ * use std::pack;
  *
  * #[packable]
  * record Point {
@@ -190,7 +222,7 @@ pub fn unpack {T} (bytes: [u8], maxDepth: usize = 1024us)-> dmut T
  * @example:
  * ```
  * use std::conv;
- * use std::pack::_;
+ * use std::pack;
  *
  * let key = "secret".to![u8] ();
  * let dmut signer = copy Signer(7u32, key);

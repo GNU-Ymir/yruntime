@@ -1,0 +1,26 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in environment_error;
+
+@final
+pub class EnvironmentError over core::exception::Exception {
+
+    pub let msg: [c8];
+
+    pub self (msg: [c8])
+        with msg = msg
+    {}
+
+    impl std::stream::Streamable {
+        pub over toStream(self, dmut stream: &std::stream::StringStream)-> void {
+            stream:.write(self.__typeid__, "(", self.msg, ")");
+            if (self.trace.len != 0us) {
+                stream:.write(":\n");
+                stream:.write(self.getStackTrace());
+            }
+        }
+    }
+}

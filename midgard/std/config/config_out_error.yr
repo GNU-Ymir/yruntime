@@ -1,0 +1,45 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in config_out_error;
+
+use std::stream;
+
+/**
+ * Error thrown when an array was index outside its range
+ * */
+@final
+pub class ConfigOutError over ConfigError {
+
+    // The length of the array
+    let _len: usize;
+
+    // The index of the access
+    let _index: u32;
+
+    pub self (len: usize, index: u32)
+        with _len = len
+        , _index = index
+    {}
+
+    impl stream::Streamable {
+        pub over toStream(self, dmut stream: &StringStream) {
+            stream:.write(self.__typeinfo__.name):.write(" ("s8);
+            stream:.write(self._len, " <= ", self._index, ')');
+
+            if (self.hasTrace()) {
+                stream:.writeln(""):.write(":"s8):.write(self.getStackTrace());
+            }
+        }
+    }
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ======================================          DICT          ======================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */

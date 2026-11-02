@@ -1,0 +1,121 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in utils;
+
+use etc::runtime::elf;
+use etc::runtime::dwarf;
+
+use core::concurrency;
+use core::exception;
+use core::types::info;
+use etc::runtime::classes;
+use etc::runtime::memory;
+use std::stream;
+
+/**
+ * Let factories allocate the class `C`, under the name `classNameOf!{C}()`.
+ * Registering a class is opting it in: it states that the class can be rebuilt field by field, without its constructor.
+ * @example:
+ * ```
+ * use core::reflect;
+ *
+ * class Point {
+ *     pub let x: i32 = 0;
+ *     pub self () {}
+ * }
+ *
+ * register!{&Point}();
+ * assert(isRegistered(classNameOf!{&Point}()));
+ * ```
+ */
+pub fn register {class C} () {
+    let vtable = __pragma!vtable(C);
+    let name = vtableTypeInfo(vtable).name;
+    atomic __FACTORY_MUTEX__ {
+        __FACTORY_CLASSES__[name] = vtable;
+    }
+}
+
+/**
+ * @returns: true if a class named `name` is registered
+ * @example:
+ * ```
+ * use core::reflect;
+ *
+ * assert(!isRegistered("main::NotAClass"));
+ * ```
+ */
+pub fn isRegistered(name: [c8])-> bool {
+    atomic __FACTORY_MUTEX__ {
+        if let Ok(_) = __FACTORY_CLASSES__[name] {
+            true
+        } else {
+            false
+        }
+    }
+}
+
+/**
+ * @returns: the name a class is registered under, which is also the `__typeinfo__.name` of its instances
+ * @example:
+ * ```
+ * use core::reflect;
+ *
+ * class Point {
+ *     pub self () {}
+ * }
+ *
+ * let p = copy Point();
+ * assert(classNameOf!{&Point}() == p.__typeinfo__.name);
+ * ```
+ */
+pub fn classNameOf {class C} ()-> [c8] {
+    C::typeinfo.inner[0].name
+}
+
+/**
+ * The type info of the class whose vtable is `vtable`, stored in the first slot of the vtable
+ */
+pub fn vtableTypeInfo(vtable: *void)-> TypeInfo {
+    unsafe {
+        *(*(cast!{*(*TypeInfo)} (vtable)))
+    }
+}
+
+/**
+ * @returns: true if the class of `ti` is named `ancestor`, or one of its ancestors is
+ */
+pub fn inherits(ti: TypeInfo, ancestor: [c8])-> bool {
+    let mut current = ti;
+    while current.name != ancestor {
+        if current.inner.len == 0us return false;
+        current = current.inner[0];
+    }
+
+    true
+}
+
+pub extern (C) fn _yrt_reflect_find_symbol_from_addr_with_elf_name(addr: usize, name: [c8])-> ReflectSymbol {
+    __ELF_LOADER__:.update(name);
+    return __ELF_LOADER__:.find(addr);
+}
+
+pub extern (C) fn _yrt_reflect_find_function_from_addr_with_elf_name(addr: usize, name: [c8])-> ReflectSymbol {
+    __ELF_LOADER__:.update(name);
+    return __ELF_LOADER__:.findFunction(addr);
+}
+
+pub extern (C) fn _yrt_reflect_get_debug_info(elfFile: [c8], addr: usize, symbol: ReflectSymbol)-> ([c8], usize) {
+    if let Ok((file, line)) = __DWARF_LOADER__:.find(elfFile, addr, symbol.ptr, symbol.ptr + symbol.size) {
+        (file, line)
+    } else {
+        ("", 0)
+    }
+}
+
+pub extern (C) fn _yrt_reflect_clear_debug_info() {
+    return __DWARF_LOADER__:.dispose();
+}

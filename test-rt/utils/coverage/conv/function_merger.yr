@@ -1,0 +1,42 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in function_merger;
+
+use utils::coverage::conv::helpers;
+
+/**
+ * Accumulates the "functions" of several `CoverageReport`(e.g. one per `.ymir_coverage_<pid>.json`
+ * file) into a single, deduplicated list, combining the hit counts of a function that appears
+ * in more than one report
+ * */
+pub class FunctionMerger {
+
+    let mut _order: [mut ([c8], [c8])] = [];
+    let dmut _byKey: [([c8], [c8]) => CoverageFunctionEntry] = copy [];
+
+    pub self () {}
+
+    pub fn add(mut self, entry: CoverageFunctionEntry) {
+        let key = (entry.file, entry.func);
+        if let Ok(prev) = self._byKey[key] {
+            self._byKey[key] = mergeFunctionEntry(prev, entry);
+        } else {
+            self._order ~= [key];
+            self._byKey[key] = entry;
+        }
+    }
+
+    pub fn build(self)-> [CoverageFunctionEntry] {
+        let mut result: [CoverageFunctionEntry] = [];
+        for key in self._order {
+            if let Ok(e) = self._byKey[key] {
+                result ~= [e];
+            }
+        }
+
+        return result;
+    }
+}

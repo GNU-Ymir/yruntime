@@ -1,0 +1,38 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in helpers;
+
+use utils::coverage::tree::coverage_tree;
+
+/**
+ * @returns: a fresh tree, recorded in `__ALL_TREES__`
+ * */
+pub fn registerTree()-> dmut &CoverageTree {
+    atomic {
+        return __ALL_TREES__:.register();
+    }
+}
+
+/**
+ * @returns: the coverage tree of the calling thread
+ * */
+pub fn threadTree()-> dmut &CoverageTree {
+    alias __THREAD_TREE__
+}
+
+/**
+ * @returns: the coverage of every thread of this process, folded into a single tree
+ * */
+pub fn mergedTree()-> &CoverageTree {
+    let dmut res = copy CoverageTree();
+    atomic {
+        for t in __ALL_TREES__.trees() {
+            res:.merge(t);
+        }
+    }
+
+    res
+}
