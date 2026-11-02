@@ -238,3 +238,45 @@ pub fn envNum (name: [c8], fallback: u64)-> u64 {
     if (i == 0us) return fallback;
     v
 }
+
+/**
+ * @params:
+ *    - name: the name of an environment variable, ending with a nul char
+ *    - fallback: the value it defaults to
+ * @returns: the bytes the variable holds, a number followed by K, M, G or T for KiB, MiB, GiB or
+ * TiB (the `iB` being optional), `fallback` if it is unset or malformed
+ * */
+@{nogc, unsafe}
+pub fn envBytes (name: [c8], fallback: u64)-> u64 {
+    let s = { getenv (cast!usize (name.ptr)) };
+    if (s == 0us) return fallback;
+
+    let mut v = 0u64;
+    let mut i = 0us;
+    loop {
+        let c = ld8 (s + i);
+        if (c < 48u8 || c > 57u8) break;
+        v = v * 10u64 + cast!u64 (c - 48u8);
+        i = i + 1us;
+    }
+
+    if (i == 0us) return fallback;
+
+    let unit = ld8 (s + i);
+    if (unit == 0u8) return v;
+
+    let mut shift = 0u64;
+    if (unit == 75u8) { shift = 10u64; }
+    else if (unit == 77u8) { shift = 20u64; }
+    else if (unit == 71u8) { shift = 30u64; }
+    else if (unit == 84u8) { shift = 40u64; }
+    else { return fallback; }
+
+    i = i + 1us;
+    if (ld8 (s + i) == 105u8 && ld8 (s + i + 1us) == 66u8) {
+        i = i + 2us;
+    }
+
+    if (ld8 (s + i) != 0u8) return fallback;
+    v << shift
+}

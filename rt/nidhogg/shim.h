@@ -117,7 +117,8 @@ uint64_t _yrt_i_nh_thread_self (void);
 void     _yrt_i_nh_stack_bounds (uint64_t * lo, uint64_t * hi);
 
 /**
- * Write the bounds of the static TLS block of the calling thread, empty where it is unknown
+ * Write the bounds of the static TLS block of the main executable in the calling thread, empty if
+ * the executable has none
  * */
 void     _yrt_i_nh_tls_bounds (uint64_t * lo, uint64_t * hi);
 

@@ -10,9 +10,10 @@ stays so: no thread, root or object ever holds a pointer to it again.
 
 The argument holds under the assumptions of [§1](#1-model-and-assumptions). [§7](#7-the-model-checked-by-tlc)
 is a model of the same algorithm, `formal/Nidhogg.tla`, that TLC checks exhaustively on small
-instances; it is what found the two defects this argument now accounts for, in `allocLarge` and in
-the park of `leaveBusy`, and it shows the gap of [§8](#8-the-barrier-test-and-its-store), which the
-stores through the barrier close.
+instances; it is what found the three defects this argument now accounts for, in `allocLarge`, in
+the park of `leaveBusy` and in the assists running before every thread acknowledged the marking, and
+it shows the gap of [§8](#8-the-barrier-test-and-its-store), which the stores through the barrier
+close.
 
 ## 1. Model and assumptions
 
@@ -23,8 +24,9 @@ interior pointers included, one byte past its end too (`allocate` adds that byte
 **Roots.** The writable segments of the loaded objects (`_yrt_i_nh_data_segments`), the ranges the
 runtime registers (`_yrt_nh_add_roots`), the objects whose finalizer is queued
 (`scanFinalizerQueue`), and for every registered thread its stack from the address it parked at up
-to its top, its registers, and its static TLS block (`copyThread`). An object is *reachable* when a
-chain of pointers leads to it from a root.
+to its top, its registers, and the static TLS block of the main executable in that thread, where
+the loader put it (`_yrt_i_nh_tls_bounds`), all copied by `copyThread`. An object is *reachable*
+when a chain of pointers leads to it from a root.
 
 **Colors during the marking of cycle *N*.** An object is *white* while unmarked, *grey* while marked
 and in a set of objects to scan (the mark stack of the collector, a grey buffer of a thread, a
@@ -149,13 +151,21 @@ stack or registers of a black thread, is protected.
 **Lemma 3.** WT holds from *s₀* to *G*.
 
 *Proof.* At *s₀* nothing is black except the objects allocated black since *M*, which are empty
-apart from what was stored into them through a barrier, and the roots were scanned just before
-(`scanRoots`, the data segments, `scanFinalizerQueue`). So WT holds. Each kind of step keeps it:
+apart from what was stored into them through a barrier, and the objects an assist scanned, which it
+does only once the `ROUND_ACK` round ended (`assistOn`, `assisting`): every word of them was shaded,
+and every store into them since went through a barrier, every thread having read the flag at 1
+since its handshake (Lemma 1). The roots were scanned just before (`scanRoots`, the data segments,
+`scanFinalizerQueue`). So WT holds.
+
+An assist from the start of the marking, which the collector allowed before MID-148, breaks it. A thread that read the flag at 0 and has not acknowledged yet stores *V* into an
+object another thread, already acknowledged, has just scanned in an assist: nothing shades *V*. If
+the storing thread then drops *V* from its stack before `ROUND_SCAN` copies it, *V* is reachable
+only from a black object, and stays white. `formal/AssistEarly.cfg` is that defect. Each kind of step keeps it:
 
 - **Shading** (`shade`) turns a white object grey. That only removes white objects and adds grey
   ones, which can only protect more.
-- **Scanning an object or a copy** (`scanObject`, `scanCopies`) shades every word of it before
-  making it black or dropping it, so no white object is left pointed to by it.
+- **Scanning an object or a copy** (`scanObject`, `scanCopies`, `assist`) shades every word of it
+  before making it black or dropping it, so no white object is left pointed to by it.
 - **Copying a stack** (`copyThread`), its thread in its handler, makes the thread black. Every white
   object its stack, registers or TLS block point to is then pointed to by the copy, which nothing
   writes to until it is scanned, so it is protected. A stack scanned in place once its thread went
@@ -238,11 +248,19 @@ scanned by the round that made it, so the protection came from a grey object *Q*
 a buffer, the mark stack, the copies, or `work`. If before the round, *Q* was drained or found in a
 thread's buffer (that round then finds something, a contradiction). If during the round, it came
 from a shade before the shading thread's flush (found) or after it (earlier than *t*, against the
-choice of *t*). Assists move buffers out of `work` (counted by `assists`), and threads in a barrier
-park only once done (Lemma 1), so no shade escapes the count. Hence no thread shades a white object
+choice of *t*). Assists move buffers out of `work` (counted by `assists`, once per buffer taken),
+and threads in a barrier or an assist park only once done (Lemma 1), so no shade escapes the count.
+The collector moves objects of its own mark stack into `work` when an assist found nothing there
+(`publishWork`, only while `sharing` is set, around the drains of `terminate`): they stay grey, and
+the drain takes them back unless an assist took them first, which `assists` counts. Hence no thread shades a white object
 between its flush and *E*, no grey object exists at *E*, and by WT no black object, root or stack
 points to a white object. Every reachable object is therefore black. `finalize` then marks what
-queued finalizers point to and runs `terminate` again, which ends the same way. ∎
+queued finalizers point to and runs `terminate` again, which ends the same way.
+
+How much an assist scans, from the debt the allocations of its thread built (`charge`, `settle`),
+only decides when the work is done, not whether: the argument above holds whatever the budget. A
+thread waiting for the collector to leave it credit or a buffer waits in `pace`, out of any
+barrier, assist and allocation, where a round reaches it (Lemma 2). ∎
 
 ## 6. The sweep
 
@@ -279,8 +297,22 @@ object is freed by `sweepAll` under the heap lock, only when its `sweepGen` is f
 generation and its mark is 0, which by Lemma 4 cannot hold for one allocated during or after the
 marking. ∎
 
+**Lemma 7.** Unmapping a chunk frees no object, and no thread reads the chunk once it is unmapped.
+
+*Proof.* `releaseChunks` runs in `runCycle` after the last `sweepAll`, under the heap lock, the flag
+at 0 and `quiesce` past: no thread shades, a shade running in a barrier or an assist that read the
+flag at 1, which `quiesce` waits for. The page map, the free spans and their records are then read
+by the collector, and by allocations under the heap lock (`allocPages`) only. A chunk is unmapped
+when a free span covers all of it (`freeOver`), so it holds no object. `unmapChunk` takes its pages
+out of the free spans and clears its page table before `munmap`: no allocation gets them again,
+and a word pointing into it, a stale one scanned conservatively, finds no span (`spanOf`) and shades
+nothing. A page table is never freed: a chunk mapped later at that address reuses the cleared one
+(`registerChunk`). `clearAllMarks`, `rescan` and `verifyHeap` walk the chunks still listed, which
+only the collector removes. ∎
+
 *Proof of the theorem.* By Lemmas 5 and 6, an object the sweep frees was unreachable at *E* and
-stayed white, so it was unreachable when freed. An unreachable object cannot become reachable: a
+stayed white, so it was unreachable when freed, and by Lemma 7 nothing else frees an object, the
+unmapping of a chunk included. An unreachable object cannot become reachable: a
 thread can only obtain a pointer by loading it from memory it reaches, or by allocating (A1).
 Conservative scanning only adds marks, so a word that merely looks like a pointer keeps garbage
 alive, and never frees anything. ∎
@@ -303,9 +335,15 @@ follows its park at once, the grey objects it hands over in the copies being on 
 before the round ends, as `Serve` puts them; one waiting for the collector, the others. With
 `Lifecycle`, threads are also spawned (the parent keeping what it hands over on its stack until the
 child registered), register outside the rounds, and exit (their grey buffer handed over, their stack
-no longer a root). The model leaves out the arithmetic (the page map, the size classes), the span
-lists and the lazy sweeping (its sweep is one atomic step), assists, finalizers, and the capacity of
-the mark stack. A stack being a set scanned in one step, the model cannot show why it is copied:
+no longer a root). With `Assists`, a thread hands its grey buffer over at any step (`Overflow`, a
+superset of the barriers and assists that fill it), the collector hands objects of its mark stack
+over while it drains (`Share`), and a thread allocating during the marking takes a buffer and scans
+it in a later step, parking in neither (`AssistTake`, `AssistScan`), once the `ROUND_ACK` round
+ended; a flush round finds something when an assist took a buffer since the drain before it
+(`assisted`, the count of `assists`). The
+model leaves out the arithmetic (the page map, the size classes, the unmapping of chunks, the
+pacing of the assists), the span lists and the lazy sweeping (its sweep is one atomic step),
+finalizers, and the capacity of the mark stack. A stack being a set scanned in one step, the model cannot show why it is copied:
 scanning it in place once its thread went holds there too. The race of `release` in Lemma 6 lived in
 that gap: the stress tests found it, and assertions in the collector located it.
 
@@ -325,6 +363,9 @@ that gap: the stress tests found it, and assertions in the collector located it.
 | `NoShadeOld.cfg` | 1, 2 | the barrier without its deletion half | fails in 26 steps |
 | `NoShadeNew.cfg` | 2, 2 | the barrier without its insertion half | fails in 25 steps |
 | `ExitDropsGrey.cfg` | 2, 3 | with `Lifecycle`, a thread exiting drops its grey buffer | fails in 23 steps |
+| `Assist2T.cfg` | 2, 2 | with `Assists` | holds: 50,378,516 states, the whole graph (10 minutes on 5 cores) |
+| `AssistEarly.cfg` | 2, 2 | with `Assists`, a thread assisting before the `ROUND_ACK` round ended (the assists before MID-148) | fails in 36 steps |
+| `NoCountAssists.cfg` | 2, 2 | with `Assists`, a flush round ignoring the buffers an assist took during it | fails in 31 steps |
 
 The failing configurations are what make the passing ones mean something: the model notices every
 defect it is given, and each trace is a scenario the code allows, in the same steps.

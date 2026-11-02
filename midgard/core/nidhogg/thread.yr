@@ -729,6 +729,15 @@ pub fn marking ()-> bool {
 }
 
 /**
+ * @returns: true while the collector marks and every thread acknowledged it: an assist making an
+ * object black before then could miss the store of a thread that read the flag at 0 into it
+ * */
+@{nogc, unsafe}
+pub fn assisting ()-> bool {
+    marking () && { _yrt_i_nh_load8 (cast!usize (&((*G ()).assistOn))) == 1u8 }
+}
+
+/**
  * Allocate a zeroed object of `size` bytes from the calling thread
  * @params:
  *    - size: the size of the object
@@ -798,16 +807,17 @@ pub fn allocate (size: usize, flags: u8)-> usize {
     let over = account (ts, cast!u64 (real));
     (*t).inAlloc = 0u8;
     if (over) {
-        pace ();
+        pace (ts);
     }
 
     obj
 }
 
 /**
- * Account for `bytes` the thread `ts` allocated: the live heap, its assists while the collector
- * marks, and the trigger of the next cycle
- * @returns: true iif the live heap reached its hard limit while a cycle runs
+ * Account for `bytes` the thread `ts` allocated: the live heap, its debt to the marking and its
+ * assists while the collector marks, and the trigger of the next cycle
+ * @returns: true iif the live heap reached its hard limit while a cycle runs, or the thread owes
+ * the marking more than DEBT_MAX once it assisted, past the goal
  * */
 @{nogc, unsafe}
 fn account (ts: usize, bytes: u64)-> bool {
@@ -818,7 +828,7 @@ fn account (ts: usize, bytes: u64)-> bool {
     (*t).allocated = (*t).allocated + bytes;
     if ((*t).allocated >= ALLOC_BATCH) {
         let live = flushAllocated (ts);
-        if (live >= (*g).goal) {
+        if (live >= (*g).trigger) {
             trigger ();
         }
 
@@ -828,17 +838,93 @@ fn account (ts: usize, bytes: u64)-> bool {
     if (marking ()) {
         (*t).sinceAssist = (*t).sinceAssist + bytes;
         if ((*t).sinceAssist >= ALLOC_BATCH) {
+            charge (ts, (*t).sinceAssist);
             (*t).sinceAssist = 0u64;
-            let b = enterBusy ();
-            if (marking ()) {
-                assist ();
+            if (settle (ts)) {
+                over = true;
             }
-
-            leaveBusy (b);
         }
     }
 
     over
+}
+
+/**
+ * Add the scan work `bytes` allocated call for to the debt of the thread `ts`, forgetting what it
+ * owed an earlier marking
+ * */
+@{nogc, unsafe}
+fn charge (ts: usize, bytes: u64) {
+    let dmut t = thread (ts);
+    let cycle = { _yrt_i_nh_load64 (cast!usize (&((*G ()).markCycle))) };
+    if ((*t).debtCycle != cycle) {
+        (*t).debtCycle = cycle;
+        (*t).debt = 0i64;
+    }
+
+    (*t).debt = (*t).debt + cast!i64 ((bytes * assistRatio ()) >> 16u64);
+}
+
+/**
+ * @returns: the scan work an allocated byte calls for, in 1/65536 of a byte: the work the marking
+ * expects left over the heap left before the goal, or once either is overrun the heap the marking
+ * started from left to scan over the heap left before the hard limit
+ * */
+@{nogc, unsafe}
+fn assistRatio ()-> u64 {
+    let g = G ();
+    {
+        let done = _yrt_i_nh_load64 (cast!usize (&((*g).scanWork)));
+        let expected = _yrt_i_nh_load64 (cast!usize (&((*g).scanExpected)));
+        let live = liveHeap (_yrt_i_nh_load64 (cast!usize (&((*g).heapLive))));
+        let mut work = 0u64, mut room = 0u64;
+        if (done < expected && live < (*g).goal) {
+            work = expected - done;
+            room = (*g).goal - live;
+        } else {
+            let base = _yrt_i_nh_load64 (cast!usize (&((*g).markBase)));
+            work = if (base > done) { base - done } else { ALLOC_BATCH };
+            room = if ((*g).hard > live) { (*g).hard - live } else { 0u64 };
+        }
+
+        if (room < ALLOC_BATCH) room = ALLOC_BATCH;
+        if (work > 1099511627776u64) work = 1099511627776u64;
+
+        let ratio = (work << 16u64) / room;
+        if (ratio > MAX_RATIO) { MAX_RATIO } else { ratio }
+    }
+}
+
+/**
+ * Pay the debt of the thread `ts` to the marking from the credit of the collector, then by
+ * assisting it
+ * @returns: true iif it still owes more than DEBT_MAX while the collector marks past the goal
+ * */
+@{nogc, unsafe}
+fn settle (ts: usize)-> bool {
+    let dmut t = thread (ts);
+    if (!marking () || (*t).debt <= 0i64) return false;
+    {
+        if ((*t).debtCycle != _yrt_i_nh_load64 (cast!usize (&((*G ()).markCycle)))) {
+            (*t).debt = 0i64;
+            return false;
+        }
+    }
+
+    (*t).debt = (*t).debt - cast!i64 (takeCredit (cast!u64 ((*t).debt)));
+    if ((*t).debt > 0i64) {
+        let b = enterBusy ();
+        if (assisting ()) {
+            (*t).debt = (*t).debt - cast!i64 (assist (cast!u64 ((*t).debt)));
+        }
+
+        leaveBusy (b);
+    }
+
+    if (!marking () || (*t).debt <= DEBT_MAX) return false;
+    {
+        liveHeap (_yrt_i_nh_load64 (cast!usize (&((*G ()).heapLive)))) >= (*G ()).goal
+    }
 }
 
 /**
@@ -852,22 +938,33 @@ fn collecting ()-> bool {
 }
 
 /**
- * Hold the calling thread, out of any allocation, until the cycle running ends or frees enough
- * for the live heap to go back under its hard limit: the objects allocated while the collector
- * marks are kept until the next cycle, a thread allocating faster than it marks would make the
- * heap grow without bound
+ * Hold the calling thread `ts`, out of any allocation, until the cycle running ends, the live heap
+ * is back under its hard limit, and it owes the marking no more than DEBT_MAX past the goal: the
+ * objects allocated while the collector marks are kept until the next cycle, a thread allocating
+ * faster than it marks would make the heap grow without bound
  * */
 @{nogc, unsafe}
-fn pace () {
+fn pace (ts: usize) {
     let g = G ();
-    {
-        _yrt_i_nh_mutex_lock ((*g).lock);
-        let cycle = (*g).cycle;
-        while ((*g).collecting != 0u8 && (*g).cycle == cycle && liveHeap (_yrt_i_nh_load64 (cast!usize (&((*g).heapLive)))) >= (*g).hard) {
-            _yrt_i_nh_cond_timedwait ((*g).cond, (*g).lock, PACE_NS);
+    let cycle = { _yrt_i_nh_load64 (cast!usize (&((*g).cycle))) };
+    loop {
+        let full = { liveHeap (_yrt_i_nh_load64 (cast!usize (&((*g).heapLive)))) >= (*g).hard };
+        let owes = settle (ts);
+        if (!full && !owes) break;
+
+        let mut over = false;
+        {
+            _yrt_i_nh_mutex_lock ((*g).lock);
+            if ((*g).collecting == 0u8 || (*g).cycle != cycle) {
+                over = true;
+            } else {
+                _yrt_i_nh_cond_timedwait ((*g).cond, (*g).lock, if (full) { PACE_NS } else { ASSIST_WAIT_NS });
+            }
+
+            _yrt_i_nh_mutex_unlock ((*g).lock);
         }
 
-        _yrt_i_nh_mutex_unlock ((*g).lock);
+        if (over) break;
     }
 }
 
@@ -892,7 +989,7 @@ fn flushAllocated (ts: usize)-> u64 {
 }
 
 /**
- * Wake the collector up, the live heap having reached its goal
+ * Wake the collector up, the live heap having reached its trigger
  * */
 @{nogc, unsafe}
 pub fn trigger () {

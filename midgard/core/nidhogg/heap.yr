@@ -6,7 +6,8 @@
  * sweep under the lock of the list, a thread allocating from a span it took for itself. The page
  * heap is under its own lock, always taken after the one of a list. A span record and its tables
  * are only ever reused by the collector while it sweeps, when no thread reads them. The free
- * pages are always zeroed: the fresh chunks are, and the collector zeroes the ones it frees.
+ * pages are always zeroed: the fresh chunks are, and the collector zeroes the ones it frees. A
+ * chunk left entirely free by IDLE_CYCLES cycles in a row is unmapped, its page table kept.
  */
 in heap;
 
@@ -94,7 +95,8 @@ fn newChunks (n: usize)-> usize {
 }
 
 /**
- * Register the page table of the chunk at `c` in the page map
+ * Register the page table of the chunk at `c` in the page map, the one an unmapped chunk left at
+ * its address being reused
  * */
 @{nogc, unsafe}
 fn registerChunk (c: usize) {
@@ -108,20 +110,132 @@ fn registerChunk (c: usize) {
             st (slot, l2);
         }
 
-        let pt = words (CHUNK_PAGES);
-        _yrt_i_nh_fence ();
-        st (l2 + ((c >> CHUNK_SHIFT) & 8191us) * 8us, pt);
+        let ptSlot = l2 + ((c >> CHUNK_SHIFT) & 8191us) * 8us;
+        if (ld (ptSlot) == 0us) {
+            let pt = words (CHUNK_PAGES);
+            _yrt_i_nh_fence ();
+            st (ptSlot, pt);
+        }
 
         if ((*g).nchunks == (*g).capChunks) {
             (*g).capChunks = (*g).capChunks * 2us;
             (*g).chunks = realloc ((*g).chunks, (*g).capChunks * 8us);
-            if ((*g).chunks == 0us) {
+            (*g).chunkIdle = realloc ((*g).chunkIdle, (*g).capChunks * 8us);
+            if ((*g).chunks == 0us || (*g).chunkIdle == 0us) {
                 fatal ("nidhogg: out of memory for the collector metadata\n");
             }
         }
 
         st ((*g).chunks + (*g).nchunks * 8us, c);
+        st ((*g).chunkIdle + (*g).nchunks * 8us, 0us);
         (*g).nchunks = (*g).nchunks + 1us;
+    }
+}
+
+/**
+ * @returns: the free span covering the whole chunk at `chunk`, 0 if a span in use lies in it
+ * @info: the lock of the heap is held
+ * */
+@{nogc, unsafe}
+fn freeOver (chunk: usize)-> usize {
+    let s = spanOf (chunk);
+    if (s == 0us) return 0us;
+
+    let x = span (s);
+    {
+        if ((*x).state != SPAN_FREE) return 0us;
+        if ((*x).base > chunk || (*x).base + (*x).npages * PAGE < chunk + CHUNK) return 0us;
+    }
+
+    s
+}
+
+/**
+ * Unmap the chunks entirely free at the end of IDLE_CYCLES cycles in a row while the ones left
+ * hold `goal` bytes, and every entirely free chunk while the heap maps more than `limit` (if not 0)
+ * @returns: the number of chunks unmapped
+ * @info: called by the collector once its sweep is over, when no thread shades: the page map and
+ * the span records are only read under the lock of the heap
+ * */
+@{nogc, unsafe}
+pub fn releaseChunks (goal: u64, limit: u64)-> u64 {
+    let g = G ();
+    let mut released = 0u64;
+    _yrt_i_nh_mutex_lock ((*g).heapLock);
+    {
+        let mut c = 0us;
+        while (c < (*g).nchunks) {
+            let chunk = ld ((*g).chunks + c * 8us);
+            let idle = (*g).chunkIdle + c * 8us;
+            let s = freeOver (chunk);
+            if (s == 0us) {
+                st (idle, 0us);
+                c = c + 1us;
+                continue;
+            }
+
+            st (idle, ld (idle) + 1us);
+            let mapped = cast!u64 ((*g).nchunks * CHUNK);
+            let over = limit != 0u64 && mapped > limit;
+            if (over || (ld (idle) >= IDLE_CYCLES && mapped >= goal + cast!u64 (CHUNK))) {
+                unmapChunk (c, s);
+                released = released + 1u64;
+            } else {
+                c = c + 1us;
+            }
+        }
+    }
+
+    _yrt_i_nh_mutex_unlock ((*g).heapLock);
+    released
+}
+
+/**
+ * Unmap the chunk of index `c`, covered by the free span `s`: the span keeps the free pages before
+ * the chunk, a span of their own the ones after it, the page table of the chunk is cleared, and the
+ * last chunk of the list takes its index
+ * @info: the lock of the heap is held
+ * */
+@{nogc, unsafe}
+fn unmapChunk (c: usize, s: usize) {
+    let dmut g = G ();
+    let dmut x = span (s);
+    {
+        let chunk = ld ((*g).chunks + c * 8us);
+        let free_ = (*g).freeSpans;
+        let end = (*x).base + (*x).npages * PAGE;
+        let after = chunk + CHUNK;
+        unlink (free_, s);
+
+        let mut rest = 0us;
+        if ((*x).base < chunk) {
+            (*x).npages = (chunk - (*x).base) / PAGE;
+            push (free_, s);
+            if (after < end) {
+                rest = newRecord ();
+            }
+        } else if (after < end) {
+            rest = s;
+        } else {
+            push ((*g).spareSpans, s);
+        }
+
+        if (rest != 0us) {
+            let dmut r = span (rest);
+            (*r).base = after;
+            (*r).npages = (end - after) / PAGE;
+            (*r).state = SPAN_FREE;
+            setPages (rest, after, (*r).npages);
+            push (free_, rest);
+        }
+
+        memset (pageEntry (chunk), 0, CHUNK_PAGES * 8us);
+        munmap (chunk, CHUNK);
+
+        let last = (*g).nchunks - 1us;
+        st ((*g).chunks + c * 8us, ld ((*g).chunks + last * 8us));
+        st ((*g).chunkIdle + c * 8us, ld ((*g).chunkIdle + last * 8us));
+        (*g).nchunks = last;
     }
 }
 

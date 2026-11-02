@@ -338,10 +338,25 @@ Stacks, registers and objects are scanned conservatively, interior pointers incl
   object can free what it points to; memory out of the collector holding collected pointers is
   registered as a root (`_yrt_nh_add_roots`, as the exception headers are).
 - A thread the runtime creates registers before any Ymir code runs on it (`_yrt_i_thread_create`).
-- A thread allocating while a cycle runs, the live heap past its hard limit (the goal plus as much
-  again, grown from what the last marking found reachable), waits for the cycle to end (`pace`):
-  what is allocated during a marking is black, nothing else bounds a thread allocating faster
-  than the collector marks.
+- The pacing is Go's: a cycle starts at its trigger, the goal (`GOGC` percent past what the last
+  marking found reachable) minus the growth of the heap during the last marking, so that the
+  marking ends at the goal (`triggerOf`). Each 64KiB a thread allocates during a marking adds to its
+  debt the scan work they call for, the work the marking expects left (what the last one scanned)
+  over the heap left before the goal (`assistRatio`); it pays it from the credit the collector
+  earns scanning (`publishWork`), then by scanning grey buffers itself (`assist`), the collector
+  handing it part of its mark stack when `work` is empty. No thread assists before the `ROUND_ACK`
+  round ended (`assisting`): an object it scanned then could take, without a barrier, the store of
+  a thread that read the flag at 0 (`formal/AssistEarly.cfg`). A thread still owing more than
+  `DEBT_MAX` once the heap is past the goal (the expected work counts the objects holding no
+  pointer, an overestimate), or allocating past the hard limit (the goal plus as much again) while
+  a cycle runs, waits in `pace`, out of the allocation: what is allocated during a marking is black, nothing else
+  bounds a thread allocating faster than the collector marks.
+- `NIDHOGG_MEMLIMIT` (bytes, or with a `K`/`M`/`G`/`T` suffix, `iB` optional) lowers the goal to
+  15/16 of the limit and the hard limit to the limit, never closer to the live heap than 1MiB or a
+  sixteenth of it (`limits`): a live heap past the limit makes the cycles run back to back, not
+  fail. At the end of a cycle, a chunk left entirely free by two cycles in a row is unmapped while
+  the chunks left hold the goal, and any entirely free one while the heap maps more than the limit
+  (`releaseChunks`, after the sweep, under the heap lock: Lemma 7 of `doc/nidhogg.md`).
 - The segfault handler leaves the faulty thread out of the collector (`_yrt_nh_crash`: it
   allocates from `calloc` and never parks, the fault may have left a lock of the collector held)
   and aborts anyway after 5 seconds (`alarm`), if the trace cannot be resolved.
@@ -351,7 +366,8 @@ Stacks, registers and objects are scanned conservatively, interior pointers incl
 - `NIDHOGG_GOGC` (heap growth before the next cycle, 100 by default), `NIDHOGG_STATS=1` (cycles,
   allocations, peak, collector time, the longest per-thread pause, from the handshake to the
   release, with what it was made of, the average one, the longest time a handshake signal took to
-  reach a thread, not a pause, and the rescans of the heap, at exit), `NIDHOGG_MARK_STACK=N` (a mark
+  reach a thread, not a pause, the rescans of the heap, the bytes the assists scanned, the grey
+  buffers the collector handed them, and the chunks unmapped, at exit), `NIDHOGG_MARK_STACK=N` (a mark
   stack of N entries, to exercise its rescans) and `NIDHOGG_VERIFY=1` (after each mark, every thread
   parked at once, aborts if a marked object, root or data segment points into an unmarked object —
   the stacks are not checked, their stale words would be false positives) are read at the first
@@ -360,7 +376,8 @@ Stacks, registers and objects are scanned conservatively, interior pointers incl
 - The verification cannot see a corrupted heap (a span used twice, a page map naming the wrong
   span), nor a pointer held by a stack only: the stress tests of the collector are the
   `tests/nidhogg/` cases of the ymir-dev workspace (`uv run tests nidhogg`), threads moving
-  pointers, growing slices and maps, large objects, finalizers, forks and short-lived threads,
+  pointers, growing slices and maps, large objects, finalizers, forks and short-lived threads, a
+  heap given back to the system (`release`) and one held under `NIDHOGG_MEMLIMIT` (`memlimit`),
   each run again at `NIDHOGG_GOGC=1` and under the verification (their `.env`).
 - `etc::runtime::gc` exposes `_yrt_gc_collect` (a whole cycle, waited for) and
   `_yrt_gc_wait_finalizers`; finalizers run unordered on a thread of their own, and once more at

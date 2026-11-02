@@ -102,13 +102,16 @@ pub fn scanRange (lo: usize, hi: usize) {
 
 /**
  * Shade every object the object `obj` points to, onto the mark stack
+ * @returns: the bytes scanned
  * */
 @{nogc, unsafe}
-pub fn scanObject (obj: usize) {
+pub fn scanObject (obj: usize)-> u64 {
     let s = spanOf (obj);
-    if (s == 0us) return;
+    if (s == 0us) return 0u64;
 
-    scanRange (obj, obj + { (*span (s)).elemSize });
+    let size = { (*span (s)).elemSize };
+    scanRange (obj, obj + size);
+    cast!u64 (size)
 }
 
 /**
@@ -138,11 +141,18 @@ pub fn drainStack ()-> usize {
     let mut rescans = 0us;
     loop {
         {
+            let mut n = 0us;
             while ((*g).markTop != 0us) {
                 (*g).markTop = (*g).markTop - 1us;
-                scanObject (ld ((*g).markStack + (*g).markTop * 8us));
+                (*g).markWork = (*g).markWork + scanObject (ld ((*g).markStack + (*g).markTop * 8us));
+                n = n + 1us;
+                if (n == PUBLISH_EVERY) {
+                    n = 0us;
+                    publishWork ();
+                }
             }
 
+            publishWork ();
             if ((*g).markOverflow == 0u8) break;
             (*g).markOverflow = 0u8;
         }
@@ -186,7 +196,7 @@ fn rescan () {
                             _yrt_i_nh_mutex_unlock (lock);
                             while ((*g).markTop != 0us) {
                                 (*g).markTop = (*g).markTop - 1us;
-                                scanObject (ld ((*g).markStack + (*g).markTop * 8us));
+                                (*g).markWork = (*g).markWork + scanObject (ld ((*g).markStack + (*g).markTop * 8us));
                             }
 
                             _yrt_i_nh_mutex_lock (lock);
@@ -204,6 +214,52 @@ fn rescan () {
     }
 
     _yrt_i_nh_mutex_unlock (lock);
+}
+
+/**
+ * Add the bytes the collector scanned since it last did to the scan work of the marking and to its
+ * credit, and hand GREY_CAP objects of its mark stack over to the assists if one found nothing to
+ * scan, while sharing is set and the stack holds twice as many
+ * */
+@{nogc, unsafe}
+pub fn publishWork () {
+    let dmut g = G ();
+    {
+        let w = (*g).markWork;
+        if (w != 0u64) {
+            (*g).markWork = 0u64;
+            _yrt_i_nh_add64 (cast!usize (&((*g).scanWork)), w);
+            _yrt_i_nh_add64 (cast!usize (&((*g).bgCredit)), w);
+        }
+
+        if ((*g).sharing == 0u8 || (*g).markTop < 2us * GREY_CAP) return;
+        if (_yrt_i_nh_load8 (cast!usize (&((*g).assistWanted))) == 0u8) return;
+
+        _yrt_i_nh_store8 (cast!usize (&((*g).assistWanted)), 0u8);
+        let buf = words (GREY_WORDS);
+        (*g).markTop = (*g).markTop - GREY_CAP;
+        memmove (buf + 16us, (*g).markStack + (*g).markTop * 8us, GREY_CAP * 8us);
+        st (buf + 8us, GREY_CAP);
+        link (buf);
+        (*g).statShared = (*g).statShared + 1u64;
+    }
+}
+
+/**
+ * @returns: up to `want` bytes taken from the credit of the collector
+ * */
+@{nogc, unsafe}
+pub fn takeCredit (want: u64)-> u64 {
+    let credit = { cast!usize (&((*G ()).bgCredit)) };
+    loop {
+        let c = _yrt_i_nh_load64 (credit);
+        if (c == 0u64) return 0u64;
+
+        let take = if (c < want) { c } else { want };
+        if (_yrt_i_nh_cas64 (credit, c, c - take) == 1u8) return take;
+    }
+
+    0u64
 }
 
 /**
@@ -322,34 +378,56 @@ fn link (buf: usize) {
 }
 
 /**
- * Scan the objects of one grey buffer handed over to the collector, for a thread that allocates
- * while the collector marks
+ * Scan grey buffers handed over to the collector, for a thread that allocates while the collector
+ * marks, until `budget` bytes are scanned, asking the collector for some of its mark stack if none
+ * is left
+ * @returns: the bytes scanned
  * @info: the thread is busy
  * */
 @{nogc, unsafe}
-pub fn assist () {
+pub fn assist (budget: u64)-> u64 {
     let dmut g = G ();
     let lock = { (*g).workLock };
-    _yrt_i_nh_mutex_lock (lock);
-    let buf = ld ({ (*g).work });
-    if (buf != 0us) {
-        st ({ (*g).work }, ld (buf));
+    let mut done = 0u64;
+    while (done < budget) {
+        _yrt_i_nh_mutex_lock (lock);
+        let buf = ld ({ (*g).work });
+        if (buf != 0us) {
+            st ({ (*g).work }, ld (buf));
+            {
+                _yrt_i_nh_add64 (cast!usize (&((*g).assists)), 1u64);
+            }
+        }
+
+        _yrt_i_nh_mutex_unlock (lock);
+        if (buf == 0us) {
+            {
+                _yrt_i_nh_store8 (cast!usize (&((*g).assistWanted)), 1u8);
+            }
+
+            break;
+        }
+
+        let n = ld (buf + 8us);
+        for i in 0us .. n {
+            let obj = ld (buf + (2us + i) * 8us);
+            let s = spanOf (obj);
+            if (s != 0us) {
+                let size = { (*span (s)).elemSize };
+                scanRangeFromThread (obj, obj + size);
+                done = done + cast!u64 (size);
+            }
+        }
+
+        free (buf);
+    }
+
+    if (done != 0u64) {
         {
-            _yrt_i_nh_add64 (cast!usize (&((*g).assists)), 1u64);
+            _yrt_i_nh_add64 (cast!usize (&((*g).scanWork)), done);
+            _yrt_i_nh_add64 (cast!usize (&((*g).statAssistWork)), done);
         }
     }
 
-    _yrt_i_nh_mutex_unlock (lock);
-    if (buf == 0us) return;
-
-    let n = ld (buf + 8us);
-    for i in 0us .. n {
-        let obj = ld (buf + (2us + i) * 8us);
-        let s = spanOf (obj);
-        if (s != 0us) {
-            scanRangeFromThread (obj, obj + { (*span (s)).elemSize });
-        }
-    }
-
-    free (buf);
+    done
 }

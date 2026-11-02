@@ -62,9 +62,36 @@ pub def COPY_KEEP = 1048576us;
 pub def ALLOC_BATCH = 65536u64;
 
 /**
- * The heap below which no cycle is triggered
+ * The smallest goal of a cycle
  * */
 pub def MIN_GOAL = 4194304u64;
+
+/**
+ * The growth a memory limit always leaves past the heap the last marking found reachable
+ * */
+pub def LIMIT_SLACK = 1048576u64;
+
+/**
+ * The scan work a thread may owe the marking, in bytes, before it waits for the collector, and the
+ * longest it waits before it tries to pay again
+ * */
+pub def DEBT_MAX = 262144i64;
+pub def ASSIST_WAIT_NS = 100000u64;
+
+/**
+ * The most scan work an allocated byte calls for, in 1/65536 of a byte
+ * */
+pub def MAX_RATIO = 4194304u64;
+
+/**
+ * The objects the collector scans between two publications of its work
+ * */
+pub def PUBLISH_EVERY = 256us;
+
+/**
+ * The number of cycles in a row at whose end a chunk is entirely free before it is unmapped
+ * */
+pub def IDLE_CYCLES = 2us;
 
 /**
  * The longest a thread held past the hard limit of the heap sleeps before it checks it again
@@ -177,9 +204,13 @@ pub record ThreadState {
     pub let mut grey : usize;
     pub let mut greyLen : usize;
 
-    // the bytes it allocated since it last updated the live heap, and since it last assisted
+    // the bytes it allocated since it last updated the live heap, and since it last updated its debt
     pub let mut allocated : u64;
     pub let mut sinceAssist : u64;
+
+    // the scan work it owes the marking of the cycle `debtCycle`, negative when it did more
+    pub let mut debt : i64;
+    pub let mut debtCycle : u64;
 
     // the links of the list of the threads
     pub let mut prev : usize;
@@ -190,9 +221,11 @@ pub record ThreadState {
  * The global state of the collector
  * */
 pub record Globals {
-    // the first level of the page map, and the chunks of the heap
+    // the first level of the page map, the chunks of the heap, and for each the number of cycles in
+    // a row at whose end it was entirely free
     pub let mut l1 : usize;
     pub let mut chunks : usize;
+    pub let mut chunkIdle : usize;
     pub let mut nchunks : usize;
     pub let mut capChunks : usize;
 
@@ -225,14 +258,21 @@ pub record Globals {
     // the current sweep generation, increased by 2 at the end of each cycle
     pub let mut sweepGen : u64;
 
-    // the bytes of the live objects, of the ones the last cycle marked, and the next trigger
+    // the bytes of the live objects, of the ones the last cycle marked, the live heap at which the
+    // next cycle starts, the one its marking is to end at, and the growth of the heap during the
+    // last marking
     pub let mut heapLive : u64;
     pub let mut heapMarked : u64;
+    pub let mut trigger : u64;
     pub let mut goal : u64;
+    pub let mut runway : u64;
 
     // the live heap past which a thread allocating while a cycle runs waits for it to end
     pub let mut hard : u64;
     pub let mut gogc : u64;
+
+    // the bytes the heap may map, 0 if unbounded
+    pub let mut memLimit : u64;
 
     // the lock and the condition of the cycles, the number of completed ones and of the one waited for
     pub let mut lock : usize;
@@ -262,9 +302,29 @@ pub record Globals {
     pub let mut workLock : usize;
     pub let mut work : usize;
 
-    // the assists running, and the number of the ones that started
+    // the assists running, the number of the grey buffers they took, and 1 once every thread
+    // acknowledged the marking, no assist scanning anything before
     pub let mut assisting : u64;
     pub let mut assists : u64;
+    pub let mut assistOn : u8;
+
+    // the cycle marking, the bytes of objects scanned in its marking and the ones expected, the live
+    // heap it started from, and the bytes the last marking scanned
+    pub let mut markCycle : u64;
+    pub let mut scanWork : u64;
+    pub let mut scanExpected : u64;
+    pub let mut markBase : u64;
+    pub let mut lastWork : u64;
+
+    // the bytes the collector scanned since it last published them, and the ones it published that
+    // no assist took as credit yet
+    pub let mut markWork : u64;
+    pub let mut bgCredit : u64;
+
+    // 1 iif an assist found no grey buffer to scan, and 1 while the collector hands part of its
+    // mark stack over to the assists then
+    pub let mut assistWanted : u8;
+    pub let mut sharing : u8;
 
     // the mark stack of the collector, the number of its entries, and 1 iif it had no room for an
     // object since its last rescan
@@ -317,6 +377,9 @@ pub record Globals {
     pub let mut statParkNs : u64;
     pub let mut statLongestSignal : u64;
     pub let mut statRescans : u64;
+    pub let mut statAssistWork : u64;
+    pub let mut statShared : u64;
+    pub let mut statUnmapped : u64;
 
     pub let mut statMarkNs : u64;
     pub let mut statPeak : u64;
@@ -400,6 +463,7 @@ fn init () {
         (*g).work = words (1us);
         (*g).capChunks = 64us;
         (*g).chunks = words (64us);
+        (*g).chunkIdle = words (64us);
         (*g).heapLo = 18446744073709551615us;
         (*g).heapLock = _yrt_i_nh_mutex_new ();
 
@@ -417,8 +481,11 @@ fn init () {
 
         (*g).sweepGen = 2u64;
         (*g).gogc = envNum ("NIDHOGG_GOGC\u{0}", 100u64);
-        (*g).goal = MIN_GOAL;
-        (*g).hard = hardLimit (0u64, MIN_GOAL);
+        (*g).memLimit = envBytes ("NIDHOGG_MEMLIMIT\u{0}", 0u64);
+        let (goal, hard) = limits (0u64, (*g).gogc, (*g).memLimit);
+        (*g).goal = goal;
+        (*g).hard = hard;
+        (*g).trigger = triggerOf (0u64, goal, 0u64);
         (*g).verify = cast!u8 (envNum ("NIDHOGG_VERIFY\u{0}", 0u64) != 0u64);
         (*g).stats = cast!u8 (envNum ("NIDHOGG_STATS\u{0}", 0u64) != 0u64);
 
@@ -514,4 +581,42 @@ pub fn classOf (size: usize)-> usize {
 pub fn hardLimit (live: u64, goal: u64)-> u64 {
     let slack = goal - live;
     goal + (if (slack < MIN_GOAL) { MIN_GOAL } else { slack })
+}
+
+/**
+ * @returns: the goal and the hard limit after a marking found `marked` bytes reachable, `gogc`
+ * percent more (MIN_GOAL at least) and that growth once more; a memory limit `limit` (0 if none)
+ * lowers them to 15/16 of it and to it, leaving LIMIT_SLACK or `marked` / 16 of growth at least
+ * */
+@nogc
+pub fn limits (marked: u64, gogc: u64, limit: u64)-> (u64, u64) {
+    let mut goal = marked + (marked / 100u64) * gogc;
+    if (goal < MIN_GOAL) goal = MIN_GOAL;
+
+    let mut hard = hardLimit (marked, goal);
+    if (limit != 0u64) {
+        let slack = if (marked / 16u64 < LIMIT_SLACK) { LIMIT_SLACK } else { marked / 16u64 };
+        let room = limit - limit / 16u64;
+        let capped = if (room < marked + slack) { marked + slack } else { room };
+        if (goal > capped) goal = capped;
+
+        let cap = if (limit < goal + slack) { goal + slack } else { limit };
+        if (hard > cap) hard = cap;
+    }
+
+    (goal, hard)
+}
+
+/**
+ * @returns: the live heap at which the cycle after a marking that found `marked` bytes reachable
+ * starts, the heap growing by `runway` bytes during a marking: soon enough for the marking to end
+ * at `goal`, between 60% and 95% of the way from `marked` to it
+ * */
+@nogc
+pub fn triggerOf (marked: u64, goal: u64, runway: u64)-> u64 {
+    let span = goal - marked;
+    let lo = marked + (span / 10u64) * 6u64;
+    let hi = goal - span / 20u64;
+    let t = if (runway >= goal - lo) { lo } else { goal - runway };
+    if (t > hi) { hi } else { t }
 }

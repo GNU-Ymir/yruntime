@@ -17,12 +17,6 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
-#if defined(__linux__) && (defined(__x86_64__) || defined(__i386__))
-// x86 uses TLS variant II: the static TLS block sits immediately below the thread pointer. Other
-// targets lay TLS out differently and are left unhandled rather than guessed at.
-#  define _YRT_NH_TLS 1
-#endif
-
 // SIGPWR is the one Boehm used, so nothing linked with the runtime expects to own it
 #define _YRT_NH_SIGNAL SIGPWR
 
@@ -218,50 +212,33 @@ void _yrt_i_nh_stack_bounds (uint64_t * lo, uint64_t * hi) {
     *hi = (uint64_t) addr + (uint64_t) size;
 }
 
-#ifdef _YRT_NH_TLS
-
-// The size of the PT_TLS segment of the main executable, rounded up to its alignment
-static size_t __NH_TLS_SIZE__ = 0;
-static pthread_once_t __NH_TLS_ONCE__ = PTHREAD_ONCE_INIT;
-
+// The block of the calling thread is the one the loader allocated for it, wherever the TLS variant
+// of the target puts it relative to the thread pointer
 static int _read_tls_phdr (struct dl_phdr_info * info, size_t size, void * data) {
     (void) size;
-    (void) data;
+    uint64_t * bounds = (uint64_t*) data;
 
     // the main executable is the only object with an empty name, the TLS of a shared object is
     // allocated on demand by __tls_get_addr and is not part of the static block
     if (info-> dlpi_name != NULL && info-> dlpi_name [0] != '\0') return 0;
+    if (info-> dlpi_tls_data == NULL) return 1;
     for (int i = 0 ; i < info-> dlpi_phnum ; i++) {
         const ElfW (Phdr) * ph = &info-> dlpi_phdr [i];
         if (ph-> p_type == PT_TLS) {
-            size_t align = ph-> p_align != 0 ? ph-> p_align : 1;
-            __NH_TLS_SIZE__ = (ph-> p_memsz + align - 1) & ~(align - 1);
+            bounds [0] = (uint64_t) info-> dlpi_tls_data;
+            bounds [1] = bounds [0] + (uint64_t) ph-> p_memsz;
         }
     }
 
     return 1;
 }
 
-static void _read_tls_size (void) {
-    dl_iterate_phdr (&_read_tls_phdr, NULL);
-}
-
 void _yrt_i_nh_tls_bounds (uint64_t * lo, uint64_t * hi) {
-    pthread_once (&__NH_TLS_ONCE__, &_read_tls_size);
-
-    char * tp = (char*) __builtin_thread_pointer ();
-    *hi = (uint64_t) tp;
-    *lo = (uint64_t) (tp - __NH_TLS_SIZE__);
+    uint64_t bounds [2] = { 0, 0 };
+    dl_iterate_phdr (&_read_tls_phdr, bounds);
+    *lo = bounds [0];
+    *hi = bounds [1];
 }
-
-#else
-
-void _yrt_i_nh_tls_bounds (uint64_t * lo, uint64_t * hi) {
-    *lo = 0;
-    *hi = 0;
-}
-
-#endif
 
 static void _thread_key_dtor (void * state) {
     _yrt_i_nh_thread_exit (state);
