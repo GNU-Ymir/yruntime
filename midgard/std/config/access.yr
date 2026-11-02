@@ -19,6 +19,7 @@
 
 in access;
 
+use std::option;
 use std::traits;
 
 /**
@@ -29,27 +30,22 @@ fn lift {C of &Config} (cfg: C)-> (&Config)? {
 }
 
 /**
- * @returns: `cfg` with its value upcast to `&Config`, e.g. a `(&Dict)?` into a `(&Config)?`
+ * @returns: `cfg` with its value upcast to `&Config`, e.g. a `(&Dict)?` into a `(&Config)?`, its error dropped
  */
 fn lift {C of &Config} (cfg: (C)?)-> (&Config)? {
-    if let Ok(c) = cfg return lift(c);
-    none
+    cfg.dropErr().map!{|c|-> &Config => c} ()
 }
 
 /**
  * @returns: the node at `key` of `cur`, the key of a dict for a string, the index of an array for an integer
- * e.g. `step(j?, "a")` is `j["a"]?`, and `step(j?, 0)` is `j[0u32]?`; none if `cur` is none
+ * e.g. `step(j?, "a")` is `j["a"]?`, and `step(j?, 0)` is `j[0u32]?`; `cur` itself if it has no value
  */
 fn step {K} (cur: (&Config)?, key: K)-> (&Config)? {
-    if let Ok(c) = cur {
-        cte if isIntegral!{K} {
-            return c[cast!u32(key)]?;
-        } else {
-            return c[key]?;
-        }
+    cte if isIntegral!{K} {
+        return cur.andThen(copy |c| => c[cast!u32(key)]?);
+    } else {
+        return cur.andThen(copy |c| => c[key]?);
     }
-
-    none
 }
 
 /**
