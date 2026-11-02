@@ -1,0 +1,65 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in any_;
+
+use std::any::implem;
+
+
+/**
+ * An any type that can store anything
+ * */
+@abstract
+pub class Any {
+
+    prot self () {}
+
+    /**
+     * Unwrap the value inside the any
+     * @returns: the value inside the any
+     * */
+    pub fn unwrap {T} (self)-> (T)? {
+        if let ISome!{T, false} (value-> v) = self {
+            return (v)?;
+        } else cte if __pragma!compile(ISome!{T, true}) {
+            if let ISome!{T, true} (value-> v) = self {
+                return (v)?;
+            }
+        }
+
+        none
+    }
+    /**
+     * Mutable unwrap of the value inside the any
+     * @returns: the value inside the any
+     * */
+    pub fn unwrap {T of dmut J, class J} (mut self)-> dmut(T)? {
+        match alias self {
+            dmut s: &ISome!{T, true} => {
+                return (alias s.value)?;
+            }
+        }
+
+        none
+    }
+
+    /**
+     * @returns: true if the any contains no data
+     * */
+    @final
+    pub fn isEmpty(self)-> bool {
+        match self {
+            None() => { true }
+            _ => { false }
+        }
+    }
+
+    impl std::stream::Streamable {
+        pub over toStream(self, dmut stream: &std::stream::StringStream) {
+            stream:.write(self.__typeid__, "()");
+        }
+    }
+
+}
