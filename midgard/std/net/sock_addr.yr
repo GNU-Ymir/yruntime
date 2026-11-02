@@ -1,50 +1,9 @@
 /**
- * This module declares classes and functions to manage IPv4 and IPv6 addresses.
  * @Authors: Emile Cadorel
  * @License: GPLv3
- * <hr>
- * @example:
- * ```
- * use std::net::addr::_;
- *
- * let localhost_v4 = copy Ipv4Addr([127u8, 0u8, 0u8, 1u8]);
- * let localhost_v6 = copy Ipv6Addr([0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 1u16]);
- *
- * let ip_v4 = ("127.0.0.1"s8).to!{&IpAddr} ();
- * assert(ip_v4 == localhost_v4);
- *
- * let ip_v6 = ("::1"s8).to!{&IpAddr} ();
- * assert(ip_v6 == localhost_v6);
- *
- * // an address can be associated to a port
- * let ip_port_v6 = SockAddr(ip_v6, 8080u16);
- * assert(ip_port_v6.ip == localhost_v6);
- * assert(ip_port_v6.port == 8080u16);
- * ```
  */
 
-in addr;
-
-mod ::v4;
-mod ::v6;
-pub mod ::conv;
-
-
-/**
- * Ancestor class of ipv4 and ipv6 addresses
- * */
-@abstract
-pub class IpAddr {
-    pub self () {}
-
-    pub fn isLoopback(self)-> bool;
-    pub fn isUnspecified(self)-> bool;
-
-    pub fn opEquals(self, o: &IpAddr)-> bool;
-
-    impl std::stream::Streamable;
-    impl core::types::Hashable;
-}
+in sock_addr;
 
 /**
  * An address associated to a port
@@ -70,7 +29,7 @@ pub record SockAddr {
      *    - addr: an ipv6 or ipv4 address
      * */
     pub self (addr: [c8], port: u16)
-        with _addr = std::net::addr::conv::to!{&IpAddr} (addr)
+        with _addr = utils::to!{&IpAddr} (addr)
         , _port = port
         throws std::conv::CastFailure
     {}
@@ -126,22 +85,3 @@ pub record SockAddr {
 
     impl core::types::Hashable;
 }
-
-pub def Ipv4Addr: std::net::addr::v4::Ipv4Addr;
-pub def Ipv6Addr: std::net::addr::v6::Ipv6Addr;
-
-
-/**
- * Common Ipv4 addresses
- */
-pub enum Ipv4
-| LOCALHOST   = copy Ipv4Addr([127, 0, 0, 1])
-| UNSPECIFIED = copy Ipv4Addr([0, 0, 0, 0])
-| BROADCAST   = copy Ipv4Addr([255, 255, 255, 255]);
-
-/**
- * Common Ipv6 addresses
- */
-pub enum Ipv6
-| LOCALHOST   = copy Ipv6Addr([0, 0, 0, 0, 0, 0, 0, 1])
-| UNSPECIFIED = copy Ipv6Addr([0, 0, 0, 0, 0, 0, 0, 0]);

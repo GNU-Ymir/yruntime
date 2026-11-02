@@ -11,7 +11,7 @@ in listener;
 use etc::c::socket;
 use etc::runtime::errno;
 
-use std::net::addr;
+use std::net::tcp::tcp_error;
 
 @final
 pub class TcpListener {
@@ -33,8 +33,8 @@ pub class TcpListener {
      * @example:
      * ```
      * use std::net::tcp;
-     * use std::net::addr::_;
      * use std::conv;
+     * use std::net;
      *
      * fn serve ()
      *    throws TcpError, CastFailure
@@ -50,7 +50,7 @@ pub class TcpListener {
      * */
     pub self (addr: SockAddr, backlog: u32 = 10)
         with _addr = addr
-        throws errors::TcpError
+        throws TcpError
     {
         if let SockAddr(ip-> ip: &Ipv6Addr, port-> p) = addr {
             self._isV4 = false;
@@ -63,7 +63,7 @@ pub class TcpListener {
         }
 
         else {
-            throw copy errors::TcpError(errors::TcpErrorCode::ADDR_TYPE, "unknown address type " ~ (addr.ip.__typeinfo__.name));
+            throw copy TcpError(TcpErrorCode::ADDR_TYPE, "unknown address type " ~ (addr.ip.__typeinfo__.name));
         }
     }
 
@@ -91,7 +91,6 @@ pub class TcpListener {
         self._sockFd
     }
 
-
     /*!
      * ====================================================================================================
      * ====================================================================================================
@@ -106,8 +105,8 @@ pub class TcpListener {
      * @example:
      * ```
      * use std::net::tcp;
-     * use std::net::addr::_;
      * use std::conv;
+     * use std::net;
      *
      * pub fn greets_client(dmut client: &TcpStream)
      *    throws TcpError
@@ -131,7 +130,7 @@ pub class TcpListener {
      * ```
      * */
     pub fn accept(mut self)-> dmut &stream::TcpStream
-        throws errors::TcpError
+        throws TcpError
     {
         if self._isV4 {
             return self:.acceptV4();
@@ -147,7 +146,7 @@ pub class TcpListener {
      * @returns: the connected client
      * */
     prv fn acceptV4(mut self)-> dmut &stream::TcpStream
-        throws errors::TcpError
+        throws TcpError
     {
         let mut client = sockaddr_in();
         let mut len = sockaddr_in::size;
@@ -162,7 +161,7 @@ pub class TcpListener {
             let err = errno();
             let errStr = strerrno(err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
 
-            throw copy errors::TcpError(errors::TcpErrorCode::ACCEPT, "failed to accept client: (errno = " ~ errStr ~ ")");
+            throw copy TcpError(TcpErrorCode::ACCEPT, "failed to accept client: (errno = " ~ errStr ~ ")");
         }
 
         copy stream::TcpStream(sock, self.readClientAddr(client))
@@ -173,7 +172,7 @@ pub class TcpListener {
      * @returns: the connected client
      * */
     prv fn acceptV6(mut self)-> dmut &stream::TcpStream
-        throws errors::TcpError
+        throws TcpError
     {
         let mut client = sockaddr_in6();
         let mut len = sockaddr_in6::size;
@@ -188,7 +187,7 @@ pub class TcpListener {
             let err = errno();
             let errStr = strerrno(err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
 
-            throw copy errors::TcpError(errors::TcpErrorCode::ACCEPT, "failed to accept client: (errno = " ~ errStr ~ ")");
+            throw copy TcpError(TcpErrorCode::ACCEPT, "failed to accept client: (errno = " ~ errStr ~ ")");
         }
 
         copy stream::TcpStream(sock, self.readClientAddr(client))
@@ -207,10 +206,10 @@ pub class TcpListener {
      * @returns: the ipv4 address of the client
      * */
     prv fn readClientAddr(self, addr: sockaddr_in)-> SockAddr
-        throws errors::TcpError
+        throws TcpError
     {
         if (addr.sin_family != AddressFamily::AF_INET) {
-            throw copy errors::TcpError(errors::TcpErrorCode::ADDR_TYPE, "malformed client address");
+            throw copy TcpError(TcpErrorCode::ADDR_TYPE, "malformed client address");
         }
 
         let h = addr.sin_addr.s_addr;
@@ -227,10 +226,10 @@ pub class TcpListener {
      * @returns: the ipv6 address of the client
      * */
     prv fn readClientAddr(self, addr: sockaddr_in6)-> SockAddr
-        throws errors::TcpError
+        throws TcpError
     {
         if addr.sin6_family != AddressFamily::AF_INET6 {
-            throw copy errors::TcpError(errors::TcpErrorCode::ADDR_TYPE, "malformed client address");
+            throw copy TcpError(TcpErrorCode::ADDR_TYPE, "malformed client address");
         }
 
         let dmut h = addr.sin6_addr.s6_addr;
@@ -261,7 +260,7 @@ pub class TcpListener {
      * Bind an ipv4 address and start listening on it
      * */
     prv fn bindV4(mut self, addr: &Ipv4Addr, port: u16, backlog: u32)
-        throws errors::TcpError
+        throws TcpError
     {
         errno(ErrnoValue::NONE);
         self._sockFd = socket::socket(AddressFamily::AF_INET, SocketType::SOCK_STREAM, 0);
@@ -269,7 +268,7 @@ pub class TcpListener {
             let err = errno();
             let errStr = strerrno(err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
 
-            throw copy errors::TcpError(errors::TcpErrorCode::SOCKET_CREATION, "failed to create socket: (errno = " ~ errStr ~ ")");
+            throw copy TcpError(TcpErrorCode::SOCKET_CREATION, "failed to create socket: (errno = " ~ errStr ~ ")");
         }
 
         // Without this, a restart (e.g. after SIGINT) fails to rebind the same port while a
@@ -287,15 +286,14 @@ pub class TcpListener {
             let err = errno();
             let errStr = strerrno(err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
 
-            throw copy errors::TcpError(errors::TcpErrorCode::BIND, "failed to bind: (errno = " ~ errStr ~ ")");
+            throw copy TcpError(TcpErrorCode::BIND, "failed to bind: (errno = " ~ errStr ~ ")");
         }
-
 
         if socket::listen(self._sockFd, cast!i32(backlog)) != 0 {
             let err = errno();
             let errStr = strerrno(err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
 
-            throw copy errors::TcpError(errors::TcpErrorCode::BIND, "failed to listen: (errno = " ~ errStr ~ ")");
+            throw copy TcpError(TcpErrorCode::BIND, "failed to listen: (errno = " ~ errStr ~ ")");
         }
 
         if port == 0 {
@@ -319,7 +317,7 @@ pub class TcpListener {
      * Bind an ipv6 address and start listening on it
      * */
     prv fn bindV6(mut self, addr: &Ipv6Addr, port: u16, backlog: u32)
-        throws errors::TcpError
+        throws TcpError
     {
         errno(ErrnoValue::NONE);
         self._sockFd = socket::socket(AddressFamily::AF_INET6, SocketType::SOCK_STREAM, 0);
@@ -327,7 +325,7 @@ pub class TcpListener {
             let err = errno();
             let errStr = strerrno(err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
 
-            throw copy errors::TcpError(errors::TcpErrorCode::SOCKET_CREATION, "failed to create socket: (errno = " ~ errStr ~ ")");
+            throw copy TcpError(TcpErrorCode::SOCKET_CREATION, "failed to create socket: (errno = " ~ errStr ~ ")");
         }
 
         // Without this, a restart (e.g. after SIGINT) fails to rebind the same port while a
@@ -341,20 +339,18 @@ pub class TcpListener {
                                         sin6_port-> htons(port),
                                         sin6_addr-> ina);
 
-
         if socket::bind(self._sockFd, &servaddr, cast!u32(sockaddr_in6::size)) != 0 {
             let err = errno();
             let errStr = strerrno(err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
 
-            throw copy errors::TcpError(errors::TcpErrorCode::BIND, "failed to bind: (errno = " ~ errStr ~ ")");
+            throw copy TcpError(TcpErrorCode::BIND, "failed to bind: (errno = " ~ errStr ~ ")");
         }
-
 
         if socket::listen(self._sockFd, cast!i32(backlog)) != 0 {
             let err = errno();
             let errStr = strerrno(err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
 
-            throw copy errors::TcpError(errors::TcpErrorCode::BIND, "failed to listen: (errno = " ~ errStr ~ ")");
+            throw copy TcpError(TcpErrorCode::BIND, "failed to listen: (errno = " ~ errStr ~ ")");
         }
 
         if port == 0 {

@@ -5,7 +5,7 @@
  * <hr>
  * @example:
  * ```
- * use std::net::addr::_;
+ * use std::net;
  *
  * let localhost_v4 = copy Ipv4Addr([127u8, 0u8, 0u8, 1u8]);
  * let localhost_v6 = copy Ipv6Addr([0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 1u16]);
@@ -23,18 +23,18 @@
  * ```
  */
 
-in conv;
+in utils;
 
 use std::conv;
 use std::algorithm::searching;
 use std::syntax::tokenizer;
-
+use std::net::{ipv4_addr, ipv6_addr};
 
 /**
  * Transform a string into an ip address
  * @example:
  * ```
- * use std::net::addr::_;
+ * use std::net;
  *
  * println(("127.0.0.1"s8).to!{&IpAddr} ());   // 127.0.0.1
  * println(("::1"s8).to!{&IpAddr} ());         // ::1
@@ -47,9 +47,9 @@ pub fn to {I of &IpAddr, T of [c8]} (addr: T)-> &IpAddr
     // ipv6 contains ':', and can contain '.' if an ipv4 is written at its end
     // So the only way to discriminate is with the find of ':'
     if let Ok(_) = searching::find(addr, ':') {
-        net::addr::conv::to!{&Ipv6Addr, [c8]} (addr)
+        utils::to!{&Ipv6Addr, [c8]} (addr)
     } else {
-        net::addr::conv::to!{&Ipv4Addr, [c8]} (addr)
+        utils::to!{&Ipv4Addr, [c8]} (addr)
     }
 }
 
@@ -57,7 +57,7 @@ pub fn to {I of &IpAddr, T of [c8]} (addr: T)-> &IpAddr
  * Transform a string into an ipv4 address
  * @example:
  * ```
- * use std::net::addr::_;
+ * use std::net;
  *
  * println(("127.0.0.1"s8).to!{&Ipv4Addr} ());      // 127.0.0.1
  * println(("192.168.128.32"s8).to!{&Ipv4Addr} ()); // 192.168.128.32
@@ -96,7 +96,7 @@ pub fn to {I of &Ipv4Addr, T of [c8]} (addr: T)-> &Ipv4Addr
  * Transform a string into an ipv6 address
  * @example:
  * ```
- * use std::net::addr::_;
+ * use std::net;
  *
  * println(("::1"s8).to!{&Ipv6Addr} ());         // ::1
  * println(("fe80:1::8:2"s8).to!{&Ipv6Addr} ()); // fe80:1::8:2
@@ -143,7 +143,7 @@ pub fn to {I of &Ipv6Addr, T of [c8]} (addr: T)-> &Ipv6Addr
 
                 if (startI + endI >= 8us) break;
             } else { // Maybe we reached an end with an ipv4 addr
-                if let Ok(v4: &Ipv4Addr) = net::addr::conv::to!{&Ipv4Addr, [c8]} (v)? {
+                if let Ok(v4: &Ipv4Addr) = utils::to!{&Ipv4Addr, [c8]} (v)? {
                     // An ipv4 tail is only legal as the very last component, and only if
                     // there is room left for the two groups it expands into
                     if (index != components.len) || (startI + endI + 2 > 8) {
