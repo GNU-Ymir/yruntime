@@ -1,0 +1,51 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in helpers;
+
+use std::fs;
+
+/**
+ * @returns: `test` as it is shown to the user -- the registered name without the `__test`
+ *           segment the compiler-generated glue inserts before the name, e.g. `io::printChars` for a
+ *           test registered as `io::__test::printChars`
+ *
+ * @info: this is also the form `--filter` matches against(see `TestFilters::passFilter`), so
+ *        every name the runner prints can be pasted straight back into a `-f`
+ * */
+pub fn displayName(test: [c8])-> [c8] {
+    let testFile = Path(test, sep-> "::").file();
+    let testName = Path(test, sep-> "::").parent().parent().push(testFile);
+
+    return testName.toStr(sep-> "::");
+}
+
+/**
+ * @returns: `jobs`(clamped to at least 1), further clamped so it never exceeds `total`
+ * */
+pub fn normalizeJobs(jobs: i64, total: usize)-> usize {
+    let n = if jobs < 1 { 1us } else { cast!usize(jobs) };
+    if n > total {
+        return total;
+    }
+
+    return n;
+}
+
+/**
+ * @returns: `name` without the trailing '\u{0}' the C registration shim appends to it
+ * */
+pub fn stripNul(name: [c8])-> [c8] {
+    if name.len > 0 && name[$-1] == '\u{0}' {
+        name[0 .. $-1]
+    } else {
+        name
+    }
+}
+
+pub extern (C) fn _yrt_force_debug()-> void;
+pub extern (C) fn _yrt_next_parameter_set(closure: *void, func: *void, ref mut out: *void)-> bool;
+pub extern (C) fn _yrt_capture_begin()-> void;
+pub extern (C) fn _yrt_capture_end()-> [c8];

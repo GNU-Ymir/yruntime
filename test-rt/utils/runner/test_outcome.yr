@@ -1,0 +1,37 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in test_outcome;
+
+use core::exception::assertion;
+
+/**
+ * What running a test produced
+ * */
+pub record TestOutcome {
+
+    // The name of the test
+    pub let name: [c8];
+
+    // True iff it passed
+    pub let ok: bool;
+
+    // How long it took, in microseconds
+    pub let micros: u64;
+
+    // What it printed to stdout and stderr, only kept when it failed
+    pub let output: [c8];
+
+    // Why it failed
+    pub let error: (&Exception)?;
+
+    pub self (name: [c8], micros: u64, output: [c8] = "", error: (&Exception)? = none)
+        with name = name
+        , ok = !error.hasValue
+        , micros = micros
+        , output = output
+        , error = error
+    {}
+}

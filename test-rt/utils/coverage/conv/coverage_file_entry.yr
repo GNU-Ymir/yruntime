@@ -1,0 +1,54 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in coverage_file_entry;
+
+use utils::coverage::tree;
+
+/**
+ * A coverage file entry groups all the hit locations in a given file, keeping line coverage and
+ * branch coverage apart: they answer two different questions("was this line reached" versus
+ * "were both outcomes of this conditional exercised"), and mixing them makes a file's percentage
+ * depend on how its conditions happen to be written.
+ */
+pub class CoverageFileEntry {
+    pub let file: [c8];
+
+    // line => number of times the line was reached
+    pub let dmut lines: [u32 => u32] = copy [];
+
+    // (line, column) of a conditional => (times taken, times not taken)
+    pub let dmut branches: [(u32, u32) => (u32, u32)] = copy [];
+
+    pub self(file: [c8])
+        with file = file
+    {}
+
+    pub fn addFunction(mut self, function: CoverageFunctionEntry) {
+        for i, loc in function.locations {
+            let (line, col, kind) = loc;
+            let hits = function.hits[i];
+
+            match kind {
+                CoverageLocKind::LINE => {
+                    if let Ok(nb) = self.lines[line] {
+                        self.lines[line] = nb + hits;
+                    } else {
+                        self.lines[line] = hits;
+                    }
+                }
+                _ => {
+                    let key = (line, col);
+                    let prev = if let Ok(p) = self.branches[key] { p } else { (0u32, 0u32) };
+                    self.branches[key] = if kind == CoverageLocKind::BRANCH_TRUE {
+                        (prev._0 + hits, prev._1)
+                    } else {
+                        (prev._0, prev._1 + hits)
+                    };
+                }
+            }
+        }
+    }
+}
