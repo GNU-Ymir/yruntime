@@ -1,0 +1,281 @@
+in option;
+
+use std::option;
+use std::algorithm::iteration;
+use core::exception;
+use core::exception::option;
+
+class Boom over Exception {
+    pub let msg: [c8];
+    pub self (msg: [c8]) with msg = msg {}
+}
+
+class Other over Exception {
+    pub self () {}
+}
+
+fn val ()-> i32? { (2)? }
+fn err ()-> i32? { failure!{i32} (copy Boom ("boom")) }
+fn empty ()-> i32? { none }
+
+fn errMsg {T} (o: T?)-> [c8] {
+    if let Err(e: &Boom) = o return e.msg;
+    ""
+}
+
+fn twice (x: i32)-> i32 { x * 2 }
+fn positive (x: i32)-> bool { x > 0 }
+fn half (x: i32)-> i32? { if (x % 2 == 0) { (x / 2)? } else { none } }
+fn wrap (e: &Exception)-> &Boom {
+    if let b: &Boom = e return copy Boom ("wrapped " ~ b.msg);
+    copy Boom ("wrapped")
+}
+
+__test failureHoldsTheError {
+    let o = err ();
+    assert(o.hasError, "a");
+    assert(!o.hasValue, "b");
+    assert(errMsg(o) == "boom", "c");
+
+    let c = failure!{&Boom} (copy Other ());
+    if let Err(_: &Other) = c {} else { assert(false, "d"); }
+
+    let s = failure!{[c8]} (copy Boom ("s"));
+    assert(errMsg(s) == "s", "e");
+}
+
+__test mapForms {
+    assert(val().map!{|x| => x * 3} () == (6)?, "a");
+    assert(val().map(&twice) == (4)?, "b");
+    let z = 10;
+    assert(val().map(copy |x| => x + z) == (12)?, "c");
+    assert(val().map(|x| => cast!i64 (x)) == (2i64)?, "d");
+
+    assert(errMsg(err().map!{|x| => x * 3} ()) == "boom", "e");
+    assert(errMsg(err().map(&twice)) == "boom", "f");
+    assert(empty().map(&twice) == none, "g");
+    assert(!empty().map(&twice).hasError, "h");
+}
+
+__test mapMutable {
+    let dmut o = (copy [1, 2, 3])?;
+    let dmut t = map!{|dmut x| => alias x[1 .. $]} (alias o);
+    if let Ok(dmut s) = alias t { s[0] = 9; }
+    assert(o == (copy [1, 9, 3])?, "a");
+
+    let dmut u = map(alias o, |dmut x| => alias x[2 .. $]);
+    if let Ok(dmut s) = alias u { s[0] = 7; }
+    assert(o == (copy [1, 9, 7])?, "b");
+
+    let dmut e = failure!{[i32]} (copy Boom ("m"));
+    assert(errMsg(map(alias e, |dmut x| => alias x)) == "m", "c");
+}
+
+__test mapErrForms {
+    assert(errMsg(err().mapErr!{|e| => wrap(e)} ()) == "wrapped boom", "a");
+    assert(errMsg(err().mapErr(&wrap)) == "wrapped boom", "b");
+    let ctx = "ctx";
+    assert(errMsg(err().mapErr(copy |_| => copy Boom (ctx))) == "ctx", "c");
+
+    assert(val().mapErr(&wrap) == (2)?, "d");
+    assert(empty().mapErr(&wrap) == none, "e");
+    assert(!empty().mapErr(&wrap).hasError, "f");
+}
+
+__test andThenForms {
+    let a = (8)?;
+    assert(a.andThen!{|x| => half(x)} () == (4)?, "a");
+    assert(a.andThen(&half).andThen(&half) == (2)?, "b");
+    assert(a.andThen(&half).andThen(&half).andThen(&half) == (1)?, "c");
+    assert(a.andThen(&half).andThen(&half).andThen(&half).andThen(&half) == none, "d");
+
+    let tab = copy [10, 20];
+    let i = (1us)?;
+    assert(i.andThen(copy |j| => { if (j < tab.len) { (tab[j])? } else { none } }) == (20)?, "e");
+    assert(errMsg(err().andThen(&half)) == "boom", "f");
+    assert(empty().andThen(&half) == none, "g");
+
+    let dmut o = (copy [1, 2, 3])?;
+    let dmut t = andThen(alias o, |dmut x| => (alias x[1 .. $])?);
+    if let Ok(dmut s) = alias t { s[1] = 0; }
+    assert(o == (copy [1, 2, 0])?, "h");
+}
+
+__test filterForms {
+    let a = (4)?, b = (-4)?;
+    assert(a.filter!{|x| => x > 0} () == (4)?, "a");
+    assert(b.filter!{|x| => x > 0} () == none, "b");
+    assert(a.filter(&positive) == (4)?, "c");
+    assert(b.filter(&positive) == none, "d");
+    let max = 3;
+    assert(a.filter(copy |x| => x < max) == none, "e");
+    assert(errMsg(err().filter(&positive)) == "boom", "f");
+    assert(empty().filter(&positive) == none, "g");
+}
+
+__test flattenNested {
+    let a: ((i32)?)? = ((1)?)?;
+    let b: ((i32)?)? = (none)?;
+    let c: ((i32)?)? = (failure!{i32} (copy Boom ("in")))?;
+    let d: ((i32)?)? = failure!{(i32)?} (copy Boom ("out"));
+    assert(a.flatten() == (1)?, "a");
+    assert(b.flatten() == none, "b");
+    assert(errMsg(c.flatten()) == "in", "c");
+    assert(errMsg(d.flatten()) == "out", "d");
+}
+
+__test zipStates {
+    let s = ("one")?;
+    let e2 = failure!{[c8]} (copy Boom ("second"));
+    let n2: [c8]? = none;
+    assert(val().zip(s) == ((2, "one"))?, "a");
+    assert(val().zip(n2) == none, "b");
+    assert(empty().zip(s) == none, "c");
+    assert(errMsg(err().zip(e2)) == "boom", "d");
+    assert(errMsg(val().zip(e2)) == "second", "e");
+    assert(errMsg(empty().zip(e2)) == "second", "f");
+    assert(errMsg(err().zip(n2)) == "boom", "g");
+}
+
+__test orElseForms {
+    assert(empty().orElse!{|| => (3)?} () == (3)?, "a");
+    assert(err().orElse(&val) == (2)?, "b");
+    let n = 5;
+    assert(empty().orElse(copy || => (n)?) == (5)?, "c");
+    assert(val().orElse(|| => (9)?) == (2)?, "d");
+    assert(empty().orElse(&empty) == none, "e");
+}
+
+__test recoverForms {
+    assert(err().recover!{|_| => 0} () == (0)?, "a");
+    let r = 7;
+    assert(err().recover(copy |_| => r) == (7)?, "b");
+    assert(empty().recover(|_| => 1) == none, "c");
+    assert(val().recover(|_| => 1) == (2)?, "d");
+
+    assert(err().recover(|e: &Boom| => cast!i32 (e.msg.len)) == (4)?, "e");
+    assert(errMsg(err().recover(|_: &Other| => 0)) == "boom", "f");
+    assert(err().recover(copy |_: &Boom| => r) == (7)?, "g");
+
+    assert(err().recoverWith!{|_| => (1)?} () == (1)?, "h");
+    assert(err().recoverWith(|_| => empty()) == none, "i");
+    assert(err().recoverWith(|_: &Boom| => (3)?) == (3)?, "j");
+    assert(errMsg(err().recoverWith(|_: &Other| => (3)?)) == "boom", "k");
+    assert(empty().recoverWith(|_| => (1)?) == none, "l");
+}
+
+__test orErrAndDropErr {
+    assert(errMsg(empty().orErr(copy Boom ("missing"))) == "missing", "a");
+    assert(val().orErr(copy Boom ("missing")) == (2)?, "b");
+    assert(errMsg(err().orErr(copy Boom ("missing"))) == "boom", "c");
+
+    assert(errMsg(empty().orErr!{|| => copy Boom ("lazy")} ()) == "lazy", "d");
+    let key = "port";
+    assert(errMsg(empty().orErr(copy || => copy Boom ("missing " ~ key))) == "missing port", "e");
+
+    let dmut built = copy [false];
+    let _ = val().orErr(copy || => { built[0] = true; copy Boom ("x") });
+    assert(!built[0], "f");
+
+    assert(err().dropErr() == none, "g");
+    assert(!err().dropErr().hasError, "h");
+    assert(val().dropErr() == (2)?, "i");
+}
+
+__test unwrapRethrows {
+    assert(val().unwrap() == 2, "a");
+
+    let mut msg = "";
+    {
+        let _ = err().unwrap();
+    } catch {
+        e: &Boom => { msg = e.msg; }
+        _ => { msg = "other"; }
+    }
+    assert(msg == "boom", "b");
+
+    let mut empt = false;
+    {
+        let _ = empty().unwrap();
+    } catch {
+        _: &EmptyValOption => { empt = true; }
+        _ => {}
+    }
+    assert(empt, "c");
+}
+
+__test expectKeepsTheCause {
+    assert(val().expect("set") == 2, "a");
+
+    let mut msg = "", mut cause = "";
+    {
+        let _ = err().expect("value expected");
+    } catch {
+        e: &ExpectError => {
+            msg = e.msg;
+            if let Ok(c: &Boom) = e.cause { cause = c.msg; }
+        }
+    }
+    assert(msg == "value expected", "b");
+    assert(cause == "boom", "c");
+
+    let mut noCause = false;
+    {
+        let _ = empty().expect("value expected");
+    } catch {
+        e: &ExpectError => { noCause = !e.cause.hasValue; }
+    }
+    assert(noCause, "d");
+}
+
+__test sideEffects {
+    let dmut seen = copy [0];
+    val().each(copy |x| => { seen[0] += x; });
+    err().each(copy |x| => { seen[0] += x; });
+    empty().each(copy |x| => { seen[0] += x; });
+    assert(seen[0] == 2, "a");
+
+    let dmut errs = copy [0];
+    let o = err().inspect(copy |x| => { seen[0] += x; }).inspectErr(copy |_| => { errs[0] += 1; });
+    assert(errMsg(o) == "boom", "b");
+    assert(errs[0] == 1, "c");
+    assert(seen[0] == 2, "d");
+
+    assert(val().inspect(copy |x| => { seen[0] += x; }) == (2)?, "e");
+    assert(seen[0] == 4, "f");
+
+    assert(val().collect() == [2], "g");
+    assert(err().collect().len == 0us, "h");
+    assert(empty().collect().len == 0us, "i");
+}
+
+__test collections {
+    let a = copy [(1)?, err (), empty (), (4)?];
+    assert(a.flatten().collect() == [1, 4], "a");
+
+    let g = (copy [1, -2, 3]).map!{|x| => { if (x > 0) { (x)? } else { none } }} ();
+    assert(g.flatten().collect() == [1, 3], "b");
+
+    assert((copy [(1)?, (2)?]).sequence() == (copy [1, 2])?, "c");
+    assert((copy [(1)?, empty (), err ()]).sequence() == none, "d");
+    assert(errMsg((copy [(1)?, err (), empty ()]).sequence()) == "boom", "e");
+    let none_: [(i32)?] = [];
+    assert(none_.sequence() == (copy [])?, "f");
+    assert((copy [1, 2]).map!{|x| => (x)?} ().sequence() == (copy [1, 2])?, "g");
+
+    let (values, errors) = a.partition();
+    assert(values == [1, 4], "h");
+    assert(errors.len == 1us, "i");
+    if let e: &Boom = errors[0] { assert(e.msg == "boom", "j"); } else { assert(false, "k"); }
+
+    let (gv, ge) = (copy [1, 2]).map!{|x| => (x)?} ().partition();
+    assert(gv == [1, 2] && ge.len == 0us, "l");
+}
+
+__test withIteration {
+    let s = copy [1, 2, 3];
+    assert(s.map!{|x| => x * 2} ().collect() == [2, 4, 6], "a");
+    assert(s.filter(|x| => x > 1).collect() == [2, 3], "b");
+    assert(val().map!{|x| => x * 2} ().filter(|x| => x > 1) == (4)?, "c");
+    assert((copy [copy [1], copy [2]]).flatten().collect() == [1, 2], "d");
+}

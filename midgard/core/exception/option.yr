@@ -21,3 +21,37 @@ pub class EmptyValOption over OptionException {
 pub class EmptyErrOption over OptionException {
     pub self () {}
 }
+
+/**
+ * Exception thrown when an option expected to hold a value holds none
+ * */
+@final
+pub class ExpectError over OptionException {
+
+    pub let msg: [c8];
+
+    pub let cause: (&core::exception::Exception)?;
+
+    /**
+     * @params:
+     *     - msg: what was expected
+     *     - cause: the error the option held
+     */
+    pub self (msg: [c8], cause: (&core::exception::Exception)? = none)
+        with msg = msg, cause = cause
+    {}
+
+    impl std::stream::Streamable {
+        pub over toStream(self, dmut stream: &std::stream::StringStream) {
+            stream:.write(self.__typeid__, " (", self.msg, ")");
+            if let Ok(c) = self.cause {
+                stream:.write(", caused by ", c);
+            }
+
+            if (self.hasTrace()) {
+                stream:.write(":\n"s8);
+                stream:.write(self.getStackTrace());
+            }
+        }
+    }
+}
