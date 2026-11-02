@@ -1,0 +1,50 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in mutex_locker;
+
+/**
+ * Entity type that is used to ensure that mutex is unlock before exiting the locking context
+ * @example:
+ * ```
+ * fn foo(dmut m: &Mutex) {
+ *    // the mutex is unlocked by the __dtor of the locker, when leaving the scope
+ *    let _ = MutexLocker(alias m);
+ *
+ *    println("Doing atomic stuff");
+ * }
+ * ```
+ * */
+pub entity MutexLocker {
+
+    let dmut _m: (&Mutex)?;
+
+    /**
+     * Move ctor
+     * */
+    pub self ()
+        with _m = none
+    {}
+
+    /**
+     * @params:
+     *    - m: the mutex to lock
+     * */
+    pub self (dmut m: &Mutex)
+        with _m = (alias m)?
+    {
+        m:.lock();
+    }
+
+    /**
+     * Unlock the mutex
+     * */
+    __dtor(mut self) {
+        if let Ok(dmut m) = alias self._m {
+            m:.unlock();
+        }
+    }
+
+}
