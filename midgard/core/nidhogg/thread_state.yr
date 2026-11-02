@@ -1,0 +1,73 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in thread_state;
+
+/**
+ * A thread the collector knows: the bounds of the memory it scans, the handshake, and the spans
+ * and the grey objects the thread keeps for itself
+ * */
+pub record ThreadState {
+    // the identifier the handshake signal is sent to
+    pub let mut thread : u64;
+
+    // the bounds of its stack and of its static TLS block
+    pub let mut stackLo : usize;
+    pub let mut stackHi : usize;
+    pub let mut tlsLo : usize;
+    pub let mut tlsHi : usize;
+
+    // the top of its stack while it is parked in a handshake
+    pub let mut sp : usize;
+
+    // the number of the last handshake the collector asked for, of the last one the thread parked
+    // in, and of the last one the collector let it go from
+    pub let mut req : u32;
+    pub let mut parked : u32;
+    pub let mut go : u32;
+
+    // the task of the last handshake asked for (a TASK_), and what came of it (an OUT_)
+    pub let mut task : u8;
+    pub let mut outcome : u8;
+
+    // the grey objects it handed over in the copies in its last handshake, the time it spent doing
+    // its task, and the address of NLISTS words, the spans of its cache it handed back
+    pub let mut handed : usize;
+    pub let mut pauseNs : u64;
+    pub let mut returned : usize;
+
+    // 1 iif the handshake signal of the current round reached it, when it was sent, when the
+    // thread parked, when the collector came to it, and the words it read from it meanwhile
+    pub let mut signaled : u8;
+    pub let mut since : u64;
+    pub let mut parkedAt : u64;
+    pub let mut servedAt : u64;
+    pub let mut parkWords : u64;
+
+    // the cycle its stack was last scanned in
+    pub let mut scanned : u64;
+
+    // the address of NLISTS words, the span it allocates from in each list
+    pub let mut cache : usize;
+
+    // 1 while it allocates, using the spans it took for itself
+    pub let mut inAlloc : u8;
+
+    // its grey buffer, and the number of objects in it
+    pub let mut grey : usize;
+    pub let mut greyLen : usize;
+
+    // the bytes it allocated since it last updated the live heap, and since it last updated its debt
+    pub let mut allocated : u64;
+    pub let mut sinceAssist : u64;
+
+    // the scan work it owes the marking of the cycle `debtCycle`, negative when it did more
+    pub let mut debt : i64;
+    pub let mut debtCycle : u64;
+
+    // the links of the list of the threads
+    pub let mut prev : usize;
+    pub let mut next : usize;
+}

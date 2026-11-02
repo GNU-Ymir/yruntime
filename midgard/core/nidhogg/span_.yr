@@ -1,0 +1,48 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in span_;
+
+/**
+ * A run of pages of the heap: free, or cut into objects of one size class, or holding a single
+ * large object
+ * */
+pub record Span {
+    // the address of the first page, and of the first object
+    pub let mut base : usize;
+
+    // the number of pages of the span
+    pub let mut npages : usize;
+
+    // the size of its objects, and their number
+    pub let mut elemSize : usize;
+    pub let mut nelems : usize;
+
+    // the list of the span (its size class, twice, plus 1 if it holds no pointer), NLISTS if large
+    pub let mut list : usize;
+
+    // 1 iif the objects of the span hold no pointer, and are never scanned
+    pub let mut noscan : u8;
+
+    // one of the SPAN_ states
+    pub let mut state : u8;
+
+    // the address of `nelems` bytes, 1 iif the object is allocated
+    pub let mut alloc : usize;
+
+    // the address of `nelems` bytes, 1 iif the object is marked
+    pub let mut marks : usize;
+
+    // the number of free objects, and the index from which the next one is searched
+    pub let mut nfree : usize;
+    pub let mut cursor : usize;
+
+    // the generation the span was last swept in
+    pub let mut sweepGen : u64;
+
+    // the links of the list holding the span
+    pub let mut prev : usize;
+    pub let mut next : usize;
+}
