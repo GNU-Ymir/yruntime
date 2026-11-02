@@ -1,0 +1,60 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in sha512_;
+
+use std::digest::{block, utils};
+
+def INIT512 = [0x6a09e667f3bcc908u64, 0xbb67ae8584caa73bu64, 0x3c6ef372fe94f82bu64, 0xa54ff53a5f1d36f1u64,
+               0x510e527fade682d1u64, 0x9b05688c2b3e6c1fu64, 0x1f83d9abfb41bd6bu64, 0x5be0cd19137e2179u64];
+
+/**
+ * The SHA-512 digest of a message absorbed piece by piece.
+ * @example:
+ * ```
+ * use std::digest;
+ *
+ * let dmut h = copy Sha512();
+ * h:.update("a");
+ * h:.update("bc");
+ *
+ * assert(h:.finish() == sha512("abc"));
+ * ```
+ */
+@final
+pub class Sha512 over BlockDigest!{128us} {
+
+    let mut _h: [mut u64 ; 8];
+
+    pub self ()
+        with super ()
+        , _h = INIT512
+    {}
+
+    /**
+     * @returns: the digest of the message absorbed so far, the hasher starting a new message
+     */
+    pub fn finish(mut self)-> [u8 ; 64] {
+        self:.pad(true);
+
+        let dmut res = [0u8 ; 64];
+        store64be(self._h, ref res);
+
+        self._h = INIT512;
+        res
+    }
+
+    /**
+     * Discard the message absorbed so far.
+     */
+    pub fn reset(mut self) {
+        self:.clear();
+        self._h = INIT512;
+    }
+
+    prot over compress(mut self, block: [u8 ; 128us]) {
+        compress512(ref self._h, block);
+    }
+}

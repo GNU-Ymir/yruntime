@@ -8,17 +8,16 @@
  * data, prefer `std::digest::sha2`.
  * @example:
  * ```
- * use std::digest::sha1;
+ * use std::digest;
  * use std::encoding::hex;
  *
  * assert(hex::encode(sha1("abc")) == "a9993e364706816aba3e25717850c26c9cd0d89d");
  * ```
  */
 
-in sha1;
+in sha1_;
 
-use std::digest::block;
-use std::traits;
+use std::digest::{block, utils};
 
 def INIT = [0x67452301u32, 0xefcdab89u32, 0x98badcfeu32, 0x10325476u32, 0xc3d2e1f0u32];
 
@@ -26,7 +25,7 @@ def INIT = [0x67452301u32, 0xefcdab89u32, 0x98badcfeu32, 0x10325476u32, 0xc3d2e1
  * The SHA-1 digest of a message absorbed piece by piece.
  * @example:
  * ```
- * use std::digest::sha1;
+ * use std::digest;
  * use std::encoding::hex;
  *
  * let dmut h = copy Sha1();
@@ -108,20 +107,4 @@ pub class Sha1 over BlockDigest!{64us} {
         self._h[3] += d;
         self._h[4] += e;
     }
-}
-
-/**
- * @returns: the SHA-1 digest of `data`, a string being digested as its UTF-8 bytes
- * @example:
- * ```
- * use std::digest::sha1;
- * use std::encoding::hex;
- *
- * println(hex::encode(sha1(""))); // da39a3ee5e6b4b0d3255bfef95601890afd80709
- * ```
- */
-pub fn if isBytes!{T} sha1 {T} (data: T)-> [u8 ; 20] {
-    let dmut h = copy Sha1();
-    h:.update(data);
-    h:.finish()
 }

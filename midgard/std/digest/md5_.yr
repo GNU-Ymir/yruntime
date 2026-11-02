@@ -7,17 +7,16 @@
  * format or a protocol that requires it, never to authenticate data, prefer `std::digest::sha2`.
  * @example:
  * ```
- * use std::digest::md5;
+ * use std::digest;
  * use std::encoding::hex;
  *
  * assert(hex::encode(md5("abc")) == "900150983cd24fb0d6963f7d28e17f72");
  * ```
  */
 
-in md5;
+in md5_;
 
-use std::digest::block;
-use std::traits;
+use std::digest::{block, utils};
 
 def INIT = [0x67452301u32, 0xefcdab89u32, 0x98badcfeu32, 0x10325476u32];
 
@@ -36,7 +35,7 @@ lazy __MD5_K__: [u32 ; 64] = [0xd76aa478u32, 0xe8c7b756u32, 0x242070dbu32, 0xc1b
  * The MD5 digest of a message absorbed piece by piece.
  * @example:
  * ```
- * use std::digest::md5;
+ * use std::digest;
  * use std::encoding::hex;
  *
  * let dmut h = copy Md5();
@@ -109,20 +108,4 @@ pub class Md5 over BlockDigest!{64us} {
         self._h[2] += c;
         self._h[3] += d;
     }
-}
-
-/**
- * @returns: the MD5 digest of `data`, a string being digested as its UTF-8 bytes
- * @example:
- * ```
- * use std::digest::md5;
- * use std::encoding::hex;
- *
- * println(hex::encode(md5(""))); // d41d8cd98f00b204e9800998ecf8427e
- * ```
- */
-pub fn if isBytes!{T} md5 {T} (data: T)-> [u8 ; 16] {
-    let dmut h = copy Md5();
-    h:.update(data);
-    h:.finish()
 }
