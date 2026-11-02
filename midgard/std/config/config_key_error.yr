@@ -1,0 +1,33 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in config_key_error;
+
+use std::stream;
+
+/**
+ * Error thrown when a dict is indexed by a key that it does not contain
+ * */
+@final
+pub class ConfigKeyError over ConfigError {
+
+    // The index of the access
+    let _key: [c8];
+
+    pub self (key: [c8])
+        with _key = key
+    {}
+
+    impl stream::Streamable {
+        pub over toStream(self, dmut stream: &StringStream) {
+            stream:.write(self.__typeinfo__.name):.write(" ("s8);
+            stream:.write(self._key, ')');
+
+            if (self.hasTrace()) {
+                stream:.writeln(""):.write(":"s8):.write(self.getStackTrace());
+            }
+        }
+    }
+}

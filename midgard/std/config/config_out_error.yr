@@ -1,25 +1,11 @@
 /**
- * Error module for the errors that can occur when dealing with configs.
  * @Authors: Emile Cadorel
  * @License: GPLv3
  */
 
-in errors;
+in config_out_error;
 
 use std::stream;
-
-pub class ConfigError over core::exception::Exception {
-    pub self () {}
-}
-
-
-/*!
- * ====================================================================================================
- * ====================================================================================================
- * =====================================          ARRAY          ======================================
- * ====================================================================================================
- * ====================================================================================================
- */
 
 /**
  * Error thrown when an array was index outside its range
@@ -57,28 +43,3 @@ pub class ConfigOutError over ConfigError {
  * ====================================================================================================
  * ====================================================================================================
  */
-
-/**
- * Error thrown when a dict is indexed by a key that it does not contain
- * */
-@final
-pub class ConfigKeyError over ConfigError {
-
-    // The index of the access
-    let _key: [c8];
-
-    pub self (key: [c8])
-        with _key = key
-    {}
-
-    impl stream::Streamable {
-        pub over toStream(self, dmut stream: &StringStream) {
-            stream:.write(self.__typeinfo__.name):.write(" ("s8);
-            stream:.write(self._key, ')');
-
-            if (self.hasTrace()) {
-                stream:.writeln(""):.write(":"s8):.write(self.getStackTrace());
-            }
-        }
-    }
-}

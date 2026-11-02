@@ -1,0 +1,40 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in malformed_argument;
+
+use std::config::args::command_line_error;
+
+use core::exception;
+use std::stream;
+
+/**
+ * Error thrown when a argument parsing fails
+ * */
+@final
+pub class MalformedArgument over CommandLineError {
+
+    // The argument being parsed
+    pub let key: [c8];
+
+    // The sub error
+    pub let subError: (&Exception)? = none;
+
+    pub self (key: [c8], subError: (&Exception)?)
+        with subError = subError
+        , key = key
+    {}
+
+    impl stream::Streamable {
+        pub over toStream(self, dmut stream: &StringStream) {
+            stream:.write(self.__typeinfo__.name):.write(" (", self.key, ")");
+            if let Ok(sub) = self.subError {
+                stream:.writeln(""):.write(" => "):.write("\t"):.write(sub);
+            } else if (self.hasTrace()) {
+                stream:.writeln(""):.write(":"):.write(self.getStackTrace());
+            }
+        }
+    }
+}
