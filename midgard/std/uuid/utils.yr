@@ -5,7 +5,10 @@
 
 in utils;
 
-use std::uuid::errors;
+use std::uuid::{errors, generator};
+
+@thread
+lazy dmut __THREAD_UUID__: &UuidGenerator = copy UuidGenerator();
 
 /** The value returned by `hexValue` for a character that is not an hexadecimal digit */
 pub def NOT_HEX = 0xffu8;
@@ -89,4 +92,67 @@ pub fn parse(str: [c8])-> Uuid
     }
 
     Uuid(bytes)
+}
+
+/**
+ * @returns: the generator the free functions of this module draw from in the calling thread
+ * @example:
+ * ```
+ * use std::uuid;
+ *
+ * fn tagged(dmut g: &UuidGenerator)-> Uuid {
+ *     g:.v7()
+ * }
+ *
+ * let id = tagged(alias threadGenerator());
+ * assert(id.version == 7u8);
+ * ```
+ */
+pub fn threadGenerator()-> dmut &UuidGenerator {
+    alias __THREAD_UUID__
+}
+
+/**
+ * Reset the generator of the calling thread to the start of the sequence identified by `seed`.
+ * @info: the generators of the other threads are left untouched.
+ * @example:
+ * ```
+ * use std::uuid;
+ *
+ * seed(42u64);
+ * let a = v4();
+ *
+ * seed(42u64);
+ * assert(v4() == a);
+ * ```
+ */
+pub fn seed(seed: u64) {
+    __THREAD_UUID__:.reseed(seed);
+}
+
+/**
+ * @returns: a version 4 identifier, whose 122 free bits are drawn at random
+ * @example:
+ * ```
+ * use std::uuid;
+ *
+ * assert(v4() != v4());
+ * ```
+ */
+pub fn v4()-> Uuid {
+    __THREAD_UUID__:.v4()
+}
+
+/**
+ * @returns: a version 7 identifier, whose 48 most significant bits are the number of milliseconds
+ * since epoch, so it sorts after every identifier the calling thread generated before it
+ * @example:
+ * ```
+ * use std::uuid;
+ *
+ * assert(v7() < v7());
+ * ```
+ */
+pub fn v7()-> Uuid {
+    __THREAD_UUID__:.v7()
 }
