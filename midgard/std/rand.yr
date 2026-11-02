@@ -3,105 +3,44 @@
  * <br>
  * The free functions of this module draw from a generator owned by the calling thread, seeded
  * from the entropy of the system when the thread first uses it, so threads never race on a shared
- * state. `seed` makes the sequence of the calling thread reproducible, and `Random` from
- * `std::rand::generator` is a generator that can be held, seeded and passed around explicitly.
+ * state. `seed` makes the sequence of the calling thread reproducible, and `Random` is a generator
+ * that can be held, seeded and passed around explicitly.
  * @warning: these numbers are predictable, never use them to generate a secret, use
- * `std::rand::secure` instead.
+ * `secureBytes`, `secureBits` or `secureUniform` instead.
  * @authors: Emile Cadorel
  * @License: GPLv3
  */
 
 in rand;
 
-pub mod ::errors;
-pub mod ::generator;
-pub mod ::secure;
+mod ::errors;
+mod ::generator;
+mod ::secure;
+mod ::utils;
 
-use std::rand::{errors, generator};
 use std::traits;
 
-@thread
-lazy dmut __THREAD_RANDOM__: &Random = copy Random();
+pub def Random: generator::Random;
+pub def RandomError: errors::RandomError;
 
-/**
- * @returns: the generator the free functions of this module draw from in the calling thread
- * @example:
- * ```
- * use std::rand::generator;
- *
- * fn roll(dmut r: &Random)-> i32 {
- *     r:.uniform(1, 6)
- * }
- *
- * let v = roll(alias threadRandom());
- * assert(v >= 1 && v <= 6);
- * ```
- */
-pub fn threadRandom()-> dmut &Random {
-    alias __THREAD_RANDOM__
-}
+pub def threadRandom = utils::threadRandom;
+pub def seed = utils::seed;
+pub def randBits = utils::randBits;
+pub def uniform = utils::uniform;
+pub def fillBytes = utils::fillBytes;
+pub def randBytes = utils::randBytes;
+pub def bernoulli = utils::bernoulli;
+pub def normal = utils::normal;
+pub def exponential = utils::exponential;
+pub def poisson = utils::poisson;
+pub def shuffle = utils::shuffle;
+pub def choice = utils::choice;
+pub def sample = utils::sample;
 
-/**
- * Reset the generator of the calling thread to the start of the sequence identified by `seed`.
- * @info: the generators of the other threads are left untouched.
- * @example:
- * ```
- * seed(42u64);
- * let a = uniform(0, 1000);
- *
- * seed(42u64);
- * assert(uniform(0, 1000) == a);
- * ```
- */
-pub fn seed(seed: u64) {
-    __THREAD_RANDOM__:.reseed(seed);
-}
-
-/**
- * @returns: a random 64 bits word, uniformly distributed over the whole domain of u64.
- * @example:
- * ```
- * println(randBits());
- * ```
- */
-pub fn randBits()-> u64 {
-    __THREAD_RANDOM__:.bits()
-}
-
-/**
- * @params:
- *    - low: the lower bound of the interval (included)
- *    - high: the upper bound of the interval (included)
- * @returns: a random number uniformly selected in `[low, high]`, or `low` if `high <= low`
- * @info: the selection is free of modulo bias.
- * @example:
- * ```
- * // Select a number between 1 and 10 with uniform probability
- * let i = uniform(1, 10);
- *
- * assert(i >= 1 && i <= 10);
- * ```
- */
-pub fn if isIntegral!{T} uniform {T} (low: T, high: T)-> T {
-    __THREAD_RANDOM__:.uniform(low, high)
-}
-
-/**
- * @params:
- *    - low: the lower bound of the interval
- *    - high: the upper bound of the interval
- * @returns: a random number uniformly selected between `low` and `high`
- * @example:
- * ```
- * // Select a number between 1 and 10 with uniform probability
- * let f = uniform(1.0, 10.0);
- *
- * assert(f >= 1.0 && f <= 10.0);
- * ```
- */
-pub fn if isFloating!{T} uniform {T} (low: T, high: T)-> T {
-    __THREAD_RANDOM__:.uniform(low, high)
-}
+pub def fillSecureBytes = secure::fillSecureBytes;
+pub def secureBytes = secure::secureBytes;
+pub def secureBits = secure::secureBits;
+pub def secureUniform = secure::secureUniform;
 
 /**
  * @returns: a random number uniformly selected in `[0, 1[`
@@ -114,158 +53,5 @@ pub fn if isFloating!{T} uniform {T} (low: T, high: T)-> T {
  * ```
  */
 pub fn if isFloating!{T} rand {T} ()-> T {
-    __THREAD_RANDOM__:.rand!{T}()
-}
-
-/**
- * Fill `buf` with random bytes.
- * @params:
- *    - buf: the buffer to fill
- * @returns: `buf`
- * @example:
- * ```
- * let dmut buf = copy [0u8 ; 16u64];
- *
- * fillBytes(alias buf);
- * println(buf);
- * ```
- */
-pub fn fillBytes(mut buf: [mut u8])-> mut [mut u8] {
-    __THREAD_RANDOM__:.fillBytes(alias buf)
-}
-
-/**
- * @params:
- *    - n: the number of bytes to generate
- * @returns: a new buffer of `n` random bytes
- * @example:
- * ```
- * let buf = randBytes(16us);
- * assert(buf.len == 16us);
- * ```
- */
-pub fn randBytes(n: usize)-> dmut [u8] {
-    __THREAD_RANDOM__:.bytes(n)
-}
-
-/**
- * @params:
- *    - p: the probability of returning `true`
- * @returns: `true` with probability `p`, `false` otherwise
- * @example:
- * ```
- * if bernoulli(0.25) {
- *     println("heads, one time out of four");
- * }
- * ```
- */
-pub fn bernoulli(p: f64)-> bool {
-    __THREAD_RANDOM__:.bernoulli(p)
-}
-
-/**
- * @params:
- *    - mean: the mean of the distribution
- *    - stddev: its standard deviation
- * @returns: a random number following the normal (gaussian) distribution `N(mean, stddev^2)`
- * @example:
- * ```
- * let height = normal(170.0, 10.0);
- * println(height);
- * ```
- */
-pub fn if isFloating!{T} normal {T} (mean: T, stddev: T)-> T {
-    __THREAD_RANDOM__:.normal(mean, stddev)
-}
-
-/**
- * @params:
- *    - lambda: the rate of the distribution, which must be positive
- * @returns: a non negative random number following the exponential distribution of rate
- * `lambda`, whose mean is `1 / lambda`
- * @example:
- * ```
- * let wait = exponential(0.5); // 2 seconds between two events on average
- * assert(wait >= 0.0);
- * ```
- */
-pub fn if isFloating!{T} exponential {T} (lambda: T)-> T {
-    __THREAD_RANDOM__:.exponential(lambda)
-}
-
-/**
- * @params:
- *    - lambda: the mean number of events in the interval
- * @returns: a random number of events following the Poisson distribution of mean `lambda`, or 0
- * if `lambda` is not positive
- * @example:
- * ```
- * let requests = poisson(12.5);
- * println(requests);
- * ```
- */
-pub fn poisson(lambda: f64)-> u64 {
-    __THREAD_RANDOM__:.poisson(lambda)
-}
-
-/**
- * Shuffle the slice `a` in place, every permutation being equally likely (Fisher-Yates).
- * @params:
- *    - a: the slice to shuffle
- * @returns: `a`, shuffled
- * @example:
- * ```
- * use std::algorithm::sorting;
- *
- * let dmut a = copy [1, 2, 3, 4, 5];
- * let b = (alias a).shuffle();
- *
- * assert(a == b);
- * assert((copy b).sort() == [1, 2, 3, 4, 5]);
- * ```
- */
-pub fn shuffle {U} (mut a: [mut U])-> mut [mut U] {
-    __THREAD_RANDOM__:.shuffle(alias a)
-}
-
-/**
- * @params:
- *    - a: the slice to pick from
- * @returns: an element of `a`, each position being equally likely
- * @throws:
- *    - &RandomError: if `a` is empty
- * @example:
- * ```
- * let c = choice(copy ["rock", "paper", "scissors"]);
- *
- * assert(c == "rock" || c == "paper" || c == "scissors");
- * ```
- */
-pub fn choice {U} (a: [U])-> U
-    throws RandomError
-{
-    __THREAD_RANDOM__:.choice(a)
-}
-
-/**
- * Pick `k` elements of `a` without replacement: each position of `a` is picked at most once, and
- * every subset of `k` positions is equally likely.
- * @params:
- *    - a: the slice to pick from
- *    - k: the number of elements to pick
- * @returns: the picked elements, in random order
- * @throws:
- *    - &RandomError: if `k` is greater than the length of `a`
- * @example:
- * ```
- * let s = sample(copy [1, 2, 3, 4, 5], 3us);
- *
- * assert(s.len == 3us);
- * assert(s[0] != s[1] && s[1] != s[2] && s[0] != s[2]);
- * ```
- */
-pub fn sample {U} (a: [U], k: usize)-> [U]
-    throws RandomError
-{
-    __THREAD_RANDOM__:.sample(a, k)
+    threadRandom():.rand!{T}()
 }

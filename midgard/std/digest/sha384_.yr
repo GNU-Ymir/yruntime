@@ -1,0 +1,60 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in sha384_;
+
+use std::digest::{block, utils};
+
+def INIT384 = [0xcbbb9d5dc1059ed8u64, 0x629a292a367cd507u64, 0x9159015a3070dd17u64, 0x152fecd8f70e5939u64,
+               0x67332667ffc00b31u64, 0x8eb44a8768581511u64, 0xdb0c2e0d64f98fa7u64, 0x47b5481dbefa4fa4u64];
+
+/**
+ * The SHA-384 digest of a message absorbed piece by piece.
+ * @example:
+ * ```
+ * use std::digest;
+ *
+ * let dmut h = copy Sha384();
+ * h:.update("a");
+ * h:.update("bc");
+ *
+ * assert(h:.finish() == sha384("abc"));
+ * ```
+ */
+@final
+pub class Sha384 over BlockDigest!{128us} {
+
+    let mut _h: [mut u64 ; 8];
+
+    pub self ()
+        with super ()
+        , _h = INIT384
+    {}
+
+    /**
+     * @returns: the digest of the message absorbed so far, the hasher starting a new message
+     */
+    pub fn finish(mut self)-> [u8 ; 48] {
+        self:.pad(true);
+
+        let dmut res = [0u8 ; 48];
+        store64be(self._h, ref res);
+
+        self._h = INIT384;
+        res
+    }
+
+    /**
+     * Discard the message absorbed so far.
+     */
+    pub fn reset(mut self) {
+        self:.clear();
+        self._h = INIT384;
+    }
+
+    prot over compress(mut self, block: [u8 ; 128us]) {
+        compress512(ref self._h, block);
+    }
+}

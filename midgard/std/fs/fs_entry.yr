@@ -5,11 +5,11 @@
  * <hr>
  * @example:
  * ```
- * use std::fs::path;
+ * use std::fs;
  * use std::fs;
  *
  * // Iteration through the directory ./some/dir
- * for entry in sys::readDir(Path("./some/dir"s8)) {
+ * for entry in readDir(Path("./some/dir"s8)) {
  *     match entry {
  *         // path field is public, so it can be used in pattern deconstruction
  *         FsEntry(path-> p, kind-> FsEntryKind::DIR) => println("Directory: ", p.toStr());
@@ -18,20 +18,12 @@
  * }
  * ```
  */
-in iteration;
+in fs_entry;
 
 use etc::c::dirent;
 
 use std::{conv, stream};
-use std::fs::path;
-
-extern (C) fn printf(c: *c8, ...);
-
-pub enum FsEntryKind: u8
-| FILE = 1
-| DIR = 2
-| LINK = 3
-| UNKNOWN = 4;
+use std::fs::{dir_iterator, path};
 
 /**
  * A FsEntry is a entry of a file system element, ancestor of DirEntry and FileEntry
@@ -68,7 +60,7 @@ pub record FsEntry {
      * Direntries are iterable.
      * @example:
      * ```
-     * use std::fs::_;
+     * use std::fs;
      *
      * /*
      *  * Verify that a directory contains a file named fName(recursively)
@@ -90,7 +82,7 @@ pub record FsEntry {
      *    false
      * }
      *
-     * exists("foo", fs::sys::readDir(Path("./some/dir")));
+     * exists("foo", readDir(Path("./some/dir")));
      * ```
      */
     pub fn begin(self)-> DirIterator {
@@ -145,100 +137,4 @@ pub record FsEntry {
             }
         }
     }
-}
-
-/**
- * Dir iterator, instantiated by DirEntry::begin, and used to iterate through the entries of a directory.
- */
-entity DirIterator {
-
-    // The directory being read(C dir iteration)
-    let mut _dir: *(void) = null;
-
-    // The path of the directory being iterated
-    let _root: Path = Path();
-
-    // The iterator on the directory(C dir iteration)
-    let mut _curr: *(dirent) = null;
-
-    /**
-     * @params:
-     *    - dir: the opendir handle
-     *    - root: the path of the directory being iterated
-     */
-    pub self (dir: *void, root: Path)
-        with _dir = dir
-        , _curr = null
-        , _root = root
-    {
-        self:.next();
-    }
-
-    /**
-     * @returns: true if the iterators point to the same entry
-     */
-    pub fn opEquals(self, end: *void)-> bool {
-        self._dir == end
-    }
-
-    impl core::types::Iterable {
-
-        /**
-         * Advance the iterator to the next element.
-         */
-        pub over next(mut self)  {
-            if (self._dir != null) {
-                self._curr = readdir(self._dir);
-                if (self._curr == null) {
-                    self:.dispose();
-                } else {
-                    let c = unsafe {
-                        *self._curr
-                    };
-
-                    match c.d_type {
-                        DirEntryTypes::DT_DIR => { // ignore current and rewind dir
-                            if (c.d_name[0 .. 2] == ".."s8 && c.d_name[2] == '\u{0}') ||
-                                (c.d_name[0 .. 1] == "."s8 && c.d_name[1] == '\u{0}')
-                                self:.next();
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * @returns: the entry being pointed by the iterator.
-     * @warning: panic if the iterator is invalid
-     */
-    pub fn get {0, 1} (self)-> FsEntry {
-        let c = unsafe {
-            *self._curr
-        };
-
-        let path = self._root.push(unsafe { c.d_name.ptr.fromStringZ() });
-        match c.d_type {
-            DirEntryTypes::DT_DIR => { FsEntry(path, kind-> FsEntryKind::DIR) }
-            DirEntryTypes::DT_REG => { FsEntry(path, kind-> FsEntryKind::FILE) }
-            DirEntryTypes::DT_LNK => { FsEntry(path, kind-> FsEntryKind::LINK) }
-            _ => { FsEntry(path, kind-> FsEntryKind::UNKNOWN) }
-        }
-    }
-
-    fn dispose(mut self) {
-        if (self._dir != null) {
-            closedir(self._dir);
-            self._dir = null;
-        }
-    }
-
-    /**
-     * Not needed, if the iterator is used to iterate, but can be used
-     * if the begin method is called outside a for loop (which is totally deprecated, but not easy to ensure)
-     */
-    __dtor(mut self) {
-        self:.dispose();
-    }
-
 }

@@ -46,89 +46,11 @@
  */
 in any;
 
+mod ::any_;
 mod ::implem;
-use std::any::implem;
+mod ::some_;
+mod ::none_;
 
-/**
- * An any type that can store anything
- * */
-@abstract
-pub class Any {
-
-    prot self () {}
-
-    /**
-     * Unwrap the value inside the any
-     * @returns: the value inside the any
-     * */
-    pub fn unwrap {T} (self)-> (T)? {
-        if let ISome!{T, false} (value-> v) = self {
-            return (v)?;
-        } else cte if __pragma!compile(ISome!{T, true}) {
-            if let ISome!{T, true} (value-> v) = self {
-                return (v)?;
-            }
-        }
-
-        none
-    }
-    /**
-     * Mutable unwrap of the value inside the any
-     * @returns: the value inside the any
-     * */
-    pub fn unwrap {T of dmut J, class J} (mut self)-> dmut(T)? {
-        match alias self {
-            dmut s: &ISome!{T, true} => {
-                return (alias s.value)?;
-            }
-        }
-
-        none
-    }
-
-    /**
-     * @returns: true if the any contains no data
-     * */
-    @final
-    pub fn isEmpty(self)-> bool {
-        match self {
-            None() => { true }
-            _ => { false }
-        }
-    }
-
-    impl std::stream::Streamable {
-        pub over toStream(self, dmut stream: &std::stream::StringStream) {
-            stream:.write(self.__typeid__, "()");
-        }
-    }
-
-}
-
-/**
- * Immutable container
- * */
-@final
-pub class Some {T} over ISome!{T, false} {
-    pub self (val: T)
-        with super (val)
-    {}
-}
-
-/**
- * Mutable container
- * */
-@final
-pub class Some {T of dmut J, class J} over ISome!{T, true} {
-    pub self (dmut val: T)
-        with super (alias val)
-    {}
-}
-
-/**
- * Empty value
- * */
-@final
-pub class None over Any {
-    pub self () {}
-}
+pub def Any: any_::Any;
+pub def Some = some_::Some;
+pub def None: none_::None;

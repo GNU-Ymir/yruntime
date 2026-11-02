@@ -1,0 +1,131 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in utils;
+
+/**
+ * @returns: A duration of `week` weeks.
+ * @example:
+ * ```
+ * use std::time;
+ *
+ * // Sleep for two weeks
+ * sleep((2).weeks());
+ * ```
+ */
+pub fn weeks(week: u64)-> Duration {
+    Duration(week * 7u64 * 24u64 * 3_600u64, 0u64)
+}
+
+/**
+ * @returns: A duration of `day` days
+ * @example:
+ * ```
+ * use std::time;
+ *
+ * // Sleep for two days
+ * sleep((2).days());
+ * ```
+ */
+pub fn days(day: u64)-> Duration {
+    Duration(day * 24u64 * 3_600u64, 0u64)
+}
+
+/**
+ * @returns: A duration of `hou` hours
+ * @example:
+ * ```
+ * use std::time;
+ *
+ * // Sleep for two hours
+ * sleep((2).hours());
+ * ```
+ */
+pub fn hours(hou: u64)-> Duration {
+    Duration(hou * 3_600u64, 0u64)
+}
+
+/**
+ * @returns: A duration of `min` minutes.
+ * @example:
+ * ```
+ * use std::time;
+ *
+ * // Sleep for two minutes
+ * sleep((2).minutes());
+ * ```
+ */
+pub fn minutes(mins: u64)-> Duration {
+    Duration(mins * 60u64, 0u64)
+}
+
+/**
+ * @returns: A duration of `secs` seconds.
+ * @example:
+ * ```
+ * use std::time;
+ *
+ * // Sleep for two seconds
+ * sleep(seconds(2u64));
+ * ```
+ */
+pub fn seconds(secs: u64)-> Duration {
+    Duration(secs, 0u64)
+}
+
+/**
+ * @returns: A duration of `mil` milliseconds.
+ * @example:
+ * ```
+ * use std::time;
+ *
+ * // Sleep for 2000 milliseconds
+ * sleep(millis(2_000u64));
+ * ```
+ */
+pub fn millis(mil: u64)-> Duration {
+    Duration(mil / 1_000u64, (mil % 1_000u64) * 1_000u64)
+}
+
+/**
+ * @returns: A duration of `mic` microseconds.
+ * @example:
+ * ```
+ * use std::time;
+ *
+ * // Sleep for 2000000 microseconds
+ * sleep(micros(2_000_000u64));
+ * ```
+ */
+pub fn micros(mic: u64)-> Duration {
+    Duration(mic / 1_000_000u64, mic % 1_000_000u64)
+}
+
+/*!
+ * ================================================================================
+ * ================================================================================
+ * =============================        SLEEPING       ============================
+ * ================================================================================
+ * ================================================================================
+ */
+
+/**
+ * Make the thread sleep for a given amount of time.
+ * @params:
+ *    - dur: the duration during which the thread will be sleeping
+ */
+pub fn sleep(dur: Duration) {
+    if (!dur.isNegative()) {
+        let mut in_ = etc::c::time::dur_t(dur.getSec(), dur.getUSec() * 1000u64);
+        loop {
+            let mut out_ = etc::c::time::dur_t(0u64, 0u64);
+            let ret = etc::c::time::nanosleep(&in_, alias &out_);
+            if (ret == 0) break;
+            else {
+                in_ = out_;
+            }
+        }
+    }
+}

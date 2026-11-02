@@ -509,12 +509,12 @@ hits/call-counts across files, and that generated/compiler-synthesized functions
 
 `UnittestLauncher::run` defaults to `-j 1` (sequential, on the main thread, via `runList`). With
 `-j N` (`N > 1`) and more than one test to run, `runParallel` runs them on a
-`std::concurrency::task::TaskPool` of N threads, in the one test process:
+`std::concurrency::TaskPool` of N threads, in the one test process:
 
 - The master walks the tests (`forEachCase`, resuming parameterized generators as it goes) and
   submits one task per case, closing over its name and delegate. A worker never touches the registry: `runOne(name, dg)` runs the test on the
   calling thread and returns a `TestOutcome`, which the task sends to a
-  `std::concurrency::mail::MailBox` and reports to the shared `utils::progress::Progress`.
+  `std::concurrency::MailBox` and reports to the shared `utils::progress::Progress`.
 - Once `pool:.join()` returns (every task has finished), the master drains that mailbox into
   `already`/`durations` (`collect`, the sequential path goes through the same mailbox), and
   everything downstream (success file, `-d`, coverage) is unchanged.

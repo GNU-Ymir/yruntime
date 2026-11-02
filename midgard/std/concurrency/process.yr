@@ -5,8 +5,8 @@
  * <hr>
  * @example:
  * ```
- * use std::concurrency::process;
- * use std::fs::path;
+ * use std::concurrency;
+ * use std::fs;
  *
  * // Spawn a sub process that run the ls command in the directory /path/to/print
  * let dmut proc = copy SubProcess("ls"s8, copy ["-la"s8], cwd-> Path("/path/to/print"));
@@ -34,7 +34,8 @@ use core::concurrency::pipes::{iopipe, ipipe, opipe};
 use etc::c::process;
 use etc::runtime::{gc, threads};
 
-use std::fs::{errors, path};
+use std::concurrency::utils;
+use std::fs;
 
 @final
 pub class SubProcess {
@@ -86,7 +87,7 @@ pub class SubProcess {
     {
         if (self._pid != 0) return alias self;
 
-        if !std::fs::sys::isDir(self._cwd) throw copy FsError(FsErrorCode::PARENT_DONT_EXIST, self._cwd.toStr());
+        if !std::fs::isDir(self._cwd) throw copy FsError(FsErrorCode::PARENT_DONT_EXIST, self._cwd.toStr());
 
         if (redirect) {
             self._stdin = (copy IOPipe::new())?;
@@ -296,14 +297,4 @@ pub class SubProcess {
         }
     }
 
-}
-
-/**
- * @returns: the exit code a status of waitpid holds, `128 + n` if the signal `n` killed the process
- * */
-fn exitCode(status: i32)-> i32 {
-    let signal = status & 0x7f;
-    if (signal != 0) return 128 + signal;
-
-    (status >> 8) & 0xff
 }

@@ -14,7 +14,7 @@
  * @example:
  * ```
  * use std::{conv, io};
- * use std::uuid::_;
+ * use std::uuid;
  *
  * let id = v7();
  * println(id); // 01993a18-4f0e-7cdb-b32e-c6621e1a644b
@@ -34,79 +34,19 @@ in uuid;
 
 mod ::uuid_;
 mod ::variant;
+mod ::errors;
+mod ::generator;
+mod ::conv;
 mod ::utils;
-
-pub mod ::errors;
-pub mod ::generator;
-pub mod ::conv;
-
-use std::uuid::generator;
 
 pub def Uuid: uuid_::Uuid;
 pub def UuidVariant: variant::UuidVariant;
+pub def UuidError: errors::UuidError;
+pub def UuidGenerator: generator::UuidGenerator;
 
-@thread
-lazy dmut __THREAD_UUID__: &UuidGenerator = copy UuidGenerator();
+pub def to = conv::to;
 
-/**
- * @returns: the generator the free functions of this module draw from in the calling thread
- * @example:
- * ```
- * use std::uuid::_;
- *
- * fn tagged(dmut g: &UuidGenerator)-> Uuid {
- *     g:.v7()
- * }
- *
- * let id = tagged(alias threadGenerator());
- * assert(id.version == 7u8);
- * ```
- */
-pub fn threadGenerator()-> dmut &UuidGenerator {
-    alias __THREAD_UUID__
-}
-
-/**
- * Reset the generator of the calling thread to the start of the sequence identified by `seed`.
- * @info: the generators of the other threads are left untouched.
- * @example:
- * ```
- * use std::uuid;
- *
- * seed(42u64);
- * let a = v4();
- *
- * seed(42u64);
- * assert(v4() == a);
- * ```
- */
-pub fn seed(seed: u64) {
-    __THREAD_UUID__:.reseed(seed);
-}
-
-/**
- * @returns: a version 4 identifier, whose 122 free bits are drawn at random
- * @example:
- * ```
- * use std::uuid;
- *
- * assert(v4() != v4());
- * ```
- */
-pub fn v4()-> Uuid {
-    __THREAD_UUID__:.v4()
-}
-
-/**
- * @returns: a version 7 identifier, whose 48 most significant bits are the number of milliseconds
- * since epoch, so it sorts after every identifier the calling thread generated before it
- * @example:
- * ```
- * use std::uuid;
- *
- * assert(v7() < v7());
- * ```
- */
-pub fn v7()-> Uuid {
-    __THREAD_UUID__:.v7()
-}
+pub def threadGenerator = utils::threadGenerator;
+pub def seed = utils::seed;
+pub def v4 = utils::v4;
+pub def v7 = utils::v7;

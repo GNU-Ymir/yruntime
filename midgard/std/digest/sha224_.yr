@@ -1,0 +1,59 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in sha224_;
+
+use std::digest::{block, utils};
+
+def INIT224 = [0xc1059ed8u32, 0x367cd507u32, 0x3070dd17u32, 0xf70e5939u32, 0xffc00b31u32, 0x68581511u32, 0x64f98fa7u32, 0xbefa4fa4u32];
+
+/**
+ * The SHA-224 digest of a message absorbed piece by piece.
+ * @example:
+ * ```
+ * use std::digest;
+ *
+ * let dmut h = copy Sha224();
+ * h:.update("a");
+ * h:.update("bc");
+ *
+ * assert(h:.finish() == sha224("abc"));
+ * ```
+ */
+@final
+pub class Sha224 over BlockDigest!{64us} {
+
+    let mut _h: [mut u32 ; 8];
+
+    pub self ()
+        with super ()
+        , _h = INIT224
+    {}
+
+    /**
+     * @returns: the digest of the message absorbed so far, the hasher starting a new message
+     */
+    pub fn finish(mut self)-> [u8 ; 28] {
+        self:.pad(true);
+
+        let dmut res = [0u8 ; 28];
+        store32be(self._h, ref res);
+
+        self._h = INIT224;
+        res
+    }
+
+    /**
+     * Discard the message absorbed so far.
+     */
+    pub fn reset(mut self) {
+        self:.clear();
+        self._h = INIT224;
+    }
+
+    prot over compress(mut self, block: [u8 ; 64us]) {
+        compress256(ref self._h, block);
+    }
+}

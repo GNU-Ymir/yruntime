@@ -8,7 +8,7 @@
 in stream;
 
 use std::net::{addr, addr::_, tcp::errors};
-use std::time::dur;
+use std::time;
 
 use etc::c::{files, socket, time};
 use etc::runtime::errno;
@@ -22,7 +22,7 @@ use std::{traits, conv};
  * ```
  * use std::net::tcp;
  * use std::net::addr::_;
- * use std::conv::errors;
+ * use std::conv;
  *
  * pub fn greets_client(dmut client: &TcpStream)
  *    throws TcpError
@@ -52,7 +52,7 @@ use std::{traits, conv};
  * ```
  * use std::net::tcp;
  * use std::net::addr::_;
- * use std::conv::errors;
+ * use std::conv;
  *
  * fn connect ()
  *    throws TcpError, CastFailure
@@ -103,7 +103,7 @@ pub class TcpStream {
      * ```
      * use std::net::tcp;
      * use std::net::addr::_;
-     * use std::conv::errors;
+     * use std::conv;
      *
      * fn ping ()
      *    throws TcpError, CastFailure
@@ -122,7 +122,7 @@ pub class TcpStream {
      * @throws:
      *    - TcpError: if the connection fails, or timeout
      * */
-    pub self connect(addr: SockAddr, timeout: dur::Duration = dur::seconds(2))
+    pub self connect(addr: SockAddr, timeout: Duration = seconds(2))
         with _addr = addr
         throws errors::TcpError
     {
@@ -150,7 +150,7 @@ pub class TcpStream {
     /**
      * Set the timeout of the scoket send
      * */
-    pub fn setSendTimeout(mut self, timeout: dur::Duration) {
+    pub fn setSendTimeout(mut self, timeout: Duration) {
         if self._sockFd != 0 && !self._error {
             let dmut tv = if timeout.isNegative() {
                 etc::c::time::dur_t(0, 0)
@@ -165,7 +165,7 @@ pub class TcpStream {
     /**
      * Set the timeout of the scoket recv
      * */
-    pub fn setRecvTimeout(mut self, timeout: dur::Duration) {
+    pub fn setRecvTimeout(mut self, timeout: Duration) {
         if self._sockFd != 0 && !self._error {
             let dmut tv = if timeout.isNegative() {
                 etc::c::time::dur_t(0, 0)
@@ -487,7 +487,7 @@ pub class TcpStream {
     /**
      * Connect the stream to an ipv4 address
      * */
-    prv fn connectV4(mut self, addr: &Ipv4Addr, port: u16, timeout: dur::Duration)
+    prv fn connectV4(mut self, addr: &Ipv4Addr, port: u16, timeout: Duration)
         throws errors::TcpError
     {
         errno(ErrnoValue::NONE);
@@ -520,7 +520,7 @@ pub class TcpStream {
     /**
      * Connect the stream to an ipv6 address
      * */
-    prv fn connectV6(mut self, addr: &Ipv6Addr, port: u16, timeout: dur::Duration)
+    prv fn connectV6(mut self, addr: &Ipv6Addr, port: u16, timeout: Duration)
         throws errors::TcpError
     {
         errno(ErrnoValue::NONE);
@@ -552,7 +552,7 @@ pub class TcpStream {
      */
 
 
-    prv fn connectWithTimeout(mut self, addr: *sockaddr, size: u32, timeout: dur::Duration)
+    prv fn connectWithTimeout(mut self, addr: *sockaddr, size: u32, timeout: Duration)
         throws errors::TcpError
     {
         self:.setNonBlocking();

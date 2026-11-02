@@ -1,0 +1,40 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in fs_error;
+
+use std::stream;
+
+/**
+ * Error thrown when an error occur in the std::fs module.
+ */
+@final
+pub class FsError over core::exception::io::IOError {
+
+    // The message of the error
+    pub let msg: [c8];
+
+    // The error code to identify the error
+    pub let code: FsErrorCode;
+
+    /**
+     * @params:
+     *    - code: the error code to identify the error
+     *    - msg: the message to explain the reason of the error
+     */
+    pub self (code: FsErrorCode, msg: [c8]) with msg = msg, code = code {}
+
+    impl Streamable {
+        pub over toStream(self, dmut stream: &StringStream) {
+            stream:.write(self.__typeinfo__.name);
+            if (self.trace.len != 0u64) {
+                stream:.write(" ("):.write(utils::to![c8] (self.code)):.write(") : "):.writeln(self.msg);
+                stream:.write(self.getStackTrace());
+            } else {
+                stream:.write(" ("):.write(utils::to![c8] (self.code)):.write(") : "):.writeln(self.msg);
+            }
+        }
+    }
+}

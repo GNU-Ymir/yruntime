@@ -10,7 +10,7 @@
  * @example:
  * Create a file and write a string in it:
  * ```
- * use std::fs::{file, path, errors};
+ * use std::fs;
  *
  * // Create a file named "foo.txt", and write something in it
  * {
@@ -26,7 +26,7 @@
  * <br>
  * Open an existing file and read its content:
  * ```
- * use std::fs::{file, path, errors};
+ * use std::fs;
  *
  * let content = {
  *     let dmut file = File::open(Path("foo.txt"));
@@ -42,7 +42,7 @@
  * <br>
  * Open an existing file and append content to it:
  * ```
- * use std::fs::{file, path, errors};
+ * use std::fs;
  *
  * {
  *   let dmut file = File::open(Path("foo.txt"), append-> true);
@@ -59,11 +59,12 @@
 
 in file;
 
-use std::fs::{path, errors};
-use std::conv;
 use etc;
-use etc::runtime::errno;
 use etc::c::files;
+use etc::runtime::errno;
+
+use std::conv;
+use std::fs::{fs_error, fs_error_code, path, sys, utils};
 
 /**
  * This type is a reference to a file in the file system.
@@ -98,7 +99,7 @@ pub entity File {
     _append = append
         throws FsError
     {
-        std::fs::sys::createFile(path);
+        sys::createFile(path);
         self:.open();
     }
 
@@ -120,7 +121,7 @@ pub entity File {
     _append = append
         throws FsError
     {
-        if fs::sys::isDir(path) {
+        if sys::isDir(path) {
             throw copy FsError(FsErrorCode::NOT_A_FILE, self._filename.toStr());
         }
         self:.open();
@@ -136,7 +137,7 @@ pub entity File {
         self._handle = c::files::fopen(self._filename.toStr().toStringZ(), mode.ptr);
 
         if (self._handle == null) {
-            throw copy FsError(fs::errors::to!(FsErrorCode) (errno()), self._filename.toStr());
+            throw copy FsError(utils::to!(FsErrorCode) (errno()), self._filename.toStr());
         }
     }
 
@@ -192,14 +193,13 @@ pub entity File {
      * ====================================================================================================
      */
 
-
     /**
      * Read all the content contained in the file from the current cursor position.
      * @throws:
      *   - FsError: if the file is not opened, or not readable.
      * @example:
      * ```
-     * use std::fs::{file, path};
+     * use std::fs;
      *
      * {
      *     // Create a file in read and write mode(read is set by default)
@@ -252,7 +252,7 @@ pub entity File {
      *   - FsError: if the file is not opened, or not readable
      * @example:
      * ```
-     * use std::fs::{file, path};
+     * use std::fs;
      *
      * {
      *     let dmut fs = File::create(Path("foo.txt"), write-> true);
@@ -308,7 +308,7 @@ pub entity File {
      *   - FsError: if the file is not opened, or not writable
      * @example:
      * ```
-     * use std::fs::{file, path, errors};
+     * use std::fs;
      *
      * {
      *      let dmut file = File::open(Path("foo.txt"), write-> true);
@@ -332,14 +332,13 @@ pub entity File {
         c::files::fwrite(cast!{*void} (text.ptr), cast!usize(c8::size), text.len, alias self._handle);
     }
 
-
     /**
      * Read all content contained in the file from the current cursor position in byte mode.
      * @throws:
      *   - FsError: if the file is not opened, or not readable
      * @example:
      * ```
-     * use std::fs::{file, path};
+     * use std::fs;
      *
      * {
      *     let dmut fs = File::create(Path("foo.txt"), write-> true);
@@ -389,7 +388,7 @@ pub entity File {
      *   - FsError: if the file is not opened, are not readable
      * @example:
      * ```
-     * use std::fs::{file, path};
+     * use std::fs;
      *
      * {
      *     let dmut fs = File::create(Path("foo.txt"), write-> true);
@@ -475,7 +474,7 @@ pub entity File {
      *   - FsError: if the file is not opened, are not writable
      * @example:
      * ```
-     * use std::fs::{file, path, errors};
+     * use std::fs;
      *
      * {
      *      let dmut file = File::open(Path("foo.txt"), write-> true);
@@ -507,7 +506,7 @@ pub entity File {
      *   - FsError: if the file is not opened, are not writable
      * @example:
      * ```
-     * use std::fs::{file, path, errors};
+     * use std::fs;
      *
      * {
      *      let dmut file = File::open(Path("foo.txt"), write-> true);

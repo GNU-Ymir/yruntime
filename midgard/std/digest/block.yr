@@ -8,7 +8,6 @@
 
 in block;
 
-
 @abstract
 pub class BlockDigest {N: usize} {
 
@@ -105,71 +104,4 @@ pub class BlockDigest {N: usize} {
      * Update the state of the digest with a full block of the message.
      */
     prot fn compress(mut self, block: [u8 ; N]);
-}
-
-/**
- * @returns: the 32 bits word stored most significant byte first at index `i` of `block`
- */
-pub fn load32be {N: usize} (block: [u8 ; N], i: usize)-> u32 {
-    (cast!u32(block[i]) << 24u32) | (cast!u32(block[i + 1us]) << 16u32)
-        | (cast!u32(block[i + 2us]) << 8u32) | cast!u32(block[i + 3us])
-}
-
-/**
- * @returns: the 32 bits word stored least significant byte first at index `i` of `block`
- */
-pub fn load32le {N: usize} (block: [u8 ; N], i: usize)-> u32 {
-    (cast!u32(block[i + 3us]) << 24u32) | (cast!u32(block[i + 2us]) << 16u32)
-        | (cast!u32(block[i + 1us]) << 8u32) | cast!u32(block[i])
-}
-
-/**
- * @returns: the 64 bits word stored most significant byte first at index `i` of `block`
- */
-pub fn load64be {N: usize} (block: [u8 ; N], i: usize)-> u64 {
-    let mut res = 0u64;
-    for j in 0us .. 8us {
-        res = (res << 8u64) | cast!u64(block[i + j]);
-    }
-
-    res
-}
-
-/**
- * Write the words of `words`, each most significant byte first, to the first bytes of `res`.
- */
-pub fn store32be {N: usize, M: usize} (words: [u32 ; M], ref mut res: [mut u8 ; N]) {
-    for i in 0us .. N {
-        res[i] = cast!u8(words[i / 4us] >> cast!u32((3us - i % 4us) * 8us));
-    }
-}
-
-/**
- * Write the words of `words`, each most significant byte first, to the first bytes of `res`.
- */
-pub fn store64be {N: usize, M: usize} (words: [u64 ; M], ref mut res: [mut u8 ; N]) {
-    for i in 0us .. N {
-        res[i] = cast!u8(words[i / 8us] >> cast!u64((7us - i % 8us) * 8us));
-    }
-}
-
-/**
- * @returns: `x` rotated by `n` bits to the left
- */
-pub fn rotl32(x: u32, n: u32)-> u32 {
-    (x << n) | (x >> (32u32 - n))
-}
-
-/**
- * @returns: `x` rotated by `n` bits to the right
- */
-pub fn rotr32(x: u32, n: u32)-> u32 {
-    (x >> n) | (x << (32u32 - n))
-}
-
-/**
- * @returns: `x` rotated by `n` bits to the right
- */
-pub fn rotr64(x: u64, n: u64)-> u64 {
-    (x >> n) | (x << (64u64 - n))
 }

@@ -6,7 +6,7 @@
  * A `Random` is not meant to be shared between threads: give each thread its own, either seeded
  * independently or obtained through `split`.
  * @warning: the sequence is predictable from a few of its outputs, never use it to generate a
- * secret (a token, a key, a password), use `std::rand::secure` instead.
+ * secret (a token, a key, a password), use `secureBytes`, `secureBits` or `secureUniform` instead.
  * @Authors: Emile Cadorel
  * @License: GPLv3
  */
@@ -15,7 +15,7 @@ in generator;
 
 use std::traits;
 use std::math;
-use std::rand::{errors, secure};
+use std::rand::{errors, secure, utils};
 
 /**
  * A xoshiro256** pseudo random number generator.
@@ -498,35 +498,3 @@ pub class Random {
 }
 
 extern (C) fn lgamma_r(x: f64, dmut sign: *i32)-> f64;
-
-/**
- * @returns: a seed read from the entropy pool of the kernel, or derived from the clock and the
- * thread if that pool is unavailable
- */
-fn entropySeed()-> u64 {
-    {
-        secureBits()
-    } catch {
-        _: &RandomError => {
-            let mut x = cast!{u64} (etc::c::time::time(null)) ^ cast!{u64} (etc::runtime::threads::_yrt_thread_self_id());
-            splitmix(ref x)
-        }
-    }
-}
-
-/**
- * Advance the splitmix64 state `x`.
- * @returns: the next output of the sequence
- */
-fn splitmix(ref mut x: u64)-> u64 {
-    x = x + 0x9e3779b97f4a7c15u64;
-    let mut z = x;
-    z = (z ^ (z >> 30u64)) * 0xbf58476d1ce4e5b9u64;
-    z = (z ^ (z >> 27u64)) * 0x94d049bb133111ebu64;
-
-    z ^ (z >> 31u64)
-}
-
-fn rotl(x: u64, k: u64)-> u64 {
-    (x << k) | (x >> (64u64 - k))
-}

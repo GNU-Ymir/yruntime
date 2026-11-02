@@ -1,0 +1,42 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in box_;
+
+use std::box::implem;
+
+/**
+ * A box class is a mutable pointer to a value that is allocated on the heap.
+ * Boxing a value is how a scalar - which is copied on every assignment and
+ * cannot be aliased - gets a single instance that several handles share.
+ * @example:
+ * ```
+ * use std::box;
+ *
+ * fn set(dmut b: &Box!{i32}, v: i32) {
+ *     b.value = v;
+ * }
+ *
+ * // a box is a heap allocated cell, whose content is seen through all its handles
+ * let dmut x = copy Box!{i32} (0);
+ * let y = x;
+ *
+ * set(alias x, 42);
+ * assert(y.value == 42);
+ * ```
+ */
+@final
+pub class Box {T} over implem::IBox!{T, false} {
+    pub self (val: T)
+        with super (val)
+    {}
+}
+
+@final
+pub class Box {T of dmut J, class J} over implem::IBox!{T, true} {
+    pub self (dmut val: T)
+        with super (alias val)
+    {}
+}
