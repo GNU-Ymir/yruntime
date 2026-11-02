@@ -1,0 +1,100 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in factory_;
+
+use core::reflect::utils;
+
+use core::concurrency;
+use core::exception;
+use core::types::info;
+use etc::runtime::classes;
+use etc::runtime::memory;
+use std::stream;
+
+/**
+ * Allocates registered classes, and keeps them pending until they are committed.
+ * A pending object is zeroed but for its vtable: it is not a valid instance of its class until every one of its fields, inherited ones included, is written, and it must not escape the code filling it before then.
+ * Committing registers the destructors of the pending objects. A factory dropped before committing leaves its objects to the collector, their destructors never running on a partially written instance.
+ */
+pub class Factory {
+
+    let mut _pending: [*void] = [];
+
+    pub self () {}
+
+    /**
+     * Allocate a pending instance of the class registered under `name`, which has to be `T` or one of its subclasses.
+     * @params:
+     *    - name: the name the class is registered under (see `classNameOf`)
+     * @returns: an instance of the class named `name`, zeroed but for its vtable
+     * @throws:
+     *    - &FactoryError: if no class is registered under `name` (UNKNOWN_CLASS), or if that class is neither `T` nor one of its subclasses (NOT_A_SUBCLASS)
+     * @example:
+     * ```
+     * use core::reflect;
+     *
+     * class Shape {
+     *     pub self () {}
+     * }
+     *
+     * class Circle {
+     *     pub self () {}
+     * }
+     *
+     * register!{&Circle}();
+     *
+     * let dmut f = copy Factory();
+     * let refused = {
+     *     f:.allocate!{&Shape}(classNameOf!{&Circle}());
+     *     false
+     * } catch {
+     *     err: &FactoryError => {
+     *         err.code == FactoryErrorCode::NOT_A_SUBCLASS
+     *     }
+     * };
+     *
+     * assert(refused);
+     * ```
+     */
+    pub fn allocate {class T} (mut self, name: [c8])-> dmut T
+        throws FactoryError
+    {
+        let expected = classNameOf!{T}();
+        let found = atomic __FACTORY_MUTEX__ {
+            __FACTORY_CLASSES__[name]
+        };
+
+        if let Ok(vtable) = found {
+            if !utils::inherits(utils::vtableTypeInfo(vtable), expected) {
+                throw copy FactoryError(FactoryErrorCode::NOT_A_SUBCLASS, name, expected);
+            }
+
+            let dmut obj = Classes!{dmut T}::_yrt_alloc_class_pending(vtable);
+            self._pending ~= [Runtime!{T, *void}::_yrt_unsafe_cast(obj)];
+            return alias obj;
+        }
+
+        throw copy FactoryError(FactoryErrorCode::UNKNOWN_CLASS, name, expected);
+    }
+
+    /**
+     * Register the destructors of the objects allocated since the last commit, every one of their fields being written
+     */
+    pub fn commit(mut self) {
+        for obj in self._pending {
+            _yrt_commit_class(obj);
+        }
+
+        self._pending = [];
+    }
+
+    /**
+     * @returns: the number of objects allocated since the last commit
+     */
+    pub fn pending(self)-> usize {
+        self._pending.len
+    }
+}

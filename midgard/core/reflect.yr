@@ -1,28 +1,50 @@
+/**
+ * Allocation of a class picked at runtime by its name, among the classes registered beforehand.
+ * Only a registered class can be allocated, and only when it is the class the caller expects or one of its subclasses, so a name read from outside the program (a packet, a file) never picks an arbitrary class of the binary.
+ * The allocated objects are built field by field instead of by a constructor, and nothing outside the code filling them must see them before every one of their fields is written. A `Factory` keeps them pending until `commit`: a pending object that is dropped is collected without its destructor ever running.
+ * @example:
+ * ```
+ * use core::reflect;
+ *
+ * class Shape {
+ *     pub let mut w: i32 = 0;
+ *     pub self () {}
+ *     pub fn area (self)-> i32 { 0 }
+ * }
+ *
+ * class Square over Shape {
+ *     pub self () {}
+ *     pub over area (self)-> i32 { self.w * self.w }
+ * }
+ *
+ * register!{&Square}();
+ *
+ * let dmut f = copy Factory();
+ * let dmut s = f:.allocate!{&Shape}(classNameOf!{&Square}());
+ * s.w = 3;
+ * f:.commit();
+ * assert(s.area() == 9);
+ * ```
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
 in reflect;
 
-pub mod ::factory;
+mod ::factory_;
+mod ::factory_error;
+mod ::factory_error_code;
+mod ::utils;
 
-use etc::runtime::elf;
-use etc::runtime::dwarf;
+use core::concurrency;
 
-pub extern (C) fn _yrt_reflect_find_symbol_from_addr_with_elf_name(addr: usize, name: [c8])-> ReflectSymbol {
-    __ELF_LOADER__:.update(name);
-    return __ELF_LOADER__:.find(addr);
-}
+lazy dmut __FACTORY_MUTEX__ = copy Mutex();
+lazy mut __FACTORY_CLASSES__: [[c8] => mut *void] = copy [];
 
-pub extern (C) fn _yrt_reflect_find_function_from_addr_with_elf_name(addr: usize, name: [c8])-> ReflectSymbol {
-    __ELF_LOADER__:.update(name);
-    return __ELF_LOADER__:.findFunction(addr);
-}
+pub def Factory: factory_::Factory;
+pub def FactoryError: factory_error::FactoryError;
+pub def FactoryErrorCode: factory_error_code::FactoryErrorCode;
 
-pub extern (C) fn _yrt_reflect_get_debug_info(elfFile: [c8], addr: usize, symbol: ReflectSymbol)-> ([c8], usize) {
-    if let Ok((file, line)) = __DWARF_LOADER__:.find(elfFile, addr, symbol.ptr, symbol.ptr + symbol.size) {
-        (file, line)
-    } else {
-        ("", 0)
-    }
-}
-
-pub extern (C) fn _yrt_reflect_clear_debug_info() {
-    return __DWARF_LOADER__:.dispose();
-}
+pub def register = utils::register;
+pub def isRegistered = utils::isRegistered;
+pub def classNameOf = utils::classNameOf;

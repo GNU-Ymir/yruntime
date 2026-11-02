@@ -1,0 +1,55 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in factory_error;
+
+use core::exception;
+use std::stream;
+
+/**
+ * Error thrown when a factory refuses to allocate a class
+ */
+@final
+pub class FactoryError over Exception {
+
+    // Why the class was refused
+    pub let code: FactoryErrorCode;
+
+    // The name of the class asked for
+    pub let name: [c8];
+
+    // The name of the class it had to be, or one of the ancestors of
+    pub let expected: [c8];
+
+    /**
+     * @params:
+     *    - code: why the class was refused
+     *    - name: the name of the class asked for
+     *    - expected: the name of the class it had to be, or one of the ancestors of
+     */
+    pub self (code: FactoryErrorCode, name: [c8], expected: [c8])
+        with code = code
+        , name = name
+        , expected = expected
+    {}
+
+    impl Streamable {
+        pub over toStream(self, dmut stream: &StringStream) {
+            stream:.write(self.__typeinfo__.name, " : ");
+            match self.code {
+                FactoryErrorCode::UNKNOWN_CLASS => {
+                    stream:.writeln("no class named ", self.name, " is registered");
+                }
+                _ => {
+                    stream:.writeln(self.name, " is not ", self.expected, " nor one of its subclasses");
+                }
+            }
+
+            if (self.trace.len != 0us) {
+                stream:.write(self.getStackTrace());
+            }
+        }
+    }
+}
