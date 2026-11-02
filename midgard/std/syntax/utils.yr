@@ -1,0 +1,38 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in utils;
+
+use std::traits;
+use std::syntax::tokenizer;
+
+/**
+ * Build the `Tokenizer` a `Lexer` would build internally from the same `tokens`/`comments`/
+ * `skips` triple(the return line token, the skip tokens, and the comment-opening tokens, on top
+ * of `tokens`).
+ * @info:
+ * =====
+ * A `Tokenizer` is immutable once built(`Tokenizer::next`/`find` never mutate it), so when many
+ * `Lexer`s are created back to back for the same fixed grammar(e.g. one per call to a `parse`
+ * function), building it once with this function and passing it to `Lexer::self(content, tzer)`
+ * avoids repeating the (`insert` + sort) cost of the whole token set on every single one of them.
+ * ====
+ * */
+pub fn if isChar!{C} buildTokenizer {C} (tokens: [[C]] = copy [" ", "\n"],
+                                         comments: [([C], [C])] = copy [("#", "\n")],
+                                         skips: [[C]] = copy [" ", "\r", "\t", "\n"])-> Tokenizer!{C}
+{
+    let dmut tzer = Tokenizer!{C} (tokens-> tokens);
+    tzer:.insert("\n");
+    for i in skips {
+        tzer:.insert(i, isSkip-> true);
+    }
+
+    for i in comments {
+        tzer:.insert(i._0, isComment-> i._1);
+    }
+
+    return tzer;
+}
