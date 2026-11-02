@@ -24,8 +24,9 @@ interior pointers included, one byte past its end too (`allocate` adds that byte
 **Roots.** The writable segments of the loaded objects (`_yrt_i_nh_data_segments`), the ranges the
 runtime registers (`_yrt_nh_add_roots`), the objects whose finalizer is queued
 (`scanFinalizerQueue`), and for every registered thread its stack from the address it parked at up
-to its top, its registers, and its static TLS block (`copyThread`). An object is *reachable* when a
-chain of pointers leads to it from a root.
+to its top, its registers, and the static TLS block of the main executable in that thread, where
+the loader put it (`_yrt_i_nh_tls_bounds`), all copied by `copyThread`. An object is *reachable*
+when a chain of pointers leads to it from a root.
 
 **Colors during the marking of cycle *N*.** An object is *white* while unmarked, *grey* while marked
 and in a set of objects to scan (the mark stack of the collector, a grey buffer of a thread, a
