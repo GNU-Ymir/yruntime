@@ -1,65 +1,11 @@
 /**
- * Error module for the errors that can occur when dealing with filesystem.
  * @Authors: Emile Cadorel
  * @License: GPLv3
  */
 
-in errors;
+in utils;
 
 use etc::runtime::errno;
-use std::stream;
-
-/**
- * Error code used to identify a specific filesystem error
- */
-pub enum FsErrorCode: u8
-| FILE_CLOSED       = 1u8
-| NOT_READABLE      = 2u8
-| NOT_WRITABLE      = 3u8
-| PERMISSION_DENIED = 4u8
-| PARENT_DONT_EXIST = 5u8
-| NOT_FOUND         = 6u8
-| ALREADY_EXISTS    = 7u8
-| IO_ERROR          = 8u8
-| LINK_LOOP         = 9u8
-| PATH_TOO_LONG     = 10u8
-| DIR_NOT_EMPTY     = 11u8
-| NOT_A_FILE        = 12u8
-| CROSS_DEVICE      = 13u8
-| NOT_A_LINK        = 14u8;
-
-
-/**
- * Error thrown when an error occur in the std::fs module.
- */
-@final
-pub class FsError over core::exception::io::IOError {
-
-    // The message of the error
-    pub let msg: [c8];
-
-    // The error code to identify the error
-    pub let code: FsErrorCode;
-
-    /**
-     * @params:
-     *    - code: the error code to identify the error
-     *    - msg: the message to explain the reason of the error
-     */
-    pub self (code: FsErrorCode, msg: [c8]) with msg = msg, code = code {}
-
-    impl Streamable {
-        pub over toStream(self, dmut stream: &StringStream) {
-            stream:.write(self.__typeinfo__.name);
-            if (self.trace.len != 0u64) {
-                stream:.write(" ("):.write(fs::errors::to![c8] (self.code)):.write(") : "):.writeln(self.msg);
-                stream:.write(self.getStackTrace());
-            } else {
-                stream:.write(" ("):.write(fs::errors::to![c8] (self.code)):.write(") : "):.writeln(self.msg);
-            }
-        }
-    }
-}
 
 /**
  * Transform an errno error into an FsErrorCode

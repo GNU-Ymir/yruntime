@@ -6,7 +6,7 @@
  * @example:
  * ```
  * use std::concurrency;
- * use std::fs::path;
+ * use std::fs;
  *
  * // Spawn a sub process that run the ls command in the directory /path/to/print
  * let dmut proc = copy SubProcess("ls"s8, copy ["-la"s8], cwd-> Path("/path/to/print"));
@@ -35,7 +35,7 @@ use etc::c::process;
 use etc::runtime::{gc, threads};
 
 use std::concurrency::utils;
-use std::fs::{errors, path};
+use std::fs;
 
 @final
 pub class SubProcess {
@@ -87,7 +87,7 @@ pub class SubProcess {
     {
         if (self._pid != 0) return alias self;
 
-        if !std::fs::sys::isDir(self._cwd) throw copy FsError(FsErrorCode::PARENT_DONT_EXIST, self._cwd.toStr());
+        if !std::fs::isDir(self._cwd) throw copy FsError(FsErrorCode::PARENT_DONT_EXIST, self._cwd.toStr());
 
         if (redirect) {
             self._stdin = (copy IOPipe::new())?;

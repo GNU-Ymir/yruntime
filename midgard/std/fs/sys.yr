@@ -11,7 +11,7 @@ use etc::runtime::{env, errno, files};
 
 use std::conv;
 use std::unit;
-use std::fs::{errors, iteration, path};
+use std::fs::{file, fs_entry, fs_error, path};
 use std::time::instant;
 
 /**
@@ -24,7 +24,7 @@ use std::time::instant;
  *   - FsError: if there was an error in the creation of the directory, cf FsErrorCode
  * @example:
  * ```
- * use std::fs::{sys, path};
+ * use std::fs;
  *
  * createDir(Path("./some/dir"));
  * assert(isDir(Path("./some/dir")));
@@ -45,7 +45,7 @@ pub fn createDir(path: Path, recursive: bool = false, permission: i32 = 0o775)
     if (isDir(parent)) {
         let code = etc::c::dirent::mkdir(path.toStr().toStringZ(), permission);
         if (code == -1) {
-            throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+            throw copy FsError(utils::to!{FsErrorCode} (errno()), path.toStr());
         }
     } else if (recursive) {
         {
@@ -63,7 +63,6 @@ pub fn createDir(path: Path, recursive: bool = false, permission: i32 = 0o775)
     }
 }
 
-
 /**
  * Check for the existence of an entry of the filesystem, whatever its kind.
  * @params:
@@ -74,7 +73,7 @@ pub fn createDir(path: Path, recursive: bool = false, permission: i32 = 0o775)
  *    - false if it does not exist, or the current user does not have permission to access it
  * @example:
  * ```
- * use std::fs::{sys, path};
+ * use std::fs;
  *
  * if exists(Path("./some/dir/file.txt")) {
  *     println("Entry exists");
@@ -100,8 +99,8 @@ pub fn exists(path: Path, followLink: bool = true)-> bool {
  *     - false if it does not exists or if it not a directory or current user does not have permission to access it
  * @example:
  * ```
- * use std::fs::sys;
- * use std::fs::path; // for Path
+ * use std::fs;
+ * use std::fs; // for Path
  *
  * if isDir(Path("./some/dir")) {
  *    println("Directory exists");
@@ -129,7 +128,7 @@ pub fn isDir(path: Path, followLink: bool = true)-> bool {
  *          + other reasons
  * @example:
  * ```
- * use std::fs::{sys, path};
+ * use std::fs;
  *
  * removeDir(Path("./some/dir"));
  * assert(!isDir(Path("./some/dir")));
@@ -155,13 +154,12 @@ pub fn removeDir(path: Path, recursive: bool = false)
         }
 
         if (etc::c::dirent::rmdir(path.toStr().toStringZ()) == -1) {
-            throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+            throw copy FsError(utils::to!{FsErrorCode} (errno()), path.toStr());
         }
     } else {
         throw copy FsError(FsErrorCode::PARENT_DONT_EXIST, path.toStr());
     }
 }
-
 
 /**
  * Copy the content of a directory into another location
@@ -178,7 +176,7 @@ pub fn removeDir(path: Path, recursive: bool = false)
  *      + other reasons
  * @example:
  * ```
- * use std::fs::{sys, path};
+ * use std::fs;
  *
  * copyDir(Path("./some/dir"), Path("/tmp/some/other/dir"), recursive-> true, create-> true);
  * assert(isDir(Path("/tmp/some/other/dir")));
@@ -209,7 +207,7 @@ pub fn copyDir(src: Path, dst: Path, recursive: bool = false, create: bool = fal
  * @returns: an iterator over the entries of a directory
  * @example:
  * ```
- * use std::fs::{sys, path};
+ * use std::fs;
  *
  * // List entries of a directory
  * for entry in readDir(Path("./some/dir")) {
@@ -224,7 +222,7 @@ pub fn readDir(path: Path)-> FsEntry
         return FsEntry(path, FsEntryKind::DIR);
     }
 
-    throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+    throw copy FsError(utils::to!{FsErrorCode} (errno()), path.toStr());
 }
 
 /**
@@ -241,7 +239,7 @@ pub fn readDir(path: Path)-> FsEntry
  *   - FsError: if path is not a directory
  * @example:
  * ```
- * use std::fs::{sys, path, iteration};
+ * use std::fs;
  *
  * // List every file of a tree
  * for entry in walkDir(Path("./some/dir")) {
@@ -305,7 +303,7 @@ pub fn tempDirectory(root: Path = Path("/tmp"), prefix: [c8] = "")-> Path
         unsafe {
             Path(res.fromStringZ())
         }
-    } else throw copy FsError(errors::to!{FsErrorCode} (errno()), root.toStr());
+    } else throw copy FsError(utils::to!{FsErrorCode} (errno()), root.toStr());
 }
 
 /**
@@ -319,7 +317,7 @@ pub fn tempDirectory(root: Path = Path("/tmp"), prefix: [c8] = "")-> Path
  *   - FsError: if the path is relative and the current working directory cannot be resolved (it was removed, or permission denied)
  * @example:
  * ```
- * use std::fs::{sys, path};
+ * use std::fs;
  * use std::env;
  *
  * setCurrentDir(Path("/tmp"));
@@ -334,7 +332,7 @@ pub fn absolute(path: Path)-> Path
 
     let cwd = _yrt_get_current_dir();
     if cwd.len == 0us {
-        throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+        throw copy FsError(utils::to!{FsErrorCode} (errno()), path.toStr());
     }
 
     Path(cwd).push(path).normalize()
@@ -352,7 +350,7 @@ pub fn absolute(path: Path)-> Path
  *      + links form a loop
  * @example:
  * ```
- * use std::fs::{sys, path};
+ * use std::fs;
  *
  * symlink(Path("dir"), Path("./some/link"));
  *
@@ -365,7 +363,7 @@ pub fn canonicalize(path: Path)-> Path
 {
     let resolved = _yrt_real_path(path.toStr().toStringZ());
     if resolved.len == 0us {
-        throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+        throw copy FsError(utils::to!{FsErrorCode} (errno()), path.toStr());
     }
 
     Path(resolved)
@@ -384,7 +382,7 @@ pub fn canonicalize(path: Path)-> Path
  *         + path is a directory
  * @example:
  * ```
- * use std::fs::{sys, path};
+ * use std::fs;
  *
  * createFile(Path("./some/dir/file.txt"));
  * assert(isFile(Path("./some/dir/file.txt")));
@@ -397,7 +395,7 @@ pub fn createFile(path: Path, permission: i32 = 0o664)
     throws FsError
 {
     if !_yrt_create_file(path.toStr().toStringZ(), permission) {
-        throw copy FsError(errors::to!(FsErrorCode) (errno()), path.toStr());
+        throw copy FsError(utils::to!(FsErrorCode) (errno()), path.toStr());
     }
 }
 
@@ -412,7 +410,7 @@ pub fn createFile(path: Path, permission: i32 = 0o664)
  *      + permission denied
  * @example:
  * ```
- * use std::fs::{sys, path};
+ * use std::fs;
  *
  * if permissions(Path("./some/dir/file.txt")) & 0o111 != 0 {
  *     println("Executable by someone");
@@ -424,7 +422,7 @@ pub fn permissions(path: Path, followLink: bool = true)-> i32
 {
     let mut mode = 0u32;
     if !_yrt_file_mode(path.toStr().toStringZ(), followLink, &mode) {
-        throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+        throw copy FsError(utils::to!{FsErrorCode} (errno()), path.toStr());
     }
 
     cast!i32(mode)
@@ -441,7 +439,7 @@ pub fn permissions(path: Path, followLink: bool = true)-> i32
  *      + the current user does not own the entry
  * @example:
  * ```
- * use std::fs::{sys, path};
+ * use std::fs;
  *
  * let script = Path("./some/dir/script.sh");
  * setPermissions(script, permissions(script) | 0o100);
@@ -452,10 +450,9 @@ pub fn setPermissions(path: Path, permission: i32)
     throws FsError
 {
     if etc::c::files::chmod(path.toStr().toStringZ(), cast!u32(permission)) == -1 {
-        throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+        throw copy FsError(utils::to!{FsErrorCode} (errno()), path.toStr());
     }
 }
-
 
 /**
  * Read the whole content of a file.
@@ -469,7 +466,7 @@ pub fn setPermissions(path: Path, permission: i32)
  *       + this is not a file
  * @example:
  * ```
- * use std::fs::{sys, path};
+ * use std::fs;
  *
  * let content = readFile(Path("./some/dir/file.txt"));
  * println(content);
@@ -478,7 +475,7 @@ pub fn setPermissions(path: Path, permission: i32)
 pub fn readFile(path: Path)-> dmut [c8]
     throws FsError
 {
-    let dmut file = fs::file::File::open(path);
+    let dmut file = File::open(path);
     return file:.readAll();
 }
 
@@ -496,7 +493,7 @@ pub fn readFile(path: Path)-> dmut [c8]
  *       + the content could not be entirely written (e.g. the device is full)
  * @example:
  * ```
- * use std::fs::{sys, path};
+ * use std::fs;
  *
  * writeFile(Path("./some/dir/file.txt"), "Hello");
  * writeFile(Path("./some/dir/file.txt"), " World!", append-> true);
@@ -510,13 +507,13 @@ pub fn writeFile(path: Path, content: [c8], append: bool = false)
     let mode = if append { "a" } else { "w" };
     let dmut handle = etc::c::files::fopen(path.toStr().toStringZ(), mode.ptr);
     if handle == null {
-        throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+        throw copy FsError(utils::to!{FsErrorCode} (errno()), path.toStr());
     }
 
     let written = etc::c::files::fwrite(cast!{*void} (content.ptr), 1us, content.len, alias handle);
     let closed = etc::c::files::fclose(alias handle);
     if written != content.len || closed != 0 {
-        throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+        throw copy FsError(utils::to!{FsErrorCode} (errno()), path.toStr());
     }
 }
 
@@ -525,7 +522,7 @@ pub fn writeFile(path: Path, content: [c8], append: bool = false)
  * @throws: FsError, if the path does not refer to a file
  * @example:
  * ```
- * use std::fs::{sys, path};
+ * use std::fs;
  *
  * let path1 = Path("./some/dir/file.txt");
  * let path2 = Path("./some/dir/file2.txt");
@@ -555,7 +552,7 @@ pub fn fileDate(path: Path)-> std::time::instant::Instant
  *       + this is not a file
  * @example:
  * ```
- * use std::fs::{sys, path};
+ * use std::fs;
  * use std::unit;
  *
  * let size = fileSize(Path("./some/dir/file.txt"));
@@ -572,7 +569,7 @@ pub fn fileSize(path: Path)-> MemorySize
     let mut size = 0u64;
     let res = _yrt_file_size(path.toStr().toStringZ(), &size);
     if res == -1 {
-        throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+        throw copy FsError(utils::to!{FsErrorCode} (errno()), path.toStr());
     } else if res == 0 {
         throw copy FsError(FsErrorCode::NOT_A_FILE, path.toStr());
     }
@@ -590,7 +587,7 @@ pub fn fileSize(path: Path)-> MemorySize
  *    - false if the file does not exists or is not a file, or the current user does not have permission to access it
  * @example:
  * ```
- * use std::fs::_;
+ * use std::fs;
  *
  * if (isFile(Path("./some/dir/file.txt"))) {
  *     println("File exists");
@@ -610,7 +607,7 @@ pub fn isFile(path: Path, followLink: bool = true)-> bool {
  *    - false if the link does not exists or is not a link, or the current user does not have permission to access it
  * @example:
  * ```
- * use std::fs::_;
+ * use std::fs;
  *
  * if (isLink(Path("./some/dir/file.lnk"))) {
  *     println("Link exists");
@@ -628,7 +625,7 @@ pub fn isLink(path: Path)-> bool {
  * @returns: true if the file exists and is writable
  * @example:
  * ```
- * use std::fs::_;
+ * use std::fs;
  *
  * if (isWritable(Path("./some/dir/file.txt")) {
  *     println("File is writable");
@@ -646,7 +643,7 @@ pub fn isWritable(path: Path)-> bool {
  * @returns: true if the file exists and is readable
  * @example:
  * ```
- * use std::fs::_;
+ * use std::fs;
  *
  * if (isReadable(Path("./some/dir/file.txt")) {
  *     println("File is readable");
@@ -664,7 +661,7 @@ pub fn isReadable(path: Path)-> bool {
  * @returns: true if the file exists and is executable
  * @example:
  * ```
- * use std::fs::_;
+ * use std::fs;
  *
  * if (isExecutable(Path("./some/dir/file.txt")) {
  *     println("File is readable");
@@ -690,7 +687,7 @@ pub fn removeFile(path: Path)
 {
     if (isFile(path)) {
         if unlink(path.toStr().toStringZ()) == -1 {
-            throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+            throw copy FsError(utils::to!{FsErrorCode} (errno()), path.toStr());
         }
     } else {
         throw copy FsError(FsErrorCode::PERMISSION_DENIED, path.toStr());
@@ -710,7 +707,7 @@ pub fn removeFile(path: Path)
  *      + this is not a file
  * @example:
  * ```
- * use std::fs::{sys, path};
+ * use std::fs;
  *
  * assert(isFile(Path("./some/dir/file.txt")));
  * assert(isDir(Path("./some/other/dir")));
@@ -722,8 +719,8 @@ pub fn removeFile(path: Path)
 pub fn copyFile(src: Path, dst: Path)
     throws FsError
 {
-    let dmut srcF = fs::file::File::open(src);
-    let dmut dstF = fs::file::File::create(dst, write-> true);
+    let dmut srcF = File::open(src);
+    let dmut dstF = File::create(dst, write-> true);
     dstF:.write(srcF:.readAll());
 }
 
@@ -745,7 +742,7 @@ pub fn copyFile(src: Path, dst: Path)
  *      + other reasons
  * @example:
  * ```
- * use std::fs::{sys, path};
+ * use std::fs;
  *
  * let tmp = Path("./some/dir/.file.txt.tmp");
  * writeFile(tmp, "new content");
@@ -759,7 +756,7 @@ pub fn rename(src: Path, dst: Path)
     throws FsError
 {
     if etc::c::files::rename(src.toStr().toStringZ(), dst.toStr().toStringZ()) == -1 {
-        throw copy FsError(errors::to!{FsErrorCode} (errno()), src.toStr());
+        throw copy FsError(utils::to!{FsErrorCode} (errno()), src.toStr());
     }
 }
 
@@ -777,10 +774,9 @@ pub fn removeFsEntry(path: Path)
     throws FsError
 {
     if remove(path.toStr().toStringZ()) == -1 {
-        throw copy FsError(errors::to!{FsErrorCode} (errno()), path.toStr());
+        throw copy FsError(utils::to!{FsErrorCode} (errno()), path.toStr());
     }
 }
-
 
 /**
  * Copy a filesystem entry that is neither a directory nor a file(e.g. a symbolic link).
@@ -818,7 +814,7 @@ pub fn copyFsEntry(src: Path, dst: Path)
  *      + other reasons
  * @example:
  * ```
- * use std::fs::{sys, path};
+ * use std::fs;
  *
  * symlink(Path("file.txt"), Path("./some/dir/file.lnk"));
  * assert(isLink(Path("./some/dir/file.lnk")));
@@ -829,7 +825,7 @@ pub fn symlink(target: Path, link: Path)
     throws FsError
 {
     if etc::c::dirent::symlink(target.toStr().toStringZ(), link.toStr().toStringZ()) == -1 {
-        throw copy FsError(errors::to!{FsErrorCode} (errno()), link.toStr());
+        throw copy FsError(utils::to!{FsErrorCode} (errno()), link.toStr());
     }
 }
 
@@ -848,7 +844,7 @@ pub fn symlink(target: Path, link: Path)
  *      + other reasons
  * @example:
  * ```
- * use std::fs::{sys, path};
+ * use std::fs;
  *
  * hardLink(Path("./some/dir/file.txt"), Path("./some/dir/other.txt"));
  * removeFile(Path("./some/dir/file.txt"));
@@ -859,7 +855,7 @@ pub fn hardLink(target: Path, link: Path)
     throws FsError
 {
     if etc::c::dirent::link(target.toStr().toStringZ(), link.toStr().toStringZ()) == -1 {
-        throw copy FsError(errors::to!{FsErrorCode} (errno()), link.toStr());
+        throw copy FsError(utils::to!{FsErrorCode} (errno()), link.toStr());
     }
 }
 
@@ -875,7 +871,7 @@ pub fn hardLink(target: Path, link: Path)
  *      + permission denied
  * @example:
  * ```
- * use std::fs::{sys, path};
+ * use std::fs;
  *
  * let link = Path("./some/dir/file.lnk");
  * let target = readLink(link);
@@ -890,7 +886,7 @@ pub fn readLink(path: Path)-> Path
 {
     let target = _yrt_read_link(path.toStr().toStringZ());
     if target.len == 0us {
-        let code = errors::to!{FsErrorCode} (errno());
+        let code = utils::to!{FsErrorCode} (errno());
         if exists(path, followLink-> false) && !isLink(path) {
             throw copy FsError(FsErrorCode::NOT_A_LINK, path.toStr());
         }
