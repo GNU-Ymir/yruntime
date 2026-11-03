@@ -1,0 +1,36 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in resolve_error;
+
+/**
+ * Exception thrown when a host name cannot be resolved to an address.
+ * */
+@final
+pub class ResolveError over core::exception::Exception {
+
+    // The host name that failed to resolve
+    pub let host: [c8];
+
+    // The reason of the failure
+    pub let code: ResolveErrorCode;
+
+    // The code `getaddrinfo` returned (an `EAI_*` value), 0 if it was not called
+    pub let gaiCode: i32;
+
+    // The message explaining the error
+    pub let msg: [c8];
+
+    pub self;
+
+    impl std::stream::Streamable {
+        pub over toStream(self, dmut stream: &std::stream::StringStream) {
+            stream:.write(self.__typeinfo__.name, "(", self.host, ": ", self.msg, ")");
+            if (self.hasTrace()) {
+                stream:.write(":\n", self.getStackTrace());
+            }
+        }
+    }
+}

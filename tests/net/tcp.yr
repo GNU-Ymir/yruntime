@@ -3,6 +3,8 @@ in tcp;
 use std::net;
 use std::net::tcp;
 use std::io;
+use std::format;
+use std::algorithm::searching;
 
 use etc::c::files;
 use etc::c::socket;
@@ -92,4 +94,64 @@ __test acceptRetriesWhenInterrupted { // MID-143: an EINTR from accept was repor
     } catch {
         err => { println(err); assert(false, "threw"); }
     }
+}
+
+__test connectByHostName { // MID-144: connect resolves the host, and tries its addresses until one connects
+    {
+        let dmut server = listenOnLoopback();
+        let port = server.addr.port;
+
+        for host in ["localhost", "127.0.0.1"] {
+            let dmut client = TcpStream::connect(host, port);
+            assert(client.addr == SockAddr(copy Ipv4Addr([127u8, 0u8, 0u8, 1u8]), port), host);
+            assert(!isNonBlocking(client.getHandle()), host);
+
+            let dmut accepted = server:.accept();
+            client:.send("ping");
+            assert(accepted:.receive!{[c8]} () == "ping", host);
+
+            client:.dispose();
+            accepted:.dispose();
+        }
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test connectByHostNameRefused { // MID-144: when no address connects, the error lists each attempt
+    let mut port = 0u16;
+    {
+        let server = listenOnLoopback();
+        port = server.addr.port;
+        socket::close(server.getHandle());
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+
+    let mut threw = false;
+    {
+        TcpStream::connect("127.0.0.1", port);
+    } catch {
+        err: &TcpError => {
+            assert(err.code == TcpErrorCode::CONNECT, "a");
+            assert(startsWith(err.msg, format("failed to connect to 127.0.0.1 (127.0.0.1 {}: ", port)), err.msg);
+            threw = true;
+        }
+        err: &ResolveError => { println(err); }
+    }
+    assert(threw, "b");
+}
+
+__test connectUnknownHost { // MID-144: a host that does not resolve is a ResolveError, not a TcpError
+    let mut threw = false;
+    {
+        TcpStream::connect("a..b", 80u16);
+    } catch {
+        err: &ResolveError => {
+            assert(err.code == ResolveErrorCode::UNKNOWN_HOST, "a");
+            threw = true;
+        }
+        err: &TcpError => { println(err); }
+    }
+    assert(threw, "b");
 }

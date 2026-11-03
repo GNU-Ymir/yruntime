@@ -1,0 +1,112 @@
+/**
+ * This module resolves host names to ip addresses.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in resolver;
+
+use std::conv;
+use std::net::{ipv4_addr, ipv6_addr, resolve_error};
+
+use etc::c::{netdb, socket};
+use etc::runtime::errno;
+
+/**
+ * Resolve a host name to its addresses, ipv4 and ipv6, in the order the system returns them.
+ * An ip literal is returned as is, without going through the resolver.
+ * @params:
+ *    - host: a host name (`"localhost"`, `"example.org"`) or an ip literal
+ * @returns: the addresses of the host, never empty
+ * @throws:
+ *    - ResolveError: if the host is unknown, or the resolver failed
+ * @warning: blocks until the system resolver answers, which can take seconds for a name served by DNS
+ * @example:
+ * ```
+ * use std::net;
+ *
+ * fn printAddresses ()
+ *    throws ResolveError
+ * {
+ *    for ip in resolve("localhost") {
+ *       println(ip); // 127.0.0.1
+ *    }
+ *
+ *    println(resolve("::1")); // [::1]
+ * }
+ * ```
+ * */
+pub fn resolve(host: [c8])-> [&IpAddr]
+    throws ResolveError
+{
+    {
+        return copy [utils::to!{&IpAddr} (host)];
+    } catch {
+        _: &CastFailure => {}
+    }
+
+    for c in host {
+        if c == '\u{0}' {
+            throw copy ResolveError(host, ResolveErrorCode::UNKNOWN_HOST, 0, "host name holds a null character");
+        }
+    }
+
+    let hints = addrinfo(ai_socktype-> cast!i32(cast!u32(SocketType::SOCK_STREAM)));
+    let mut list: *addrinfo = null;
+
+    errno(ErrnoValue::NONE);
+    let err = getaddrinfo(host.toStringZ(), null, &hints, &list);
+    if err != AddrInfoError::NONE {
+        throw makeError(host, err, errno());
+    }
+
+    let mut result: [&IpAddr] = [];
+    let mut cur = list;
+    while cur != null {
+        unsafe {
+            let addr = cur[0].ai_addr;
+            if addr != null {
+                if addr[0].sin_family == AddressFamily::AF_INET {
+                    let h = (cast!{*sockaddr_in} (addr))[0].sin_addr.s_addr;
+                    let pack: *u8 = cast!{*u8} (cast!{*void} (&h));
+                    result = result ~ [copy Ipv4Addr([pack[0], pack[1], pack[2], pack[3]])];
+                } else if addr[0].sin_family == AddressFamily::AF_INET6 {
+                    let b = (cast!{*sockaddr_in6} (addr))[0].sin6_addr.s6_addr;
+                    let dmut groups = [0u16 ; 8];
+                    for i in 0us .. 8us {
+                        groups[i] = (cast!u16(b[2us * i]) << 8u16) | cast!u16(b[2us * i + 1us]);
+                    }
+
+                    result = result ~ [copy Ipv6Addr(groups)];
+                }
+            }
+
+            cur = cur[0].ai_next;
+        }
+    }
+
+    freeaddrinfo(list);
+    if result.len == 0us {
+        throw copy ResolveError(host, ResolveErrorCode::UNKNOWN_HOST, 0, "no ipv4 or ipv6 address");
+    }
+
+    result
+}
+
+/**
+ * @returns: the error reporting the failure `err` of `getaddrinfo` on `host`
+ * */
+fn makeError(host: [c8], err: AddrInfoError, sysErr: ErrnoValue)-> &ResolveError {
+    let code = match err {
+        AddrInfoError::EAI_NONAME | AddrInfoError::EAI_NODATA | AddrInfoError::EAI_ADDRFAMILY => { ResolveErrorCode::UNKNOWN_HOST }
+        AddrInfoError::EAI_AGAIN => { ResolveErrorCode::TEMPORARY }
+        _ => { ResolveErrorCode::FAILURE }
+    };
+
+    let mut msg = unsafe { fromStringZ(gai_strerror(err)) };
+    if err == AddrInfoError::EAI_SYSTEM {
+        msg = msg ~ " (" ~ strerrno(sysErr) ~ ")";
+    }
+
+    copy ResolveError(host, code, cast!i32(err), msg)
+}
