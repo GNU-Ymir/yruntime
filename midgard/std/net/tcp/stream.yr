@@ -560,46 +560,42 @@ pub class TcpStream {
 
         let mut res = socket::connect(self._sockFd, addr, size);
         if res < 0 {
-            let err = errno();
-            let succ = (if err == ErrnoValue::EINPROGRESS {
+            let mut err = errno();
+            if err == ErrnoValue::EINPROGRESS {
                 let mut dur = dur_t(timeout.getSec(), timeout.getUSec());
                 let mut myset = fd_set();
 
-                let succ = loop {
+                err = loop {
                     _yrt_fd_zero(alias &myset);
                     _yrt_fd_set(self._sockFd, &myset);
 
                     res = select(cast!u32(self._sockFd + 1), null, cast!{*void} (&myset), null, cast!{*void} (&dur));
                     if (res < 0) {
-                        if errno() == ErrnoValue::EINTR { continue; }
-                        break false;
+                        let selErr = errno();
+                        if selErr == ErrnoValue::EINTR { continue; }
+                        break selErr;
                     }
 
                     else if res > 0 {
                         let lon: u32 = i32::size;
-                        let mut valopt: i32 = 0;
+                        let mut valopt = ErrnoValue::NONE;
                         if getsockopt(self._sockFd, SocketOptions::SOL_SOCKET, SocketOptions::SO_ERROR, cast!{*void} (&valopt), &lon) < 0 {
-                            break false;
+                            break errno();
                         }
 
-                        if valopt != 0 {
-                            break false;
-                        }
-
-                        break true;
+                        break valopt;
                     }
 
-                    else { // timeout
-                        break false;
+                    else {
+                        break ErrnoValue::ETIMEDOUT;
                     }
                 };
+            }
 
-                succ
-            } else { // error connecting
-                false
-            });
+            if err != ErrnoValue::NONE {
+                socket::close(self._sockFd);
+                self._sockFd = 0;
 
-            if !succ {
                 let errStr = strerrno(err) ~ " (" ~ std::conv::to!{[c8], i32} (err) ~ ")";
                 throw copy TcpError(TcpErrorCode::SOCKET_CREATION, "failed to connect: (errno = " ~ errStr ~ ")");
             }
