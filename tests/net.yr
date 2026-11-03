@@ -4,6 +4,7 @@ mod ::tcp;
 
 use std::net;
 use std::format;
+use std::io;
 
 __test parseIpv4 {
     let a = ("127.0.0.1"s8).to!{&Ipv4Addr} ();
@@ -150,4 +151,54 @@ __test sockAddr { // a socket address pairs an ip with a port, and compares on b
     assert(a != SockAddr(copy Ipv4Addr([10u8, 0u8, 0u8, 1u8]), 8080u16), "e");
 
     assert(format("{}", a) == "127.0.0.1 8080", format("{}", a));
+}
+
+__test resolveLiterals { // MID-144: an ip literal is its own resolution
+    {
+        assert(resolve("127.0.0.1") == [copy Ipv4Addr([127u8, 0u8, 0u8, 1u8])], "a");
+        assert(resolve("::1") == [copy Ipv6Addr([0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 0u16, 1u16])], "b");
+        assert(resolve("::ffff:192.168.1.1") == [copy Ipv6Addr([0u16, 0u16, 0u16, 0u16, 0u16, 0xffffu16, 0xc0a8u16, 0x0101u16])], "c");
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test resolveLocalhost { // MID-144: a host name resolves through the system, ipv4 and ipv6
+    {
+        let ips = resolve("localhost");
+        assert(ips.len != 0us, "a");
+        for ip in ips {
+            assert(ip.isLoopback(), format("{}", ip));
+        }
+    } catch {
+        err => { println(err); assert(false, "threw"); }
+    }
+}
+
+__test resolveUnknownHost { // MID-144: an unknown name is reported with the EAI code, a..b is rejected without a query
+    let mut threw = false;
+    {
+        resolve("a..b");
+    } catch {
+        err: &ResolveError => {
+            assert(err.code == ResolveErrorCode::UNKNOWN_HOST, "a");
+            assert(err.gaiCode == -2, "b");
+            assert(err.host == "a..b", "c");
+            assert(err.msg.len != 0us, "d");
+            threw = true;
+        }
+    }
+    assert(threw, "e");
+
+    threw = false;
+    {
+        resolve("localhost\u{0}.invalid");
+    } catch {
+        err: &ResolveError => {
+            assert(err.code == ResolveErrorCode::UNKNOWN_HOST, "f");
+            assert(err.gaiCode == 0, "g");
+            threw = true;
+        }
+    }
+    assert(threw, "h");
 }
