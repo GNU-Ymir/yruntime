@@ -44,6 +44,15 @@ in path;
 
 use std::stream;
 
+/**
+ * The separator of the directories of a path on the target system
+ */
+#if WINDOWS
+def SEPARATOR = "\\";
+#else
+def SEPARATOR = "/";
+#end
+
 pub record Path {
 
     // The content of the path
@@ -72,7 +81,7 @@ pub record Path {
      * assert(path.parts() == ["foo", "bar", "baz.txt"]);
      * ```
      */
-    pub self (path: [c8], sep: [c8] = (cte if __version!WINDOWS { "\\" } else { "/" })) {
+    pub self (path: [c8], sep: [c8] = SEPARATOR) {
         let mut last = 0us;
         for i in 0us .. path.len {
             if path[i .. $].len >= sep.len {
@@ -193,7 +202,7 @@ pub record Path {
      * assert(ipath.parts() == ["std", "fs", "path", "some::dir", "some::file"]);
      * ```
      */
-    pub fn push(self, path: [c8], sep: [c8] = (cte if __version!WINDOWS { "\\" } else { "/" }))-> Path {
+    pub fn push(self, path: [c8], sep: [c8] = SEPARATOR)-> Path {
         let mut result = self;
         {
             let mut last = 0us;
