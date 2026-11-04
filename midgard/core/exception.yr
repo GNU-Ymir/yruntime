@@ -12,11 +12,11 @@ pub class Exception {
     let trace: [*(void)];
 
     self ()
-        with trace = {
-            cte if __version!DEBUG_LIB {
-                _yrt_exc_get_stack_trace()
-            } else []
-        }
+#if DEBUG_LIB
+        with trace = _yrt_exc_get_stack_trace()
+#else
+        with trace = []
+#end
     {}
 
     impl std::stream::Streamable {
@@ -40,11 +40,11 @@ pub class Exception {
      */
     @final
     pub fn getStackTrace(self)-> [c8] {
-        cte if __version!DEBUG_LIB {
-            _yrt_exc_resolve_stack_trace(self.trace)
-        } else {
-            []
-        }
+#if DEBUG_LIB
+        _yrt_exc_resolve_stack_trace(self.trace)
+#else
+        []
+#end
     }
 
 }
