@@ -131,11 +131,16 @@ void _yrt_thread_mutex_init (_yrt_mutex_t* lock, _yrt_mutexattr_t * data) {
     if (data != NULL) {
         ptr = data;
     } else {
+        pthread_mutexattr_init (&attr);
         ptr = &attr;
     }
 
     pthread_mutexattr_settype(ptr, PTHREAD_MUTEX_RECURSIVE);
     pthread_mutex_init (lock, ptr);
+
+    if (data == NULL) {
+        pthread_mutexattr_destroy (&attr);
+    }
 }
 
 void _yrt_thread_mutex_lock (_yrt_mutex_t* lock) {
