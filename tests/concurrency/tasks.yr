@@ -1,6 +1,8 @@
 in tasks;
 
 use std::concurrency;
+use core::concurrency;
+use std::time;
 
 fn computePi(prec: i32)-> f64 {
     let mut res = 0.0;
@@ -28,4 +30,234 @@ __test submitAndJoin {
     pool:.join();
     pool:.dispose();
     assert(res[0] == 4950);
+}
+
+/**
+ * A leaf pending until it is fired, keeping the last waker it was polled with
+ */
+class Leaf {
+    let mut _ready: bool = false;
+    let mut _waker: (dg ()-> void)? = none;
+    pub let mut polls: i32 = 0;
+
+    pub self () {}
+
+    pub fn poll (mut self, waker: dg ()-> void)-> i32? {
+        atomic self {
+            self.polls += 1;
+            if self._ready return (1)?;
+            self._waker = waker?;
+        }
+        none
+    }
+
+    /**
+     * Makes the leaf ready, and calls its waker
+     */
+    pub fn fire (mut self) {
+        let mut waker: (dg ()-> void)? = none;
+        atomic self {
+            self._ready = true;
+            waker = self._waker;
+        }
+
+        if let Ok (w) = waker {
+            w ();
+        }
+    }
+}
+
+async awaitLeaf (dmut leaf: &Leaf) {
+    let _ = await alias leaf;
+}
+
+async yielding () {
+    await;
+}
+
+__test taskWokenFromThread {
+    let dmut queue = copy MailBox!{dmut &Task} ();
+    let dmut leaf = copy Leaf ();
+    let dmut task = copy Task (awaitLeaf (alias leaf), copy |dmut t| => queue:.send (alias t));
+    assert (task.state == TaskState::SCHEDULED);
+
+    assert (!task:.run ());
+    assert (task.state == TaskState::IDLE);
+    assert (queue.len == 0us);
+
+    let th = spawn leaf:.fire ();
+    th.value;
+    assert (queue.len == 1us);
+    assert (task.state == TaskState::SCHEDULED);
+
+    if let Ok (dmut t) = alias queue:.receive () {
+        assert (t:.run ());
+    }
+
+    assert (task.state == TaskState::DONE);
+    assert (queue.len == 0us);
+    assert (leaf.polls == 2);
+}
+
+__test taskWokenDuringPoll {
+    let dmut queue = copy MailBox!{dmut &Task} ();
+    let dmut task = copy Task (yielding (), copy |dmut t| => queue:.send (alias t));
+
+    assert (!task:.run ());
+    assert (task.state == TaskState::SCHEDULED);
+    assert (queue.len == 1us);
+
+    if let Ok (dmut t) = alias queue:.receive () {
+        assert (t:.run ());
+    }
+
+    assert (task.state == TaskState::DONE);
+    assert (queue.len == 0us);
+}
+
+__test taskWokenThriceWhileIdle {
+    let dmut queue = copy MailBox!{dmut &Task} ();
+    let dmut leaf = copy Leaf ();
+    let dmut task = copy Task (awaitLeaf (alias leaf), copy |dmut t| => queue:.send (alias t));
+
+    assert (!task:.run ());
+    for _ in 0 .. 3 {
+        task:.wake ();
+    }
+
+    assert (queue.len == 1us);
+    assert (task.state == TaskState::SCHEDULED);
+    assert (leaf.polls == 1);
+}
+
+__test taskWokenWhenDone {
+    let dmut queue = copy MailBox!{dmut &Task} ();
+    let dmut leaf = copy Leaf ();
+    let dmut task = copy Task (awaitLeaf (alias leaf), copy |dmut t| => queue:.send (alias t));
+
+    assert (!task:.run ());
+    leaf:.fire ();
+    if let Ok (dmut t) = alias queue:.receive () {
+        assert (t:.run ());
+    }
+
+    leaf:.fire ();
+    task:.wake ();
+    assert (queue.len == 0us);
+    assert (task.state == TaskState::DONE);
+
+    assert (task:.run ());
+    assert (leaf.polls == 2);
+}
+
+/**
+ * A leaf counting how many polls of it run at the same time, completed once every waking thread finished
+ */
+class Contended {
+    let _wakers: i32;
+    let mut _finished: i32 = 0;
+    let mut _running: i32 = 0;
+    pub let mut maxRunning: i32 = 0;
+    pub let mut polls: i32 = 0;
+
+    pub self (wakers: i32) with _wakers = wakers {}
+
+    pub fn poll (mut self, _: dg ()-> void)-> i32? {
+        let mut done = false;
+        atomic self {
+            self._running += 1;
+            self.polls += 1;
+            if self._running > self.maxRunning self.maxRunning = self._running;
+            done = self._finished == self._wakers;
+        }
+
+        computePi (1000);
+        atomic self {
+            self._running -= 1;
+        }
+
+        if done return (0)?;
+        none
+    }
+
+    pub fn finish (mut self) {
+        atomic self {
+            self._finished += 1;
+        }
+    }
+}
+
+async awaitContended (dmut leaf: &Contended) {
+    let _ = await alias leaf;
+}
+
+/**
+ * Wakes `task` `nb` times, marks this thread finished in `leaf`, then wakes it once more
+ */
+fn wakeMany (dmut task: &Task, dmut leaf: &Contended, nb: i32) {
+    for _ in 0 .. nb {
+        task:.wake ();
+    }
+
+    leaf:.finish ();
+    task:.wake ();
+}
+
+/**
+ * Runs the tasks of `queue` as `ready` is posted, until one of them is done, or nothing is posted for 5 seconds
+ */
+fn runLoop (dmut queue: &MailBox!{dmut &Task}, dmut ready: &Semaphore, dmut done: [bool], nbRunners: i32) {
+    loop {
+        if !ready:.wait (timeout-> seconds (5u64)) break;
+        let mut stop = false;
+        atomic {
+            stop = done[0];
+        }
+
+        if stop break;
+        if let Ok (dmut t) = alias queue:.receive () {
+            if t:.run () {
+                atomic {
+                    done[0] = true;
+                }
+
+                for _ in 0 .. nbRunners {
+                    ready:.post ();
+                }
+            }
+        }
+    }
+}
+
+__test taskWokenConcurrently {
+    let nbWakers = 8;
+    let nbRunners = 4;
+
+    let dmut queue = copy MailBox!{dmut &Task} ();
+    let dmut ready = copy Semaphore ();
+    let dmut done = copy [false];
+    let dmut leaf = copy Contended (nbWakers);
+    let dmut task = copy Task (awaitContended (alias leaf), copy |dmut t| => {
+        queue:.send (alias t);
+        ready:.post ();
+    });
+
+    queue:.send (alias task);
+    ready:.post ();
+
+    let runners = copy [spawn runLoop (alias queue, alias ready, alias done, nbRunners) for _ in 0 .. nbRunners];
+    let wakers = copy [spawn wakeMany (alias task, alias leaf, 1000) for _ in 0 .. nbWakers];
+
+    for i in 0us .. runners.len {
+        runners[i].value;
+    }
+
+    for i in 0us .. wakers.len {
+        wakers[i].value;
+    }
+
+    ready:.dispose ();
+    assert (task.state == TaskState::DONE);
+    assert (leaf.maxRunning == 1);
+    assert (leaf.polls >= 1);
 }
