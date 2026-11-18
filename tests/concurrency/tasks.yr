@@ -606,6 +606,132 @@ __test poolWokenConcurrently { // a lost wake leaves a task parked for good, a d
     assert (completed);
 }
 
+async pinging (dmut out: &AsyncMailBox!{i32}, dmut inbox: &AsyncMailBox!{i32}, dmut log: &Log, n: i32) {
+    for i in 0 .. n {
+        log:.push (0);
+        out:.send (i);
+        let _ = await alias inbox:.receive ();
+    }
+}
+
+async ponging (dmut inbox: &AsyncMailBox!{i32}, dmut out: &AsyncMailBox!{i32}, n: i32) {
+    for _ in 0 .. n {
+        if let Ok (v) = await alias inbox:.receive () {
+            out:.send (v);
+        }
+    }
+}
+
+async pairing (dmut pool: &TaskPool, dmut done: &Semaphore, n: i32) {
+    let dmut there = copy AsyncMailBox!{i32} ();
+    let dmut back = copy AsyncMailBox!{i32} ();
+    let dmut log = copy Log ();
+    let dmut a = pool:.submit (pinging (alias there, alias back, alias log, n));
+    let dmut b = pool:.submit (ponging (alias there, alias back, n));
+    await alias a;
+    await alias b;
+    done:.post ();
+}
+
+__test poolPairNeverStalls { // two tasks waking each other on 2 workers, the idle one sleeping and waking all along
+    let dmut done = copy Semaphore ();
+    let mut completed = true;
+    for _ in 0 .. 200 {
+        let dmut pool = copy TaskPool (nbThreads-> 2u32);
+        pool:.submit (pairing (alias pool, alias done, 500));
+        completed = done:.wait (timeout-> seconds (5u64));
+        pool:.dispose ();
+        if !completed break;
+    }
+
+    done:.dispose ();
+    assert (completed);
+}
+
+async napping () {
+    sleep (millis (200u64));
+}
+
+async spreading (dmut pool: &TaskPool) {
+    let dmut handles = copy [pool:.submit (napping ()) for _ in 0 .. 4];
+    for i in 0us .. handles.len {
+        await alias handles[i];
+    }
+}
+
+__test poolStealsFromBusyWorker { // 4 tasks blocking their worker, submitted from a worker, are spread over 4 workers
+    let dmut pool = copy TaskPool (nbThreads-> 4u32);
+    let start = Instant::now ();
+    pool:.submit (spreading (alias pool));
+    pool:.join ();
+    pool:.dispose ();
+
+    let elapsed = Instant::now () - start;
+    assert (elapsed >= millis (200u64) && elapsed < millis (500u64));
+}
+
+/**
+ * A flag raised once, and the number of times a task looked at it before
+ */
+class Flag {
+    let mut _raised: bool = false;
+    let mut _looks: i32 = 0;
+
+    pub self () {}
+
+    pub fn raise (mut self) {
+        atomic self {
+            self._raised = true;
+        }
+    }
+
+    /**
+     * @returns: true iif the flag is raised, counting the look otherwise
+     */
+    pub fn look (mut self)-> bool {
+        atomic self {
+            if self._raised return true;
+            self._looks += 1;
+            return false;
+        }
+    }
+
+    pub fn looks (self)-> i32 {
+        atomic self {
+            return self._looks;
+        }
+    }
+}
+
+async spinning (dmut flag: &Flag) {
+    for _ in 0 .. 1_000_000 {
+        if flag:.look () return;
+        await;
+    }
+}
+
+async raising (dmut flag: &Flag) {
+    flag:.raise ();
+}
+
+__test poolInjectedNotStarved { // on one worker, a task submitted from outside is polled while another keeps yielding
+    let dmut pool = copy TaskPool (nbThreads-> 1u32);
+    let dmut flag = copy Flag ();
+    pool:.submit (spinning (alias flag));
+
+    let deadline = Instant::now () + seconds (5u64);
+    while flag.looks () == 0 && Instant::now () < deadline {
+        sleep (millis (1u64));
+    }
+
+    let looks = flag.looks ();
+    pool:.submit (raising (alias flag));
+    pool:.join ();
+    pool:.dispose ();
+    assert (looks != 0);
+    assert (flag.looks () - looks < 1000);
+}
+
 /*!
  * ====================================================================================================
  * ====================================================================================================
