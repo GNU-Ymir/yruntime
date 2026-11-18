@@ -1,0 +1,159 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in timer;
+
+use core::concurrency;
+
+/**
+ * The deadlines of the pending delays, served by a thread that exits once none is left
+ */
+@final
+class Timers {
+
+    let mut _pending: [(Instant, dg ()-> void)] = [];
+
+    let dmut _wake: &Semaphore = copy Semaphore ();
+
+    let mut _running: bool = false;
+
+    let mut _thread: (future-> void)? = none;
+
+    pub self () {}
+
+    /**
+     * Calls `fire` from the timer thread once `deadline` is reached, starting the thread if it is not running
+     */
+    pub fn add (mut self, deadline: Instant, fire: dg ()-> void) {
+        let mut previous: (future-> void)? = none;
+        atomic self {
+            let mut i = self._pending.len;
+            while i > 0us && self._pending[i - 1us]._0 > deadline {
+                i -= 1us;
+            }
+
+            self._pending = self._pending[0us .. i] ~ [(deadline, fire)] ~ self._pending[i .. self._pending.len];
+            if !self._running {
+                self._running = true;
+                previous = self._thread;
+                self._thread = (spawn self:.serve ())?;
+            } else if i == 0us {
+                self._wake:.post ();
+            }
+        }
+
+        if let Ok (f) = previous {
+            f.value;
+        }
+    }
+
+    /**
+     * Fires the deadlines as they are reached, until none is pending
+     */
+    fn serve (mut self) {
+        loop {
+            let mut due: [dg ()-> void] = [];
+            let mut next: Instant? = none;
+            atomic self {
+                let now = Instant::now ();
+                let mut i = 0us;
+                while i < self._pending.len && self._pending[i]._0 <= now {
+                    due ~= [self._pending[i]._1];
+                    i += 1us;
+                }
+
+                self._pending = self._pending[i .. self._pending.len];
+                if self._pending.len == 0us && due.len == 0us {
+                    self._running = false;
+                    return;
+                }
+
+                if self._pending.len != 0us {
+                    next = self._pending[0]._0?;
+                }
+            }
+
+            for f in due {
+                f ();
+            }
+
+            if let Ok (n) = next {
+                self._wake:.wait (n);
+            }
+        }
+    }
+}
+
+lazy dmut __TIMERS__ = copy Timers ();
+
+/**
+ * A leaf pending until its deadline, the timer thread calling its waker then
+ */
+@final
+class Delay {
+
+    let _deadline: Instant;
+
+    let mut _armed: bool = false;
+
+    let mut _fired: bool = false;
+
+    let mut _waker: (dg ()-> void)? = none;
+
+    pub self (deadline: Instant) with _deadline = deadline {}
+
+    pub fn poll (mut self, waker: dg ()-> void)-> void? {
+        atomic self {
+            if self._fired || Instant::now () >= self._deadline return {}?;
+            self._waker = waker?;
+        }
+
+        if !self._armed {
+            self._armed = true;
+            __TIMERS__:.add (self._deadline, &self:.fire);
+        }
+
+        none
+    }
+
+    fn fire (mut self) {
+        let mut waker: (dg ()-> void)? = none;
+        atomic self {
+            self._fired = true;
+            waker = self._waker;
+        }
+
+        if let Ok (w) = waker {
+            w ();
+        }
+    }
+}
+
+/**
+ * The async counterpart of `sleep`: completes once `dur` has passed, without holding the thread that polls it.
+ * A single timer thread, started on demand and stopped once no delay is pending, calls the waker at the deadline.
+ * @params:
+ *    - dur: the time to wait, a negative or zero duration completing at the first poll
+ * @example:
+ * ```
+ * use std::io;
+ * use std::time;
+ *
+ * async greet (name: [c8]) {
+ *     await delay (millis (10u64));
+ *     println ("hello ", name);
+ * }
+ *
+ * fn main () {
+ *     greet ("world").run ();
+ * }
+ * ```
+ */
+pub async delay (dur: Duration) {
+    if dur.isNegative () return;
+
+    let dmut d = copy Delay (Instant::now () + dur);
+    await alias d;
+}

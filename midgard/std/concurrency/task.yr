@@ -1,7 +1,7 @@
 /**
- * This module implements the class TaskPool, that encapsulate a task queue and a set of worker thread to execute the tasks.
- * The task queue is a FIFO queue.
- * It also implements the class Task, the scheduling state of an async value, that its waker puts back in a ready queue.
+ * This module implements the class TaskPool, a set of worker threads polling async values, and the class Task,
+ * the scheduling state of an async value, that its waker puts back in a ready queue.
+ * A worker polls a ready task once: a pending task frees its worker, and is polled again only once woken.
  * @Authors: Emile Cadorel
  * @License: GPLv3
  * <hr>
@@ -9,27 +9,33 @@
  * ```
  * use std::io; // for 'println'
  * use std::concurrency;
+ * use std::time;
  *
- * fn computePi(prec: i32)-> f64 {
- *    let mut res = 0.0;
- *    let n = cast!f64(prec);
- *    for i in 0 .. prec {
- *        res += (4.0 / n) / ( 1.0 + (( cast!f64(i) - 0.5 ) * (1.0 / n)) * (( cast!f64(i) - 0.5 ) * (1.0 / n)));
- *    }
- *    res
+ * async fetch (id: i32) {
+ *     await delay (millis (10u64)); // parked, its worker polls the other tasks meanwhile
+ *     println ("fetched ", id);
  * }
  *
- * fn main() {
- *     let dmut pool = copy TaskPool(nbThreads-> 2u64); // Creating a task pool with two threads
+ * fn slow (id: i32)-> i32 {
+ *     sleep (millis (10u64));
+ *     id * 2
+ * }
  *
- *     // Only two threads are spawned to perform 1_000_000 jobs
- *     for _ in 0 .. 1_000_000 {
- *         pool:.submit(|| => {
- *             println(computePi(i32::max / 1000));
- *         });
+ * async compute (id: i32) {
+ *     let f = spawn slow (id); // blocking work moves to a thread of its own
+ *     let r = await f;
+ *     println ("computed ", r);
+ * }
+ *
+ * fn main () {
+ *     let dmut pool = copy TaskPool (nbThreads-> 2u64);
+ *     for i in 0 .. 100 {
+ *         pool:.submit (fetch (i));
+ *         pool:.submit (compute (i));
  *     }
  *
- *     pool:.join();
+ *     pool:.join ();
+ *     pool:.dispose ();
  * }
  * ```
  */
@@ -146,6 +152,19 @@ pub class Task {
     }
 
     /**
+     * Marks an `IDLE` or `SCHEDULED` task `DONE` without polling it, so that its waker does nothing from then on.
+     * @returns: false if the task was being polled or already `DONE`, its state being left unchanged
+     */
+    pub fn cancel (mut self)-> bool {
+        atomic self {
+            if self._state != TaskState::IDLE && self._state != TaskState::SCHEDULED return false;
+            self._state = TaskState::DONE;
+        }
+
+        true
+    }
+
+    /**
      * @returns: the current state of the task
      */
     @field
@@ -157,116 +176,123 @@ pub class Task {
 
 }
 
+/**
+ * A pool of worker threads polling the async values submitted to it.
+ * The ready tasks wait in a FIFO queue, a worker dequeuing one and polling it once (see `Task::run`).
+ * A pending task frees its worker: it is held only by what keeps its waker, and is put back in the queue once woken.
+ *
+ * @warning: blocking inside an async (a subprocess, `h.run ()`, `pool.join ()`, `sleep`) holds its worker until
+ *           it returns, awaiting a `spawn` moves such work to a thread of its own, `await delay (d)` is the
+ *           sleep that frees the worker
+ */
 @final
 pub class TaskPool {
 
-    // The list of task submitted in the task pool
-    let dmut _mails: &mail::MailBox!{dg()-> void} = copy mail::MailBox!{dg ()-> void} ();
+    let dmut _queue: &mail::MailBox!{dmut &Task} = copy mail::MailBox!{dmut &Task} ();
 
-    // the number of thread to manage in the pool
     let _nbThreads: u32;
 
-    // The threads spawned by the pool
     let mut _threads: [mut future-> void] = [];
 
-    // The semaphore used to trigger the workers
-    let dmut _ready: &Semaphore = copy Semaphore();
+    // posted once by each worker when it starts, then whenever every submitted task is finished
+    let dmut _ready: &Semaphore = copy Semaphore ();
 
-    // The semaphore used
-    let dmut _waitTask: &Semaphore = copy Semaphore();
+    // counts the tasks in the queue, the idle workers waiting on it
+    let dmut _waitTask: &Semaphore = copy Semaphore ();
 
-    // Set to true when the task pool is disposed
     let mut _terminated: bool = false;
 
-    // The number of finished tasks
     let mut _finished: usize = 0;
 
-    // The number of submitted tasks
     let mut _submitted: usize = 0;
 
     /**
      * Create a task pool
-     * */
+     * @params:
+     *    - nbThreads: the number of workers, the number of processors if 0
+     */
     pub self (nbThreads: u32 = 0u32)
-        with _nbThreads = (if (nbThreads == 0u32) etc::runtime::threads::_yrt_get_nprocs() else nbThreads)
+        with _nbThreads = (if (nbThreads == 0u32) etc::runtime::threads::_yrt_get_nprocs () else nbThreads)
     {
-        // Spawn the threads of the pool
-        self._threads = copy [spawn { self:.workerMain(i); } for i in 0 .. self._nbThreads];
+        self._threads = copy [spawn { self:.workerMain (); } for _ in 0 .. self._nbThreads];
         for _ in 0 .. self._nbThreads {
-            self._ready:.wait();
+            self._ready:.wait ();
         }
     }
 
     /**
-     * Submit a task to the task pool
-     * @limitation: submitted tasks cannot have blocking treatment, for complex and dependant tasks normal threads have to be used
-     * */
-    pub fn submit(mut self, task: dg ()-> void) {
+     * Submit an async value to the pool, its first poll being due
+     */
+    pub fn submit (mut self, value: async-> void) {
+        let dmut task = copy Task (value, &self:.schedule);
         atomic self {
             self._submitted += 1;
-            self._mails:.send(task);
         }
 
-        self._waitTask:.post();
+        self:.schedule (alias task);
     }
 
     /**
-     * Wait for the task pool to complete all submitted tasks
-     * */
-    pub fn join(mut self) {
+     * Wait for every submitted task to complete
+     * @warning: a task whose waker is never called never completes, and keeps this waiting forever
+     */
+    pub fn join (mut self) {
         loop {
             atomic self {
-                // an empty mailbox is not enough, a task that was already dequeued by a
-                // worker is no longer in the mailbox but is still running
                 if (self._terminated || self._finished == self._submitted) return;
             }
 
-            // _ready may hold posts emitted while tasks were still being submitted, in
-            // which case the loop simply checks the counters again
-            if (!self._ready:.wait()) return; // the semaphore was disposed, the pool is dead
+            // _ready may hold posts emitted while tasks were still being submitted, the counters are checked again
+            if (!self._ready:.wait ()) return;
         }
     }
 
     /**
-     * Clear the tasks that have been submitted
-     * */
-    pub fn clear(mut self) {
+     * Drop the tasks waiting in the ready queue, counting them as finished. They are marked `DONE`, so a late
+     * wake does nothing. A pending task is not in the queue, it completes or is woken normally.
+     */
+    pub fn clear (mut self) {
+        let mut dropped = 0us;
+        while let Ok (dmut t) = alias self._queue:.receive () {
+            t:.cancel ();
+            dropped += 1us;
+        }
+
         atomic self {
-            let len = self._mails.len;
-            self._mails:.clear();
-            self._finished += len;
-            if (self._finished == self._submitted) self._ready:.post();
+            self._finished += dropped;
+            if (dropped != 0us && self._finished == self._submitted) self._ready:.post ();
         }
     }
 
     /**
-     * Stop all running threads in the task pool without waiting for all tasks to be completed
-     * */
-    pub fn dispose(mut self) {
-        if (!self._terminated) {
+     * Stop the workers once their current poll returns, without waiting for the tasks to complete.
+     * The tasks left pending are collected with their frame, and a later wake of them does nothing.
+     */
+    pub fn dispose (mut self) {
+        atomic self {
+            if (self._terminated) return;
             self._terminated = true;
-            self._mails:.clear();
-
-            // a post wakes any idle worker, not a given one: wake them all before joining
-            for _ in 0us .. self._threads.len {
-                self._waitTask:.post();
-            }
-
-            for i in 0us .. self._threads.len {
-                self._threads[i].value;
-            }
-
-            // Every worker has been joined, so none of them can be blocked on the
-            // semaphores anymore, they are safe to destroy here. Doing it now rather
-            // than leaving it to their own destructors is what makes this class
-            // independent of the order the gc finalizes the pool and its fields in.
-            self._ready:.dispose();
-            self._waitTask:.dispose();
         }
+
+        self._queue:.clear ();
+
+        // a post wakes any idle worker, not a given one: wake them all before joining
+        for _ in 0us .. self._threads.len {
+            self._waitTask:.post ();
+        }
+
+        for i in 0us .. self._threads.len {
+            self._threads[i].value;
+        }
+
+        // the workers are joined, so none of them waits on the semaphores anymore: they are destroyed now,
+        // independently of the order the gc finalizes the pool and its fields in
+        self._ready:.dispose ();
+        self._waitTask:.dispose ();
     }
 
-    __dtor(mut self) {
-        self:.dispose();
+    __dtor (mut self) {
+        self:.dispose ();
     }
 
     /*!
@@ -278,19 +304,32 @@ pub class TaskPool {
      */
 
     /**
-     * Worker threads waiting for tasks to be submitted and execute them one after the other
-     * */
-    fn workerMain(mut self, _: u32) {
-        self._ready:.post();
+     * Enqueue a task whose poll is due, the enqueue function of the tasks of the pool
+     */
+    fn schedule (mut self, dmut task: &Task) {
+        atomic self {
+            if (self._terminated) return;
+            self._queue:.send (alias task);
+        }
+
+        self._waitTask:.post ();
+    }
+
+    /**
+     * Poll the ready tasks one after the other, waiting for one when the queue is empty
+     */
+    fn workerMain (mut self) {
+        self._ready:.post ();
         loop {
-            self._waitTask:.wait();
+            self._waitTask:.wait ();
             if (self._terminated) break;
 
-            if let Ok(j) = self._mails:.receive() {
-                j();
-                atomic self {
-                    self._finished += 1;
-                    if (self._finished == self._submitted) self._ready:.post();
+            if let Ok (dmut t) = alias self._queue:.receive () {
+                if t:.run () {
+                    atomic self {
+                        self._finished += 1;
+                        if (self._finished == self._submitted) self._ready:.post ();
+                    }
                 }
             }
         }
