@@ -339,6 +339,37 @@ __test tomlSubTableOfArray {
     }
 }
 
+__test tomlArrayTrailingComma {
+    let parsed = toml::parse("a = [1, 2,]\nb = [\n  \"x\",\n  \"y\", # comment\n]\nc = [[1,], [],]\n");
+    {
+        if let a: &Array = parsed["a"] {
+            assert(a.len == 2us && a[0u32] == 1 && a[1u32] == 2);
+        } else assert(false);
+
+        if let b: &Array = parsed["b"] {
+            assert(b.len == 2us && b[0u32] == "x" && b[1u32] == "y");
+        } else assert(false);
+
+        if let c: &Array = parsed["c"] {
+            assert(c.len == 2us);
+            if let c0: &Array = c[0u32] { assert(c0.len == 1us); } else assert(false);
+        } else assert(false);
+    } catch {
+        _ => assert(false);
+    }
+
+    for bad in ["a = [,]\n"s8, "a = [1,,]\n", "a = [1 2]\n"] {
+        let failed = {
+            let _ = toml::parse(bad);
+            false
+        } catch {
+            _: &SyntaxError => true
+        };
+
+        assert(failed);
+    }
+}
+
 __test tomlInlineArrays {
     // an empty array, or an array that is not made only of dicts, stays an inline array
     let dmut mixed = copy Array();
