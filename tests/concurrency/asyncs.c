@@ -149,13 +149,21 @@ static _yrt_future_t spawn_sleeping (uint32_t micros) {
   return _yrt_spawn_future (closure, sizeof (int32_t));
 }
 
+// The attempts at awaiting a future before it finishes, a thread held 20ms losing the race to it
+#define AWAIT_ATTEMPTS 5
+
 // Awaits a future finishing 20ms later, then once more after it finished
 // @returns: 0 on success, the number of the first failing check otherwise
 uint32_t _yrt_test_future_await_wakes () {
   counting_waker_t w, late;
-  _yrt_future_t f = spawn_sleeping (20000);
+  _yrt_future_t f;
+  for (uint32_t attempt = 0 ;; attempt++) {
+    if (attempt == AWAIT_ATTEMPTS) return 1;
+    f = spawn_sleeping (20000);
+    if (_yrt_future_await (f, counting_waker (&w)) == 0) break;
+    _yrt_i_thread_join (f.id, NULL);
+  }
 
-  if (_yrt_future_await (f, counting_waker (&w)) != 0) return 1;
   if (!_yrt_thread_sem_wait_timeout (&w.sem, 5, 0)) return 2;
   if (!_yrt_check_finished_future (f)) return 3;
   if (_yrt_future_await (f, counting_waker (&late)) != 1) return 4;
@@ -172,10 +180,13 @@ uint32_t _yrt_test_future_await_wakes () {
 // @returns: 0 on success, the number of the first failing check otherwise
 uint32_t _yrt_test_future_await_replaces () {
   counting_waker_t first, second;
-  _yrt_future_t f = spawn_sleeping (20000);
-
-  if (_yrt_future_await (f, counting_waker (&first)) != 0) return 1;
-  if (_yrt_future_await (f, counting_waker (&second)) != 0) return 2;
+  _yrt_future_t f;
+  for (uint32_t attempt = 0 ;; attempt++) {
+    if (attempt == AWAIT_ATTEMPTS) return 1;
+    f = spawn_sleeping (20000);
+    if (_yrt_future_await (f, counting_waker (&first)) == 0 && _yrt_future_await (f, counting_waker (&second)) == 0) break;
+    _yrt_i_thread_join (f.id, NULL);
+  }
 
   _yrt_i_thread_join (f.id, NULL);
   if (atomic_load (&first.calls) != 0) return 3;

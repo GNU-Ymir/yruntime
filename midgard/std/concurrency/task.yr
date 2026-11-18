@@ -292,9 +292,271 @@ async awaitHandle {T} (dmut handle: &TaskHandle!{T})-> T {
 }
 
 /**
+ * The worker of a `TaskPool` running on the calling thread, none on a thread that is not a worker
+ */
+@thread
+lazy dmut __TASK_WORKER__ : (&Worker)? = none;
+
+// the polls between two in which a worker looks at the queue of the pool before its own
+def INJECT_EVERY = 61u32;
+
+// the most tasks a worker takes from the queue of the pool at once
+def INJECT_BATCH = 32us;
+
+// the rounds over the queues a searching worker makes before it sleeps
+def SEARCH_ROUNDS = 64u32;
+
+/**
+ * The ready tasks of a worker of a `TaskPool`: a FIFO the other workers steal from.
+ * The queue is guarded by the lock of the worker, the rest is used by its own thread alone.
+ */
+@final
+class Worker {
+
+    let _index: usize;
+
+    let dmut _queue: &ring::Ring!{dmut &Task} = copy ring::Ring!{dmut &Task} ();
+
+    // 1 iif the queue holds a task, read without the lock by the searching workers to skip it while it is empty
+    let mut _filled: Atomic!{u32} = Atomic!{u32} (0u32);
+
+    // the tasks taken from another queue, until `adopt` moves them to this one
+    let dmut _taken: &ring::Ring!{dmut &Task} = copy ring::Ring!{dmut &Task} ();
+
+    let mut _seed: u32;
+
+    // posted by the schedule that takes the worker out of the sleepers, or by the disposal of the pool
+    let dmut _wakeup: &Semaphore = copy Semaphore ();
+
+    pub self (index: usize)
+        with _index = index, _seed = cast!u32 (index) * 2654435761u32 + 1u32
+    {}
+
+    /**
+     * @returns: the index of the worker in its pool
+     */
+    @field
+    pub fn index (self)-> usize {
+        self._index
+    }
+
+    /**
+     * Append a task at the back of the queue
+     */
+    pub fn push (mut self, dmut task: &Task) {
+        atomic self {
+            self._queue:.push (alias task);
+            if self._queue.len == 1us self._filled:.store (1u32);
+        }
+    }
+
+    /**
+     * @returns: the task at the front of the queue, removed from it, none if the queue is empty
+     */
+    pub fn next (mut self)-> dmut (&Task)? {
+        atomic self {
+            let dmut t = alias self._queue:.pop ();
+            if t.hasValue && self._queue.len == 0us self._filled:.store (0u32);
+            return alias t;
+        }
+    }
+
+    /**
+     * @returns: true iif the queue looked empty, without taking its lock
+     */
+    pub fn looksEmpty (self)-> bool {
+        self._filled.load () == 0u32
+    }
+
+    /**
+     * Take a task from another queue, polled once `adopt` returns it
+     */
+    pub fn take (mut self, dmut task: &Task) {
+        self._taken:.push (alias task);
+    }
+
+    /**
+     * Take the front half of the queue of `victim`, rounded up
+     * @returns: the number of tasks taken
+     */
+    pub fn steal (mut self, dmut victim: &Worker)-> usize {
+        atomic victim {
+            let n = victim._queue.len - victim._queue.len / 2us;
+            for _ in 0us .. n {
+                if let Ok (dmut t) = alias victim._queue:.pop () {
+                    self._taken:.push (alias t);
+                }
+            }
+
+            if victim._queue.len == 0us victim._filled:.store (0u32);
+            return n;
+        }
+    }
+
+    /**
+     * @returns: the first of the tasks taken, the others going to the back of the queue
+     */
+    pub fn adopt (mut self)-> dmut (&Task)? {
+        let dmut first = alias self._taken:.pop ();
+        if self._taken.len != 0us {
+            atomic self {
+                while let Ok (dmut t) = alias self._taken:.pop () {
+                    self._queue:.push (alias t);
+                }
+
+                if self._queue.len != 0us self._filled:.store (1u32);
+            }
+        }
+
+        alias first
+    }
+
+    /**
+     * Mark the tasks of the queue `DONE`, and remove them
+     * @returns: the number of tasks removed
+     */
+    pub fn cancelAll (mut self)-> u64 {
+        let mut nb = 0u64;
+        atomic self {
+            while let Ok (dmut t) = alias self._queue:.pop () {
+                t:.cancel ();
+                nb += 1u64;
+            }
+
+            self._filled:.store (0u32);
+        }
+
+        nb
+    }
+
+    /**
+     * Remove the tasks of the queue, and destroy the semaphore the worker sleeps on
+     */
+    pub fn dispose (mut self) {
+        atomic self {
+            self._queue:.clear ();
+            self._filled:.store (0u32);
+        }
+
+        self._taken:.clear ();
+        self._wakeup:.dispose ();
+    }
+
+    /**
+     * Block the thread of the worker until `wake` is called
+     */
+    pub fn sleep (mut self) {
+        self._wakeup:.wait ();
+    }
+
+    /**
+     * Wake the thread of the worker, or let its next `sleep` return at once
+     */
+    pub fn wake (mut self) {
+        self._wakeup:.post ();
+    }
+
+    /**
+     * @returns: a pseudo-random number lower than `nb`
+     */
+    pub fn random (mut self, nb: usize)-> usize {
+        self._seed = self._seed ^ (self._seed << 13u32);
+        self._seed = self._seed ^ (self._seed >> 17u32);
+        self._seed = self._seed ^ (self._seed << 5u32);
+        cast!usize (self._seed) % nb
+    }
+
+}
+
+/**
+ * The sleeping workers of a `TaskPool`, by index, in the order they fell asleep
+ */
+@final
+class Sleepers {
+
+    let mut _asleep: [mut bool] = [];
+
+    let dmut _order: &ring::Ring!{usize} = copy ring::Ring!{usize} ();
+
+    // written under the lock of the sleepers, read without it
+    let mut _count: Atomic!{u32} = Atomic!{u32} (0u32);
+
+    /**
+     * @params:
+     *    - nb: the number of workers of the pool
+     */
+    pub self (nb: usize) {
+        self._asleep = copy [false for _ in 0us .. nb];
+    }
+
+    /**
+     * Count the worker `i` asleep
+     */
+    pub fn add (mut self, i: usize) {
+        atomic self {
+            self._asleep[i] = true;
+            self._order:.push (i);
+            self._count:.store (self._count.load () + 1u32);
+        }
+    }
+
+    /**
+     * Uncount the worker `i`, that found a task before sleeping
+     * @returns: false if `pop` already uncounted it, its semaphore being posted
+     */
+    pub fn remove (mut self, i: usize)-> bool {
+        atomic self {
+            if !self._asleep[i] return false;
+            self._asleep[i] = false;
+            let mut at = 0us;
+            for j in 0us .. self._order.len {
+                if self._order[j] == (i)? at = j;
+            }
+
+            self._order:.removeAt (at);
+            self._count:.store (self._count.load () - 1u32);
+        }
+
+        true
+    }
+
+    /**
+     * @returns: the worker asleep the longest, uncounted, none if no worker is asleep
+     */
+    pub fn pop (mut self)-> usize? {
+        atomic self {
+            if let Ok (i) = self._order:.pop () {
+                self._asleep[i] = false;
+                self._count:.store (self._count.load () - 1u32);
+                return i?;
+            }
+        }
+
+        none
+    }
+
+    /**
+     * @returns: the number of workers asleep
+     */
+    @field
+    pub fn count (self)-> u32 {
+        self._count.load ()
+    }
+
+}
+
+/**
  * A pool of worker threads polling the async values submitted to it.
- * The ready tasks wait in a FIFO queue, a worker dequeuing one and polling it once (see `Task::run`).
- * A pending task frees its worker: it is held only by what keeps its waker, and is put back in the queue once woken.
+ * A worker polls a ready task once (see `Task::run`). A pending task frees its worker: it is held only by what keeps
+ * its waker, and is put back in a ready queue once woken.
+ *
+ * Each worker has a queue of its own. A task submitted or woken by a worker goes to the back of the queue of that
+ * worker, a task submitted or woken from any other thread to the queue of the pool. A worker takes its tasks from
+ * its queue, then from the queue of the pool, then steals half of the queue of another worker. It looks at the queue
+ * of the pool first every `INJECT_EVERY` polls, so that the tasks submitted from outside are never starved.
+ * A worker out of tasks searches the other queues `SEARCH_ROUNDS` times before it sleeps, at most half of the
+ * workers at once. A schedule wakes a sleeping worker only while none is searching, and a searcher finding a task
+ * wakes the next one, so that a burst of tasks wakes the workers one after the other rather than all at once.
  *
  * @warning: blocking inside an async (a subprocess, `h.run ()`, `pool.join ()`, `sleep`) holds its worker until
  *           it returns, awaiting a `spawn` moves such work to a thread of its own, `await delay (d)` is the
@@ -303,8 +565,10 @@ async awaitHandle {T} (dmut handle: &TaskHandle!{T})-> T {
 @final
 pub class TaskPool {
 
-    // the ready tasks, guarded by the lock of the pool
-    let dmut _queue: &ring::Ring!{dmut &Task} = copy ring::Ring!{dmut &Task} ();
+    // the tasks scheduled from a thread that is not a worker, guarded by the lock of the pool
+    let dmut _inject: &ring::Ring!{dmut &Task} = copy ring::Ring!{dmut &Task} ();
+
+    let dmut _workers: [&Worker] = [];
 
     let _nbThreads: u32;
 
@@ -313,10 +577,15 @@ pub class TaskPool {
     // posted once by each worker when it starts, then whenever every submitted task is finished
     let dmut _ready: &Semaphore = copy Semaphore ();
 
-    // counts the tasks in the queue, the idle workers waiting on it
-    let dmut _waitTask: &Semaphore = copy Semaphore ();
+    let dmut _sleepers: &Sleepers = copy Sleepers (0us);
 
-    let mut _terminated: bool = false;
+    // the workers looking for a task in the queues of the others, a schedule waking none while one does
+    let mut _searching: Atomic!{u32} = Atomic!{u32} (0u32);
+
+    // 1 iif _inject holds a task, read without the lock by the searching workers to skip it while it is empty
+    let mut _injectFilled: Atomic!{u32} = Atomic!{u32} (0u32);
+
+    let mut _terminated: Atomic!{u32} = Atomic!{u32} (0u32);
 
     let mut _finished: Atomic!{u64} = Atomic!{u64} (0u64);
 
@@ -330,8 +599,11 @@ pub class TaskPool {
     pub self (nbThreads: u32 = 0u32)
         with _nbThreads = (if (nbThreads == 0u32) etc::runtime::threads::_yrt_get_nprocs () else nbThreads)
     {
-        self._threads = copy [spawn { self:.workerMain (); } for _ in 0 .. self._nbThreads];
-        for _ in 0 .. self._nbThreads {
+        let nb = cast!usize (self._nbThreads);
+        self._workers = copy [copy Worker (i) for i in 0us .. nb];
+        self._sleepers = copy Sleepers (nb);
+        self._threads = copy [spawn { self:.workerMain (i); } for i in 0us .. nb];
+        for _ in 0us .. nb {
             self._ready:.wait ();
         }
     }
@@ -354,10 +626,7 @@ pub class TaskPool {
      */
     pub fn join (mut self) {
         loop {
-            atomic self {
-                if (self._terminated) return;
-            }
-
+            if (self._terminated.load () != 0u32) return;
             if (self.allFinished ()) return;
 
             // _ready may hold posts emitted while tasks were still being submitted, the counters are checked again
@@ -366,14 +635,22 @@ pub class TaskPool {
     }
 
     /**
-     * Drop the tasks waiting in the ready queue, counting them as finished. They are marked `DONE`, so a late
-     * wake does nothing. A pending task is not in the queue, it completes or is woken normally.
+     * Drop the tasks waiting in the ready queues, counting them as finished. They are marked `DONE`, so a late
+     * wake does nothing. A pending task is not in a queue, it completes or is woken normally.
      */
     pub fn clear (mut self) {
         let mut dropped = 0u64;
-        while let Ok (dmut t) = alias self:.dequeue () {
-            t:.cancel ();
-            dropped += 1u64;
+        atomic self {
+            while let Ok (dmut t) = alias self._inject:.pop () {
+                t:.cancel ();
+                dropped += 1u64;
+            }
+
+            self._injectFilled:.store (0u32);
+        }
+
+        for i in 0us .. self._workers.len {
+            dropped += self._workers[i]:.cancelAll ();
         }
 
         if (dropped != 0u64) self:.finish (dropped);
@@ -385,14 +662,14 @@ pub class TaskPool {
      */
     pub fn dispose (mut self) {
         atomic self {
-            if (self._terminated) return;
-            self._terminated = true;
-            self._queue:.clear ();
+            if (self._terminated.load () != 0u32) return;
+            self._terminated:.store (1u32);
+            self._inject:.clear ();
+            self._injectFilled:.store (0u32);
         }
 
-        // a post wakes any idle worker, not a given one: wake them all before joining
-        for _ in 0us .. self._threads.len {
-            self._waitTask:.post ();
+        for i in 0us .. self._workers.len {
+            self._workers[i]:.wake ();
         }
 
         for i in 0us .. self._threads.len {
@@ -401,8 +678,11 @@ pub class TaskPool {
 
         // the workers are joined, so none of them waits on the semaphores anymore: they are destroyed now,
         // independently of the order the gc finalizes the pool and its fields in
+        for i in 0us .. self._workers.len {
+            self._workers[i]:.dispose ();
+        }
+
         self._ready:.dispose ();
-        self._waitTask:.dispose ();
     }
 
     __dtor (mut self) {
@@ -418,24 +698,66 @@ pub class TaskPool {
      */
 
     /**
-     * Enqueue a task whose poll is due, the enqueue function of the tasks of the pool
+     * Enqueue a task whose poll is due, the enqueue function of the tasks of the pool: at the back of the queue of
+     * the calling worker, or in the queue of the pool if the caller is not one of its workers
      */
     fn schedule (mut self, dmut task: &Task) {
-        atomic self {
-            if (self._terminated) return;
-            self._queue:.push (alias task);
+        if let Ok (dmut w) = alias __TASK_WORKER__ {
+            if self.owns (w) {
+                if (self._terminated.load () != 0u32) return;
+                w:.push (alias task);
+                self:.notify ();
+                return;
+            }
         }
 
-        self._waitTask:.post ();
+        atomic self {
+            if (self._terminated.load () != 0u32) return;
+            self._inject:.push (alias task);
+            if self._inject.len == 1us self._injectFilled:.store (1u32);
+        }
+
+        self:.notify ();
     }
 
     /**
-     * @returns: the task at the front of the ready queue, removed from it, none if the queue is empty
+     * @returns: true iif `w` is a worker of this pool
      */
-    fn dequeue (mut self)-> dmut (&Task)? {
-        atomic self {
-            return alias self._queue:.pop ();
+    fn owns (self, w: &Worker)-> bool {
+        w.index < self._workers.len && (self._workers[w.index] is w)
+    }
+
+    /**
+     * Wake the worker asleep the longest, counted searching, unless a worker is searching already
+     */
+    fn notify (mut self) {
+        if (self._searching.load () != 0u32) return;
+        if (self._sleepers.count == 0u32) return;
+        if let Ok (i) = self._sleepers:.pop () {
+            self._searching:.add (1u32);
+            self._workers[i]:.wake ();
         }
+    }
+
+    /**
+     * Count a worker out of local tasks searching, unless half of the workers already are
+     * @returns: true iif the worker is counted
+     */
+    fn startSearching (mut self)-> bool {
+        let mut nb = self._searching.load ();
+        while 2u32 * nb < self._nbThreads {
+            if self._searching:.compareExchange (ref nb, nb + 1u32) return true;
+        }
+
+        false
+    }
+
+    /**
+     * Uncount a searching worker
+     * @returns: true iif it was the last one
+     */
+    fn stopSearching (mut self)-> bool {
+        self._searching:.add (0xFFFFFFFFu32) == 0u32
     }
 
     /**
@@ -456,20 +778,174 @@ pub class TaskPool {
     }
 
     /**
-     * Poll the ready tasks one after the other, waiting for one when the queue is empty
+     * Move at most `max` tasks from the front of the queue of the pool to the tasks `w` took, its share of the
+     * queue rounded up
+     * @returns: the number of tasks moved
      */
-    fn workerMain (mut self) {
-        self._ready:.post ();
-        loop {
-            self._waitTask:.wait ();
-            if (self._terminated) break;
+    fn inject (mut self, dmut w: &Worker, max: usize)-> usize {
+        atomic self {
+            let len = self._inject.len;
+            if len == 0us return 0us;
 
-            if let Ok (dmut t) = alias self:.dequeue () {
-                if t:.run () {
-                    self:.finish (1u64);
+            let share = len / self._workers.len + 1us;
+            let n = if share > max { max } else if share > len { len } else { share };
+            for _ in 0us .. n {
+                if let Ok (dmut t) = alias self._inject:.pop () {
+                    w:.take (alias t);
                 }
             }
+
+            if self._inject.len == 0us self._injectFilled:.store (0u32);
+            return n;
         }
+    }
+
+    /**
+     * Steal the front half of the queue of another worker for `w`, trying each one from a random first
+     * @params:
+     *    - hinted: skip the queues that look empty without taking their lock
+     * @returns: the number of tasks stolen
+     */
+    fn steal (mut self, dmut w: &Worker, hinted: bool)-> usize {
+        let nb = self._workers.len;
+        if nb < 2us return 0us;
+
+        let start = w:.random (nb);
+        for k in 0us .. nb {
+            let i = (start + k) % nb;
+            if i != w.index && !(hinted && self._workers[i].looksEmpty ()) {
+                let n = w:.steal (alias self._workers[i]);
+                if n != 0us return n;
+            }
+        }
+
+        0us
+    }
+
+    /**
+     * @returns: the first of the `nb` tasks `w` took, notifying an idle worker if some of them went to its queue
+     */
+    fn adopt (mut self, dmut w: &Worker, nb: usize)-> dmut (&Task)? {
+        let dmut t = alias w:.adopt ();
+        if nb > 1us self:.notify ();
+        alias t
+    }
+
+    /**
+     * @returns: the next task in the queue of `w`, looking at the queue of the pool first if `fair`
+     */
+    fn local (mut self, dmut w: &Worker, fair: bool)-> dmut (&Task)? {
+        if fair {
+            let n = self:.inject (alias w, 1us);
+            if n != 0us return alias self:.adopt (alias w, n);
+        }
+
+        alias w:.next ()
+    }
+
+    /**
+     * @returns: a task from the queue of the pool or stolen from another worker for `w`, none if they are all empty
+     * @params:
+     *    - hinted: skip the queues that look empty without taking their lock
+     */
+    fn foreign (mut self, dmut w: &Worker, hinted: bool)-> dmut (&Task)? {
+        if !(hinted && self._injectFilled.load () == 0u32) {
+            let n = self:.inject (alias w, INJECT_BATCH);
+            if n != 0us return alias self:.adopt (alias w, n);
+        }
+
+        let s = self:.steal (alias w, hinted);
+        if s != 0us return alias self:.adopt (alias w, s);
+
+        none
+    }
+
+    /**
+     * @returns: a task for the searching worker `w`, looking at the queues `SEARCH_ROUNDS` times, none if they stayed
+     *           empty
+     */
+    fn search (mut self, dmut w: &Worker)-> dmut (&Task)? {
+        for _ in 0u32 .. SEARCH_ROUNDS {
+            let dmut t = alias self:.foreign (alias w, hinted-> true);
+            if t.hasValue return alias t;
+            if (self._terminated.load () != 0u32) return none;
+        }
+
+        none
+    }
+
+    /**
+     * Count `w` asleep and uncount it searching, then look at every queue under its lock once more before sleeping,
+     * so that a task scheduled meanwhile is either found or wakes a worker
+     * @params:
+     *    - searching: whether `w` is counted searching, and on return whether it is
+     * @returns: the task found, none if the worker slept
+     */
+    fn park (mut self, dmut w: &Worker, ref mut searching: bool)-> dmut (&Task)? {
+        self._sleepers:.add (w.index);
+        let last = searching && self:.stopSearching ();
+        searching = false;
+
+        let dmut found = alias w:.next ();
+        if !found.hasValue found = alias self:.foreign (alias w, hinted-> false);
+        if found.hasValue {
+            if !self._sleepers:.remove (w.index) {
+                // a schedule took it out of the sleepers and counted it searching, its post is consumed here
+                w:.sleep ();
+                searching = true;
+            } else if last {
+                self:.notify ();
+            }
+
+            return alias found;
+        }
+
+        w:.sleep ();
+        searching = true;
+        none
+    }
+
+    /**
+     * Poll `t`, counting it finished if it completed
+     */
+    fn poll (mut self, dmut t: &Task) {
+        if t:.run () {
+            self:.finish (1u64);
+        }
+    }
+
+    /**
+     * Poll the tasks of the worker `index` one after the other: its own, then searching the others' a few rounds,
+     * then sleeping until a schedule wakes it
+     */
+    fn workerMain (mut self, index: usize) {
+        let dmut w = alias self._workers[index];
+        __TASK_WORKER__ = (alias w)?;
+        self._ready:.post ();
+
+        let mut ticks = 0u32;
+        let mut searching = false;
+        while self._terminated.load () == 0u32 {
+            ticks += 1u32;
+            let dmut t = alias self:.local (alias w, ticks % INJECT_EVERY == 0u32);
+            if !t.hasValue {
+                if !searching searching = self:.startSearching ();
+                if searching t = alias self:.search (alias w);
+                if !t.hasValue t = alias self:.park (alias w, ref searching);
+            }
+
+            if let Ok (dmut task) = alias t {
+                // the last searcher to find a task wakes another, for a schedule that saw it searching
+                if searching {
+                    searching = false;
+                    if self:.stopSearching () self:.notify ();
+                }
+
+                self:.poll (alias task);
+            }
+        }
+
+        __TASK_WORKER__ = none;
     }
 
 }

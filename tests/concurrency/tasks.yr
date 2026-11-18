@@ -606,6 +606,227 @@ __test poolWokenConcurrently { // a lost wake leaves a task parked for good, a d
     assert (completed);
 }
 
+async pinging (dmut out: &AsyncMailBox!{i32}, dmut inbox: &AsyncMailBox!{i32}, dmut log: &Log, n: i32) {
+    for i in 0 .. n {
+        log:.push (0);
+        out:.send (i);
+        let _ = await alias inbox:.receive ();
+    }
+}
+
+async ponging (dmut inbox: &AsyncMailBox!{i32}, dmut out: &AsyncMailBox!{i32}, n: i32) {
+    for _ in 0 .. n {
+        if let Ok (v) = await alias inbox:.receive () {
+            out:.send (v);
+        }
+    }
+}
+
+async pairing (dmut pool: &TaskPool, dmut done: &Semaphore, n: i32) {
+    let dmut there = copy AsyncMailBox!{i32} ();
+    let dmut back = copy AsyncMailBox!{i32} ();
+    let dmut log = copy Log ();
+    let dmut a = pool:.submit (pinging (alias there, alias back, alias log, n));
+    let dmut b = pool:.submit (ponging (alias there, alias back, n));
+    await alias a;
+    await alias b;
+    done:.post ();
+}
+
+__test poolPairNeverStalls { // two tasks waking each other on 2 workers, the idle one sleeping and waking all along
+    let dmut done = copy Semaphore ();
+    let mut completed = true;
+    for _ in 0 .. 200 {
+        let dmut pool = copy TaskPool (nbThreads-> 2u32);
+        pool:.submit (pairing (alias pool, alias done, 500));
+        completed = done:.wait (timeout-> seconds (5u64));
+        pool:.dispose ();
+        if !completed break;
+    }
+
+    done:.dispose ();
+    assert (completed);
+}
+
+async posting (dmut done: &Semaphore) {
+    done:.post ();
+}
+
+async spawning (dmut pool: &TaskPool, dmut done: &Semaphore, n: i32) {
+    for _ in 0 .. n {
+        pool:.submit (posting (alias done));
+    }
+
+    done:.post ();
+}
+
+__test poolBurstsNeverStall { // bursts from outside and from the workers, which search and sleep between them
+    let dmut pool = copy TaskPool (nbThreads-> 4u32);
+    let dmut done = copy Semaphore ();
+    let mut completed = true;
+    for _ in 0 .. 300 {
+        for _ in 0 .. 8 {
+            pool:.submit (spawning (alias pool, alias done, 4));
+        }
+
+        for _ in 0 .. 40 {
+            completed = completed && done:.wait (timeout-> seconds (5u64));
+        }
+
+        if !completed break;
+        sleep (micros (200u64));
+    }
+
+    pool:.dispose ();
+    done:.dispose ();
+    assert (completed);
+}
+
+/**
+ * A leaf holding the worker polling it until it is released, or for two seconds
+ */
+class Holding {
+    let mut _released: bool = false;
+
+    pub self () {}
+
+    /**
+     * @returns: true iif the leaf was released before the two seconds
+     */
+    pub fn poll (mut self, _: dg ()-> void)-> bool? {
+        let deadline = Instant::now () + seconds (2u64);
+        while Instant::now () < deadline {
+            atomic self {
+                if self._released return true?;
+            }
+
+            sleep (millis (1u64));
+        }
+
+        false?
+    }
+
+    pub fn release (mut self) {
+        atomic self {
+            self._released = true;
+        }
+    }
+}
+
+async holding (dmut leaf: &Holding, dmut log: &Log) {
+    let released = await alias leaf;
+    log:.push (if released { 1 } else { 0 });
+}
+
+async releasing (dmut leaf: &Holding) {
+    leaf:.release ();
+}
+
+__test poolWakesBehindHeldWorker { // a task queued behind one holding its worker is polled by a worker it wakes
+    let mut released = true;
+    for _ in 0 .. 10 {
+        let dmut pool = copy TaskPool (nbThreads-> 2u32);
+        let dmut leaf = copy Holding ();
+        let dmut log = copy Log ();
+        sleep (millis (5u64));
+
+        // both are queued before the woken worker takes them, the second one going behind the first
+        pool:.submit (holding (alias leaf, alias log));
+        pool:.submit (releasing (alias leaf));
+        pool:.join ();
+        pool:.dispose ();
+
+        released = log.ids () == [1];
+        if !released break;
+    }
+
+    assert (released);
+}
+
+async napping () {
+    sleep (millis (200u64));
+}
+
+async spreading (dmut pool: &TaskPool) {
+    let dmut handles = copy [pool:.submit (napping ()) for _ in 0 .. 4];
+    for i in 0us .. handles.len {
+        await alias handles[i];
+    }
+}
+
+__test poolStealsFromBusyWorker { // 4 tasks blocking their worker, submitted from a worker, are spread over 4 workers
+    let dmut pool = copy TaskPool (nbThreads-> 4u32);
+    let start = Instant::now ();
+    pool:.submit (spreading (alias pool));
+    pool:.join ();
+    pool:.dispose ();
+
+    let elapsed = Instant::now () - start;
+    assert (elapsed >= millis (200u64) && elapsed < millis (500u64));
+}
+
+/**
+ * A flag raised once, and the number of times a task looked at it before
+ */
+class Flag {
+    let mut _raised: bool = false;
+    let mut _looks: i32 = 0;
+
+    pub self () {}
+
+    pub fn raise (mut self) {
+        atomic self {
+            self._raised = true;
+        }
+    }
+
+    /**
+     * @returns: true iif the flag is raised, counting the look otherwise
+     */
+    pub fn look (mut self)-> bool {
+        atomic self {
+            if self._raised return true;
+            self._looks += 1;
+            return false;
+        }
+    }
+
+    pub fn looks (self)-> i32 {
+        atomic self {
+            return self._looks;
+        }
+    }
+}
+
+async spinning (dmut flag: &Flag) {
+    for _ in 0 .. 1_000_000 {
+        if flag:.look () return;
+        await;
+    }
+}
+
+async raising (dmut flag: &Flag) {
+    flag:.raise ();
+}
+
+__test poolInjectedNotStarved { // on one worker, a task submitted from outside is polled while another keeps yielding
+    let dmut pool = copy TaskPool (nbThreads-> 1u32);
+    let dmut flag = copy Flag ();
+    pool:.submit (spinning (alias flag));
+
+    let deadline = Instant::now () + seconds (5u64);
+    while flag.looks () == 0 && Instant::now () < deadline {
+        sleep (millis (1u64));
+    }
+
+    let looks = flag.looks ();
+    pool:.submit (raising (alias flag));
+    pool:.join ();
+    pool:.dispose ();
+    assert (looks != 0);
+    assert (flag.looks () - looks < 1000);
+}
+
 /*!
  * ====================================================================================================
  * ====================================================================================================
