@@ -518,6 +518,94 @@ __test poolDisposeWithParked { // the tasks still parked when the pool is dispos
     assert (a.polled () == 1 && b.polled () == 1);
 }
 
+/**
+ * A leaf woken by threads of its own through the waker it was last polled with, completed once each of them
+ * finished, that counts the polls of it running at the same time and the ones after it completed
+ */
+class Raced {
+    let _wakers: i32;
+    let mut _finished: i32 = 0;
+    let mut _running: i32 = 0;
+    let mut _done: bool = false;
+    let mut _waker: (dg ()-> void)? = none;
+    pub let mut maxRunning: i32 = 0;
+    pub let mut late: i32 = 0;
+
+    pub self (wakers: i32) with _wakers = wakers {}
+
+    pub fn poll (mut self, waker: dg ()-> void)-> i32? {
+        let mut done = false;
+        atomic self {
+            if self._done self.late += 1;
+            self._running += 1;
+            if self._running > self.maxRunning self.maxRunning = self._running;
+            self._waker = waker?;
+            done = self._finished == self._wakers;
+        }
+
+        computePi (100);
+        atomic self {
+            self._running -= 1;
+            self._done = done;
+        }
+
+        if done return (0)?;
+        none
+    }
+
+    /**
+     * Calls the waker the leaf was last polled with, if any, after counting this thread finished if `last`
+     */
+    pub fn wake (mut self, last: bool) {
+        let mut waker: (dg ()-> void)? = none;
+        atomic self {
+            if last self._finished += 1;
+            waker = self._waker;
+        }
+
+        if let Ok (w) = waker {
+            w ();
+        }
+    }
+}
+
+async awaitRaced (dmut leaf: &Raced, dmut done: &Semaphore) {
+    let _ = await alias leaf;
+    done:.post ();
+}
+
+fn wakeRaced (dmut leaf: &Raced, nb: i32) {
+    for _ in 0 .. nb {
+        leaf:.wake (false);
+    }
+
+    leaf:.wake (true);
+}
+
+__test poolWokenConcurrently { // a lost wake leaves a task parked for good, a double poll is two polls running at once
+    let nbWakers = 8;
+    let dmut pool = copy TaskPool (nbThreads-> 4u32);
+    let dmut done = copy Semaphore ();
+    let mut completed = true;
+    for _ in 0 .. 1000 {
+        let dmut leaf = copy Raced (nbWakers);
+        pool:.submit (awaitRaced (alias leaf, alias done));
+        let wakers = copy [spawn wakeRaced (alias leaf, 20) for _ in 0 .. nbWakers];
+        for i in 0us .. wakers.len {
+            wakers[i].value;
+        }
+
+        completed = done:.wait (timeout-> seconds (5u64));
+        if !completed break;
+        assert (leaf.maxRunning == 1);
+        assert (leaf.late == 0);
+    }
+
+    pool:.dispose ();
+    done:.dispose ();
+    assert (completed);
+}
+
 /*!
  * ====================================================================================================
  * ====================================================================================================
