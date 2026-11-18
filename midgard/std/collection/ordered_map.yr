@@ -1,0 +1,337 @@
+/**
+ * A map sorted by key, in a balanced binary search tree.
+ * @example:
+ * ```
+ * let dmut m = copy OrderedMap!{[c8], i32} ();
+ * m ["b"] = 2;
+ * m ["a"] = 1;
+ * m ["c"] = 3;
+ *
+ * for k, v in m {
+ *     println (k, " => ", v); // a => 1, b => 2, c => 3, in that order
+ * }
+ * ```
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in ordered_map;
+
+use std::collection::{slice, tree};
+use std::stream;
+
+/**
+ * A map whose entries are sorted by key, an iteration going from the smallest key to the largest.
+ * Keys are compared with `<` alone, two keys being the same when none is lower than the other.
+ * @warning: modifying the map while iterating over it leaves the iteration undefined
+ */
+@final
+pub class OrderedMap {K, V} {
+
+    let dmut _tree: &Tree!{K} = copy Tree!{K} ();
+
+    let mut _values: [mut V] = [];
+
+    pub self () {}
+
+    /**
+     * Associate `value` to `key`, replacing the value it had
+     * @complexity: O(log n)
+     */
+    pub fn insert (mut self, key: K, value: V) {
+        let (n, appended) = self._tree:.insert (key);
+        if appended {
+            self._values ~= [value];
+        } else {
+            self._values[n] = value;
+        }
+    }
+
+    /**
+     * Associate `value` to `key`, as `insert`
+     * @example:
+     * ```
+     * let dmut m = copy OrderedMap!{i32, i32} ();
+     * m [1] = 10;
+     * m [1] = 11;
+     * assert (m [1] == (11)? && m.len == 1us);
+     * ```
+     * @complexity: O(log n)
+     */
+    pub fn opIndexAssign (mut self, key: K, value: V) {
+        self:.insert (key, value);
+    }
+
+    /**
+     * Remove `key` and its value from the map
+     * @returns: true if the map had the key
+     * @example:
+     * ```
+     * let dmut m = copy OrderedMap!{i32, i32} ();
+     * m [1] = 10;
+     * assert (m:.remove (1) && !m:.remove (1) && m.len == 0us);
+     * ```
+     * @complexity: O(log n)
+     */
+    pub fn remove (mut self, key: K)-> bool {
+        let r = self._tree:.remove (key);
+        if r == NIL return false;
+
+        let last = self._tree.len;
+        if r != last {
+            self._values[r] = self._values[last];
+        }
+
+        truncate (ref self._values, last);
+        true
+    }
+
+    /**
+     * Remove every entry, keeping the storage
+     */
+    pub fn clear (mut self) {
+        self._tree:.clear ();
+        clear (ref self._values);
+    }
+
+    /**
+     * @returns: the value of `key`, none if the map has no such key
+     * @example:
+     * ```
+     * let dmut m = copy OrderedMap!{i32, [c8]} ();
+     * m [1] = "one";
+     * assert (m [1] == ("one"s8)? && (m [2] ?? "none"s8) == "none");
+     * ```
+     * @complexity: O(log n)
+     */
+    pub fn opIndex (self, key: K)-> V? {
+        let n = self._tree.find (key);
+        if n == NIL return none;
+        self._values[n]?
+    }
+
+    /**
+     * @returns: true if the map has the key `key`, called by `key in map`
+     * @complexity: O(log n)
+     */
+    pub fn opContains (self, key: K)-> bool {
+        self._tree.find (key) != NIL
+    }
+
+    /**
+     * @returns: the entry of the smallest key, none if the map is empty
+     * @example:
+     * ```
+     * let dmut m = copy OrderedMap!{i32, i32} ();
+     * m [3] = 30;
+     * m [1] = 10;
+     * assert (m.first () == (1, 10)? && m.last () == (3, 30)?);
+     * ```
+     * @complexity: O(log n)
+     */
+    pub fn first (self)-> (K, V)? {
+        self.entry (self._tree.first ())
+    }
+
+    /**
+     * @returns: the entry of the largest key, none if the map is empty
+     * @complexity: O(log n)
+     */
+    pub fn last (self)-> (K, V)? {
+        self.entry (self._tree.last ())
+    }
+
+    /**
+     * @returns: the entry of the largest key not greater than `key`, none if there is none
+     * @example:
+     * ```
+     * let dmut m = copy OrderedMap!{i32, i32} ();
+     * m [10] = 1;
+     * m [20] = 2;
+     * assert (m.floor (15) == (10, 1)? && m.ceil (15) == (20, 2)? && m.floor (5) == none);
+     * ```
+     * @complexity: O(log n)
+     */
+    pub fn floor (self, key: K)-> (K, V)? {
+        self.entry (self._tree.floor (key))
+    }
+
+    /**
+     * @returns: the entry of the smallest key not lower than `key`, none if there is none
+     * @complexity: O(log n)
+     */
+    pub fn ceil (self, key: K)-> (K, V)? {
+        self.entry (self._tree.ceil (key))
+    }
+
+    /**
+     * @returns: a generator yielding the keys of the map, from the smallest to the largest
+     * @example:
+     * ```
+     * let dmut m = copy OrderedMap!{i32, i32} ();
+     * m [2] = 20;
+     * m [1] = 10;
+     * let mut prev = 0;
+     * for k in m.keys () {
+     *     assert (prev < k);
+     *     prev = k;
+     * }
+     * ```
+     * @complexity: O(n) to exhaust the generator
+     */
+    pub yield keys (self)-> K {
+        let dmut w = copy InOrder!{K} (self._tree, none);
+        while w.node != NIL {
+            yield self._tree.key (w.node);
+            w:.next ();
+        }
+    }
+
+    /**
+     * @returns: a generator yielding the values of the map, in the order of their keys
+     * @complexity: O(n) to exhaust the generator
+     */
+    pub yield values (self)-> V {
+        let dmut w = copy InOrder!{K} (self._tree, none);
+        while w.node != NIL {
+            yield self._values[w.node];
+            w:.next ();
+        }
+    }
+
+    /**
+     * @returns: a generator yielding the entries whose key is not lower than `lo` and lower than `hi`, in order
+     * @example:
+     * ```
+     * let dmut m = copy OrderedMap!{i32, i32} ();
+     * for i in 0 .. 10 {
+     *     m [i] = i * i;
+     * }
+     *
+     * let mut sum = 0;
+     * for _, v in m.range (2, 5) {
+     *     sum += v; // 4 + 9 + 16
+     * }
+     *
+     * assert (sum == 29);
+     * ```
+     * @complexity: O(log n + k) to exhaust the generator, with k the number of entries it yields
+     */
+    pub yield range (self, lo: K, hi: K)-> (K, V) {
+        let dmut w = copy InOrder!{K} (self._tree, lo?);
+        while w.node != NIL {
+            let k = self._tree.key (w.node);
+            if !(k < hi) break;
+            yield (k, self._values[w.node]);
+            w:.next ();
+        }
+    }
+
+    /**
+     * Start of a for loop over the entries of the map, from the smallest key to the largest
+     */
+    pub fn begin (self)-> dmut &OrderedMapIterator!{K, V} {
+        copy OrderedMapIterator!{K, V} (self._tree, self._values)
+    }
+
+    /**
+     * End of a for loop over the entries of the map
+     */
+    pub fn end (self)-> usize {
+        NIL
+    }
+
+    /**
+     * @returns: the number of entries in the map
+     */
+    @field
+    pub fn len (self)-> usize {
+        self._tree.len
+    }
+
+    fn entry (self, n: usize)-> (K, V)? {
+        if n == NIL return none;
+        (self._tree.key (n), self._values[n])?
+    }
+
+    impl Streamable {
+
+        /**
+         * Write the entries of the map in the order of their keys, as `{k1 => v1, k2 => v2}`
+         */
+        pub over toStream (self, dmut stream: &StringStream) {
+            stream:.write ("{");
+            let dmut w = copy InOrder!{K} (self._tree, none);
+            let mut i = 0us;
+            while w.node != NIL {
+                if i != 0us stream:.write (", ");
+                stream:.write (self._tree.key (w.node), " => ", self._values[w.node]);
+                w:.next ();
+                i += 1us;
+            }
+
+            stream:.write ("}");
+        }
+
+    }
+
+}
+
+/**
+ * The iterator of a for loop over an `OrderedMap`, as `for k in m` and `for k, v in m`
+ */
+@final
+pub class OrderedMapIterator {K, V} {
+
+    let dmut _walk: &InOrder!{K};
+
+    let _tree: &Tree!{K};
+
+    let _values: [V];
+
+    pub self (tree: &Tree!{K}, values: [V])
+        with _walk = copy InOrder!{K} (tree, none)
+        , _tree = tree
+        , _values = values
+    {}
+
+    /**
+     * @returns: the key of the current entry
+     */
+    pub fn get {0us, 1us} (self)-> K {
+        self._tree.key (self._walk.node)
+    }
+
+    /**
+     * @returns: the key of the current entry
+     */
+    pub fn get {0us, 2us} (self)-> K {
+        self._tree.key (self._walk.node)
+    }
+
+    /**
+     * @returns: the value of the current entry
+     */
+    pub fn get {1us, 2us} (self)-> V {
+        self._values[self._walk.node]
+    }
+
+    impl core::types::Iterable {
+
+        /**
+         * Move to the next entry
+         */
+        pub over next (mut self) {
+            self._walk:.next ();
+        }
+
+    }
+
+    /**
+     * @returns: true once every entry was walked
+     */
+    pub fn opEquals (self, end: usize)-> bool {
+        self._walk.node == end
+    }
+
+}

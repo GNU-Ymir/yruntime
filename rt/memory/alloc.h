@@ -67,5 +67,27 @@ uint8_t* _yrt_i_grow_slice (_yrt_slice_t * result, uint64_t len, uint64_t size);
  *  */
 void _yrt_grow_slice (_yrt_slice_t * result, _yrt_slice_t * appended, uint64_t len, uint64_t size);
 
+/**
+ * @returns: the number of elements the slice holds before an append reallocates it
+ * @info: a slice ending before the end of its block reallocates on any append, its capacity is its length
+ *  */
+uint64_t _yrt_slice_capacity (_yrt_slice_t * s, uint64_t size);
+
+/**
+ * Reallocate the slice into a block of 'cap' elements, unless its capacity is already 'cap' or more
+ *  */
+void _yrt_reserve_slice (_yrt_slice_t * s, uint64_t cap, uint64_t size);
+
+/**
+ * Reallocate the slice into a block of exactly its length, unless its block has no room to spare
+ *  */
+void _yrt_shrink_slice (_yrt_slice_t * s, uint64_t size);
+
+/**
+ * Shorten the slice to 'len' elements, the block keeping the room of the others for the next appends
+ * @info: a slice longer than 'len' viewing the same block sees these appends replace its last elements
+ *  */
+void _yrt_truncate_slice (_yrt_slice_t * s, uint64_t len, uint64_t size);
+
 
 #endif // ALLOCS_H_

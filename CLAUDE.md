@@ -256,10 +256,13 @@ repository of its own, see its `README.md`). It clones gymir, bootstrap, midgard
 Three top-level modules declared in `midgard/__lib__.yr`:
 
 - `std` (`midgard/std.yr`): general-purpose stdlib — `algorithm`, `any`, `box`, `char`,
-  `concurrency`, `config`, `conv`, `env`, `format`, `fs`, `io`, `log`, `math`, `net`, `pack`,
+  `collection`, `concurrency`, `config`, `conv`, `env`, `format`, `fs`, `io`, `log`, `math`, `net`, `pack`,
   `rand`, `stream`, `syntax`, `time`, `traits`, `unit`, `uuid`. `std::log` is the logging
   facility: library code reports through a named `Logger` rather than `println`, so the
-  application picks the level and sinks. `std::pack` packs values into bytes and rebuilds them
+  application picks the level and sinks. `std::collection` adds no slice or map type: its `slice`
+  and `map` modules are functions over the builtin ones (a set is `[K => ()]`), next to `Ring`,
+  `PriorityQueue` and the AVL-backed `OrderedMap`/`OrderedSet`. Shortening a slice
+  (`_yrt_truncate_slice`) gives the room back to its block, so it takes `[mut T]` only. `std::pack` packs values into bytes and rebuilds them
   (classes and records opt in with `#[packable]`); its generic code splits enums off in one entry
   point per operation (`write`, `read`, `schema`, `minWire`), because a pattern like
   `{T of [U], U}` also matches an enum through its proxy type. A packet is a payload inside an

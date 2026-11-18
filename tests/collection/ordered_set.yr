@@ -1,0 +1,54 @@
+in ordered_set;
+
+use std::collection;
+use std::collection::map;
+use std::algorithm::sorting;
+use std::rand;
+use std::conv;
+
+__test randomModel { // random insertions and removals agree with a hashmap
+    let dmut rng = copy Random (7u64);
+    let dmut s = copy OrderedSet!{i32} ();
+    let dmut model: [i32 => ()] = copy [];
+    for _ in 0 .. 3000 {
+        let x = rng:.uniform (0, 200);
+        if rng:.bernoulli (0.5) {
+            assert (s:.insert (x) == (x !in model), "inserted");
+            model [x] = ();
+        } else {
+            assert (s:.remove (x) == (x in model), "removed");
+            model:.remove (x);
+        }
+    }
+
+    let mut xs: [mut i32] = [];
+    for x in model.keys () { xs ~= [x]; }
+    xs = sort (alias xs);
+
+    let mut i = 0us;
+    for x in s {
+        assert (x == xs[i], "sorted");
+        i += 1us;
+    }
+
+    assert (i == xs.len && s.len == xs.len, "len");
+}
+
+__test boundsAndRange {
+    let dmut s = copy OrderedSet!{i32} ();
+    for i in 0 .. 10 { s:.insert (i * 3); }
+    assert (s.first () == (0)? && s.last () == (27)?, "bounds");
+    assert (s.floor (10) == (9)? && s.ceil (10) == (12)? && s.ceil (28) == none, "floor ceil");
+
+    let mut xs: [i32] = [];
+    for x in s.range (4, 13) { xs ~= [x]; }
+    assert (xs == [6, 9, 12], "range");
+}
+
+__test strings {
+    let dmut s = copy OrderedSet!{[c8]} ();
+    for w in ["b"s8, "a"s8, "c"s8, "a"s8] { s:.insert (w); }
+    assert (s.to![c8] () == "{a, b, c}" && "a" in s && "d" !in s, s.to![c8] ());
+    s:.clear ();
+    assert (s.len == 0us && s.first () == none, "cleared");
+}

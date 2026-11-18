@@ -1,0 +1,250 @@
+/**
+ * A set sorted by value, in a balanced binary search tree.
+ * @example:
+ * ```
+ * let dmut s = copy OrderedSet!{i32} ();
+ * for x in [3, 1, 2, 3] {
+ *     s:.insert (x);
+ * }
+ *
+ * for x in s {
+ *     println (x); // 1, 2, 3, in that order
+ * }
+ * ```
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in ordered_set;
+
+use std::collection::tree;
+use std::stream;
+
+/**
+ * A set whose values are sorted, an iteration going from the smallest to the largest.
+ * Values are compared with `<` alone, two values being the same when none is lower than the other.
+ * @warning: modifying the set while iterating over it leaves the iteration undefined
+ */
+@final
+pub class OrderedSet {T} {
+
+    let dmut _tree: &Tree!{T} = copy Tree!{T} ();
+
+    pub self () {}
+
+    /**
+     * Insert `value` in the set
+     * @returns: true if the set did not have it
+     * @example:
+     * ```
+     * let dmut s = copy OrderedSet!{[c8]} ();
+     * assert (s:.insert ("a") && !s:.insert ("a") && s.len == 1us);
+     * ```
+     * @complexity: O(log n)
+     */
+    pub fn insert (mut self, value: T)-> bool {
+        let (_, appended) = self._tree:.insert (value);
+        appended
+    }
+
+    /**
+     * Remove `value` from the set
+     * @returns: true if the set had it
+     * @example:
+     * ```
+     * let dmut s = copy OrderedSet!{i32} ();
+     * s:.insert (1);
+     * assert (s:.remove (1) && !s:.remove (1));
+     * ```
+     * @complexity: O(log n)
+     */
+    pub fn remove (mut self, value: T)-> bool {
+        self._tree:.remove (value) != NIL
+    }
+
+    /**
+     * Remove every value, keeping the storage
+     */
+    pub fn clear (mut self) {
+        self._tree:.clear ();
+    }
+
+    /**
+     * @returns: true if the set has `value`, called by `value in set`
+     * @example:
+     * ```
+     * let dmut s = copy OrderedSet!{i32} ();
+     * s:.insert (1);
+     * assert (1 in s && 2 !in s);
+     * ```
+     * @complexity: O(log n)
+     */
+    pub fn opContains (self, value: T)-> bool {
+        self._tree.find (value) != NIL
+    }
+
+    /**
+     * @returns: the smallest value, none if the set is empty
+     * @example:
+     * ```
+     * let dmut s = copy OrderedSet!{i32} ();
+     * s:.insert (3);
+     * s:.insert (1);
+     * assert (s.first () == (1)? && s.last () == (3)?);
+     * ```
+     * @complexity: O(log n)
+     */
+    pub fn first (self)-> T? {
+        self.value (self._tree.first ())
+    }
+
+    /**
+     * @returns: the largest value, none if the set is empty
+     * @complexity: O(log n)
+     */
+    pub fn last (self)-> T? {
+        self.value (self._tree.last ())
+    }
+
+    /**
+     * @returns: the largest value not greater than `value`, none if there is none
+     * @example:
+     * ```
+     * let dmut s = copy OrderedSet!{i32} ();
+     * s:.insert (10);
+     * s:.insert (20);
+     * assert (s.floor (15) == (10)? && s.ceil (15) == (20)? && s.ceil (25) == none);
+     * ```
+     * @complexity: O(log n)
+     */
+    pub fn floor (self, value: T)-> T? {
+        self.value (self._tree.floor (value))
+    }
+
+    /**
+     * @returns: the smallest value not lower than `value`, none if there is none
+     * @complexity: O(log n)
+     */
+    pub fn ceil (self, value: T)-> T? {
+        self.value (self._tree.ceil (value))
+    }
+
+    /**
+     * @returns: a generator yielding the values not lower than `lo` and lower than `hi`, in order
+     * @example:
+     * ```
+     * let dmut s = copy OrderedSet!{i32} ();
+     * for i in 0 .. 10 {
+     *     s:.insert (i);
+     * }
+     *
+     * let mut sum = 0;
+     * for x in s.range (2, 5) {
+     *     sum += x; // 2 + 3 + 4
+     * }
+     *
+     * assert (sum == 9);
+     * ```
+     * @complexity: O(log n + k) to exhaust the generator, with k the number of values it yields
+     */
+    pub yield range (self, lo: T, hi: T)-> T {
+        let dmut w = copy InOrder!{T} (self._tree, lo?);
+        while w.node != NIL {
+            let x = self._tree.key (w.node);
+            if !(x < hi) break;
+            yield x;
+            w:.next ();
+        }
+    }
+
+    /**
+     * Start of a for loop over the values of the set, from the smallest to the largest
+     */
+    pub fn begin (self)-> dmut &OrderedSetIterator!{T} {
+        copy OrderedSetIterator!{T} (self._tree)
+    }
+
+    /**
+     * End of a for loop over the values of the set
+     */
+    pub fn end (self)-> usize {
+        NIL
+    }
+
+    /**
+     * @returns: the number of values in the set
+     */
+    @field
+    pub fn len (self)-> usize {
+        self._tree.len
+    }
+
+    fn value (self, n: usize)-> T? {
+        if n == NIL return none;
+        self._tree.key (n)?
+    }
+
+    impl Streamable {
+
+        /**
+         * Write the values of the set in order, as `{v1, v2}`
+         */
+        pub over toStream (self, dmut stream: &StringStream) {
+            stream:.write ("{");
+            let dmut w = copy InOrder!{T} (self._tree, none);
+            let mut i = 0us;
+            while w.node != NIL {
+                if i != 0us stream:.write (", ");
+                stream:.write (self._tree.key (w.node));
+                w:.next ();
+                i += 1us;
+            }
+
+            stream:.write ("}");
+        }
+
+    }
+
+}
+
+/**
+ * The iterator of a for loop over an `OrderedSet`, as `for x in s`
+ */
+@final
+pub class OrderedSetIterator {T} {
+
+    let dmut _walk: &InOrder!{T};
+
+    let _tree: &Tree!{T};
+
+    pub self (tree: &Tree!{T})
+        with _walk = copy InOrder!{T} (tree, none)
+        , _tree = tree
+    {}
+
+    /**
+     * @returns: the current value
+     */
+    pub fn get {0us, 1us} (self)-> T {
+        self._tree.key (self._walk.node)
+    }
+
+    impl core::types::Iterable {
+
+        /**
+         * Move to the next value
+         */
+        pub over next (mut self) {
+            self._walk:.next ();
+        }
+
+    }
+
+    /**
+     * @returns: true once every value was walked
+     */
+    pub fn opEquals (self, end: usize)-> bool {
+        self._walk.node == end
+    }
+
+}

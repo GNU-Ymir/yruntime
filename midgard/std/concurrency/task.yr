@@ -43,6 +43,7 @@
 in task;
 
 use core::concurrency;
+use std::collection::ring;
 
 /**
  * The scheduling state of a `Task`
@@ -315,13 +316,13 @@ class Worker {
 
     let _index: usize;
 
-    let dmut _queue: &ring::Ring!{dmut &Task} = copy ring::Ring!{dmut &Task} ();
+    let dmut _queue: &Ring!{dmut &Task} = copy Ring!{dmut &Task} ();
 
     // 1 iif the queue holds a task, read without the lock by the searching workers to skip it while it is empty
     let mut _filled: Atomic!{u32} = Atomic!{u32} (0u32);
 
     // the tasks taken from another queue, until `adopt` moves them to this one
-    let dmut _taken: &ring::Ring!{dmut &Task} = copy ring::Ring!{dmut &Task} ();
+    let dmut _taken: &Ring!{dmut &Task} = copy Ring!{dmut &Task} ();
 
     let mut _seed: u32;
 
@@ -489,7 +490,7 @@ class Sleepers {
 
     let mut _asleep: [mut bool] = [];
 
-    let dmut _order: &ring::Ring!{usize} = copy ring::Ring!{usize} ();
+    let dmut _order: &Ring!{usize} = copy Ring!{usize} ();
 
     // written under the lock of the sleepers, read without it
     let mut _count: Atomic!{u32} = Atomic!{u32} (0u32);
@@ -580,7 +581,7 @@ class Sleepers {
 pub class TaskPool {
 
     // the tasks scheduled from a thread that is not a worker, guarded by the lock of the pool
-    let dmut _inject: &ring::Ring!{dmut &Task} = copy ring::Ring!{dmut &Task} ();
+    let dmut _inject: &Ring!{dmut &Task} = copy Ring!{dmut &Task} ();
 
     let dmut _workers: [&Worker] = [];
 

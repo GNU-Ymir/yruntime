@@ -146,3 +146,55 @@ void _yrt_grow_slice (_yrt_slice_t * result, _yrt_slice_t * appended, uint64_t l
 	res.blk_info = result-> blk_info;
 	_yrt_i_gc_store (appended, &res, sizeof (_yrt_slice_t));
 }
+
+static uint8_t _yrt_i_slice_ends_block (_yrt_slice_t * s, uint64_t size) {
+	if (s-> blk_info == NULL) return 0;
+	uint8_t * end = ((uint8_t*) s-> blk_info) + sizeof (_yrt_slice_blk_info_t) + (s-> blk_info-> len * size);
+	return end == ((uint8_t*) s-> data) + (s-> len * size);
+}
+
+static void _yrt_i_realloc_slice (_yrt_slice_t * s, uint64_t cap, uint64_t size) {
+	_yrt_slice_t res;
+	uint8_t* x = (uint8_t*) _yrt_i_gc_alloc (cap * size + sizeof (_yrt_slice_blk_info_t));
+	_yrt_slice_blk_info_t * blk = (_yrt_slice_blk_info_t*) (x);
+
+	blk-> cap = cap;
+	blk-> len = s-> len;
+
+	res.len = s-> len;
+	res.data = x + sizeof (_yrt_slice_blk_info_t);
+	res.blk_info = blk;
+	_yrt_i_gc_copy_new (res.data, s-> data, s-> len * size);
+	_yrt_i_gc_store (s, &res, sizeof (_yrt_slice_t));
+}
+
+uint64_t _yrt_slice_capacity (_yrt_slice_t * s, uint64_t size) {
+	if (!_yrt_i_slice_ends_block (s, size)) return s-> len;
+	return s-> len + (s-> blk_info-> cap - s-> blk_info-> len);
+}
+
+void _yrt_reserve_slice (_yrt_slice_t * s, uint64_t cap, uint64_t size) {
+	if (_yrt_slice_capacity (s, size) >= cap) return;
+	_yrt_i_realloc_slice (s, cap, size);
+}
+
+void _yrt_shrink_slice (_yrt_slice_t * s, uint64_t size) {
+	if (s-> blk_info == NULL || s-> blk_info-> cap == s-> len) return;
+	if (s-> len == 0) {
+		_yrt_slice_t res;
+		memset (&res, 0, sizeof (_yrt_slice_t));
+		_yrt_i_gc_store (s, &res, sizeof (_yrt_slice_t));
+		return;
+	}
+
+	_yrt_i_realloc_slice (s, s-> len, size);
+}
+
+void _yrt_truncate_slice (_yrt_slice_t * s, uint64_t len, uint64_t size) {
+	if (len >= s-> len) return;
+	if (_yrt_i_slice_ends_block (s, size)) {
+		s-> blk_info-> len -= (s-> len - len);
+	}
+
+	s-> len = len;
+}

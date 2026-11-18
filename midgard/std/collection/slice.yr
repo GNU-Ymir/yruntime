@@ -1,0 +1,287 @@
+/**
+ * Functions using a slice as a growable buffer: its capacity, the room it reserves for the appends to
+ * come, and the removals and insertions in the middle of it.
+ * <br>
+ * A slice grows amortized when appended with `~=`, in place as long as it ends where the elements
+ * of its block do and the block has room left. The functions of this module shortening a slice
+ * keep that room, the next appends filling it back without reallocating.
+ * <br>
+ * The functions taking the slice by `ref` rebind the caller's variable, they are called as
+ * `pop (ref a)`. Those shortening it or writing its elements need mutable elements, a `[mut T]`,
+ * and an overload of them returns the very instance it removes from a slice of mutable class instances.
+ * @warning: a slice shortened by one of these functions leaves the elements it dropped in its block:
+ * another slice viewing them sees the next appends to the shortened one replace them.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in slice;
+
+mod Runtime {S} {
+    pub extern (C) fn _yrt_slice_capacity (ref a: S, size: usize)-> usize;
+    pub extern (C) fn _yrt_reserve_slice (ref mut a: S, cap: usize, size: usize);
+    pub extern (C) fn _yrt_shrink_slice (ref mut a: S, size: usize);
+}
+
+mod Shorten {T} {
+    pub extern (C) fn _yrt_truncate_slice (ref mut a: [mut T], len: usize, size: usize);
+}
+
+/**
+ * @returns: the number of elements `a` holds before an append reallocates it
+ * @info: a slice ending before the end of its block, a slice cut out of another, has the capacity of its length
+ * @example:
+ * ```
+ * let mut a: [i32] = [];
+ * a ~= [1, 2, 3];
+ * assert (a.capacity () >= 3us);
+ * ```
+ * @complexity: O(1)
+ */
+pub fn capacity {T} (a: [T])-> usize {
+    Runtime!{[T]}::_yrt_slice_capacity (a, T::size)
+}
+
+/**
+ * Make room in `a` for `n` more elements, so that the next appends up to that many do not reallocate it
+ * @example:
+ * ```
+ * let mut a: [i32] = [];
+ * reserve (ref a, 100us);
+ * assert (a.capacity () >= 100us && a.len == 0us);
+ * ```
+ * @complexity: O(a.len) when it reallocates, O(1) otherwise
+ */
+pub fn reserve {T} (ref mut a: [T], n: usize) {
+    Runtime!{[T]}::_yrt_reserve_slice (ref a, a.len + n, T::size);
+}
+
+/**
+ * Reallocate `a` into a block of its length, giving back the room left for appends
+ * @example:
+ * ```
+ * let mut a: [i32] = [];
+ * reserve (ref a, 100us);
+ * a ~= [1, 2];
+ * shrink (ref a);
+ * assert (a.capacity () == 2us && a == [1, 2]);
+ * ```
+ * @complexity: O(a.len) when it reallocates, O(1) otherwise
+ */
+pub fn shrink {T} (ref mut a: [T]) {
+    Runtime!{[T]}::_yrt_shrink_slice (ref a, T::size);
+}
+
+/**
+ * Shorten `a` to its first `len` elements, leaving it as it is if it is not longer
+ * @example:
+ * ```
+ * let mut a: [mut i32] = copy [1, 2, 3, 4];
+ * truncate (ref a, 2us);
+ * assert (a == [1, 2]);
+ * ```
+ * @complexity: O(1)
+ */
+pub fn truncate {T} (ref mut a: [mut T], len: usize) {
+    Shorten!{T}::_yrt_truncate_slice (ref a, len, T::size);
+}
+
+/**
+ * Remove every element of `a`, keeping its capacity
+ * @info: `a = []` drops the block instead
+ * @example:
+ * ```
+ * let mut a: [mut i32] = copy [1, 2, 3];
+ * clear (ref a);
+ * assert (a.len == 0us && a.capacity () >= 3us);
+ * ```
+ * @complexity: O(1)
+ */
+pub fn clear {T} (ref mut a: [mut T]) {
+    Shorten!{T}::_yrt_truncate_slice (ref a, 0us, T::size);
+}
+
+/**
+ * Remove the last element of `a`
+ * @returns: the removed element, none if `a` is empty
+ * @example:
+ * ```
+ * let mut a: [mut i32] = copy [1, 2];
+ * assert (pop (ref a) == (2)? && a == [1]);
+ * ```
+ * @complexity: O(1)
+ */
+pub fn pop {T} (ref mut a: [mut T])-> T? {
+    if a.len == 0us return none;
+    let x = a[a.len - 1us];
+    truncate (ref a, a.len - 1us);
+    x?
+}
+
+/**
+ * Remove the last instance of a slice of mutable class instances
+ * @returns: the removed instance, none if `a` is empty
+ * @example:
+ * ```
+ * class Counter {
+ *     pub let mut n: i32 = 0;
+ *     pub self () {}
+ * }
+ *
+ * let dmut a = copy [copy Counter ()];
+ * if let Ok (dmut c) = alias pop (ref a) {
+ *     c.n += 1;
+ *     println (c.n);
+ * }
+ * ```
+ * @complexity: O(1)
+ */
+pub fn if (template!{T}{class C}) pop {T} (ref dmut a: [T])-> dmut T? {
+    if a.len == 0us return none;
+    let dmut x = alias a[a.len - 1us];
+    truncate (ref a, a.len - 1us);
+    (alias x)?
+}
+
+/**
+ * Insert `x` at the index `i` of `a`, the elements from `i` moving one place back
+ * @warning: panics if `i` is greater than `a.len`
+ * @example:
+ * ```
+ * let mut a: [mut i32] = copy [1, 3];
+ * insert (ref a, 1us, 2);
+ * insert (ref a, 3us, 4);
+ * assert (a == [1, 2, 3, 4]);
+ * ```
+ * @complexity: O(a.len - i), amortized
+ */
+pub fn insert {T} (ref mut a: [mut T], i: usize, x: T) {
+    if i > a.len panic;
+    a ~= [x];
+    for j in 0us .. a.len - 1us - i {
+        let k = a.len - 1us - j;
+        a[k] = a[k - 1us];
+    }
+
+    a[i] = x;
+}
+
+/**
+ * Insert the instance `x` at the index `i` of a slice of mutable class instances
+ * @warning: panics if `i` is greater than `a.len`
+ * @example:
+ * ```
+ * class Counter {
+ *     pub let mut n: i32 = 0;
+ *     pub self () {}
+ * }
+ *
+ * let dmut a: [&Counter] = [];
+ * insert (ref a, 0us, copy Counter ());
+ * a[0].n += 1;
+ * println (a[0].n);
+ * ```
+ * @complexity: O(a.len - i), amortized
+ */
+pub fn if (template!{T}{class C}) insert {T} (ref dmut a: [T], i: usize, dmut x: T) {
+    if i > a.len panic;
+    a ~= [alias x];
+    for j in 0us .. a.len - 1us - i {
+        let k = a.len - 1us - j;
+        a[k] = alias a[k - 1us];
+    }
+
+    a[i] = alias x;
+}
+
+/**
+ * Remove the element at the index `i` of `a`, the elements behind it moving one place forward
+ * @returns: the removed element
+ * @warning: panics if `i` is not lower than `a.len`
+ * @example:
+ * ```
+ * let mut a: [mut i32] = copy [1, 2, 3];
+ * assert (removeAt (ref a, 0us) == 1 && a == [2, 3]);
+ * ```
+ * @complexity: O(a.len - i)
+ */
+pub fn removeAt {T} (ref mut a: [mut T], i: usize)-> T {
+    let x = a[i];
+    for j in i + 1us .. a.len {
+        a[j - 1us] = a[j];
+    }
+
+    truncate (ref a, a.len - 1us);
+    x
+}
+
+/**
+ * Remove the instance at the index `i` of a slice of mutable class instances
+ * @returns: the removed instance
+ * @warning: panics if `i` is not lower than `a.len`
+ * @example:
+ * ```
+ * class Counter {
+ *     pub let mut n: i32 = 0;
+ *     pub self () {}
+ * }
+ *
+ * let dmut a = copy [copy Counter (), copy Counter ()];
+ * let dmut c = removeAt (ref a, 0us);
+ * c.n += 1;
+ * println (c.n, a.len);
+ * ```
+ * @complexity: O(a.len - i)
+ */
+pub fn if (template!{T}{class C}) removeAt {T} (ref dmut a: [T], i: usize)-> dmut T {
+    let dmut x = alias a[i];
+    for j in i + 1us .. a.len {
+        a[j - 1us] = alias a[j];
+    }
+
+    truncate (ref a, a.len - 1us);
+    alias x
+}
+
+/**
+ * Remove the element at the index `i` of `a`, the last element taking its place
+ * @returns: the removed element
+ * @warning: panics if `i` is not lower than `a.len`
+ * @example:
+ * ```
+ * let mut a: [mut i32] = copy [1, 2, 3, 4];
+ * assert (swapRemove (ref a, 0us) == 1 && a == [4, 2, 3]);
+ * ```
+ * @complexity: O(1)
+ */
+pub fn swapRemove {T} (ref mut a: [mut T], i: usize)-> T {
+    let x = a[i];
+    a[i] = a[a.len - 1us];
+    truncate (ref a, a.len - 1us);
+    x
+}
+
+/**
+ * Remove the instance at the index `i` of a slice of mutable class instances, the last instance taking its place
+ * @returns: the removed instance
+ * @warning: panics if `i` is not lower than `a.len`
+ * @example:
+ * ```
+ * class Counter {
+ *     pub let mut n: i32 = 0;
+ *     pub self () {}
+ * }
+ *
+ * let dmut a = copy [copy Counter (), copy Counter ()];
+ * let dmut c = swapRemove (ref a, 0us);
+ * c.n += 1;
+ * println (c.n, a.len);
+ * ```
+ * @complexity: O(1)
+ */
+pub fn if (template!{T}{class C}) swapRemove {T} (ref dmut a: [T], i: usize)-> dmut T {
+    let dmut x = alias a[i];
+    a[i] = alias a[a.len - 1us];
+    truncate (ref a, a.len - 1us);
+    alias x
+}

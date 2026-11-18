@@ -1,5 +1,14 @@
 /**
- * The FIFO queues the mailboxes and schedulers of `std::concurrency` keep under their own lock.
+ * A double-ended queue in a ring buffer, the FIFO queues the mailboxes and schedulers of
+ * `std::concurrency` keep under their own lock.
+ * @example:
+ * ```
+ * let dmut r = copy Ring!{i32} ();
+ * r:.push (2);
+ * r:.push (3);
+ * r:.pushFront (1);
+ * assert (r:.pop () == (1)? && r:.popBack () == (3)? && r.len == 1us);
+ * ```
  * @Authors: Emile Cadorel
  * @License: GPLv3
  */
@@ -7,7 +16,7 @@
 in ring;
 
 /**
- * A FIFO of values in a ring buffer, which doubles its storage when full and reuses it otherwise.
+ * A double-ended queue of values in a ring buffer, which doubles its storage when full and reuses it otherwise.
  * A push allocates only when the queue reaches a length it never had, a pop never does.
  * It is not synchronized: its owner guards it with its own lock.
  */
@@ -41,6 +50,43 @@ pub class Ring {T} {
         self._head = self.index (1us);
         self._len -= 1us;
         value
+    }
+
+    /**
+     * Insert `value` at the front of the queue
+     */
+    pub fn pushFront (mut self, value: T) {
+        if self._len == self._slots.len self:.grow ();
+        self._head = self.index (self._slots.len - 1us);
+        self._slots[self._head] = value?;
+        self._len += 1us;
+    }
+
+    /**
+     * @returns: the value at the back of the queue, removed from it, none if the queue is empty
+     */
+    pub fn popBack (mut self)-> T? {
+        if self._len == 0us return none;
+        let i = self.index (self._len - 1us);
+        let value = self._slots[i];
+        self._slots[i] = none;
+        self._len -= 1us;
+        value
+    }
+
+    /**
+     * @returns: the value at the front of the queue, none if the queue is empty
+     */
+    pub fn front (self)-> T? {
+        self.opIndex (0us)
+    }
+
+    /**
+     * @returns: the value at the back of the queue, none if the queue is empty
+     */
+    pub fn back (self)-> T? {
+        if self._len == 0us return none;
+        self._slots[self.index (self._len - 1us)]
     }
 
     /**
@@ -153,6 +199,43 @@ pub class Ring {T of dmut J, class J} {
         self._head = self.index (1us);
         self._len -= 1us;
         alias value
+    }
+
+    /**
+     * Insert `value` at the front of the queue
+     */
+    pub fn pushFront (mut self, dmut value: T) {
+        if self._len == self._slots.len self:.grow ();
+        self._head = self.index (self._slots.len - 1us);
+        self._slots[self._head] = (alias value)?;
+        self._len += 1us;
+    }
+
+    /**
+     * @returns: the instance at the back of the queue, removed from it, none if the queue is empty
+     */
+    pub fn popBack (mut self)-> dmut T? {
+        if self._len == 0us return none;
+        let i = self.index (self._len - 1us);
+        let dmut value = alias self._slots[i];
+        self._slots[i] = none;
+        self._len -= 1us;
+        alias value
+    }
+
+    /**
+     * @returns: the instance at the front of the queue, none if the queue is empty
+     */
+    pub fn front (self)-> T? {
+        self.opIndex (0us)
+    }
+
+    /**
+     * @returns: the instance at the back of the queue, none if the queue is empty
+     */
+    pub fn back (self)-> T? {
+        if self._len == 0us return none;
+        self._slots[self.index (self._len - 1us)]
     }
 
     /**
