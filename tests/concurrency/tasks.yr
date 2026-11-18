@@ -492,3 +492,102 @@ __test poolDisposeWithParked { // the tasks still parked when the pool is dispos
     sleep (millis (20u64));
     assert (a.polled () == 1 && b.polled () == 1);
 }
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ====================================          TASK HANDLE          =================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+async double (x: i32)-> i32 {
+    await;
+    x * 2
+}
+
+__test handleWait {
+    let dmut pool = copy TaskPool (nbThreads-> 4u32);
+    let dmut handles = copy [pool:.submit (double (i)) for i in 0 .. 100];
+    let mut sum = 0;
+    for i in 0us .. handles.len {
+        sum += handles[i]:.wait ();
+    }
+
+    pool:.dispose ();
+    assert (sum == 9900);
+}
+
+__test handleWaitVoid {
+    let dmut pool = copy TaskPool (nbThreads-> 2u32);
+    let dmut res = copy [0];
+    let dmut h = pool:.submit (addTo (alias res, 7));
+    h:.wait ();
+    pool:.dispose ();
+    assert (res[0] == 7);
+}
+
+async fanIn (dmut pool: &TaskPool, n: i32)-> i32 {
+    let dmut handles = copy [pool:.submit (double (i)) for i in 0 .. n];
+    let mut sum = 0;
+    for i in 0us .. handles.len {
+        sum += await alias handles[i];
+    }
+
+    sum
+}
+
+__test handleFanIn { // two parents awaiting their children on 2 workers, which a worker held by an await would deadlock
+    let dmut pool = copy TaskPool (nbThreads-> 2u32);
+    let dmut a = pool:.submit (fanIn (alias pool, 1000));
+    let dmut b = pool:.submit (fanIn (alias pool, 1000));
+    assert (a:.wait () == 999000);
+    assert (b:.wait () == 999000);
+
+    pool:.join ();
+    pool:.dispose ();
+}
+
+async gated (dmut gate: &Leaf)-> i32 {
+    let r = await alias gate;
+    r + 41
+}
+
+async awaitInto (dmut h: &TaskHandle!{i32}, dmut log: &Log) {
+    let r = await alias h;
+    log:.push (r);
+}
+
+async openGate (dmut gate: &Leaf) {
+    gate:.fire ();
+}
+
+__test handleTwoAwaiters { // on one worker, both awaiters are parked on the handle before the gate opens
+    let dmut pool = copy TaskPool (nbThreads-> 1u32);
+    let dmut log = copy Log ();
+    let dmut gate = copy Leaf ();
+    let dmut h = pool:.submit (gated (alias gate));
+    pool:.submit (awaitInto (alias h, alias log));
+    pool:.submit (awaitInto (alias h, alias log));
+    pool:.submit (openGate (alias gate));
+
+    pool:.join ();
+    pool:.dispose ();
+    assert (log.ids () == [42, 42]);
+}
+
+async awaitValue (dmut h: &TaskHandle!{i32})-> i32 {
+    await alias h
+}
+
+__test handleAwaitCompleted { // awaiting a completed handle completes at the first poll, its waker never called
+    let dmut pool = copy TaskPool (nbThreads-> 1u32);
+    let dmut h = pool:.submit (double (21));
+    assert (h:.wait () == 42);
+    pool:.dispose ();
+
+    let dmut log = copy Log ();
+    let a = awaitValue (alias h);
+    assert (a.poll (copy || => log:.push (0)) == (42)?);
+    assert (log.ids () == []);
+}
