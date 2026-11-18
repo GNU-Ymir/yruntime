@@ -1,0 +1,218 @@
+/**
+ * The FIFO queues the mailboxes and schedulers of `std::concurrency` keep under their own lock.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in ring;
+
+/**
+ * A FIFO of values in a ring buffer, which doubles its storage when full and reuses it otherwise.
+ * A push allocates only when the queue reaches a length it never had, a pop never does.
+ * It is not synchronized: its owner guards it with its own lock.
+ */
+@final
+pub class Ring {T} {
+
+    let mut _slots: [mut T?] = [];
+
+    let mut _head: usize = 0us;
+
+    let mut _len: usize = 0us;
+
+    pub self () {}
+
+    /**
+     * Append `value` at the back of the queue
+     */
+    pub fn push (mut self, value: T) {
+        if self._len == self._slots.len self:.grow ();
+        self._slots[self.index (self._len)] = value?;
+        self._len += 1us;
+    }
+
+    /**
+     * @returns: the value at the front of the queue, removed from it, none if the queue is empty
+     */
+    pub fn pop (mut self)-> T? {
+        if self._len == 0us return none;
+        let value = self._slots[self._head];
+        self._slots[self._head] = none;
+        self._head = self.index (1us);
+        self._len -= 1us;
+        value
+    }
+
+    /**
+     * @returns: the `i`-th value from the front, none if `i` is not lower than `len`
+     */
+    pub fn opIndex (self, i: usize)-> T? {
+        if i >= self._len return none;
+        self._slots[self.index (i)]
+    }
+
+    /**
+     * Replace the `i`-th value from the front, `i` being lower than `len`
+     */
+    pub fn set (mut self, i: usize, value: T) {
+        self._slots[self.index (i)] = value?;
+    }
+
+    /**
+     * Remove the `i`-th value from the front, `i` being lower than `len`, the values behind it moving forward
+     */
+    pub fn removeAt (mut self, i: usize) {
+        for j in i .. self._len - 1us {
+            self._slots[self.index (j)] = self._slots[self.index (j + 1us)];
+        }
+
+        self._len -= 1us;
+        self._slots[self.index (self._len)] = none;
+    }
+
+    /**
+     * @returns: every value of the queue from the front, the queue being left empty
+     */
+    pub fn drain (mut self)-> [T] {
+        let mut res: [mut T] = core::types::array::allocArray!{T} (self._len);
+        for i in 0us .. self._len {
+            if let Ok (v) = self._slots[self.index (i)] {
+                res[i] = v;
+            }
+        }
+
+        self:.clear ();
+        res
+    }
+
+    /**
+     * Drop every value and the storage
+     */
+    pub fn clear (mut self) {
+        self._slots = [];
+        self._head = 0us;
+        self._len = 0us;
+    }
+
+    /**
+     * @returns: the number of values in the queue
+     */
+    @field
+    pub fn len (self)-> usize {
+        self._len
+    }
+
+    fn index (self, i: usize)-> usize {
+        let j = self._head + i;
+        if j >= self._slots.len { j - self._slots.len } else { j }
+    }
+
+    fn grow (mut self) {
+        let cap = if self._slots.len == 0us { 16us } else { self._slots.len * 2us };
+        let mut slots: [mut T?] = core::types::array::allocArray!{T?} (cap);
+        for i in 0us .. cap {
+            slots[i] = if i < self._len { self._slots[self.index (i)] } else { none };
+        }
+
+        self._slots = alias slots;
+        self._head = 0us;
+    }
+
+}
+
+/**
+ * A `Ring` of mutable class instances, a pop returning the very instance that was pushed
+ */
+@final
+pub class Ring {T of dmut J, class J} {
+
+    let dmut _slots: [T?] = [];
+
+    let mut _head: usize = 0us;
+
+    let mut _len: usize = 0us;
+
+    pub self () {}
+
+    /**
+     * Append `value` at the back of the queue
+     */
+    pub fn push (mut self, dmut value: T) {
+        if self._len == self._slots.len self:.grow ();
+        self._slots[self.index (self._len)] = (alias value)?;
+        self._len += 1us;
+    }
+
+    /**
+     * @returns: the instance at the front of the queue, removed from it, none if the queue is empty
+     */
+    pub fn pop (mut self)-> dmut T? {
+        if self._len == 0us return none;
+        let dmut value = alias self._slots[self._head];
+        self._slots[self._head] = none;
+        self._head = self.index (1us);
+        self._len -= 1us;
+        alias value
+    }
+
+    /**
+     * @returns: the `i`-th instance from the front, none if `i` is not lower than `len`
+     */
+    pub fn opIndex (self, i: usize)-> T? {
+        if i >= self._len return none;
+        self._slots[self.index (i)]
+    }
+
+    /**
+     * @returns: every instance of the queue from the front, the queue being left empty
+     */
+    pub fn drain (mut self)-> dmut [T] {
+        let dmut res: [T] = core::types::array::allocArray!{T} (self._len);
+        for i in 0us .. self._len {
+            if let Ok (dmut v) = alias self._slots[self.index (i)] {
+                res[i] = alias v;
+            }
+        }
+
+        self:.clear ();
+        alias res
+    }
+
+    /**
+     * Drop every instance and the storage
+     */
+    pub fn clear (mut self) {
+        self._slots = [];
+        self._head = 0us;
+        self._len = 0us;
+    }
+
+    /**
+     * @returns: the number of instances in the queue
+     */
+    @field
+    pub fn len (self)-> usize {
+        self._len
+    }
+
+    fn index (self, i: usize)-> usize {
+        let j = self._head + i;
+        if j >= self._slots.len { j - self._slots.len } else { j }
+    }
+
+    fn grow (mut self) {
+        let cap = if self._slots.len == 0us { 16us } else { self._slots.len * 2us };
+        let dmut slots: [T?] = core::types::array::allocArray!{T?} (cap);
+        for i in 0us .. cap {
+            if i < self._len {
+                slots[i] = alias self._slots[self.index (i)];
+            } else {
+                slots[i] = none;
+            }
+        }
+
+        self._slots = alias slots;
+        self._head = 0us;
+    }
+
+}

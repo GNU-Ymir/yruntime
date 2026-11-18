@@ -1,18 +1,18 @@
 in implem;
 
 use std::stream;
+use std::concurrency::ring;
 
 /**
- * Atomic linked list storing
+ * A FIFO of messages shared between threads, every operation taking its lock
  * */
 @abstract
 pub class IMailBox {T, mutable: bool} {
 
     cte if mutable {
-        // The list of mails
-        let dmut _mails: [T] = [];
+        let dmut _mails: &Ring!{dmut T} = copy Ring!{dmut T} ();
     } else {
-        let mut _mails: [mut T] = [];
+        let dmut _mails: &Ring!{T} = copy Ring!{T} ();
     }
 
     /**
@@ -29,7 +29,7 @@ pub class IMailBox {T, mutable: bool} {
          * */
         pub fn send(mut self, value: T) {
             atomic self {
-                self._mails ~= [value];
+                self._mails:.push (value);
             }
         }
 
@@ -38,11 +38,7 @@ pub class IMailBox {T, mutable: bool} {
          * */
         pub fn receive(mut self)-> (T)? {
             atomic self {
-                if (self._mails.len == 0us) return none;
-                let fr = self._mails[0];
-                self._mails = alias self._mails[1 .. $];
-
-                return fr?;
+                return self._mails:.pop ();
             }
         }
 
@@ -51,10 +47,7 @@ pub class IMailBox {T, mutable: bool} {
          * */
         pub fn opIndex(mut self)-> [T] {
             atomic self {
-                let mut result = self._mails;
-                self._mails = [];
-
-                return result;
+                return self._mails:.drain ();
             }
         }
 
@@ -66,7 +59,7 @@ pub class IMailBox {T, mutable: bool} {
          * */
         pub fn send(mut self, dmut value: T) {
             atomic self {
-                self._mails ~= [alias value];
+                self._mails:.push (alias value);
             }
         }
 
@@ -75,12 +68,7 @@ pub class IMailBox {T, mutable: bool} {
          * */
         pub fn receive(mut self)-> dmut(T)? {
             atomic self {
-                if (self._mails.len == 0us) return none;
-
-                let dmut fr = alias self._mails[0];
-                self._mails = alias self._mails[1 .. $];
-
-                (alias fr)?
+                return alias self._mails:.pop ();
             }
         }
 
@@ -89,10 +77,7 @@ pub class IMailBox {T, mutable: bool} {
          * */
         pub fn opIndex(mut self)-> dmut[T] {
             atomic self {
-                let dmut result = alias self._mails;
-                self._mails = [];
-
-                return alias result;
+                return alias self._mails:.drain ();
             }
         }
 
@@ -104,7 +89,7 @@ pub class IMailBox {T, mutable: bool} {
      * */
     pub fn clear(mut self) {
         atomic self {
-            self._mails = [];
+            self._mails:.clear ();
         }
     }
 
@@ -120,13 +105,14 @@ pub class IMailBox {T, mutable: bool} {
         pub over toStream(self, dmut stream: &StringStream) {
             stream:.write("MailBox {");
             atomic self {
-                for i, m in self._mails {
-                    cte if __pragma!compile({ stream:.write(m); }) {
-                        if i != 0 { stream:.write(", "); }
-                        stream:.write(m);
-                    } else {
-                        i;
-                        m;
+                for i in 0us .. self._mails.len {
+                    if let Ok (m) = self._mails[i] {
+                        cte if __pragma!compile({ stream:.write(m); }) {
+                            if i != 0us { stream:.write(", "); }
+                            stream:.write(m);
+                        } else {
+                            m;
+                        }
                     }
                 }
             }

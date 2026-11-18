@@ -214,6 +214,8 @@ pub class TaskHandle {T} {
 
     let mut _value: T? = none;
 
+    let mut _waker: (dg ()-> void)? = none;
+
     let mut _wakers: [dg ()-> void] = [];
 
     /**
@@ -231,11 +233,16 @@ pub class TaskHandle {T} {
     pub fn poll (mut self, waker: dg ()-> void)-> T? {
         atomic self {
             if self._value.hasValue return self._value;
-            for w in self._wakers {
-                if w == waker return none;
-            }
+            if let Ok (first) = self._waker {
+                if first == waker return none;
+                for w in self._wakers {
+                    if w == waker return none;
+                }
 
-            self._wakers ~= [waker];
+                self._wakers ~= [waker];
+            } else {
+                self._waker = waker?;
+            }
         }
 
         none
@@ -263,11 +270,18 @@ pub class TaskHandle {T} {
 
         if let Ok (s) = source {
             let value = (await s)?;
+            let mut first: (dg ()-> void)? = none;
             let mut wakers: [dg ()-> void] = [];
             atomic self {
                 self._value = value;
+                first = self._waker;
                 wakers = self._wakers;
+                self._waker = none;
                 self._wakers = [];
+            }
+
+            if let Ok (w) = first {
+                w ();
             }
 
             for w in wakers {
@@ -294,7 +308,8 @@ async awaitHandle {T} (dmut handle: &TaskHandle!{T})-> T {
 @final
 pub class TaskPool {
 
-    let dmut _queue: &mail::MailBox!{dmut &Task} = copy mail::MailBox!{dmut &Task} ();
+    // the ready tasks, guarded by the lock of the pool
+    let dmut _queue: &ring::Ring!{dmut &Task} = copy ring::Ring!{dmut &Task} ();
 
     let _nbThreads: u32;
 
@@ -362,7 +377,7 @@ pub class TaskPool {
      */
     pub fn clear (mut self) {
         let mut dropped = 0us;
-        while let Ok (dmut t) = alias self._queue:.receive () {
+        while let Ok (dmut t) = alias self:.dequeue () {
             t:.cancel ();
             dropped += 1us;
         }
@@ -381,9 +396,8 @@ pub class TaskPool {
         atomic self {
             if (self._terminated) return;
             self._terminated = true;
+            self._queue:.clear ();
         }
-
-        self._queue:.clear ();
 
         // a post wakes any idle worker, not a given one: wake them all before joining
         for _ in 0us .. self._threads.len {
@@ -418,10 +432,19 @@ pub class TaskPool {
     fn schedule (mut self, dmut task: &Task) {
         atomic self {
             if (self._terminated) return;
-            self._queue:.send (alias task);
+            self._queue:.push (alias task);
         }
 
         self._waitTask:.post ();
+    }
+
+    /**
+     * @returns: the task at the front of the ready queue, removed from it, none if the queue is empty
+     */
+    fn dequeue (mut self)-> dmut (&Task)? {
+        atomic self {
+            return alias self._queue:.pop ();
+        }
     }
 
     /**
@@ -433,7 +456,7 @@ pub class TaskPool {
             self._waitTask:.wait ();
             if (self._terminated) break;
 
-            if let Ok (dmut t) = alias self._queue:.receive () {
+            if let Ok (dmut t) = alias self:.dequeue () {
                 if t:.run () {
                     atomic self {
                         self._finished += 1;
