@@ -8,6 +8,7 @@ use std::algorithm::searching;
 
 use etc::c::files;
 use etc::c::socket;
+use core::exception::assertion;
 
 extern (C) fn _yrt_test_interrupt_then_write (fd: i32)-> *void;
 extern (C) fn _yrt_test_interrupt_then_connect (port: u16)-> *void;
@@ -118,15 +119,28 @@ __test connectByHostName { // MID-144: connect resolves the host, and tries its 
     }
 }
 
+/**
+ * Bind a socket on a free port of the loopback without listening on it
+ * @returns: the socket and its port, which refuses connections and cannot be bound by another socket until it is closed
+ * */
+fn bindRefusingPort()-> (i32, u16)
+    throws AssertError
+{
+    let fd = socket::socket(AddressFamily::AF_INET, SocketType::SOCK_STREAM, 0);
+    assert(fd >= 0, "socket");
+
+    let mut servaddr = sockaddr_in(sin_family-> AddressFamily::AF_INET,
+                                   sin_addr-> in_addr(s_addr-> (copy Ipv4Addr([127u8, 0u8, 0u8, 1u8])).toN()));
+    assert(socket::bind(fd, &servaddr, cast!u32(sockaddr_in::size)) == 0, "bind");
+
+    let mut len = sockaddr_in::size;
+    assert(socket::getsockname(fd, alias &servaddr, alias &len) == 0, "getsockname");
+
+    (fd, ntohs(servaddr.sin_port))
+}
+
 __test connectByHostNameRefused { // MID-144: when no address connects, the error lists each attempt
-    let mut port = 0u16;
-    {
-        let server = listenOnLoopback();
-        port = server.addr.port;
-        socket::close(server.getHandle());
-    } catch {
-        err => { println(err); assert(false, "threw"); }
-    }
+    let (fd, port) = bindRefusingPort();
 
     let mut threw = false;
     {
@@ -139,6 +153,7 @@ __test connectByHostNameRefused { // MID-144: when no address connects, the erro
         }
         err: &ResolveError => { println(err); }
     }
+    socket::close(fd);
     assert(threw, "b");
 }
 
