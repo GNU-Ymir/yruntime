@@ -47,17 +47,19 @@ use core::concurrency;
 /**
  * The scheduling state of a `Task`
  */
-pub enum TaskState: u8
-| IDLE      = 0u8 // pending, polled again only once its waker is called
-| SCHEDULED = 1u8 // in a ready queue, its next poll is due
-| RUNNING   = 2u8 // being polled
-| NOTIFIED  = 3u8 // being polled, and woken since the poll started
-| DONE      = 4u8; // completed, never polled again
+pub enum TaskState: u32
+| IDLE      = 0u32 // pending, polled again only once its waker is called
+| SCHEDULED = 1u32 // in a ready queue, its next poll is due
+| RUNNING   = 2u32 // being polled
+| NOTIFIED  = 3u32 // being polled, and woken since the poll started
+| DONE      = 4u32; // completed, never polled again
 
 /**
  * An async value and its scheduling state, polled by `run` and put back in a ready queue by its waker `wake`.
  * Where a woken task goes is up to the `enqueue` function it is created with, so it is independent of any pool.
  * A newly created task is `SCHEDULED`, because its first poll is due: its creator enqueues it.
+ * The state is a lock-free word: each transition is a compare-and-swap, and only the thread polling the task leaves
+ * `RUNNING` or `NOTIFIED`.
  * @example:
  * ```
  * use std::concurrency;
@@ -87,7 +89,7 @@ pub class Task {
 
     let _enqueue: dg (dmut &Task)-> void;
 
-    let mut _state: TaskState = TaskState::SCHEDULED;
+    let mut _state: Atomic!{u32} = Atomic!{u32} (TaskState::SCHEDULED);
 
     /**
      * @params:
@@ -103,21 +105,19 @@ pub class Task {
      * It does nothing in any other state, so it can be called from any thread, any number of times.
      */
     pub fn wake (mut self) {
-        let mut push = false;
-        atomic self {
-            match self._state {
-                TaskState::IDLE => {
-                    self._state = TaskState::SCHEDULED;
-                    push = true;
+        let mut current: u32 = TaskState::IDLE;
+        loop {
+            if current == TaskState::IDLE {
+                if self._state:.compareExchange (ref current, TaskState::SCHEDULED) {
+                    self._enqueue (alias self);
+                    return;
                 }
-                TaskState::RUNNING => {
-                    self._state = TaskState::NOTIFIED;
-                }
-                _ => {}
+            } else if current == TaskState::RUNNING {
+                if self._state:.compareExchange (ref current, TaskState::NOTIFIED) return;
+            } else {
+                return;
             }
         }
-
-        if push self._enqueue (alias self);
     }
 
     /**
@@ -126,30 +126,21 @@ pub class Task {
      * @returns: true iif the task is `DONE`
      */
     pub fn run (mut self)-> bool {
-        atomic self {
-            if self._state != TaskState::SCHEDULED return self._state == TaskState::DONE;
-            self._state = TaskState::RUNNING;
-        }
+        let mut current: u32 = TaskState::SCHEDULED;
+        if !self._state:.compareExchange (ref current, TaskState::RUNNING) return current == TaskState::DONE;
 
-        let mut done = false;
         if let Ok () = self._value.poll (&self:.wake) {
-            done = true;
+            self._state:.store (TaskState::DONE);
+            return true;
         }
 
-        let mut push = false;
-        atomic self {
-            if done {
-                self._state = TaskState::DONE;
-            } else if self._state == TaskState::NOTIFIED {
-                self._state = TaskState::SCHEDULED;
-                push = true;
-            } else {
-                self._state = TaskState::IDLE;
-            }
+        current = TaskState::RUNNING;
+        if !self._state:.compareExchange (ref current, TaskState::IDLE) {
+            self._state:.store (TaskState::SCHEDULED); // it is NOTIFIED, a state only the polling thread leaves
+            self._enqueue (alias self);
         }
 
-        if push self._enqueue (alias self);
-        done
+        false
     }
 
     /**
@@ -157,12 +148,12 @@ pub class Task {
      * @returns: false if the task was being polled or already `DONE`, its state being left unchanged
      */
     pub fn cancel (mut self)-> bool {
-        atomic self {
-            if self._state != TaskState::IDLE && self._state != TaskState::SCHEDULED return false;
-            self._state = TaskState::DONE;
+        let mut current: u32 = TaskState::IDLE;
+        while current == TaskState::IDLE || current == TaskState::SCHEDULED {
+            if self._state:.compareExchange (ref current, TaskState::DONE) return true;
         }
 
-        true
+        false
     }
 
     /**
@@ -170,8 +161,12 @@ pub class Task {
      */
     @field
     pub fn state (self)-> TaskState {
-        atomic self {
-            return self._state;
+        match self._state.load () {
+            TaskState::IDLE      => TaskState::IDLE
+            TaskState::SCHEDULED => TaskState::SCHEDULED
+            TaskState::RUNNING   => TaskState::RUNNING
+            TaskState::NOTIFIED  => TaskState::NOTIFIED
+            _                    => TaskState::DONE
         }
     }
 
@@ -323,9 +318,9 @@ pub class TaskPool {
 
     let mut _terminated: bool = false;
 
-    let mut _finished: usize = 0;
+    let mut _finished: Atomic!{u64} = Atomic!{u64} (0u64);
 
-    let mut _submitted: usize = 0;
+    let mut _submitted: Atomic!{u64} = Atomic!{u64} (0u64);
 
     /**
      * Create a task pool
@@ -348,10 +343,7 @@ pub class TaskPool {
     pub fn submit {T} (mut self, value: async-> T)-> dmut &TaskHandle!{T} {
         let dmut handle = copy TaskHandle!{T} (value);
         let dmut task = copy Task (handle:.drive (), &self:.schedule);
-        atomic self {
-            self._submitted += 1;
-        }
-
+        self._submitted:.add (1u64);
         self:.schedule (alias task);
         alias handle
     }
@@ -363,8 +355,10 @@ pub class TaskPool {
     pub fn join (mut self) {
         loop {
             atomic self {
-                if (self._terminated || self._finished == self._submitted) return;
+                if (self._terminated) return;
             }
+
+            if (self.allFinished ()) return;
 
             // _ready may hold posts emitted while tasks were still being submitted, the counters are checked again
             if (!self._ready:.wait ()) return;
@@ -376,16 +370,13 @@ pub class TaskPool {
      * wake does nothing. A pending task is not in the queue, it completes or is woken normally.
      */
     pub fn clear (mut self) {
-        let mut dropped = 0us;
+        let mut dropped = 0u64;
         while let Ok (dmut t) = alias self:.dequeue () {
             t:.cancel ();
-            dropped += 1us;
+            dropped += 1u64;
         }
 
-        atomic self {
-            self._finished += dropped;
-            if (dropped != 0us && self._finished == self._submitted) self._ready:.post ();
-        }
+        if (dropped != 0u64) self:.finish (dropped);
     }
 
     /**
@@ -448,6 +439,23 @@ pub class TaskPool {
     }
 
     /**
+     * Count `nb` more tasks finished, posting `_ready` if every submitted task is
+     */
+    fn finish (mut self, nb: u64) {
+        let finished = self._finished:.add (nb);
+        if (finished == self._submitted.load ()) self._ready:.post ();
+    }
+
+    /**
+     * @returns: true iif every submitted task is finished
+     * @info: `_finished` is read first, a task submitting another being counted finished only after the submit
+     */
+    fn allFinished (self)-> bool {
+        let finished = self._finished.load ();
+        finished == self._submitted.load ()
+    }
+
+    /**
      * Poll the ready tasks one after the other, waiting for one when the queue is empty
      */
     fn workerMain (mut self) {
@@ -458,10 +466,7 @@ pub class TaskPool {
 
             if let Ok (dmut t) = alias self:.dequeue () {
                 if t:.run () {
-                    atomic self {
-                        self._finished += 1;
-                        if (self._finished == self._submitted) self._ready:.post ();
-                    }
+                    self:.finish (1u64);
                 }
             }
         }
