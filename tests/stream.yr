@@ -132,7 +132,7 @@ __test threadLocalRecursionGuard {
     let dmut res = copy [true];
 
     for i in 0 .. 8 {
-        pool:.submit(copy || => {
+        pool:.submit((copy async || => {
             let mut ok = true;
             for _ in 0 .. 5000 {
                 let dmut str = copy StringStream();
@@ -145,7 +145,7 @@ __test threadLocalRecursionGuard {
             atomic {
                 res[0] = res[0] && ok;
             }
-        });
+        })());
     }
 
     pool:.join();

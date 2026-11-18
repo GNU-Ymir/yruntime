@@ -13,25 +13,6 @@ fn computePi(prec: i32)-> f64 {
     res
 }
 
-__test submitAndJoin {
-    let dmut pool = copy TaskPool(nbThreads-> 12u64); // Creating a task pool with two threads
-    let dmut res = copy [0];
-    for i in 0 .. 100 {
-        pool:.submit(copy || => {
-            computePi(i32::max / 10000);
-
-            // res[0] += i is a read-modify-write, and the workers run it concurrently
-            atomic {
-                res[0] += i;
-            }
-        });
-    }
-
-    pool:.join();
-    pool:.dispose();
-    assert(res[0] == 4950);
-}
-
 /**
  * A leaf pending until it is fired, keeping the last waker it was polled with
  */
@@ -41,6 +22,15 @@ class Leaf {
     pub let mut polls: i32 = 0;
 
     pub self () {}
+
+    /**
+     * @returns: the number of times the leaf was polled so far
+     */
+    pub fn polled (self)-> i32 {
+        atomic self {
+            return self.polls;
+        }
+    }
 
     pub fn poll (mut self, waker: dg ()-> void)-> i32? {
         atomic self {
@@ -260,4 +250,245 @@ __test taskWokenConcurrently {
     assert (task.state == TaskState::DONE);
     assert (leaf.maxRunning == 1);
     assert (leaf.polls >= 1);
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ====================================          TASK POOL          ===================================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+/**
+ * Waits up to 5 seconds for `leaf` to be polled `n` times
+ * @returns: true if it was
+ */
+fn waitPolls (leaf: &Leaf, n: i32)-> bool {
+    let deadline = Instant::now () + seconds (5u64);
+    while leaf.polled () < n {
+        if Instant::now () > deadline return false;
+        sleep (millis (1u64));
+    }
+
+    true
+}
+
+async addTo (dmut res: [i32], i: i32) {
+    computePi (i32::max / 10000);
+
+    // res[0] += i is a read-modify-write, and the workers run it concurrently
+    atomic {
+        res[0] += i;
+    }
+}
+
+__test poolSubmitAndJoin {
+    let dmut pool = copy TaskPool (nbThreads-> 12u32);
+    let dmut res = copy [0];
+    for i in 0 .. 100 {
+        pool:.submit (addTo (alias res, i));
+    }
+
+    pool:.join ();
+    pool:.dispose ();
+    assert (res[0] == 4950);
+}
+
+/**
+ * The ids pushed by the tasks, in the order they pushed them
+ */
+class Log {
+    let mut _ids: [i32] = [];
+
+    pub self () {}
+
+    pub fn push (mut self, id: i32) {
+        atomic self {
+            self._ids ~= [id];
+        }
+    }
+
+    pub fn ids (self)-> [i32] {
+        atomic self {
+            return self._ids;
+        }
+    }
+}
+
+async stepping (dmut gate: &Leaf, dmut log: &Log, id: i32, steps: i32) {
+    let _ = await alias gate;
+    for _ in 0 .. steps {
+        log:.push (id);
+        await;
+    }
+}
+
+async openGates (dmut a: &Leaf, dmut b: &Leaf) {
+    a:.fire ();
+    b:.fire ();
+}
+
+__test poolYieldIsFair { // on one worker, a task yielding goes behind the other ready ones
+    let dmut pool = copy TaskPool (nbThreads-> 1u32);
+    let dmut log = copy Log ();
+    let dmut a = copy Leaf ();
+    let dmut b = copy Leaf ();
+
+    // the gates are opened from the worker itself, so both tasks are in the queue before either resumes
+    pool:.submit (stepping (alias a, alias log, 1, 4));
+    pool:.submit (stepping (alias b, alias log, 2, 4));
+    pool:.submit (openGates (alias a, alias b));
+
+    pool:.join ();
+    pool:.dispose ();
+    assert (log.ids () == [1, 2, 1, 2, 1, 2, 1, 2]);
+}
+
+fn nap () {
+    sleep (millis (250u64));
+}
+
+async awaitNap () {
+    let f = spawn nap ();
+    await f;
+}
+
+async awaitDelay () {
+    await delay (millis (250u64));
+}
+
+__test poolParkedFreeWorker { // 8 tasks awaiting a sleeping thread, on 2 workers, take about one sleep, not four
+    let dmut pool = copy TaskPool (nbThreads-> 2u32);
+    let start = Instant::now ();
+    for _ in 0 .. 8 {
+        pool:.submit (awaitNap ());
+    }
+
+    pool:.join ();
+    pool:.dispose ();
+    let elapsed = Instant::now () - start;
+    assert (elapsed >= millis (250u64) && elapsed < millis (750u64));
+}
+
+__test poolDelayFreesWorker { // 8 tasks awaiting a delay, on 1 worker, take about one delay, not eight
+    let dmut pool = copy TaskPool (nbThreads-> 1u32);
+    let start = Instant::now ();
+    for _ in 0 .. 8 {
+        pool:.submit (awaitDelay ());
+    }
+
+    pool:.join ();
+    pool:.dispose ();
+    let elapsed = Instant::now () - start;
+    assert (elapsed >= millis (250u64) && elapsed < millis (750u64));
+}
+
+__test poolPollsOnceAfterWake { // a parked task is not polled until woken, then exactly once more
+    let dmut pool = copy TaskPool (nbThreads-> 2u32);
+    let dmut leaf = copy Leaf ();
+    pool:.submit (awaitLeaf (alias leaf));
+    assert (waitPolls (leaf, 1));
+
+    sleep (millis (50u64));
+    assert (leaf.polled () == 1);
+
+    let th = spawn leaf:.fire ();
+    th.value;
+    pool:.join ();
+    pool:.dispose ();
+    assert (leaf.polled () == 2);
+}
+
+/**
+ * A leaf holding the worker polling it until it is released
+ */
+class Blocker {
+    let mut _entered: bool = false;
+    let mut _released: bool = false;
+
+    pub self () {}
+
+    pub fn poll (mut self, _: dg ()-> void)-> i32? {
+        atomic self {
+            self._entered = true;
+        }
+
+        let mut released = false;
+        while !released {
+            sleep (millis (1u64));
+            atomic self {
+                released = self._released;
+            }
+        }
+
+        (0)?
+    }
+
+    pub fn entered (self)-> bool {
+        atomic self {
+            return self._entered;
+        }
+    }
+
+    pub fn release (mut self) {
+        atomic self {
+            self._released = true;
+        }
+    }
+}
+
+async awaitBlocker (dmut blocker: &Blocker) {
+    let _ = await alias blocker;
+}
+
+__test poolClearWithParked { // clear drops the queued tasks, woken ones included, and leaves the parked ones be
+    let dmut pool = copy TaskPool (nbThreads-> 1u32);
+    let dmut parked = copy Leaf ();
+    let dmut woken = copy Leaf ();
+    let dmut queued = copy Leaf ();
+    let dmut blocker = copy Blocker ();
+
+    pool:.submit (awaitLeaf (alias parked));
+    pool:.submit (awaitLeaf (alias woken));
+    pool:.submit (awaitBlocker (alias blocker));
+
+    let deadline = Instant::now () + seconds (5u64);
+    while !blocker.entered () && Instant::now () < deadline {
+        sleep (millis (1u64));
+    }
+
+    assert (blocker.entered ());
+
+    // the only worker is held by the blocker, so these two wait in the queue
+    pool:.submit (awaitLeaf (alias queued));
+    woken:.fire ();
+    pool:.clear ();
+
+    woken:.fire ();
+    blocker:.release ();
+    parked:.fire ();
+    pool:.join ();
+    pool:.dispose ();
+
+    assert (parked.polled () == 2);
+    assert (woken.polled () == 1);
+    assert (queued.polled () == 0);
+}
+
+__test poolDisposeWithParked { // the tasks still parked when the pool is disposed are never polled again
+    let dmut pool = copy TaskPool (nbThreads-> 2u32);
+    let dmut a = copy Leaf ();
+    let dmut b = copy Leaf ();
+    pool:.submit (awaitLeaf (alias a));
+    pool:.submit (awaitLeaf (alias b));
+    assert (waitPolls (a, 1) && waitPolls (b, 1));
+
+    pool:.dispose ();
+    a:.fire ();
+    b:.fire ();
+    pool:.join ();
+
+    sleep (millis (20u64));
+    assert (a.polled () == 1 && b.polled () == 1);
 }

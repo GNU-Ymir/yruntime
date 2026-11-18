@@ -371,7 +371,7 @@ pub class UnittestLauncher {
      *    - func: the body of the test
      * */
     fn submitOne(self, dmut pool: &TaskPool, dmut progress: &Progress, dmut outcomes: &MailBox!{TestOutcome}, dmut stopped: [bool], hasStopFirst: bool, test: [c8], func: dg ()-> void) {
-        pool:.submit(copy || => {
+        pool:.submit((copy async || => {
             if (stopped[0]) return;
 
             let worker = progress:.started(displayName(test));
@@ -379,7 +379,7 @@ pub class UnittestLauncher {
             outcomes:.send(outcome);
             progress:.completed(worker, outcome.ok);
             if (!outcome.ok && hasStopFirst) stopped[0] = true;
-        });
+        })());
     }
 
     /**
