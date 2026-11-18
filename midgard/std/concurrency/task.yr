@@ -318,9 +318,9 @@ pub class TaskPool {
 
     let mut _terminated: bool = false;
 
-    let mut _finished: usize = 0;
+    let mut _finished: Atomic!{u64} = Atomic!{u64} (0u64);
 
-    let mut _submitted: usize = 0;
+    let mut _submitted: Atomic!{u64} = Atomic!{u64} (0u64);
 
     /**
      * Create a task pool
@@ -343,10 +343,7 @@ pub class TaskPool {
     pub fn submit {T} (mut self, value: async-> T)-> dmut &TaskHandle!{T} {
         let dmut handle = copy TaskHandle!{T} (value);
         let dmut task = copy Task (handle:.drive (), &self:.schedule);
-        atomic self {
-            self._submitted += 1;
-        }
-
+        self._submitted:.add (1u64);
         self:.schedule (alias task);
         alias handle
     }
@@ -358,8 +355,10 @@ pub class TaskPool {
     pub fn join (mut self) {
         loop {
             atomic self {
-                if (self._terminated || self._finished == self._submitted) return;
+                if (self._terminated) return;
             }
+
+            if (self.allFinished ()) return;
 
             // _ready may hold posts emitted while tasks were still being submitted, the counters are checked again
             if (!self._ready:.wait ()) return;
@@ -371,16 +370,13 @@ pub class TaskPool {
      * wake does nothing. A pending task is not in the queue, it completes or is woken normally.
      */
     pub fn clear (mut self) {
-        let mut dropped = 0us;
+        let mut dropped = 0u64;
         while let Ok (dmut t) = alias self:.dequeue () {
             t:.cancel ();
-            dropped += 1us;
+            dropped += 1u64;
         }
 
-        atomic self {
-            self._finished += dropped;
-            if (dropped != 0us && self._finished == self._submitted) self._ready:.post ();
-        }
+        if (dropped != 0u64) self:.finish (dropped);
     }
 
     /**
@@ -443,6 +439,23 @@ pub class TaskPool {
     }
 
     /**
+     * Count `nb` more tasks finished, posting `_ready` if every submitted task is
+     */
+    fn finish (mut self, nb: u64) {
+        let finished = self._finished:.add (nb);
+        if (finished == self._submitted.load ()) self._ready:.post ();
+    }
+
+    /**
+     * @returns: true iif every submitted task is finished
+     * @info: `_finished` is read first, a task submitting another being counted finished only after the submit
+     */
+    fn allFinished (self)-> bool {
+        let finished = self._finished.load ();
+        finished == self._submitted.load ()
+    }
+
+    /**
      * Poll the ready tasks one after the other, waiting for one when the queue is empty
      */
     fn workerMain (mut self) {
@@ -453,10 +466,7 @@ pub class TaskPool {
 
             if let Ok (dmut t) = alias self:.dequeue () {
                 if t:.run () {
-                    atomic self {
-                        self._finished += 1;
-                        if (self._finished == self._submitted) self._ready:.post ();
-                    }
+                    self:.finish (1u64);
                 }
             }
         }
