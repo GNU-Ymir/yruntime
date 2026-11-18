@@ -351,6 +351,19 @@ class Worker {
     }
 
     /**
+     * Append tasks at the back of the queue, in their order, under one lock
+     */
+    pub fn pushAll (mut self, dmut tasks: [&Task]) {
+        atomic self {
+            for i in 0us .. tasks.len {
+                self._queue:.push (alias tasks[i]);
+            }
+
+            if self._queue.len != 0us self._filled:.store (1u32);
+        }
+    }
+
+    /**
      * @returns: the task at the front of the queue, removed from it, none if the queue is empty
      */
     pub fn next (mut self)-> dmut (&Task)? {
@@ -557,6 +570,7 @@ class Sleepers {
  * A worker out of tasks searches the other queues `SEARCH_ROUNDS` times before it sleeps, at most half of the
  * workers at once. A schedule wakes a sleeping worker only while none is searching, and a searcher finding a task
  * wakes the next one, so that a burst of tasks wakes the workers one after the other rather than all at once.
+ * `submitAll` enqueues its tasks under one lock, and wakes a single worker as a schedule does.
  *
  * @warning: blocking inside an async (a subprocess, `h.run ()`, `pool.join ()`, `sleep`) holds its worker until
  *           it returns, awaiting a `spawn` moves such work to a thread of its own, `await delay (d)` is the
@@ -618,6 +632,40 @@ pub class TaskPool {
         self._submitted:.add (1u64);
         self:.schedule (alias task);
         alias handle
+    }
+
+    /**
+     * Submit async values to the pool at once, enqueued under one lock and waking a single worker, which wakes the
+     * others as it finds more tasks than it takes
+     * @returns: the handles of the values the asyncs complete with, in the order of `values`
+     * @example:
+     * ```
+     * use std::io;
+     * use std::concurrency;
+     *
+     * async square (x: i32)-> i32 {
+     *     x * x
+     * }
+     *
+     * fn main () {
+     *     let dmut pool = copy TaskPool (nbThreads-> 4u32);
+     *     let dmut handles = pool:.submitAll (copy [square (i) for i in 0 .. 10]);
+     *     let mut total = 0;
+     *     for i in 0us .. handles.len {
+     *         total += handles[i]:.wait ();
+     *     }
+     *
+     *     println (total); // 285
+     *     pool:.dispose ();
+     * }
+     * ```
+     */
+    pub fn submitAll {T} (mut self, values: [async-> T])-> dmut [&TaskHandle!{T}] {
+        let dmut handles = copy [copy TaskHandle!{T} (v) for v in values];
+        let dmut tasks = copy [copy Task (handles[i]:.drive (), &self:.schedule) for i in 0us .. handles.len];
+        self._submitted:.add (cast!u64 (tasks.len));
+        self:.scheduleAll (alias tasks);
+        alias handles
     }
 
     /**
@@ -715,6 +763,32 @@ pub class TaskPool {
             if (self._terminated.load () != 0u32) return;
             self._inject:.push (alias task);
             if self._inject.len == 1us self._injectFilled:.store (1u32);
+        }
+
+        self:.notify ();
+    }
+
+    /**
+     * Enqueue tasks whose poll is due under one lock, where `schedule` would enqueue each of them
+     */
+    fn scheduleAll (mut self, dmut tasks: [&Task]) {
+        if tasks.len == 0us return;
+        if let Ok (dmut w) = alias __TASK_WORKER__ {
+            if self.owns (w) {
+                if (self._terminated.load () != 0u32) return;
+                w:.pushAll (alias tasks);
+                self:.notify ();
+                return;
+            }
+        }
+
+        atomic self {
+            if (self._terminated.load () != 0u32) return;
+            for i in 0us .. tasks.len {
+                self._inject:.push (alias tasks[i]);
+            }
+
+            self._injectFilled:.store (1u32);
         }
 
         self:.notify ();

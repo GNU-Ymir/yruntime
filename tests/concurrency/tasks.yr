@@ -827,6 +827,61 @@ __test poolInjectedNotStarved { // on one worker, a task submitted from outside 
     assert (flag.looks () - looks < 1000);
 }
 
+__test poolSubmitAllWakesWorkers { // 4 tasks blocking their worker, submitted at once from outside, run on 4 workers
+    let dmut pool = copy TaskPool (nbThreads-> 4u32);
+    sleep (millis (5u64));
+
+    let start = Instant::now ();
+    pool:.submitAll (copy [napping () for _ in 0 .. 4]);
+    pool:.join ();
+    pool:.dispose ();
+
+    let elapsed = Instant::now () - start;
+    assert (elapsed >= millis (200u64) && elapsed < millis (500u64));
+}
+
+async spreadingAll (dmut pool: &TaskPool) {
+    let dmut handles = pool:.submitAll (copy [napping () for _ in 0 .. 4]);
+    for i in 0us .. handles.len {
+        await alias handles[i];
+    }
+}
+
+__test poolSubmitAllFromWorker { // 4 tasks blocking their worker, submitted at once from a worker, run on 4 workers
+    let dmut pool = copy TaskPool (nbThreads-> 4u32);
+    let start = Instant::now ();
+    pool:.submit (spreadingAll (alias pool));
+    pool:.join ();
+    pool:.dispose ();
+
+    let elapsed = Instant::now () - start;
+    assert (elapsed >= millis (200u64) && elapsed < millis (500u64));
+}
+
+async spawningAll (dmut pool: &TaskPool, dmut done: &Semaphore, n: i32) {
+    pool:.submitAll (copy [posting (alias done) for _ in 0 .. n]);
+    done:.post ();
+}
+
+__test poolBatchBurstsNeverStall { // batches from outside and from the workers, which search and sleep between them
+    let dmut pool = copy TaskPool (nbThreads-> 4u32);
+    let dmut done = copy Semaphore ();
+    let mut completed = true;
+    for _ in 0 .. 300 {
+        pool:.submitAll (copy [spawningAll (alias pool, alias done, 4) for _ in 0 .. 8]);
+        for _ in 0 .. 40 {
+            completed = completed && done:.wait (timeout-> seconds (5u64));
+        }
+
+        if !completed break;
+        sleep (micros (200u64));
+    }
+
+    pool:.dispose ();
+    done:.dispose ();
+    assert (completed);
+}
+
 /*!
  * ====================================================================================================
  * ====================================================================================================
@@ -850,6 +905,21 @@ __test handleWait {
 
     pool:.dispose ();
     assert (sum == 9900);
+}
+
+__test handleSubmitAll { // the handles are in the order of the values
+    let dmut pool = copy TaskPool (nbThreads-> 4u32);
+    let dmut handles = pool:.submitAll (copy [double (i) for i in 0 .. 100]);
+    let mut ordered = handles.len == 100us;
+    for i in 0us .. handles.len {
+        ordered = ordered && handles[i]:.wait () == 2 * cast!i32 (i);
+    }
+
+    let empty = pool:.submitAll (copy [double (i) for i in 0 .. 0]);
+    pool:.join ();
+    pool:.dispose ();
+    assert (ordered);
+    assert (empty.len == 0us);
 }
 
 __test handleWaitVoid {
