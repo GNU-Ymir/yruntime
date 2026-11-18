@@ -242,6 +242,10 @@ int32_t _yrt_thread_sem_get (sem_t * sem) {
     return i;
 }
 
+// the size a monitor is allocated with: a size class of the collector whose objects are aligned on cache lines,
+// so that two monitors locked by different threads never share one
+#define MONITOR_SIZE (sizeof (_yrt_mutex_t) <= 64 ? 64 : sizeof (_yrt_mutex_t))
+
 _yrt_mutex_t * _yrt_i_ensure_monitor (void* object) {
     _yrt_mutex_t* mut = *((_yrt_mutex_t**) object + 1); // skip the vtable
     if (mut != NULL) {
@@ -251,7 +255,7 @@ _yrt_mutex_t * _yrt_i_ensure_monitor (void* object) {
     pthread_mutex_lock (&__monitor_mutex__);
     mut = *((_yrt_mutex_t**) object + 1); // skip the vtable
     if (mut == NULL) {
-        mut = _yrt_i_gc_alloc_atomic (sizeof (_yrt_mutex_t));
+        mut = _yrt_i_gc_alloc_atomic (MONITOR_SIZE);
         pthread_mutexattr_t attr;
         pthread_mutexattr_init(&attr);
         pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
