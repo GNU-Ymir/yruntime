@@ -1,0 +1,398 @@
+/**
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in asyncbox;
+
+/**
+ * The messages of an `AsyncMailBox`, and its receivers waiting for one in the order they registered
+ */
+@final
+class Mails {T, mutable: bool} {
+
+    cte if mutable {
+        let dmut _mails: [T] = [];
+    } else {
+        let mut _mails: [T] = [];
+    }
+
+    let mut _waiting: [(u64, dg ()-> void)] = [];
+
+    let mut _tickets: u64 = 0u64;
+
+    let mut _closed: bool = false;
+
+    pub self () {}
+
+    cte if !mutable {
+        /**
+         * Queue `value` and wake the receiver waiting the longest, once the lock is released
+         * @returns: false if the mailbox is closed, `value` being dropped
+         */
+        pub fn send (mut self, value: T)-> bool {
+            let mut waker: (dg ()-> void)? = none;
+            atomic self {
+                if self._closed return false;
+                self._mails ~= [value];
+                waker = self:.popWaiter ();
+            }
+
+            if let Ok (w) = waker {
+                w ();
+            }
+
+            true
+        }
+
+        /**
+         * Take the first message, or the empty option once closed and drained, unregistering `ticket`.
+         * Otherwise register `waker` under `ticket` (see `register`).
+         * @returns: none if no message is there yet
+         */
+        pub fn take (mut self, ref mut ticket: u64, waker: dg ()-> void)-> (T?)? {
+            atomic self {
+                if self._mails.len != 0us {
+                    self:.unregister (ref ticket);
+                    let value = self._mails[0];
+                    self._mails = self._mails[1us .. $];
+                    return (value?)?;
+                }
+
+                if self._closed {
+                    self:.unregister (ref ticket);
+                    let closed: T? = none;
+                    return closed?;
+                }
+
+                self:.register (ref ticket, waker);
+            }
+
+            none
+        }
+    } else {
+        /**
+         * Queue `value` and wake the receiver waiting the longest, once the lock is released
+         * @returns: false if the mailbox is closed, `value` being dropped
+         */
+        pub fn send (mut self, dmut value: T)-> bool {
+            let mut waker: (dg ()-> void)? = none;
+            atomic self {
+                if self._closed return false;
+                self._mails ~= [alias value];
+                waker = self:.popWaiter ();
+            }
+
+            if let Ok (w) = waker {
+                w ();
+            }
+
+            true
+        }
+
+        /**
+         * Take the first message, or the empty option once closed and drained, unregistering `ticket`.
+         * Otherwise register `waker` under `ticket` (see `register`).
+         * @returns: none if no message is there yet
+         */
+        pub fn take (mut self, ref mut ticket: u64, waker: dg ()-> void)-> dmut (T?)? {
+            atomic self {
+                if self._mails.len != 0us {
+                    self:.unregister (ref ticket);
+                    let dmut value = alias self._mails[0];
+                    self._mails = alias self._mails[1us .. $];
+                    return ((alias value)?)?;
+                }
+
+                if self._closed {
+                    self:.unregister (ref ticket);
+                    let dmut closed: T? = none;
+                    return (alias closed)?;
+                }
+
+                self:.register (ref ticket, waker);
+            }
+
+            none
+        }
+    }
+
+    /**
+     * Refuse any further message, and wake every waiting receiver once the lock is released
+     */
+    pub fn close (mut self) {
+        let mut waiting: [(u64, dg ()-> void)] = [];
+        atomic self {
+            if self._closed return;
+            self._closed = true;
+            waiting = self._waiting;
+            self._waiting = [];
+        }
+
+        for w in waiting {
+            w._1 ();
+        }
+    }
+
+    pub fn len (self)-> usize {
+        atomic self {
+            return self._mails.len;
+        }
+    }
+
+    pub fn isClosed (self)-> bool {
+        atomic self {
+            return self._closed;
+        }
+    }
+
+    /**
+     * @returns: the waker of the receiver waiting the longest, removed from the waiting ones; the lock is held
+     */
+    fn popWaiter (mut self)-> (dg ()-> void)? {
+        if self._waiting.len == 0us return none;
+        let waker = self._waiting[0]._1;
+        self._waiting = self._waiting[1us .. $];
+        waker?
+    }
+
+    /**
+     * Register `waker` under `ticket`, a new one if it is 0, keeping its place if it is still waiting; the lock is held
+     */
+    fn register (mut self, ref mut ticket: u64, waker: dg ()-> void) {
+        if ticket != 0u64 {
+            for i, w in self._waiting {
+                if w._0 == ticket {
+                    self._waiting = self._waiting[0us .. i] ~ [(ticket, waker)] ~ self._waiting[i + 1us .. $];
+                    return;
+                }
+            }
+        } else {
+            self._tickets += 1u64;
+            ticket = self._tickets;
+        }
+
+        self._waiting ~= [(ticket, waker)];
+    }
+
+    /**
+     * Remove `ticket` from the waiting receivers if it is there, and reset it to 0; the lock is held
+     */
+    fn unregister (mut self, ref mut ticket: u64) {
+        if ticket == 0u64 return;
+        for i, w in self._waiting {
+            if w._0 == ticket {
+                self._waiting = self._waiting[0us .. i] ~ self._waiting[i + 1us .. $];
+                break;
+            }
+        }
+
+        ticket = 0u64;
+    }
+
+}
+
+/**
+ * A mailbox whose messages are awaited from an async, the sender waking a receiver instead of being polled.
+ * See `AsyncMailBox` for the mailbox of immutable messages, and the one of mutable class instances.
+ */
+@abstract
+pub class IAsyncMailBox {T, mutable: bool} {
+
+    let dmut _mails: &Mails!{T, mutable} = copy Mails!{T, mutable} ();
+
+    /**
+     * Create a new empty and open mailbox
+     */
+    pub self () {}
+
+    cte if !mutable {
+        /**
+         * Post a message, waking the receiver waiting the longest. It never blocks, and can be called from any
+         * thread.
+         * @params:
+         *    - value: the value to post
+         * @returns: false if the mailbox is closed, the message being dropped
+         */
+        pub fn send (mut self, value: T)-> bool {
+            self._mails:.send (value)
+        }
+    } else {
+        /**
+         * Post a message, waking the receiver waiting the longest. It never blocks, and can be called from any
+         * thread.
+         * @params:
+         *    - value: the value to post, the receiver being given the same mutable instance
+         * @returns: false if the mailbox is closed, the message being dropped
+         */
+        pub fn send (mut self, dmut value: T)-> bool {
+            self._mails:.send (alias value)
+        }
+    }
+
+    cte if !mutable {
+        /**
+         * @returns: a leaf completing with the next message, or with the empty option once the mailbox is closed
+         *           and drained, to await once: each call returns a receiver of its own
+         */
+        pub fn receive (mut self)-> dmut MailReceive!{T} {
+            MailReceive!{T} (alias self._mails)
+        }
+    } else {
+        /**
+         * @returns: a leaf completing with the next message, or with the empty option once the mailbox is closed
+         *           and drained, to await once: each call returns a receiver of its own
+         */
+        pub fn receive (mut self)-> dmut MailReceive!{dmut T} {
+            MailReceive!{dmut T} (alias self._mails)
+        }
+    }
+
+    /**
+     * Refuse any further message, and wake every waiting receiver. Closing it again does nothing.
+     */
+    pub fn close (mut self) {
+        self._mails:.close ();
+    }
+
+    /**
+     * @returns: the number of messages waiting for a receiver
+     */
+    @field
+    pub fn len (self)-> usize {
+        self._mails.len ()
+    }
+
+    /**
+     * @returns: true iif the mailbox was closed
+     */
+    @field
+    pub fn isClosed (self)-> bool {
+        self._mails.isClosed ()
+    }
+
+}
+
+/**
+ * The leaf `AsyncMailBox::receive` returns, completing with the next message of the mailbox, or with the empty
+ * option once it is closed and drained. A value: the async awaiting it holds it in its frame, and polls it in place.
+ */
+pub record MailReceive {T} {
+
+    let dmut _mails: &Mails!{T, false};
+
+    let mut _ticket: u64 = 0u64;
+
+    pub self (dmut mails: &Mails!{T, false}) with _mails = alias mails {}
+
+    /**
+     * @returns: the next message if there is one, the empty option if the mailbox is closed and drained,
+     *           none otherwise, `waker` being called once a message is sent or the mailbox is closed
+     * @warning: the receiver is registered under the ticket this value holds, a copy of it must not be polled too
+     */
+    pub fn poll (mut self, waker: dg ()-> void)-> (T?)? {
+        self._mails:.take (ref self._ticket, waker)
+    }
+
+}
+
+/**
+ * The leaf `AsyncMailBox::receive` returns for mutable class instances, the one it completes with being the
+ * instance that was sent
+ */
+pub record MailReceive {T of dmut J, class J} {
+
+    let dmut _mails: &Mails!{T, true};
+
+    let mut _ticket: u64 = 0u64;
+
+    pub self (dmut mails: &Mails!{T, true}) with _mails = alias mails {}
+
+    /**
+     * @returns: the next message if there is one, the empty option if the mailbox is closed and drained,
+     *           none otherwise, `waker` being called once a message is sent or the mailbox is closed
+     * @warning: the receiver is registered under the ticket this value holds, a copy of it must not be polled too
+     */
+    pub fn poll (mut self, waker: dg ()-> void)-> dmut (T?)? {
+        alias self._mails:.take (ref self._ticket, waker)
+    }
+
+}
+
+/**
+ * A mailbox whose messages are awaited from an async, the sender waking a receiver instead of being polled.
+ * `send` never blocks and can be called from any thread, `receive` returns a leaf an async awaits.
+ * A message wakes one receiver, the one waiting the longest. A receiver woken but beaten to the message by another
+ * registers again on its next poll, so a message is never left in the box while a receiver waits for one.
+ * Once `close` is called, the receivers drain the messages left, then complete with the empty option.
+ * @example:
+ * ```
+ * use std::io;
+ * use std::concurrency;
+ *
+ * async consume (dmut box: &AsyncMailBox!{i32}) {
+ *     while let Ok (v) = await alias box:.receive () { // parked while the box is empty
+ *         println ("received ", v);
+ *     }
+ * }
+ *
+ * fn produce (dmut box: &AsyncMailBox!{i32}) {
+ *     for i in 0 .. 10 {
+ *         box:.send (i);
+ *     }
+ *
+ *     box:.close (); // the consumer loop ends
+ * }
+ *
+ * fn main () {
+ *     let dmut box = copy AsyncMailBox!{i32} ();
+ *     let dmut pool = copy TaskPool (nbThreads-> 2u32);
+ *     let dmut h = pool:.submit (consume (alias box));
+ *
+ *     let th = spawn produce (alias box);
+ *     th.value;
+ *     h:.wait ();
+ *     pool:.dispose ();
+ * }
+ * ```
+ */
+pub class AsyncMailBox {T} over IAsyncMailBox!{T, false} {
+    pub self () {}
+}
+
+/**
+ * An `AsyncMailBox` of mutable class instances: the receiver is given the very instance that was sent,
+ * and can mutate it.
+ * @example:
+ * ```
+ * use std::io;
+ * use std::concurrency;
+ *
+ * class Job {
+ *     pub let mut done: bool = false;
+ *     pub self () {}
+ * }
+ *
+ * async work (dmut box: &AsyncMailBox!{dmut &Job}) {
+ *     loop {
+ *         let dmut job = await alias box:.receive ();
+ *         if let Ok (dmut j) = alias job {
+ *             j.done = true;
+ *         } else break; // closed and drained
+ *     }
+ * }
+ *
+ * fn main () {
+ *     let dmut box = copy AsyncMailBox!{dmut &Job} ();
+ *     let dmut job = copy Job ();
+ *     box:.send (alias job);
+ *     box:.close ();
+ *
+ *     work (alias box).run ();
+ *     println (job.done); // true
+ * }
+ * ```
+ */
+pub class AsyncMailBox {T of dmut J, class J} over IAsyncMailBox!{T, true} {
+    pub self () {}
+}
