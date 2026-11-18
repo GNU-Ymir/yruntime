@@ -1,0 +1,180 @@
+/**
+ * This module converts an identifier from a naming convention to another, at compile time.
+ * The identifier is split into words at the underscores and hyphens, at a capital following a lowercase letter or a digit, and at the last capital of an acronym followed by a lowercase letter (`HTTPServer` is `HTTP` and `Server`). Leading underscores and hyphens are dropped, the characters that are neither letters nor digits are kept as they are.
+ * The conversions are templates whose argument is a compile-time string, the conversion of a run-time string is not available.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ * <hr>
+ * @example:
+ * ```
+ * use std::conv::casing;
+ *
+ * cte assert(snakeCase!{"_buildDir"} == "build_dir");
+ * cte assert(kebabCase!{"HTTPServer"} == "http-server");
+ * cte assert(camelCase!{"max_jobs"} == "maxJobs");
+ * cte assert(pascalCase!{"max-jobs"} == "MaxJobs");
+ * cte assert(screamingSnakeCase!{"maxJobs"} == "MAX_JOBS");
+ * cte assert(toCase!{"maxJobs", "kebab-case"} == "max-jobs");
+ * ```
+ */
+
+in casing;
+
+def LOWERS = "abcdefghijklmnopqrstuvwxyz";
+def UPPERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+/**
+ * The names of the conventions `toCase` accepts
+ */
+pub def CONVENTIONS = "snake_case, camelCase, PascalCase, kebab-case, SCREAMING_SNAKE_CASE";
+
+/**
+ * True if `name` is one of the conventions `toCase` accepts, see `CONVENTIONS`
+ * @example:
+ * ```
+ * use std::conv::casing;
+ *
+ * cte assert(isCaseConvention!{"camelCase"});
+ * cte assert(!isCaseConvention!{"camel"});
+ * ```
+ */
+pub def isCaseConvention {name: [c8]} = cte (name == "snake_case" || name == "camelCase" || name == "PascalCase" || name == "kebab-case" || name == "SCREAMING_SNAKE_CASE");
+
+/**
+ * `s` converted to the convention named `name`, one of `CONVENTIONS`
+ * @example:
+ * ```
+ * use std::conv::casing;
+ *
+ * cte assert(toCase!{"build_dir", "camelCase"} == "buildDir");
+ * cte assert(toCase!{"buildDir", "SCREAMING_SNAKE_CASE"} == "BUILD_DIR");
+ * ```
+ */
+pub def if (name == "snake_case") toCase {s: [c8], name: [c8]} = snakeCase!{s};
+pub def if (name == "camelCase") toCase {s: [c8], name: [c8]} = camelCase!{s};
+pub def if (name == "PascalCase") toCase {s: [c8], name: [c8]} = pascalCase!{s};
+pub def if (name == "kebab-case") toCase {s: [c8], name: [c8]} = kebabCase!{s};
+pub def if (name == "SCREAMING_SNAKE_CASE") toCase {s: [c8], name: [c8]} = screamingSnakeCase!{s};
+
+/**
+ * `s` in snake_case: its words in lowercase, separated by underscores
+ * @example:
+ * ```
+ * use std::conv::casing;
+ *
+ * cte assert(snakeCase!{"parseHTTPRequest2"} == "parse_http_request2");
+ * cte assert(snakeCase!{"__private-name"} == "private_name");
+ * ```
+ */
+pub def snakeCase {s: [c8]} = snakeFrom!{stripped!{s}, 0us};
+
+/**
+ * `s` in kebab-case: its words in lowercase, separated by hyphens
+ * @example:
+ * ```
+ * use std::conv::casing;
+ *
+ * cte assert(kebabCase!{"_buildDir"} == "build-dir");
+ * ```
+ */
+pub def kebabCase {s: [c8]} = kebabFrom!{snakeCase!{s}, 0us};
+
+/**
+ * `s` in SCREAMING_SNAKE_CASE: its words in uppercase, separated by underscores
+ * @example:
+ * ```
+ * use std::conv::casing;
+ *
+ * cte assert(screamingSnakeCase!{"buildDir"} == "BUILD_DIR");
+ * ```
+ */
+pub def screamingSnakeCase {s: [c8]} = upperFrom!{snakeCase!{s}, 0us};
+
+/**
+ * `s` in camelCase: its words joined, each capitalized but the first one, which is in lowercase
+ * @example:
+ * ```
+ * use std::conv::casing;
+ *
+ * cte assert(camelCase!{"HTTP_SERVER"} == "httpServer");
+ * ```
+ */
+pub def camelCase {s: [c8]} = camelFrom!{snakeCase!{s}, 0us, false};
+
+/**
+ * `s` in PascalCase: its words capitalized and joined
+ * @example:
+ * ```
+ * use std::conv::casing;
+ *
+ * cte assert(pascalCase!{"http_server"} == "HttpServer");
+ * ```
+ */
+pub def pascalCase {s: [c8]} = camelFrom!{snakeCase!{s}, 0us, true};
+
+def isUpper {c: c8} = cte (c >= 'A' && c <= 'Z');
+def isLower {c: c8} = cte (c >= 'a' && c <= 'z');
+def isDigit {c: c8} = cte (c >= '0' && c <= '9');
+def isSep {c: c8} = cte (c == '_' || c == '-');
+
+def if (isUpper!{c}) lower {c: c8} = cte (LOWERS[cast!usize (cast!u8 (c) - cast!u8 ('A')) .. cast!usize (cast!u8 (c) - cast!u8 ('A')) + 1us]);
+def if (isLower!{c}) upper {c: c8} = cte (UPPERS[cast!usize (cast!u8 (c) - cast!u8 ('a')) .. cast!usize (cast!u8 (c) - cast!u8 ('a')) + 1us]);
+
+/**
+ * The character at `i` in `s`, `'\0'` past its end
+ */
+def if (i < s.len) at {s: [c8], i: usize} = s[i];
+def if (i >= s.len) at {s: [c8], i: usize} = '\u{0}';
+
+/**
+ * The character before `i` in `s`, `'\0'` before its start
+ */
+def if (i > 0us) before {s: [c8], i: usize} = s[i - 1us];
+def if (i == 0us) before {s: [c8], i: usize} = '\u{0}';
+
+/**
+ * The index of the first character of `s` from `i` that is not a separator
+ */
+def if (isSep!{at!{s, i}}) firstWord {s: [c8], i: usize} = firstWord!{s, i + 1us};
+def if (!isSep!{at!{s, i}}) firstWord {s: [c8], i: usize} = i;
+
+def stripped {s: [c8]} = cte (s[firstWord!{s, 0us} .. s.len]);
+
+/**
+ * True if the capital at `i` in `s` starts a word
+ */
+def startsWord {s: [c8], i: usize} = cte (i > 0us && (isLower!{before!{s, i}} || isDigit!{before!{s, i}} || (isUpper!{before!{s, i}} && isLower!{at!{s, i + 1us}})));
+
+/**
+ * The snake_case spelling of the character at `i` in `s`, a separator kept only once between two words
+ */
+def if (isSep!{s[i]} && !isSep!{at!{s, i + 1us}} && i + 1us < s.len) snakeAt {s: [c8], i: usize} = "_";
+def if (isSep!{s[i]} && !(!isSep!{at!{s, i + 1us}} && i + 1us < s.len)) snakeAt {s: [c8], i: usize} = "";
+def if (isUpper!{s[i]} && startsWord!{s, i}) snakeAt {s: [c8], i: usize} = cte ("_" ~ lower!{s[i]});
+def if (isUpper!{s[i]} && !startsWord!{s, i}) snakeAt {s: [c8], i: usize} = lower!{s[i]};
+def if (!isSep!{s[i]} && !isUpper!{s[i]}) snakeAt {s: [c8], i: usize} = cte (s[i .. i + 1us]);
+
+def if (i >= s.len) snakeFrom {s: [c8], i: usize} = "";
+def if (i < s.len) snakeFrom {s: [c8], i: usize} = cte (snakeAt!{s, i} ~ snakeFrom!{s, i + 1us});
+
+def if (s[i] == '_') kebabAt {s: [c8], i: usize} = "-";
+def if (s[i] != '_') kebabAt {s: [c8], i: usize} = cte (s[i .. i + 1us]);
+
+def if (i >= s.len) kebabFrom {s: [c8], i: usize} = "";
+def if (i < s.len) kebabFrom {s: [c8], i: usize} = cte (kebabAt!{s, i} ~ kebabFrom!{s, i + 1us});
+
+def if (isLower!{s[i]}) upperAt {s: [c8], i: usize} = upper!{s[i]};
+def if (!isLower!{s[i]}) upperAt {s: [c8], i: usize} = cte (s[i .. i + 1us]);
+
+def if (i >= s.len) upperFrom {s: [c8], i: usize} = "";
+def if (i < s.len) upperFrom {s: [c8], i: usize} = cte (upperAt!{s, i} ~ upperFrom!{s, i + 1us});
+
+/**
+ * The camelCase spelling of the character at `i` of the snake_case `s`, capitalized after an underscore, and at the start if `first`
+ */
+def if (s[i] == '_') camelAt {s: [c8], i: usize, first: bool} = "";
+def if (s[i] != '_' && isLower!{s[i]} && ((i == 0us && first) || before!{s, i} == '_')) camelAt {s: [c8], i: usize, first: bool} = upper!{s[i]};
+def if (s[i] != '_' && !(isLower!{s[i]} && ((i == 0us && first) || before!{s, i} == '_'))) camelAt {s: [c8], i: usize, first: bool} = cte (s[i .. i + 1us]);
+
+def if (i >= s.len) camelFrom {s: [c8], i: usize, first: bool} = "";
+def if (i < s.len) camelFrom {s: [c8], i: usize, first: bool} = cte (camelAt!{s, i, first} ~ camelFrom!{s, i + 1us, first});

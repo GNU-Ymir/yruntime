@@ -1,5 +1,5 @@
 /**
- * Json dumper to dump a toml string from a configuration
+ * Json dumper to dump a json string from a configuration
  * @Authors: Emile Cadorel
  * @License: GPLv3
  */
@@ -10,19 +10,23 @@ use std::stream;
 
 
 /**
- * A toml dumper that produces an utf8 string from a configuration
+ * A json dumper that produces an utf8 string from a configuration
  * */
 pub record JsonDumper {
 
     // The root node of the config to dump
     let _root: &Config;
 
+    // The number of spaces per level of nesting, none to dump on a single line
+    let _indent: (u32)?;
+
     /**
      * @params:
      *    - root: the configuration to dump
+     *    - indent: the number of spaces per level of nesting, each entry on its own line, `0` putting them on their own line without indenting them, none to dump on a single line
      * */
-    pub self (root: &Config)
-        with _root = root
+    pub self (root: &Config, indent: (u32)? = none)
+        with _root = root, _indent = indent
     {}
 
     /**
@@ -30,7 +34,7 @@ pub record JsonDumper {
      * */
     pub fn dump(self)-> [c8] {
         let dmut res = copy StringStream();
-        self.dump(self._root, alias res, 0, 0);
+        self.dump(self._root, alias res, 0u32);
 
         res[]
     }
@@ -48,14 +52,15 @@ pub record JsonDumper {
      * @params:
      *    - c: the configuration to dump
      *    - stream: the stream to fill
+     *    - depth: the level of nesting of `c`
      * */
-    prv fn dump(self, c: &Config, dmut stream: &StringStream, indent: i32, retIndent: i32) {
+    prv fn dump(self, c: &Config, dmut stream: &StringStream, depth: u32) {
         match c {
             d: &Dict => {
-                self.dumpDict(d, alias stream, indent, retIndent);
+                self.dumpDict(d, alias stream, depth);
             }
             a: &Array => {
-                self.dumpArray(a, alias stream, indent, retIndent);
+                self.dumpArray(a, alias stream, depth);
             }
             Int(value-> i) => {
                 stream:.write(i);
@@ -110,62 +115,85 @@ pub record JsonDumper {
     }
 
     /**
-     * Dump an array in json format
+     * Write the separator before the element of a dict or an array at the level of nesting `depth`
      * @params:
-     *    - d: the dict to dump
-     *    - stream: the stream to fill
+     *    - first: true if it is the first element of its container, false otherwise
      * */
-    prv fn dumpArray(self, a: &Array, dmut stream: &StringStream, indent: i32, retIndent: i32) {
-        stream:.write("[");
-        for i, v in a[] {
-            if i != 0 {
-                stream:.write(", ");
+    prv fn separate(self, dmut stream: &StringStream, first: bool, depth: u32) {
+        if let Ok(n) = self._indent {
+            if !first {
+                stream:.write(",");
             }
 
-            self.dump(v, alias stream, indent, retIndent);
+            self.newLine(alias stream, n, depth);
+        } else if !first {
+            stream:.write(", ");
+        }
+    }
+
+    /**
+     * Write the end of line closing a non empty dict or array at the level of nesting `depth`
+     * */
+    prv fn close(self, dmut stream: &StringStream, depth: u32) {
+        if let Ok(n) = self._indent {
+            self.newLine(alias stream, n, depth);
+        }
+    }
+
+    /**
+     * Write a new line indented by `n` spaces per level of nesting
+     * */
+    prv fn newLine(self, dmut stream: &StringStream, n: u32, depth: u32) {
+        stream:.write("\n");
+        for _ in 0u32 .. n * depth {
+            stream:.write(" ");
+        }
+    }
+
+    /**
+     * Dump an array in json format
+     * @params:
+     *    - a: the array to dump
+     *    - stream: the stream to fill
+     *    - depth: the level of nesting of `a`
+     * */
+    prv fn dumpArray(self, a: &Array, dmut stream: &StringStream, depth: u32) {
+        stream:.write("[");
+        for i, v in a[] {
+            self.separate(alias stream, i == 0us, depth + 1u32);
+            self.dump(v, alias stream, depth + 1u32);
+        }
+
+        if a.len != 0us {
+            self.close(alias stream, depth);
         }
 
         stream:.write("]");
     }
 
     /**
-     * Dump a dictionnary in json format
+     * Dump a dictionnary in json format, its keys sorted, so that dumping twice produces the same text
      * @params:
      *    - d: the dict to dump
      *    - stream: the stream to fill
+     *    - depth: the level of nesting of `d`
      * */
-    prv fn dumpDict(self, d: &Dict, dmut stream: &StringStream, indent: i32, retIndent: i32) {
+    prv fn dumpDict(self, d: &Dict, dmut stream: &StringStream, depth: u32) {
         stream:.write("{");
-        if d[].len != 0 {
-            stream:.write("\n");
-            for _ in 0 .. indent + 3 {
-                stream:.write(" ");
-            }
-        }
-
-        let mut z = 0us;
+        let mut first = true;
         let content = d[];
-        for k in d.sortedKeys() { // sorted, so that dumping twice produces the same text
+        for k in d.sortedKeys() {
             if let Ok(v) = content[k] {
-                if z != 0 {
-                    stream:.write(",\n");
-                    for _ in 0 .. indent + 3 {
-                        stream:.write(" ");
-                    }
-                }
-
+                self.separate(alias stream, first, depth + 1u32);
                 self.dumpString(k, alias stream);
-                stream:.write(" : ");
-                self.dump(v, alias stream, indent + cast!i32(k.len) + 3, indent + 3);
-                z += 1;
+                stream:.write(": ");
+                self.dump(v, alias stream, depth + 1u32);
+                first = false;
             }
         }
 
-        if d[].len != 0 {
-            stream:.write("\n");
-            for _ in 0 .. retIndent {
-                stream:.write(" ");
-            }
+        if !first {
+            self.close(alias stream, depth);
         }
 
         stream:.write("}");

@@ -2,6 +2,7 @@ in conv;
 
 use core::exception::assertion;
 use std::conv;
+use std::conv::casing;
 use std::conv::utf;
 use std::traits;
 use helpers;
@@ -774,4 +775,56 @@ __test unionToString {
 
     assert(r.to![c8] () == "conv::StreamedRecord(12)", r.to![c8] ());
     assert(o.to![c32] () == "conv::OtherStreamedRecord()"s32);
+}
+
+__test casingSnake {
+    cte assert(snakeCase!{"buildDir"} == "build_dir");
+    cte assert(snakeCase!{"_buildDir"} == "build_dir");
+    cte assert(snakeCase!{"__build-dir_"} == "build_dir");
+    cte assert(snakeCase!{"BuildDir"} == "build_dir");
+    cte assert(snakeCase!{"HTTPServer"} == "http_server");
+    cte assert(snakeCase!{"parseHTTPRequest2"} == "parse_http_request2");
+    cte assert(snakeCase!{"base64Url"} == "base64_url");
+    cte assert(snakeCase!{"BUILD_DIR"} == "build_dir");
+    cte assert(snakeCase!{"a__b"} == "a_b");
+    cte assert(snakeCase!{"x"} == "x");
+    cte assert(snakeCase!{"___"} == "");
+    cte assert(snakeCase!{""} == "");
+}
+
+__test casingKebab {
+    cte assert(kebabCase!{"_buildDir"} == "build-dir");
+    cte assert(kebabCase!{"HTTP_SERVER"} == "http-server");
+    cte assert(kebabCase!{"build-dir"} == "build-dir");
+}
+
+__test casingScreamingSnake {
+    cte assert(screamingSnakeCase!{"_buildDir"} == "BUILD_DIR");
+    cte assert(screamingSnakeCase!{"http-server2"} == "HTTP_SERVER2");
+}
+
+__test casingCamel {
+    cte assert(camelCase!{"_build_dir"} == "buildDir");
+    cte assert(camelCase!{"BuildDir"} == "buildDir");
+    cte assert(camelCase!{"HTTP_SERVER"} == "httpServer");
+    cte assert(camelCase!{"base64_url"} == "base64Url");
+    cte assert(camelCase!{"x"} == "x");
+}
+
+__test casingPascal {
+    cte assert(pascalCase!{"_build_dir"} == "BuildDir");
+    cte assert(pascalCase!{"buildDir"} == "BuildDir");
+    cte assert(pascalCase!{"x"} == "X");
+}
+
+__test casingToCase {
+    cte assert(toCase!{"maxJobs", "snake_case"} == "max_jobs");
+    cte assert(toCase!{"maxJobs", "camelCase"} == "maxJobs");
+    cte assert(toCase!{"maxJobs", "PascalCase"} == "MaxJobs");
+    cte assert(toCase!{"maxJobs", "kebab-case"} == "max-jobs");
+    cte assert(toCase!{"maxJobs", "SCREAMING_SNAKE_CASE"} == "MAX_JOBS");
+    cte assert(isCaseConvention!{"kebab-case"});
+    cte assert(!isCaseConvention!{"kebab"});
+    cte assert(!isCaseConvention!{""});
+    cte assert(CONVENTIONS == "snake_case, camelCase, PascalCase, kebab-case, SCREAMING_SNAKE_CASE");
 }

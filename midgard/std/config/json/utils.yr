@@ -21,12 +21,49 @@ pub fn parse(content: [c8])-> &Config
 }
 
 /**
- * Dump a configuration in a utf8 string in json format
+ * Dump a configuration in a utf8 string in json format, on a single line
  * @params:
  *    - content: the configuration to dump
  * @returns: an utf8 string in json format
+ * @example:
+ * ```
+ * use std::config::json;
+ *
+ * let cfg = json#{"name" : "midgard", "versions" : [1, 2]};
+ * assert(dump(cfg) == "{\"name\": \"midgard\", \"versions\": [1, 2]}");
+ * ```
  * */
 pub fn dump(content: &Config)-> [c8] {
-    let dumper = JsonDumper(content);
+    utils::dump(content, none)
+}
+
+/**
+ * Dump a configuration in a utf8 string in json format, each entry of a dict or an array on its own line
+ * @params:
+ *    - content: the configuration to dump
+ *    - indent: the number of spaces per level of nesting, `0` putting each entry on its own line without indenting it
+ * @returns: an utf8 string in json format
+ * @example:
+ * ```
+ * use std::config::json;
+ *
+ * let cfg = json#{"name" : "midgard", "versions" : [1, 2]};
+ * assert(dump(cfg, indent-> 2u32) == "{\n  \"name\": \"midgard\",\n  \"versions\": [\n    1,\n    2\n  ]\n}");
+ * assert(dump(cfg, indent-> 0u32) == "{\n\"name\": \"midgard\",\n\"versions\": [\n1,\n2\n]\n}");
+ * ```
+ * */
+pub fn dump(content: &Config, indent: u32)-> [c8] {
+    utils::dump(content, indent?)
+}
+
+/**
+ * Dump a configuration in a utf8 string in json format
+ * @params:
+ *    - content: the configuration to dump
+ *    - indent: the number of spaces per level of nesting, each entry of a dict or an array on its own line, `0` putting them on their own line without indenting them, none to dump on a single line
+ * @returns: an utf8 string in json format
+ * */
+pub fn dump(content: &Config, indent: (u32)?)-> [c8] {
+    let dumper = JsonDumper(content, indent-> indent);
     return dumper.dump();
 }

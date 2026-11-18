@@ -42,79 +42,210 @@ pub def elements = access::elements;
 pub def entries = access::entries;
 
 /**
- * The print set stores the list of classes that are already serialized, to avoid infinite loops when a class contains itself
+ * The objects whose serialization is running, to avoid infinite loops when an object contains itself
  * */
 lazy mut __SERIALIZE_SET__: [*void => mut()] = copy [];
 
 /**
- * Simple trait to impl in a class to be serializable into a `Config`.
- * @warning: Work in progress, for the moment the trait does not implement a standard behavior, but it is planned to be done.
+ * Trait of the classes and the records that can be serialized into a `Config`, the one `to!{&Config}` accepts.
+ * It is implemented by the tag `#[serializable]`, which writes every field, or by hand, implementing `serialize`.
  * @example:
  * ```
  * use std::{config, io};
  *
- * class A {
- *     pub let value: i32;
+ * class Version {
+ *     let major: i32;
+ *     let minor: i32;
  *
- *     pub self (v: i32) with value = v {}
+ *     pub self (major: i32, minor: i32) with major = major, minor = minor {}
  *
- *     // using the default serialization method
- *     impl Serializable;
+ *     impl Serializable {
+ *         pub over serialize(self)-> &Config {
+ *             copy Str(std::conv::to!{[c8]} (self.major) ~ "." ~ std::conv::to!{[c8]} (self.minor))
+ *         }
+ *     }
  * }
  *
- * let a = copy A(89);
+ * #[serializable]
+ * class Package {
+ *     pub let name: [c8];
+ *     pub let version: &Version;
  *
- * // transform A into &Config, and then dump it using toml format
- * let cfg = a.to!{&Config} ();
- * println(toml::dump(cfg));
+ *     pub self (name: [c8], version: &Version) with name = name, version = version {}
+ * }
  *
- * // and into json using the same config
- * println(json::dump(cfg));
+ * let cfg = (copy Package("midgard", copy Version(3, 2))).to!{&Config} ();
+ * println(toml::dump(cfg)); // name = "midgard"\nversion = "3.2"
  * ```
  */
 pub trait Serializable {
 
     /**
-     * Serialize the content of the class
-     * @warning: ignore fields that failed to be serialized
-     * */
-    prot fn __config__serializeContent(self, dmut dict: &Dict) {
-        dict;
-        cte if (__pragma!has_super(typeof(self))) {
-            cte if template!{__pragma!super(typeof(self))}{X impl std::config::Serializable} {
-                self.super.__config__serializeContent(alias dict);
-            }
-        }
-
-        cte for i in 0 .. typeof(self)::field_infos.len {
-            let name = cte {typeof(self)::field_infos[i].name};
-            cte if (__pragma!compile({std::config::to!{&Config} (__pragma!field(self, name));})) {
-                dict[name] = std::config::to!{&Config} (__pragma!field(self, name));
-            }
-        }
-    }
-
-    /**
-     * Transform the object into a configuration
-     * Create dictionnary containing the serializable fields(ignore the fields that cannot be serialized, e.g. function pointers)
+     * @returns: the value transformed into a configuration
      */
-    pub fn serialize(self)-> &Config {
-        cte if template!{typeof(self)}{class C} {
-            let vd = etc::runtime::memory::Runtime!{typeof(self), *void}::_yrt_unsafe_cast(self);
-            let dmut dict = copy Dict();
-            if vd !in __SERIALIZE_SET__ {
-                __SERIALIZE_SET__[vd] = ();
-                self.__config__serializeContent(alias dict);
-                __SERIALIZE_SET__:.remove(vd);
+    pub fn serialize(self)-> &Config;
+}
+
+/**
+ * Tag of a field of a class or a record tagged `#[serializable]`, giving the key it is written under instead of its name
+ * @params:
+ *    - name: the key of the field, never converted by the `case` of `#[serializable]`
+ * @example:
+ * ```
+ * use std::config;
+ *
+ * #[serializable (case-> "kebab-case")]
+ * record Target {
+ *     #[key ("dir")]
+ *     pub let _buildDir: [c8] = "build";
+ *
+ *     pub let maxJobs: i32 = 4;
+ *
+ *     pub self () {}
+ * }
+ *
+ * let cfg = Target().to!{&Config} ();
+ * assert(cfg["dir"].to!{[c8]} () == "build" && cfg["max-jobs"].to!{i32} () == 4);
+ * ```
+ */
+pub tag key (name: [c8]) {}
+
+/**
+ * Tag implementing `Serializable` for a class or a record, as a `Dict` holding each of its fields, the private ones included, under its name.
+ * The fields of an ancestor implementing `Serializable`, tagged or by hand, are written first, under the keys of its own serialization; an ancestor that does not implement it is skipped. A field whose type cannot be converted into a `Config` (a function pointer, a delegate, ...) is skipped, unless it is tagged `#[key]`.
+ * An object met again while it is being serialized, through a field holding it, is written as an empty `Dict`.
+ * @params:
+ *    - case: the naming convention the field names are converted to (their leading underscores dropped first), one of `std::conv::casing::CONVENTIONS`, the names are kept as written by default. A field tagged `#[key]` is written under the key it gives.
+ * @example:
+ * ```
+ * use std::{config, io};
+ *
+ * #[serializable]
+ * class Shape {
+ *     pub let name: [c8];
+ *     pub self (name: [c8]) with name = name {}
+ * }
+ *
+ * #[serializable (case-> "snake_case")]
+ * class Square over Shape {
+ *     let _sideLength: i32;
+ *
+ *     #[key ("drawn")]
+ *     let mut _draws: i32 = 0;
+ *
+ *     pub self (side: i32) with super ("square"), _sideLength = side {}
+ * }
+ *
+ * let cfg = (copy Square(3)).to!{&Config} ();
+ * println(json::dump(cfg)); // {"drawn": 0, "name": "square", "side_length": 3}
+ * ```
+ */
+pub tag serializable (case: [c8] = "") {
+
+    pub class apply {class C} {
+
+        impl std::config::Serializable {
+
+            pub over serialize(self)-> &Config {
+                cte assert(case == "" || std::conv::casing::isCaseConvention!{case},
+                           "unknown case convention \"" ~ case ~ "\" on " ~ C::typeid ~ ", expected one of " ~ std::conv::casing::CONVENTIONS);
+                cte for i in 0us .. C::field_infos.len {
+                    cte for j in (i + 1us) .. C::field_infos.len {
+                        cte assert(!std::config::sameKey(std::config::serialKey!{C, C::field_infos[i].name, case}, std::config::serialKey!{C, C::field_infos[j].name, case}),
+                                   "the fields " ~ C::field_infos[i].name ~ " and " ~ C::field_infos[j].name ~ " of " ~ C::typeid ~ " are both serialized under the key \"" ~ std::config::serialKey!{C, C::field_infos[i].name, case} ~ "\"");
+                    }
+                }
+
+                let dmut dict = copy Dict();
+                let running = etc::runtime::memory::Runtime!{typeof(self), *void}::_yrt_unsafe_cast(self);
+                if running !in __SERIALIZE_SET__ {
+                    cte if (__pragma!has_super(C)) {
+                        cte if template!{__pragma!super(C)}{X impl std::config::Serializable} {
+                            if let ancestor: &Dict = self.super.serialize() {
+                                for k, v in ancestor[] {
+                                    dict[k] = v;
+                                }
+                            }
+                        }
+                    }
+
+                    __SERIALIZE_SET__[running] = ();
+
+                    cte for i in 0us .. C::field_infos.len {
+                        cte if (__pragma!compile({std::config::to!{&Config} (__pragma!field(self, C::field_infos[i].name));})) {
+                            dict[std::config::serialKey!{C, C::field_infos[i].name, case}] = std::config::to!{&Config} (__pragma!field(self, C::field_infos[i].name));
+                        } else {
+                            cte assert(!__pragma!field_has_tag(C, C::field_infos[i].name, std::config::key),
+                                       "the field " ~ C::field_infos[i].name ~ " of " ~ C::typeid ~ " is tagged #[key], but cannot be converted into a &Config");
+                        }
+                    }
+
+                    __SERIALIZE_SET__:.remove(running);
+                }
+
+                dict
             }
-
-            return dict;
-        } else {
-            let dmut dict = copy Dict();
-            self.__config__serializeContent(alias dict);
-
-            return dict;
         }
     }
 
+    pub record apply {record R} {
+
+        impl std::config::Serializable {
+
+            pub over serialize(self)-> &Config {
+                cte assert(case == "" || std::conv::casing::isCaseConvention!{case},
+                           "unknown case convention \"" ~ case ~ "\" on " ~ R::typeid ~ ", expected one of " ~ std::conv::casing::CONVENTIONS);
+                cte for i in 0us .. R::field_infos.len {
+                    cte for j in (i + 1us) .. R::field_infos.len {
+                        cte assert(!std::config::sameKey(std::config::serialKey!{R, R::field_infos[i].name, case}, std::config::serialKey!{R, R::field_infos[j].name, case}),
+                                   "the fields " ~ R::field_infos[i].name ~ " and " ~ R::field_infos[j].name ~ " of " ~ R::typeid ~ " are both serialized under the key \"" ~ std::config::serialKey!{R, R::field_infos[i].name, case} ~ "\"");
+                    }
+                }
+
+                let dmut dict = copy Dict();
+                cte for i in 0us .. R::field_infos.len {
+                    cte if (__pragma!compile({std::config::to!{&Config} (__pragma!field(self, R::field_infos[i].name));})) {
+                        dict[std::config::serialKey!{R, R::field_infos[i].name, case}] = std::config::to!{&Config} (__pragma!field(self, R::field_infos[i].name));
+                    } else {
+                        cte assert(!__pragma!field_has_tag(R, R::field_infos[i].name, std::config::key),
+                                   "the field " ~ R::field_infos[i].name ~ " of " ~ R::typeid ~ " is tagged #[key], but cannot be converted into a &Config");
+                    }
+                }
+
+                dict
+            }
+        }
+    }
+}
+
+/**
+ * The key `#[serializable (case)]` writes the field `F` of `T` under: the name given by its tag `#[key]`, or its name converted to `case`
+ * @example:
+ * ```
+ * use std::config;
+ *
+ * record A {
+ *     pub let _maxJobs: i32 = 1;
+ *
+ *     #[key ("dir")]
+ *     pub let buildDir: [c8] = "";
+ *
+ *     pub self () {}
+ * }
+ *
+ * cte assert(serialKey!{A, "_maxJobs", "kebab-case"} == "max-jobs");
+ * cte assert(serialKey!{A, "_maxJobs", ""} == "_maxJobs");
+ * cte assert(serialKey!{A, "buildDir", "kebab-case"} == "dir");
+ * ```
+ */
+pub def if (__pragma!field_has_tag(T, F, key)) serialKey {T, F: [c8], case: [c8]} = __pragma!field_tag(T, F, key).name;
+pub def if (!__pragma!field_has_tag(T, F, key) && !std::conv::casing::isCaseConvention!{case}) serialKey {T, F: [c8], case: [c8]} = F;
+pub def if (!__pragma!field_has_tag(T, F, key) && std::conv::casing::isCaseConvention!{case}) serialKey {T, F: [c8], case: [c8]} = std::conv::casing::toCase!{F, case};
+
+/**
+ * @returns: true if `a` and `b` are the same key
+ * @info: the duplicate keys check of `#[serializable]` runs it at compile time, the keys built by `std::conv::casing` cannot be compared with `==` there
+ */
+pub fn sameKey {T of [c8]} (a: T, b: T)-> bool {
+    a == b
 }
