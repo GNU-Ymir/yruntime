@@ -345,6 +345,31 @@ __test poolYieldIsFair { // on one worker, a task yielding goes behind the other
     assert (log.ids () == [1, 2, 1, 2, 1, 2, 1, 2]);
 }
 
+async openAll (dmut gates: [&Leaf]) {
+    for i in 0us .. gates.len {
+        gates[i]:.fire ();
+    }
+}
+
+__test poolYieldIsFairManyTasks { // the round robin holds with more ready tasks than the queue first has room for
+    let dmut pool = copy TaskPool (nbThreads-> 1u32);
+    let dmut log = copy Log ();
+    let dmut gates = copy [copy Leaf () for _ in 0 .. 40];
+    for i in 0us .. gates.len {
+        pool:.submit (stepping (alias gates[i], alias log, cast!i32 (i), 3));
+    }
+
+    pool:.submit (openAll (alias gates));
+    pool:.join ();
+    pool:.dispose ();
+
+    let ids = log.ids ();
+    assert (ids.len == 120us);
+    for i, id in ids {
+        assert (id == cast!i32 (i % 40us));
+    }
+}
+
 fn nap () {
     sleep (millis (250u64));
 }
