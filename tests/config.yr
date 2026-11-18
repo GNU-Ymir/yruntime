@@ -596,22 +596,22 @@ __test jsonBool { // MID-99: a Bool is dumped as a json boolean literal, not as 
   }
 }
 
+#[serializable]
 class SerialBase {
     pub let a: i32 = 1;
     pub self () {}
-    impl Serializable;
 }
 
+#[serializable]
 class SerialMid over SerialBase {
     pub let b: i32 = 2;
     pub self () {}
-    impl Serializable;
 }
 
+#[serializable]
 class SerialLeaf over SerialMid {
     pub let c: i32 = 3;
     pub self () {}
-    impl Serializable;
 }
 
 class SerialPlain {
@@ -619,13 +619,206 @@ class SerialPlain {
     pub self () {}
 }
 
+#[serializable]
 class SerialOverPlain over SerialPlain {
     pub let q: i32 = 8;
     pub self () {}
-    impl Serializable;
 }
 
 __test serializableInheritedFields { // MID-137: the fields of every Serializable ancestor are serialized, a non Serializable one is skipped
     assert(json::dump((copy SerialLeaf()).to!{&Config} ()) == "{\n   \"a\" : 1,\n   \"b\" : 2,\n   \"c\" : 3\n}", "a");
     assert(json::dump((copy SerialOverPlain()).to!{&Config} ()) == "{\n   \"q\" : 8\n}", "b");
+
+    let base: &SerialBase = copy SerialLeaf();
+    assert(json::dump(base.to!{&Config} ()) == "{\n   \"a\" : 1,\n   \"b\" : 2,\n   \"c\" : 3\n}", "c");
+}
+
+#[serializable]
+class SerialPrivate {
+    let hidden: i32 = 4;
+    let f: fn (i32)-> i32 = &serialId;
+    pub self () {}
+    pub fn apply(self)-> i32 { (self.f)(self.hidden) }
+}
+
+fn serialId(x: i32)-> i32 { x }
+
+__test serializablePrivateAndSkipped { // MID-138: private fields are serialized, a field that cannot be converted is skipped
+    let p = copy SerialPrivate();
+    assert(p.apply() == 4, "a");
+    assert(json::dump(p.to!{&Config} ()) == "{\n   \"hidden\" : 4\n}", "b");
+}
+
+#[serializable (case-> "snake_case")]
+class SerialSnake {
+    pub let _buildDir: i32 = 1;
+    pub let maxJobs: i32 = 2;
+    pub let HTTPServer: i32 = 3;
+    pub self () {}
+}
+
+#[serializable (case-> "camelCase")]
+class SerialCamel {
+    pub let _build_dir: i32 = 1;
+    pub let MaxJobs: i32 = 2;
+    pub self () {}
+}
+
+#[serializable (case-> "PascalCase")]
+class SerialPascal {
+    pub let _buildDir: i32 = 1;
+    pub let max_jobs: i32 = 2;
+    pub self () {}
+}
+
+#[serializable (case-> "kebab-case")]
+class SerialKebab {
+    pub let _buildDir: i32 = 1;
+    pub let max_jobs: i32 = 2;
+    pub self () {}
+}
+
+#[serializable (case-> "SCREAMING_SNAKE_CASE")]
+class SerialScreaming {
+    pub let _buildDir: i32 = 1;
+    pub let maxJobs: i32 = 2;
+    pub self () {}
+}
+
+#[serializable]
+class SerialAsWritten {
+    pub let _buildDir: i32 = 1;
+    pub let max_jobs: i32 = 2;
+    pub self () {}
+}
+
+fn serialKeys {T} (value: T)-> [[c8]] {
+    if let d: &Dict = value.to!{&Config} () {
+        return d.sortedKeys();
+    }
+
+    []
+}
+
+__test serializableCase { // MID-138: the case parameter converts every key, the leading underscores dropped first
+    assert(serialKeys(copy SerialSnake()) == ["build_dir", "http_server", "max_jobs"], "snake");
+    assert(serialKeys(copy SerialCamel()) == ["buildDir", "maxJobs"], "camel");
+    assert(serialKeys(copy SerialPascal()) == ["BuildDir", "MaxJobs"], "pascal");
+    assert(serialKeys(copy SerialKebab()) == ["build-dir", "max-jobs"], "kebab");
+    assert(serialKeys(copy SerialScreaming()) == ["BUILD_DIR", "MAX_JOBS"], "screaming");
+    assert(serialKeys(copy SerialAsWritten()) == ["_buildDir", "max_jobs"], "as written");
+}
+
+#[serializable (case-> "kebab-case")]
+class SerialRenamed {
+    #[key ("dir")]
+    pub let _buildDir: [c8] = "build";
+
+    #[key ("max_JOBS")]
+    pub let maxJobs: i32 = 2;
+
+    pub let nbThreads: i32 = 3;
+
+    pub self () {}
+}
+
+__test serializableKey { // MID-138: a field tagged #[key] is written under the key it gives, never converted by the case
+    let cfg = (copy SerialRenamed()).to!{&Config} ();
+    assert(json::dump(cfg) == "{\n   \"dir\" : \"build\",\n   \"max_JOBS\" : 2,\n   \"nb-threads\" : 3\n}", "a");
+    cte assert(serialKey!{&SerialRenamed, "_buildDir", "kebab-case"} == "dir");
+    cte assert(serialKey!{&SerialRenamed, "nbThreads", "kebab-case"} == "nb-threads");
+    cte assert(serialKey!{&SerialRenamed, "nbThreads", ""} == "nbThreads");
+}
+
+#[serializable (case-> "SCREAMING_SNAKE_CASE")]
+class SerialRenamedBase {
+    #[key ("id")]
+    pub let _identifier: i32 = 1;
+    pub let baseValue: i32 = 2;
+    pub self () {}
+}
+
+#[serializable (case-> "kebab-case")]
+class SerialRenamedLeaf over SerialRenamedBase {
+    #[key ("leaf")]
+    pub let leafName: [c8] = "l";
+    pub let leafValue: i32 = 3;
+    pub self () {}
+}
+
+__test serializableRenamedInheritance { // MID-138: an ancestor keeps the keys of its own tag
+    let cfg = (copy SerialRenamedLeaf()).to!{&Config} ();
+    assert(json::dump(cfg) == "{\n   \"BASE_VALUE\" : 2,\n   \"id\" : 1,\n   \"leaf\" : \"l\",\n   \"leaf-value\" : 3\n}", "a");
+}
+
+class SerialHand {
+    pub let version: (i32, i32) = (1, 2);
+    pub self () {}
+
+    impl Serializable {
+        pub over serialize(self)-> &Config {
+            let dmut d = copy Dict();
+            d["version"] = copy Str(std::conv::to!{[c8]} (self.version._0) ~ "." ~ std::conv::to!{[c8]} (self.version._1));
+            d
+        }
+    }
+}
+
+#[serializable (case-> "snake_case")]
+class SerialOverHand over SerialHand {
+    pub let maxJobs: i32 = 4;
+    pub self () {}
+}
+
+class SerialHandScalar {
+    pub self () {}
+
+    impl Serializable {
+        pub over serialize(self)-> &Config {
+            copy Str("scalar")
+        }
+    }
+}
+
+#[serializable]
+class SerialOverHandScalar over SerialHandScalar {
+    pub let x: i32 = 1;
+    pub self () {}
+}
+
+__test serializableOverHandWritten { // MID-138: a tagged class over a hand-written Serializable ancestor merges the Dict its ancestor returns
+    assert(json::dump((copy SerialHand()).to!{&Config} ()) == "{\n   \"version\" : \"1.2\"\n}", "a");
+    assert(json::dump((copy SerialOverHand()).to!{&Config} ()) == "{\n   \"max_jobs\" : 4,\n   \"version\" : \"1.2\"\n}", "b");
+    assert(json::dump((copy SerialOverHandScalar()).to!{&Config} ()) == "{\n   \"x\" : 1\n}", "c");
+}
+
+#[serializable (case-> "kebab-case")]
+record SerialRecord {
+    #[key ("dir")]
+    pub let _buildDir: [c8] = "build";
+    pub let maxJobs: i32 = 4;
+    pub let inner: &SerialBase = copy SerialBase();
+    pub self () {}
+}
+
+__test serializableRecord { // MID-138: a tagged record is converted through to!{&Config}, by value and by reference
+    let r = SerialRecord();
+    for cfg in [SerialRecord().to!{&Config} (), r.to!{&Config} (), r.serialize()] {
+        assert(serialKeys(cfg) == ["dir", "inner", "max-jobs"], "a");
+        assert(cfg.str("dir") == ("build")? && cfg.int("max-jobs") == (4i64)? && cfg.int("inner", "a") == (1i64)?, "b");
+    }
+}
+
+#[serializable]
+class SerialCycle {
+    pub let mut next: [&SerialCycle] = [];
+    pub let v: i32 = 1;
+    pub self () {}
+}
+
+__test serializableCycle { // an object met again while it is serialized is written as an empty Dict
+    let dmut c = copy SerialCycle();
+    c.next = copy [alias c];
+    assert(json::dump(c.to!{&Config} ()) == "{\n   \"next\" : [{}],\n   \"v\" : 1\n}", "a");
+    assert(json::dump(c.to!{&Config} ()) == "{\n   \"next\" : [{}],\n   \"v\" : 1\n}", "b");
 }
