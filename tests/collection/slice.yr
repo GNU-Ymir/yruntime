@@ -1,0 +1,167 @@
+in slice;
+
+use std::collection::slice;
+
+class Counter {
+    pub let mut n: i32;
+    pub self (n: i32) with n = n {}
+}
+
+__test appendGrowsInPlace { // an append fills the capacity left without reallocating
+    let mut a: [i32] = [];
+    a ~= [1];
+    let cap = a.capacity ();
+    let ptr = a.ptr;
+    for i in 1us .. cap {
+        a ~= [cast!i32 (i)];
+    }
+
+    assert (a.ptr == ptr && a.len == cap, "in place");
+}
+
+__test reserveThenAppend { // the appends up to the reserved room keep the block
+    let mut a = copy [1, 2];
+    reserve (ref a, 100us);
+    assert (a == [1, 2] && a.capacity () >= 102us, "reserved");
+
+    let ptr = a.ptr;
+    for i in 0 .. 100 {
+        a ~= [i];
+    }
+
+    assert (a.ptr == ptr && a.len == 102us && a[101us] == 99, "in place");
+}
+
+__test reserveEnoughIsNoop { // reserving the room it has already keeps the block
+    let mut a: [i32] = [];
+    reserve (ref a, 10us);
+    let ptr = a.ptr;
+    reserve (ref a, 5us);
+    assert (a.ptr == ptr, "kept");
+}
+
+__test reserveCutSlice { // a slice cut out of another reallocates, leaving the other alone
+    let a = copy [1, 2, 3, 4];
+    let mut b = a[0us .. 2us];
+    assert (b.capacity () == 2us, "cut capacity");
+
+    reserve (ref b, 10us);
+    b ~= [9];
+    assert (b == [1, 2, 9] && a == [1, 2, 3, 4], "independent");
+}
+
+__test shrinkToLength { // a shrunk slice holds its content in a block of its length
+    let mut a: [mut i32] = [];
+    reserve (ref a, 64us);
+    a ~= [1, 2, 3];
+    shrink (ref a);
+    assert (a == [1, 2, 3] && a.capacity () == 3us, "shrunk");
+
+    clear (ref a);
+    shrink (ref a);
+    assert (a.len == 0us && a.capacity () == 0us, "empty");
+}
+
+__test truncateKeepsCapacity { // the room a truncation frees is filled back in place
+    let mut a: [mut i32] = copy [1, 2, 3, 4];
+    let ptr = a.ptr;
+    truncate (ref a, 2us);
+    truncate (ref a, 3us);
+    assert (a == [1, 2], "truncated");
+
+    a ~= [5, 6];
+    assert (a == [1, 2, 5, 6] && a.ptr == ptr, "in place");
+}
+
+__test clearKeepsCapacity {
+    let mut a: [mut i32] = copy [1, 2, 3];
+    let ptr = a.ptr;
+    clear (ref a);
+    assert (a.len == 0us, "cleared");
+
+    a ~= [7];
+    assert (a == [7] && a.ptr == ptr, "in place");
+}
+
+__test popAll { // the elements come out from the last, none once empty
+    let mut a: [mut i32] = copy [1, 2, 3];
+    assert (pop (ref a) == (3)?, "3");
+    assert (pop (ref a) == (2)?, "2");
+    assert (pop (ref a) == (1)?, "1");
+    assert (pop (ref a) == none && a.len == 0us, "empty");
+}
+
+__test popPushInPlace { // a stack pushing and popping never reallocates
+    let mut a: [mut i32] = [];
+    reserve (ref a, 4us);
+    let ptr = a.ptr;
+    for i in 0 .. 1000 {
+        a ~= [i, i + 1];
+        assert (pop (ref a) == (i + 1)?, "pop");
+        assert (pop (ref a) == (i)?, "pop");
+    }
+
+    assert (a.ptr == ptr, "in place");
+}
+
+__test popInstance { // the popped instance is the very one of the slice
+    let dmut a = copy [copy Counter (1), copy Counter (2)];
+    let dmut kept = alias a[1us];
+    if let Ok (dmut c) = alias pop (ref a) {
+        c.n = 20;
+    }
+
+    assert (kept.n == 20 && a.len == 1us, "same instance");
+    let dmut empty: [&Counter] = [];
+    assert (!pop (ref empty).hasValue, "empty");
+}
+
+__test insertAnywhere {
+    let mut a: [mut i32] = [];
+    insert (ref a, 0us, 2);
+    insert (ref a, 0us, 0);
+    insert (ref a, 1us, 1);
+    insert (ref a, 3us, 3);
+    assert (a == [0, 1, 2, 3], "inserted");
+}
+
+__test insertStrings { // the elements of a slice of strings are themselves immutable
+    let mut a: [mut [c8]] = copy ["a"s8, "c"s8];
+    insert (ref a, 1us, "b");
+    assert (a == ["a"s8, "b"s8, "c"s8], "inserted");
+    assert (removeAt (ref a, 0us) == "a" && a == ["b"s8, "c"s8], "removed");
+}
+
+__test insertInstance {
+    let dmut a = copy [copy Counter (1)];
+    insert (ref a, 0us, copy Counter (0));
+    a[0us].n += 10;
+    assert (a.len == 2us && a[0us].n == 10 && a[1us].n == 1, "inserted");
+}
+
+__test removeAtEnds {
+    let mut a: [mut i32] = copy [1, 2, 3, 4];
+    assert (removeAt (ref a, 3us) == 4 && a == [1, 2, 3], "last");
+    assert (removeAt (ref a, 0us) == 1 && a == [2, 3], "first");
+    assert (removeAt (ref a, 0us) == 2 && removeAt (ref a, 0us) == 3 && a.len == 0us, "all");
+}
+
+__test removeAtInstance {
+    let dmut a = copy [copy Counter (1), copy Counter (2), copy Counter (3)];
+    let dmut c = removeAt (ref a, 1us);
+    c.n = 0;
+    assert (a.len == 2us && a[0us].n == 1 && a[1us].n == 3, "removed");
+}
+
+__test swapRemoveMovesLast {
+    let mut a: [mut i32] = copy [1, 2, 3, 4];
+    assert (swapRemove (ref a, 1us) == 2 && a == [1, 4, 3], "middle");
+    assert (swapRemove (ref a, 2us) == 3 && a == [1, 4], "last");
+}
+
+__test swapRemoveInstance {
+    let dmut a = copy [copy Counter (1), copy Counter (2), copy Counter (3)];
+    let dmut c = swapRemove (ref a, 0us);
+    c.n = 0;
+    assert (a.len == 2us && a[0us].n == 3 && a[1us].n == 2, "removed");
+}
