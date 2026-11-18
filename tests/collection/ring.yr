@@ -1,0 +1,66 @@
+in ring;
+
+use std::collection;
+
+class Counter {
+    pub let mut n: i32;
+    pub self (n: i32) with n = n {}
+}
+
+__test fifo {
+    let dmut r = copy Ring!{i32} ();
+    for i in 0 .. 100 { r:.push (i); }
+    for i in 0 .. 100 {
+        assert (r:.pop () == (i)?, "order");
+    }
+
+    assert (r:.pop () == none && r.len == 0us, "empty");
+}
+
+__test lifoFromFront { // pushFront and pop make a stack, across the growths
+    let dmut r = copy Ring!{i32} ();
+    for i in 0 .. 100 { r:.pushFront (i); }
+    for i in 0 .. 100 {
+        assert (r:.pop () == (99 - i)?, "order");
+    }
+}
+
+__test bothEnds { // pushes on both ends, wrapping around the storage
+    let dmut r = copy Ring!{i32} ();
+    for i in 0 .. 50 {
+        r:.push (i);
+        r:.pushFront (-i - 1);
+    }
+
+    assert (r.len == 100us && r.front () == (-50)? && r.back () == (49)?, "ends");
+    for i in 0 .. 100 {
+        assert (r[cast!usize (i)] == (i - 50)?, "index");
+    }
+
+    for i in 0 .. 50 {
+        assert (r:.popBack () == (49 - i)?, "back");
+        assert (r:.pop () == (-50 + i)?, "front");
+    }
+
+    assert (r:.popBack () == none && r.front () == none && !r.back ().hasValue, "empty");
+}
+
+__test interleaved { // a queue going through its storage many times without growing
+    let dmut r = copy Ring!{i32} ();
+    for i in 0 .. 1000 {
+        r:.push (i);
+        r:.push (i);
+        assert (r:.pop () != none, "pop");
+    }
+
+    assert (r.len == 1000us, "len");
+}
+
+__test instances { // both ends hand back the very instances
+    let dmut r = copy Ring!{dmut &Counter} ();
+    r:.push (copy Counter (1));
+    r:.pushFront (copy Counter (0));
+    if let Ok (dmut c) = alias r:.popBack () { c.n = 10; assert (c.n == 10, "back"); }
+    if let Ok (dmut c) = alias r:.pop () { c.n = 5; assert (c.n == 5, "front"); }
+    assert (r.len == 0us && !r.back ().hasValue, "empty");
+}
