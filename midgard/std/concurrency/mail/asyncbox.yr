@@ -5,6 +5,8 @@
 
 in asyncbox;
 
+use std::concurrency::ring;
+
 /**
  * The messages of an `AsyncMailBox`, and its receivers waiting for one in the order they registered
  */
@@ -12,12 +14,12 @@ in asyncbox;
 class Mails {T, mutable: bool} {
 
     cte if mutable {
-        let dmut _mails: [T] = [];
+        let dmut _mails: &Ring!{dmut T} = copy Ring!{dmut T} ();
     } else {
-        let mut _mails: [T] = [];
+        let dmut _mails: &Ring!{T} = copy Ring!{T} ();
     }
 
-    let mut _waiting: [(u64, dg ()-> void)] = [];
+    let dmut _waiting: &Ring!{(u64, dg ()-> void)} = copy Ring!{(u64, dg ()-> void)} ();
 
     let mut _tickets: u64 = 0u64;
 
@@ -34,7 +36,7 @@ class Mails {T, mutable: bool} {
             let mut waker: (dg ()-> void)? = none;
             atomic self {
                 if self._closed return false;
-                self._mails ~= [value];
+                self._mails:.push (value);
                 waker = self:.popWaiter ();
             }
 
@@ -52,10 +54,8 @@ class Mails {T, mutable: bool} {
          */
         pub fn take (mut self, ref mut ticket: u64, waker: dg ()-> void)-> (T?)? {
             atomic self {
-                if self._mails.len != 0us {
+                if let Ok (value) = self._mails:.pop () {
                     self:.unregister (ref ticket);
-                    let value = self._mails[0];
-                    self._mails = self._mails[1us .. $];
                     return (value?)?;
                 }
 
@@ -79,7 +79,7 @@ class Mails {T, mutable: bool} {
             let mut waker: (dg ()-> void)? = none;
             atomic self {
                 if self._closed return false;
-                self._mails ~= [alias value];
+                self._mails:.push (alias value);
                 waker = self:.popWaiter ();
             }
 
@@ -97,10 +97,8 @@ class Mails {T, mutable: bool} {
          */
         pub fn take (mut self, ref mut ticket: u64, waker: dg ()-> void)-> dmut (T?)? {
             atomic self {
-                if self._mails.len != 0us {
+                if let Ok (dmut value) = alias self._mails:.pop () {
                     self:.unregister (ref ticket);
-                    let dmut value = alias self._mails[0];
-                    self._mails = alias self._mails[1us .. $];
                     return ((alias value)?)?;
                 }
 
@@ -121,15 +119,15 @@ class Mails {T, mutable: bool} {
      * Refuse any further message, and wake every waiting receiver once the lock is released
      */
     pub fn close (mut self) {
-        let mut waiting: [(u64, dg ()-> void)] = [];
+        let dmut waiting: &Ring!{(u64, dg ()-> void)} = copy Ring!{(u64, dg ()-> void)} ();
         atomic self {
             if self._closed return;
             self._closed = true;
-            waiting = self._waiting;
-            self._waiting = [];
+            waiting = alias self._waiting;
+            self._waiting = copy Ring!{(u64, dg ()-> void)} ();
         }
 
-        for w in waiting {
+        while let Ok (w) = waiting:.pop () {
             w._1 ();
         }
     }
@@ -150,10 +148,8 @@ class Mails {T, mutable: bool} {
      * @returns: the waker of the receiver waiting the longest, removed from the waiting ones; the lock is held
      */
     fn popWaiter (mut self)-> (dg ()-> void)? {
-        if self._waiting.len == 0us return none;
-        let waker = self._waiting[0]._1;
-        self._waiting = self._waiting[1us .. $];
-        waker?
+        if let Ok (w) = self._waiting:.pop () return w._1?;
+        none
     }
 
     /**
@@ -161,10 +157,12 @@ class Mails {T, mutable: bool} {
      */
     fn register (mut self, ref mut ticket: u64, waker: dg ()-> void) {
         if ticket != 0u64 {
-            for i, w in self._waiting {
-                if w._0 == ticket {
-                    self._waiting = self._waiting[0us .. i] ~ [(ticket, waker)] ~ self._waiting[i + 1us .. $];
-                    return;
+            for i in 0us .. self._waiting.len {
+                if let Ok (w) = self._waiting[i] {
+                    if w._0 == ticket {
+                        self._waiting:.set (i, (ticket, waker));
+                        return;
+                    }
                 }
             }
         } else {
@@ -172,7 +170,7 @@ class Mails {T, mutable: bool} {
             ticket = self._tickets;
         }
 
-        self._waiting ~= [(ticket, waker)];
+        self._waiting:.push ((ticket, waker));
     }
 
     /**
@@ -180,10 +178,12 @@ class Mails {T, mutable: bool} {
      */
     fn unregister (mut self, ref mut ticket: u64) {
         if ticket == 0u64 return;
-        for i, w in self._waiting {
-            if w._0 == ticket {
-                self._waiting = self._waiting[0us .. i] ~ self._waiting[i + 1us .. $];
-                break;
+        for i in 0us .. self._waiting.len {
+            if let Ok (w) = self._waiting[i] {
+                if w._0 == ticket {
+                    self._waiting:.removeAt (i);
+                    break;
+                }
             }
         }
 

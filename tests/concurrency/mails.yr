@@ -96,6 +96,50 @@ __test asyncMailLostRace { // a woken receiver beaten to the message registers a
     assert (got (ref a, alias wa, 3));
 }
 
+__test asyncMailLeaveMiddle { // a receiver taking a message from the middle of the waiters leaves the others in order
+    let dmut box = copy AsyncMailBox!{i32} ();
+    let dmut rs = copy [box:.receive () for _ in 0 .. 4];
+    let dmut ws = copy [copy Wakes () for _ in 0 .. 4];
+    for i in 0us .. rs.len {
+        assert (pending (ref rs[i], alias ws[i]));
+    }
+
+    box:.send (1);
+    assert (ws[0].count () == 1);
+    assert (got (ref rs[2], alias ws[2], 1));
+
+    box:.send (2);
+    box:.send (3);
+    assert (ws[1].count () == 1 && ws[2].count () == 0 && ws[3].count () == 1);
+}
+
+__test asyncMailOrderPastGrowth { // the messages keep their order while the box grows past messages already taken
+    let dmut box = copy AsyncMailBox!{i32} ();
+    let dmut r = box:.receive ();
+    let dmut w = copy Wakes ();
+    let mut next = 0;
+    let mut sent = 0;
+    for round in 1 .. 8 {
+        for _ in 0 .. round * 7 {
+            box:.send (sent);
+            sent += 1;
+        }
+
+        for _ in 0 .. round * 3 {
+            assert (got (ref r, alias w, next));
+            next += 1;
+        }
+    }
+
+    assert (box.len == cast!usize (sent - next));
+    while next < sent {
+        assert (got (ref r, alias w, next));
+        next += 1;
+    }
+
+    assert (pending (ref r, alias w));
+}
+
 __test asyncMailCloseWakes { // close wakes every waiting receiver, which drain the box, then complete empty
     let dmut box = copy AsyncMailBox!{i32} ();
     let dmut rs = copy [box:.receive () for _ in 0 .. 4];
@@ -324,6 +368,35 @@ __test asyncMailMutableInstance { // the receiver mutates the very instance that
     assert (!box:.send (alias job));
     assert (jobsEnded (ref r, alias w));
     assert (box.isClosed && box.len == 0us);
+}
+
+__test asyncMailMutableOrderPastGrowth { // the instances keep their order while the box grows past ones already taken
+    let dmut box = copy AsyncMailBox!{dmut &Job} ();
+    let dmut r = box:.receive ();
+    let dmut w = copy Wakes ();
+    let dmut jobs = copy [copy Job (i) for i in 0 .. 100];
+    let mut next = 0;
+    let mut sent = 0us;
+    for round in 1 .. 6 {
+        for _ in 0 .. round * 6 {
+            box:.send (alias jobs[sent]);
+            sent += 1us;
+        }
+
+        for _ in 0 .. round * 3 {
+            assert (runJob (ref r, alias w, next));
+            next += 1;
+        }
+    }
+
+    while cast!usize (next) < sent {
+        assert (runJob (ref r, alias w, next));
+        next += 1;
+    }
+
+    for i in 0us .. sent {
+        assert (jobs[i].runs == 1);
+    }
 }
 
 async runAll (dmut box: &AsyncMailBox!{dmut &Job})-> i32 {
