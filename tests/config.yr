@@ -409,15 +409,7 @@ __test sortedKeys {
 
 __test jsonIndent { // dump on a single line by default, or each entry on its own line indented by indent spaces per level, as python's json.dumps
   {
-    let dmut deps = copy Array();
-    deps:.push(json#{"a" : 1});
-    deps:.push(copy Array());
-    deps:.push(copy Dict());
-
-    let dmut cfg = copy Dict();
-    cfg["name"] = copy Str("midgard");
-    cfg["deps"] = deps;
-    cfg["empty"] = copy Array();
+    let cfg = json#{"name" : "midgard", "deps" : [{"a" : 1}, [], {}], "empty" : []};
 
     assert(json::dump(cfg) == "{\"deps\": [{\"a\": 1}, [], {}], \"empty\": [], \"name\": \"midgard\"}", "a");
     assert(json::dump(cfg, none) == json::dump(cfg), "b");
@@ -577,6 +569,15 @@ __test jsonNull { // MID-56: a null literal parses to a None node, and is dumped
   } catch {
     err => { println(err); assert(false, "threw"); }
   }
+}
+
+__test jsonMacroEmptyArray { // the json macro accepts an empty array as a value and as an element
+    let d = json#{"a" : [], "b" : [[], [1, [ ]], {}], "c" : {"d" : []}};
+    assert(json::dump(d) == "{\"a\": [], \"b\": [[], [1, []], {}], \"c\": {\"d\": []}}", "a");
+
+    if let Ok(a: &Array) = d["a"]? {
+        assert(a.len == 0us, "b");
+    } else { assert(false, "c"); }
 }
 
 __test jsonMacroNull { // MID-56: the json macro accepts null as a value
