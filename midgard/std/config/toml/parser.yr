@@ -142,27 +142,34 @@ pub record TomlParser {
     }
 
     /**
-     * Parse an array value
+     * Parse an array value, its last element possibly followed by a comma
      * */
     prv fn parseArray(mut self)-> &Array
         throws SyntaxError
     {
         let dmut result = copy Array();
-
-        let cursor = self._lex.getCursor();
-        let (b, _, _) = self._lex:.next(); // check if we have an empty array
-        if (b == "]") return result;
-        else {
-            self._lex:.rewind(expand cursor); // rewind the read
-        }
+        if self:.readArrayEnd() return result;
 
         loop {
             result:.push(self:.parseValue());
             let (n, _, _) = self:.assertRead([",", "]"]);
-            if (n == "]") break;
+            if (n == "]" || self:.readArrayEnd()) break;
         }
 
         result
+    }
+
+    /**
+     * Consume the next token if it closes an array
+     * @returns: true iif it did
+     * */
+    prv fn readArrayEnd(mut self)-> bool {
+        let cursor = self._lex.getCursor();
+        let (b, _, _) = self._lex:.next();
+        if (b == "]") return true;
+
+        self._lex:.rewind(expand cursor);
+        false
     }
 
     /**
