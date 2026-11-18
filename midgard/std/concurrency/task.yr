@@ -214,6 +214,8 @@ pub class TaskHandle {T} {
 
     let mut _value: T? = none;
 
+    let mut _waker: (dg ()-> void)? = none;
+
     let mut _wakers: [dg ()-> void] = [];
 
     /**
@@ -231,11 +233,16 @@ pub class TaskHandle {T} {
     pub fn poll (mut self, waker: dg ()-> void)-> T? {
         atomic self {
             if self._value.hasValue return self._value;
-            for w in self._wakers {
-                if w == waker return none;
-            }
+            if let Ok (first) = self._waker {
+                if first == waker return none;
+                for w in self._wakers {
+                    if w == waker return none;
+                }
 
-            self._wakers ~= [waker];
+                self._wakers ~= [waker];
+            } else {
+                self._waker = waker?;
+            }
         }
 
         none
@@ -263,11 +270,18 @@ pub class TaskHandle {T} {
 
         if let Ok (s) = source {
             let value = (await s)?;
+            let mut first: (dg ()-> void)? = none;
             let mut wakers: [dg ()-> void] = [];
             atomic self {
                 self._value = value;
+                first = self._waker;
                 wakers = self._wakers;
+                self._waker = none;
                 self._wakers = [];
+            }
+
+            if let Ok (w) = first {
+                w ();
             }
 
             for w in wakers {
