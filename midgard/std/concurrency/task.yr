@@ -2,6 +2,7 @@
  * This module implements the class TaskPool, a set of worker threads polling async values, and the class Task,
  * the scheduling state of an async value, that its waker puts back in a ready queue.
  * A worker polls a ready task once: a pending task frees its worker, and is polled again only once woken.
+ * Submitting an async returns a `TaskHandle` of its result, that an async awaits and a thread waits on.
  * @Authors: Emile Cadorel
  * @License: GPLv3
  * <hr>
@@ -177,6 +178,111 @@ pub class Task {
 }
 
 /**
+ * The handle of the value an async completes with, a leaf that any number of asyncs can await, and threads wait on.
+ * `TaskPool::submit` returns one, the task it submits being `drive`.
+ * Awaiting a handle never throws, as the async it is the result of cannot throw: an error travels in the value.
+ * @example:
+ * ```
+ * use std::io;
+ * use std::concurrency;
+ *
+ * async square (x: i32)-> i32 {
+ *     x * x
+ * }
+ *
+ * async sum (dmut pool: &TaskPool, n: i32)-> i32 {
+ *     let dmut handles = copy [pool:.submit (square (i)) for i in 0 .. n];
+ *     let mut total = 0;
+ *     for i in 0us .. handles.len {
+ *         total += await alias handles[i]; // parks this task, its worker polls the children meanwhile
+ *     }
+ *     total
+ * }
+ *
+ * fn main () {
+ *     let dmut pool = copy TaskPool (nbThreads-> 2u32);
+ *     let dmut h = pool:.submit (sum (alias pool, 10));
+ *     println (h:.wait ()); // 285
+ *     pool:.dispose ();
+ * }
+ * ```
+ */
+@final
+pub class TaskHandle {T} {
+
+    let mut _source: (async-> T)? = none;
+
+    let mut _value: T? = none;
+
+    let mut _wakers: [dg ()-> void] = [];
+
+    /**
+     * @params:
+     *    - source: the async value whose result the handle holds, once `drive` completed it
+     */
+    pub self (source: async-> T)
+        with _source = source?
+    {}
+
+    /**
+     * @returns: the value of the async if it completed, none otherwise, calling `waker` once it completes
+     * @info: the wakers are a set of delegates, so an awaiter polling with the same waker is registered once
+     */
+    pub fn poll (mut self, waker: dg ()-> void)-> T? {
+        atomic self {
+            if self._value.hasValue return self._value;
+            for w in self._wakers {
+                if w == waker return none;
+            }
+
+            self._wakers ~= [waker];
+        }
+
+        none
+    }
+
+    /**
+     * Block the calling thread until the async completed
+     * @returns: the value of the async
+     * @warning: waiting from a worker holds it, and never returns once the pool is disposed before completion
+     */
+    pub fn wait (mut self)-> T {
+        awaitHandle!{T} (alias self).run ()
+    }
+
+    /**
+     * Await the source to completion, then store its value and call the wakers.
+     * Only the first `drive` awaits the source, any other one completing at once.
+     */
+    pub async drive (mut self) {
+        let mut source: (async-> T)? = none;
+        atomic self {
+            source = self._source;
+            self._source = none;
+        }
+
+        if let Ok (s) = source {
+            let value = (await s)?;
+            let mut wakers: [dg ()-> void] = [];
+            atomic self {
+                self._value = value;
+                wakers = self._wakers;
+                self._wakers = [];
+            }
+
+            for w in wakers {
+                w ();
+            }
+        }
+    }
+
+}
+
+async awaitHandle {T} (dmut handle: &TaskHandle!{T})-> T {
+    await alias handle
+}
+
+/**
  * A pool of worker threads polling the async values submitted to it.
  * The ready tasks wait in a FIFO queue, a worker dequeuing one and polling it once (see `Task::run`).
  * A pending task frees its worker: it is held only by what keeps its waker, and is put back in the queue once woken.
@@ -222,14 +328,17 @@ pub class TaskPool {
 
     /**
      * Submit an async value to the pool, its first poll being due
+     * @returns: the handle of the value the async completes with, awaited from an async or waited on from a thread
      */
-    pub fn submit (mut self, value: async-> void) {
-        let dmut task = copy Task (value, &self:.schedule);
+    pub fn submit {T} (mut self, value: async-> T)-> dmut &TaskHandle!{T} {
+        let dmut handle = copy TaskHandle!{T} (value);
+        let dmut task = copy Task (handle:.drive (), &self:.schedule);
         atomic self {
             self._submitted += 1;
         }
 
         self:.schedule (alias task);
+        alias handle
     }
 
     /**
