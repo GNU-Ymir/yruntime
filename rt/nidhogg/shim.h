@@ -224,6 +224,7 @@ void     _yrt_nh_remove_roots (void * lo, void * hi);
 void     _yrt_nh_register_thread (void);
 void     _yrt_nh_collect (void);
 void     _yrt_nh_wait_finalizers (void);
+uint64_t _yrt_nh_allocated (void);
 uint64_t _yrt_nh_live_bytes (void);
 void     _yrt_nh_exit (void);
 void     _yrt_nh_crash (void);
