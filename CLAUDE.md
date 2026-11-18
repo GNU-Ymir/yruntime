@@ -379,9 +379,10 @@ Stacks, registers and objects are scanned conservatively, interior pointers incl
   pointers, growing slices and maps, large objects, finalizers, forks and short-lived threads, a
   heap given back to the system (`release`) and one held under `NIDHOGG_MEMLIMIT` (`memlimit`),
   each run again at `NIDHOGG_GOGC=1` and under the verification (their `.env`).
-- `etc::runtime::gc` exposes `_yrt_gc_collect` (a whole cycle, waited for) and
-  `_yrt_gc_wait_finalizers`; finalizers run unordered on a thread of their own, and once more at
-  exit.
+- `etc::runtime::gc` exposes `_yrt_gc_collect` (a whole cycle, waited for),
+  `_yrt_gc_wait_finalizers` and `_yrt_gc_live_bytes` (`heapMarked`, what the last completed cycle found reachable: read after
+  `_yrt_gc_collect` at each repetition of an action, it grows if the action leaks reachable
+  objects); finalizers run unordered on a thread of their own, and once more at exit.
 
 ### `tests/` — the test suite
 

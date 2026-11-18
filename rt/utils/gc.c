@@ -19,3 +19,7 @@ void _yrt_gc_collect () {
 void _yrt_gc_wait_finalizers () {
     _yrt_nh_wait_finalizers ();
 }
+
+uint64_t _yrt_gc_live_bytes () {
+    return _yrt_nh_live_bytes ();
+}
