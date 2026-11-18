@@ -138,6 +138,9 @@ fn runCycle (number: u64) {
         (*g).hard = hard;
         (*g).trigger = triggerOf (marked, goal, (*g).runway);
         (*g).statUnmapped = (*g).statUnmapped + releaseChunks (goal, (*g).memLimit);
+        if ((*g).stats >= 2u8) {
+            printCycle (number, marked, freed, goal);
+        }
     }
 }
 
@@ -686,6 +689,23 @@ fn describe (p: usize) {
  * ====================================================================================================
  * ====================================================================================================
  */
+
+/**
+ * Print the line of the cycle `number` on the standard error: the bytes it found reachable, the
+ * ones its sweep freed and the goal of the next cycle
+ * */
+@{nogc, unsafe}
+fn printCycle (number: u64, live: u64, freed: u64, goal: u64) {
+    print ("nidhogg: cycle ");
+    printNum (number);
+    print (", live ");
+    printNum (live);
+    print (" bytes, freed ");
+    printNum (freed);
+    print (" bytes, goal ");
+    printNum (goal);
+    print (" bytes\n");
+}
 
 /**
  * Print the statistics of the collector on the standard error, if NIDHOGG_STATS is set

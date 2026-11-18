@@ -367,7 +367,9 @@ Stacks, registers and objects are scanned conservatively, interior pointers incl
   allocations, peak, collector time, the longest per-thread pause, from the handshake to the
   release, with what it was made of, the average one, the longest time a handshake signal took to
   reach a thread, not a pause, the rescans of the heap, the bytes the assists scanned, the grey
-  buffers the collector handed them, and the chunks unmapped, at exit), `NIDHOGG_MARK_STACK=N` (a mark
+  buffers the collector handed them, and the chunks unmapped, at exit; `NIDHOGG_STATS=2` adds a
+  line per cycle: its number, the bytes it found reachable, the ones it freed and the next goal,
+  `printCycle`), `NIDHOGG_MARK_STACK=N` (a mark
   stack of N entries, to exercise its rescans) and `NIDHOGG_VERIFY=1` (after each mark, every thread
   parked at once, aborts if a marked object, root or data segment points into an unmarked object —
   the stacks are not checked, their stale words would be false positives) are read at the first
