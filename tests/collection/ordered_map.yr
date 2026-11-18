@@ -1,0 +1,120 @@
+in ordered_map;
+
+use std::collection;
+use std::collection::map;
+use std::algorithm::sorting;
+use std::rand;
+use std::conv;
+use core::exception::assertion;
+
+fn sortedKeys (m: [i32 => i32])-> [i32] {
+    let mut ks: [mut i32] = [];
+    for k in m.keys () { ks ~= [k]; }
+    sort (alias ks)
+}
+
+fn check (m: &OrderedMap!{i32, i32}, model: [i32 => i32])
+    throws AssertError
+{
+    let ks = sortedKeys (model);
+    assert (m.len == ks.len, "len " ~ m.len.to![c8] () ~ " " ~ ks.len.to![c8] ());
+
+    let mut i = 0us;
+    for k, v in m {
+        assert (k == ks[i] && model[k] == (v)?, "entry");
+        i += 1us;
+    }
+
+    assert (i == ks.len, "walked");
+}
+
+__test randomModel { // random insertions and removals agree with a hashmap
+    let dmut rng = copy Random (42u64);
+    let dmut m = copy OrderedMap!{i32, i32} ();
+    let dmut model: [i32 => i32] = copy [];
+    for round in 0 .. 3000 {
+        let k = rng:.uniform (0, 300);
+        if rng:.bernoulli (0.6) {
+            m [k] = round;
+            model [k] = round;
+        } else {
+            assert (m:.remove (k) == (k in model), "removed");
+            model:.remove (k);
+        }
+
+        if round % 100 == 0 { check (m, model); }
+        assert ((k in m) == (k in model), "contains");
+        assert ((m [k] ?? -1) == (model [k] ?? -1), "lookup");
+    }
+
+    check (m, model);
+    for k in sortedKeys (model) {
+        assert (m:.remove (k), "remove all");
+    }
+
+    assert (m.len == 0us && m.first () == none, "empty");
+}
+
+__test sequentialKeys { // keys inserted in order, then removed in the same and the reverse order
+    let dmut m = copy OrderedMap!{i32, i32} ();
+    for i in 0 .. 1000 { m [i] = i * 2; }
+    for i in 0 .. 500 { assert (m:.remove (i), "front"); }
+    for i in 0 .. 250 { assert (m:.remove (999 - i), "back"); }
+
+    assert (m.len == 250us && m.first () == (500, 1000)? && m.last () == (749, 1498)?, "bounds");
+    let mut prev = 499;
+    for k in m.keys () {
+        assert (k == prev + 1, "sorted");
+        prev = k;
+    }
+}
+
+__test replaceValue {
+    let dmut m = copy OrderedMap!{[c8], [c8]} ();
+    m:.insert ("a", "1");
+    m:.insert ("a", "2");
+    assert (m.len == 1us && m ["a"] == ("2"s8)? && m ["b"] == none, "replaced");
+}
+
+__test floorCeil {
+    let dmut m = copy OrderedMap!{i32, i32} ();
+    for i in 1 .. 10 { m [i * 10] = i; }
+    assert (m.floor (55) == (50, 5)? && m.ceil (55) == (60, 6)?, "between");
+    assert (m.floor (50) == (50, 5)? && m.ceil (50) == (50, 5)?, "equal");
+    assert (m.floor (5) == none && m.ceil (95) == none, "outside");
+}
+
+__test ranges {
+    let dmut m = copy OrderedMap!{i32, i32} ();
+    for i in 0 .. 100 { m [i * 2] = i; }
+
+    let mut ks: [i32] = [];
+    for k, _ in m.range (11, 20) { ks ~= [k]; }
+    assert (ks == [12, 14, 16, 18], "inside");
+
+    let mut n = 0;
+    for _, _ in m.range (300, 400) { n += 1; }
+    for _, _ in m.range (20, 20) { n += 1; }
+    assert (n == 0, "empty");
+}
+
+__test valuesInKeyOrder {
+    let dmut m = copy OrderedMap!{[c8], i32} ();
+    m ["c"] = 3;
+    m ["a"] = 1;
+    m ["b"] = 2;
+    let mut vs: [i32] = [];
+    for v in m.values () { vs ~= [v]; }
+    let mut ks: [[c8]] = [];
+    for k in m { ks ~= [k]; }
+    assert (vs == [1, 2, 3] && ks == ["a"s8, "b"s8, "c"s8], "order");
+}
+
+__test toStream {
+    let dmut m = copy OrderedMap!{i32, [c8]} ();
+    m [2] = "b";
+    m [1] = "a";
+    assert (m.to![c8] () == "{1 => a, 2 => b}", m.to![c8] ());
+    m:.clear ();
+    assert (m.to![c8] () == "{}" && m.len == 0us, "cleared");
+}

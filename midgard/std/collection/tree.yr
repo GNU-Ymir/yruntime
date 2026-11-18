@@ -1,0 +1,413 @@
+/**
+ * The AVL tree of keys behind `OrderedMap` and `OrderedSet`.
+ * Its nodes are indices into slices, which the map mirrors to keep a value per node: an
+ * insertion appends its node at the end, a removal moves the last node into the hole it leaves.
+ * Keys are ordered by `<` alone, two keys being equal when none is lower than the other.
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in tree;
+
+use std::collection::slice;
+
+/**
+ * The index of no node
+ */
+pub def NIL = usize::max;
+
+@final
+pub class Tree {K} {
+
+    let mut _keys: [mut K] = [];
+
+    let mut _left: [mut usize] = [];
+
+    let mut _right: [mut usize] = [];
+
+    let mut _height: [mut u8] = [];
+
+    let mut _root: usize = NIL;
+
+    let mut _detached: usize = NIL;
+
+    let mut _removed: usize = NIL;
+
+    pub self () {}
+
+    /**
+     * Insert `key` unless the tree has it already
+     * @returns: the node of the key, and whether it was appended
+     */
+    pub fn insert (mut self, key: K)-> (usize, bool) {
+        let len = self._keys.len;
+        let found = self.find (key);
+        if found != NIL return (found, false);
+
+        let root = self:.insertInto (self._root, key);
+        self._root = root;
+        (len, true)
+    }
+
+    /**
+     * Remove `key` from the tree, the last node moving into the index of the removed one
+     * @returns: the index of the removed node, NIL if the tree has no such key
+     */
+    pub fn remove (mut self, key: K)-> usize {
+        self._removed = NIL;
+        let root = self:.removeFrom (self._root, key);
+        self._root = root;
+        let r = self._removed;
+        if r != NIL {
+            self:.compact (r);
+        }
+
+        r
+    }
+
+    /**
+     * Remove every node, keeping the storage
+     */
+    pub fn clear (mut self) {
+        clear (ref self._keys);
+        clear (ref self._left);
+        clear (ref self._right);
+        clear (ref self._height);
+        self._root = NIL;
+    }
+
+    /**
+     * @returns: the node of `key`, NIL if the tree has no such key
+     */
+    pub fn find (self, key: K)-> usize {
+        let mut n = self._root;
+        while n != NIL {
+            if key < self._keys[n] {
+                n = self._left[n];
+            } else if self._keys[n] < key {
+                n = self._right[n];
+            } else {
+                return n;
+            }
+        }
+
+        NIL
+    }
+
+    /**
+     * @returns: the node of the smallest key, NIL if the tree is empty
+     */
+    pub fn first (self)-> usize {
+        let mut n = self._root;
+        if n == NIL return NIL;
+        while self._left[n] != NIL {
+            n = self._left[n];
+        }
+
+        n
+    }
+
+    /**
+     * @returns: the node of the largest key, NIL if the tree is empty
+     */
+    pub fn last (self)-> usize {
+        let mut n = self._root;
+        if n == NIL return NIL;
+        while self._right[n] != NIL {
+            n = self._right[n];
+        }
+
+        n
+    }
+
+    /**
+     * @returns: the node of the largest key not greater than `key`, NIL if there is none
+     */
+    pub fn floor (self, key: K)-> usize {
+        let mut n = self._root;
+        let mut res = NIL;
+        while n != NIL {
+            if key < self._keys[n] {
+                n = self._left[n];
+            } else {
+                res = n;
+                n = self._right[n];
+            }
+        }
+
+        res
+    }
+
+    /**
+     * @returns: the node of the smallest key not lower than `key`, NIL if there is none
+     */
+    pub fn ceil (self, key: K)-> usize {
+        let mut n = self._root;
+        let mut res = NIL;
+        while n != NIL {
+            if self._keys[n] < key {
+                n = self._right[n];
+            } else {
+                res = n;
+                n = self._left[n];
+            }
+        }
+
+        res
+    }
+
+    /**
+     * @returns: the key of the node `n`
+     */
+    pub fn key (self, n: usize)-> K {
+        self._keys[n]
+    }
+
+    /**
+     * @returns: the left child of the node `n`, NIL if it has none
+     */
+    pub fn left (self, n: usize)-> usize {
+        self._left[n]
+    }
+
+    /**
+     * @returns: the right child of the node `n`, NIL if it has none
+     */
+    pub fn right (self, n: usize)-> usize {
+        self._right[n]
+    }
+
+    /**
+     * @returns: the root node, NIL if the tree is empty
+     */
+    @field
+    pub fn root (self)-> usize {
+        self._root
+    }
+
+    /**
+     * @returns: the number of keys in the tree
+     */
+    @field
+    pub fn len (self)-> usize {
+        self._keys.len
+    }
+
+    fn insertInto (mut self, n: usize, key: K)-> usize {
+        if n == NIL {
+            self._keys ~= [key];
+            self._left ~= [NIL];
+            self._right ~= [NIL];
+            self._height ~= [1u8];
+            return self._keys.len - 1us;
+        }
+
+        if key < self._keys[n] {
+            let l = self:.insertInto (self._left[n], key);
+            self._left[n] = l;
+        } else {
+            let r = self:.insertInto (self._right[n], key);
+            self._right[n] = r;
+        }
+
+        self:.balance (n)
+    }
+
+    fn removeFrom (mut self, n: usize, key: K)-> usize {
+        if n == NIL return NIL;
+        if key < self._keys[n] {
+            let l = self:.removeFrom (self._left[n], key);
+            self._left[n] = l;
+        } else if self._keys[n] < key {
+            let r = self:.removeFrom (self._right[n], key);
+            self._right[n] = r;
+        } else {
+            self._removed = n;
+            if self._left[n] == NIL return self._right[n];
+            if self._right[n] == NIL return self._left[n];
+
+            let r = self:.detachMin (self._right[n]);
+            let m = self._detached;
+            self._left[m] = self._left[n];
+            self._right[m] = r;
+            return self:.balance (m);
+        }
+
+        self:.balance (n)
+    }
+
+    fn detachMin (mut self, n: usize)-> usize {
+        if self._left[n] == NIL {
+            self._detached = n;
+            return self._right[n];
+        }
+
+        let l = self:.detachMin (self._left[n]);
+        self._left[n] = l;
+        self:.balance (n)
+    }
+
+    fn compact (mut self, r: usize) {
+        let last = self._keys.len - 1us;
+        if r != last {
+            self._keys[r] = self._keys[last];
+            self._left[r] = self._left[last];
+            self._right[r] = self._right[last];
+            self._height[r] = self._height[last];
+            self:.relink (last, r);
+        }
+
+        truncate (ref self._keys, last);
+        truncate (ref self._left, last);
+        truncate (ref self._right, last);
+        truncate (ref self._height, last);
+    }
+
+    fn relink (mut self, from: usize, to: usize) {
+        if self._root == from {
+            self._root = to;
+            return {};
+        }
+
+        let key = self._keys[to];
+        let mut n = self._root;
+        loop {
+            if key < self._keys[n] {
+                if self._left[n] == from {
+                    self._left[n] = to;
+                    break;
+                }
+
+                n = self._left[n];
+            } else {
+                if self._right[n] == from {
+                    self._right[n] = to;
+                    break;
+                }
+
+                n = self._right[n];
+            }
+        }
+    }
+
+    fn height (self, n: usize)-> u8 {
+        if n == NIL { 0u8 } else { self._height[n] }
+    }
+
+    fn fix (mut self, n: usize) {
+        let l = self.height (self._left[n]);
+        let r = self.height (self._right[n]);
+        self._height[n] = (if l > r { l } else { r }) + 1u8;
+    }
+
+    fn rotateRight (mut self, n: usize)-> usize {
+        let l = self._left[n];
+        self._left[n] = self._right[l];
+        self._right[l] = n;
+        self:.fix (n);
+        self:.fix (l);
+        l
+    }
+
+    fn rotateLeft (mut self, n: usize)-> usize {
+        let r = self._right[n];
+        self._right[n] = self._left[r];
+        self._left[r] = n;
+        self:.fix (n);
+        self:.fix (r);
+        r
+    }
+
+    fn balance (mut self, n: usize)-> usize {
+        self:.fix (n);
+        let l = self._left[n];
+        let r = self._right[n];
+        let hl = self.height (l);
+        let hr = self.height (r);
+        if hl > hr + 1u8 {
+            if self.height (self._left[l]) < self.height (self._right[l]) {
+                let nl = self:.rotateLeft (l);
+                self._left[n] = nl;
+            }
+
+            return self:.rotateRight (n);
+        }
+
+        if hr > hl + 1u8 {
+            if self.height (self._right[r]) < self.height (self._left[r]) {
+                let nr = self:.rotateRight (r);
+                self._right[n] = nr;
+            }
+
+            return self:.rotateLeft (n);
+        }
+
+        n
+    }
+
+}
+
+/**
+ * A walk of the nodes of a `Tree` in the order of their keys
+ */
+@final
+pub class InOrder {K} {
+
+    let _tree: &Tree!{K};
+
+    let mut _stack: [mut usize] = [];
+
+    let mut _node: usize = NIL;
+
+    /**
+     * A walk from the smallest key not lower than `from`, or from the smallest key if `from` is none
+     */
+    pub self (tree: &Tree!{K}, from: K?)
+        with _tree = tree
+    {
+        let mut n = tree.root;
+        if let Ok (lo) = from {
+            while n != NIL {
+                if tree.key (n) < lo {
+                    n = tree.right (n);
+                } else {
+                    self._stack ~= [n];
+                    n = tree.left (n);
+                }
+            }
+        } else {
+            self:.descend (n);
+        }
+
+        self:.next ();
+    }
+
+    /**
+     * Move to the node of the next key, NIL once every node was walked
+     */
+    pub fn next (mut self) {
+        if let Ok (n) = pop (ref self._stack) {
+            self._node = n;
+            self:.descend (self._tree.right (n));
+        } else {
+            self._node = NIL;
+        }
+    }
+
+    /**
+     * @returns: the current node, NIL once every node was walked
+     */
+    @field
+    pub fn node (self)-> usize {
+        self._node
+    }
+
+    fn descend (mut self, from: usize) {
+        let mut n = from;
+        while n != NIL {
+            self._stack ~= [n];
+            n = self._tree.left (n);
+        }
+    }
+
+}
