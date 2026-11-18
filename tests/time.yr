@@ -396,25 +396,32 @@ __test delayElapsed { // a zero or negative delay completes at the first poll, w
 }
 
 __test delayWakesInOrder { // pending delays are woken from the timer thread in the order of their deadlines
-    let dmut woken = copy std::concurrency::MailBox!{i32}();
-    let a = delay((60).millis());
-    let b = delay((20).millis());
-    let c = delay((40).millis());
-    assert(!a.poll(copy || => woken:.send(60)).hasValue);
-    assert(!b.poll(copy || => woken:.send(20)).hasValue);
-    assert(!c.poll(copy || => woken:.send(40)).hasValue);
-    assert(woken.len == 0us);
-
-    let deadline = Instant::now() + (5).seconds();
-    while woken.len < 3us && Instant::now() < deadline {
-        sleep((5).millis());
-    }
-
+    // a round in which this thread is held 20ms reaches a deadline before polling every delay, it is retried
     let mut order: [i32] = [];
-    while let Ok(ms) = woken:.receive() {
-        order ~= [ms];
+    for _ in 0 .. 5 {
+        let dmut woken = copy std::concurrency::MailBox!{i32}();
+        let a = delay((60).millis());
+        let b = delay((20).millis());
+        let c = delay((40).millis());
+        let pending = !a.poll(copy || => woken:.send(60)).hasValue
+            && !b.poll(copy || => woken:.send(20)).hasValue
+            && !c.poll(copy || => woken:.send(40)).hasValue
+            && woken.len == 0us;
+
+        if pending {
+            let deadline = Instant::now() + (5).seconds();
+            while woken.len < 3us && Instant::now() < deadline {
+                sleep((5).millis());
+            }
+
+            while let Ok(ms) = woken:.receive() {
+                order ~= [ms];
+            }
+
+            assert(a.poll(|| => {}).hasValue && b.poll(|| => {}).hasValue && c.poll(|| => {}).hasValue);
+            break;
+        }
     }
 
     assert(order == [20, 40, 60]);
-    assert(a.poll(|| => {}).hasValue && b.poll(|| => {}).hasValue && c.poll(|| => {}).hasValue);
 }
