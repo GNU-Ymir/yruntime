@@ -367,7 +367,9 @@ Stacks, registers and objects are scanned conservatively, interior pointers incl
   allocations, peak, collector time, the longest per-thread pause, from the handshake to the
   release, with what it was made of, the average one, the longest time a handshake signal took to
   reach a thread, not a pause, the rescans of the heap, the bytes the assists scanned, the grey
-  buffers the collector handed them, and the chunks unmapped, at exit), `NIDHOGG_MARK_STACK=N` (a mark
+  buffers the collector handed them, and the chunks unmapped, at exit; `NIDHOGG_STATS=2` adds a
+  line per cycle: its number, the bytes it found reachable, the ones it freed and the next goal,
+  `printCycle`), `NIDHOGG_MARK_STACK=N` (a mark
   stack of N entries, to exercise its rescans) and `NIDHOGG_VERIFY=1` (after each mark, every thread
   parked at once, aborts if a marked object, root or data segment points into an unmarked object —
   the stacks are not checked, their stale words would be false positives) are read at the first
@@ -379,9 +381,12 @@ Stacks, registers and objects are scanned conservatively, interior pointers incl
   pointers, growing slices and maps, large objects, finalizers, forks and short-lived threads, a
   heap given back to the system (`release`) and one held under `NIDHOGG_MEMLIMIT` (`memlimit`),
   each run again at `NIDHOGG_GOGC=1` and under the verification (their `.env`).
-- `etc::runtime::gc` exposes `_yrt_gc_collect` (a whole cycle, waited for) and
-  `_yrt_gc_wait_finalizers`; finalizers run unordered on a thread of their own, and once more at
-  exit.
+- `etc::runtime::gc` exposes `_yrt_gc_collect` (a whole cycle, waited for),
+  `_yrt_gc_wait_finalizers`, `_yrt_gc_allocated_bytes` (every byte allocated so far, the
+  threads' unflushed batches included, exact while no other thread allocates) and
+  `_yrt_gc_live_bytes` (`heapMarked`, what the last completed cycle found reachable: read after
+  `_yrt_gc_collect` at each repetition of an action, it grows if the action leaks reachable
+  objects); finalizers run unordered on a thread of their own, and once more at exit.
 
 ### `tests/` — the test suite
 

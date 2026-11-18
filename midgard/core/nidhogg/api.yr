@@ -165,6 +165,34 @@ pub extern (C) fn _yrt_nh_wait_finalizers () {
 }
 
 /**
+ * @returns: the bytes the last completed cycle found reachable, 0 before the first one ends. A
+ * thread holding a span while the cycle swept leaves its unreachable objects counted
+ * */
+@nogc
+pub extern (C) fn _yrt_nh_live_bytes ()-> u64 {
+    let g = G ();
+    _yrt_i_nh_load64 (cast!usize (&((*g).heapMarked)))
+}
+
+/**
+ * @returns: the bytes allocated since the program started, exact while no other thread allocates
+ * */
+@nogc
+pub extern (C) fn _yrt_nh_allocated ()-> u64 {
+    let g = G ();
+    _yrt_i_nh_mutex_lock ((*g).threadsLock);
+    let mut total = _yrt_i_nh_load64 (cast!usize (&((*g).statAllocated)));
+    let mut ts = ld ((*g).threads);
+    while (ts != 0us) {
+        total = total + _yrt_i_nh_load64 (cast!usize (&((*thread (ts)).allocated)));
+        ts = (*thread (ts)).next;
+    }
+
+    _yrt_i_nh_mutex_unlock ((*g).threadsLock);
+    total
+}
+
+/**
  * Run a last cycle and the finalizers it queues, the program exiting
  * */
 @nogc

@@ -25,6 +25,16 @@ void _yrt_gc_collect ();
 void _yrt_gc_wait_finalizers ();
 
 /**
+ * @returns: the bytes the collector allocated since the program started
+ * */
+uint64_t _yrt_gc_allocated_bytes ();
+
+/**
+ * @returns: the bytes the last completed cycle of the collector found reachable
+ * */
+uint64_t _yrt_gc_live_bytes ();
+
+/**
  * @returns: true while the collector marks, read anew at each call so that it is never hoisted out
  * of a loop of stores
  * */
