@@ -1,0 +1,91 @@
+in atomics;
+
+prv extern (C) fn _yrt_atomic_load_u32 (p: *u32)-> u32;
+prv extern (C) fn _yrt_atomic_load_u64 (p: *u64)-> u64;
+
+prv extern (C) fn _yrt_atomic_store_u32 (p: *u32, value: u32);
+prv extern (C) fn _yrt_atomic_store_u64 (p: *u64, value: u64);
+
+prv extern (C) fn _yrt_atomic_cas_u32 (p: *u32, ref mut expected: u32, desired: u32)-> bool;
+prv extern (C) fn _yrt_atomic_cas_u64 (p: *u64, ref mut expected: u64, desired: u64)-> bool;
+
+prv extern (C) fn _yrt_atomic_add_u32 (p: *u32, value: u32)-> u32;
+prv extern (C) fn _yrt_atomic_add_u64 (p: *u64, value: u64)-> u64;
+
+/**
+ * A `u32` or `u64` read and written atomically by any number of threads, without a lock.
+ * A load acquires and a store releases, so what a thread wrote before a store is visible to the thread whose load
+ * reads it. It is meant to be the field of a class shared between threads: copying the record is not atomic.
+ * @example:
+ * ```
+ * use core::concurrency;
+ *
+ * let mut flag = Atomic!{u32} (0u32);
+ * let mut expected = 0u32;
+ * assert (flag:.compareExchange (ref expected, 1u32));
+ * assert (!flag:.compareExchange (ref expected, 2u32)); // expected is now 1
+ * assert (expected == 1u32 && flag.load () == 1u32);
+ *
+ * let mut count = Atomic!{u64} (0u64);
+ * assert (count:.add (2u64) == 2u64);
+ * ```
+ */
+pub record if (template!{T}{U of u32} || template!{T}{U of u64}) Atomic {T} {
+
+    let mut _value: T;
+
+    /**
+     * @params:
+     *    - value: the initial value
+     */
+    pub self (value: T)
+        with _value = value
+    {}
+
+    /**
+     * @returns: the current value, with acquire ordering
+     */
+    pub fn load (self)-> T {
+        cte if (template!{T}{U of u32}) {
+            _yrt_atomic_load_u32 (&self._value)
+        } else {
+            _yrt_atomic_load_u64 (&self._value)
+        }
+    }
+
+    /**
+     * Replace the value with release ordering
+     */
+    pub fn store (mut self, value: T) {
+        cte if (template!{T}{U of u32}) {
+            _yrt_atomic_store_u32 (&self._value, value);
+        } else {
+            _yrt_atomic_store_u64 (&self._value, value);
+        }
+    }
+
+    /**
+     * Replace the value by `desired` if it is `expected`, or write the value found in `expected` otherwise
+     * @returns: true iif the value was replaced
+     */
+    pub fn compareExchange (mut self, ref mut expected: T, desired: T)-> bool {
+        cte if (template!{T}{U of u32}) {
+            _yrt_atomic_cas_u32 (&self._value, ref expected, desired)
+        } else {
+            _yrt_atomic_cas_u64 (&self._value, ref expected, desired)
+        }
+    }
+
+    /**
+     * Add `value` to the value, wrapping around on overflow
+     * @returns: the value after the addition
+     */
+    pub fn add (mut self, value: T)-> T {
+        cte if (template!{T}{U of u32}) {
+            _yrt_atomic_add_u32 (&self._value, value)
+        } else {
+            _yrt_atomic_add_u64 (&self._value, value)
+        }
+    }
+
+}
