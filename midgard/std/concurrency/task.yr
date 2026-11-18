@@ -1,6 +1,7 @@
 /**
  * This module implements the class TaskPool, that encapsulate a task queue and a set of worker thread to execute the tasks.
  * The task queue is a FIFO queue.
+ * It also implements the class Task, the scheduling state of an async value, that its waker puts back in a ready queue.
  * @Authors: Emile Cadorel
  * @License: GPLv3
  * <hr>
@@ -35,6 +36,126 @@
 in task;
 
 use core::concurrency;
+
+/**
+ * The scheduling state of a `Task`
+ */
+pub enum TaskState: u8
+| IDLE      = 0u8 // pending, polled again only once its waker is called
+| SCHEDULED = 1u8 // in a ready queue, its next poll is due
+| RUNNING   = 2u8 // being polled
+| NOTIFIED  = 3u8 // being polled, and woken since the poll started
+| DONE      = 4u8; // completed, never polled again
+
+/**
+ * An async value and its scheduling state, polled by `run` and put back in a ready queue by its waker `wake`.
+ * Where a woken task goes is up to the `enqueue` function it is created with, so it is independent of any pool.
+ * A newly created task is `SCHEDULED`, because its first poll is due: its creator enqueues it.
+ * @example:
+ * ```
+ * use std::concurrency;
+ *
+ * async yielding () {
+ *     await; // calls the waker during the poll, the task is requeued
+ * }
+ *
+ * fn main () {
+ *     let dmut ready = copy MailBox!{dmut &Task} ();
+ *     let dmut task = copy Task (yielding (), copy |dmut t| => ready:.send (alias t));
+ *     ready:.send (alias task);
+ *
+ *     let mut done = false;
+ *     while !done {
+ *         if let Ok (dmut t) = alias ready:.receive () {
+ *             done = t:.run (); // false at the first run, true at the second
+ *         }
+ *     }
+ * }
+ * ```
+ */
+@final
+pub class Task {
+
+    let _value: async-> void;
+
+    let _enqueue: dg (dmut &Task)-> void;
+
+    let mut _state: TaskState = TaskState::SCHEDULED;
+
+    /**
+     * @params:
+     *    - value: the async value the task polls
+     *    - enqueue: called with the task whenever it becomes `SCHEDULED` again
+     */
+    pub self (value: async-> void, enqueue: dg (dmut &Task)-> void)
+        with _value = value, _enqueue = enqueue
+    {}
+
+    /**
+     * The waker of the task: an `IDLE` task becomes `SCHEDULED` and is enqueued, a `RUNNING` one `NOTIFIED`.
+     * It does nothing in any other state, so it can be called from any thread, any number of times.
+     */
+    pub fn wake (mut self) {
+        let mut push = false;
+        atomic self {
+            match self._state {
+                TaskState::IDLE => {
+                    self._state = TaskState::SCHEDULED;
+                    push = true;
+                }
+                TaskState::RUNNING => {
+                    self._state = TaskState::NOTIFIED;
+                }
+                _ => {}
+            }
+        }
+
+        if push self._enqueue (alias self);
+    }
+
+    /**
+     * Polls a `SCHEDULED` task once, with `wake` as waker. A completed task becomes `DONE`, a pending one `IDLE`,
+     * or `SCHEDULED` and enqueued again if it was woken during the poll. A task in any other state is not polled.
+     * @returns: true iif the task is `DONE`
+     */
+    pub fn run (mut self)-> bool {
+        atomic self {
+            if self._state != TaskState::SCHEDULED return self._state == TaskState::DONE;
+            self._state = TaskState::RUNNING;
+        }
+
+        let mut done = false;
+        if let Ok () = self._value.poll (&self:.wake) {
+            done = true;
+        }
+
+        let mut push = false;
+        atomic self {
+            if done {
+                self._state = TaskState::DONE;
+            } else if self._state == TaskState::NOTIFIED {
+                self._state = TaskState::SCHEDULED;
+                push = true;
+            } else {
+                self._state = TaskState::IDLE;
+            }
+        }
+
+        if push self._enqueue (alias self);
+        done
+    }
+
+    /**
+     * @returns: the current state of the task
+     */
+    @field
+    pub fn state (self)-> TaskState {
+        atomic self {
+            return self._state;
+        }
+    }
+
+}
 
 @final
 pub class TaskPool {
