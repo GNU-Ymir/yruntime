@@ -648,6 +648,101 @@ __test poolPairNeverStalls { // two tasks waking each other on 2 workers, the id
     assert (completed);
 }
 
+async posting (dmut done: &Semaphore) {
+    done:.post ();
+}
+
+async spawning (dmut pool: &TaskPool, dmut done: &Semaphore, n: i32) {
+    for _ in 0 .. n {
+        pool:.submit (posting (alias done));
+    }
+
+    done:.post ();
+}
+
+__test poolBurstsNeverStall { // bursts from outside and from the workers, which search and sleep between them
+    let dmut pool = copy TaskPool (nbThreads-> 4u32);
+    let dmut done = copy Semaphore ();
+    let mut completed = true;
+    for _ in 0 .. 300 {
+        for _ in 0 .. 8 {
+            pool:.submit (spawning (alias pool, alias done, 4));
+        }
+
+        for _ in 0 .. 40 {
+            completed = completed && done:.wait (timeout-> seconds (5u64));
+        }
+
+        if !completed break;
+        sleep (micros (200u64));
+    }
+
+    pool:.dispose ();
+    done:.dispose ();
+    assert (completed);
+}
+
+/**
+ * A leaf holding the worker polling it until it is released, or for two seconds
+ */
+class Holding {
+    let mut _released: bool = false;
+
+    pub self () {}
+
+    /**
+     * @returns: true iif the leaf was released before the two seconds
+     */
+    pub fn poll (mut self, _: dg ()-> void)-> bool? {
+        let deadline = Instant::now () + seconds (2u64);
+        while Instant::now () < deadline {
+            atomic self {
+                if self._released return true?;
+            }
+
+            sleep (millis (1u64));
+        }
+
+        false?
+    }
+
+    pub fn release (mut self) {
+        atomic self {
+            self._released = true;
+        }
+    }
+}
+
+async holding (dmut leaf: &Holding, dmut log: &Log) {
+    let released = await alias leaf;
+    log:.push (if released { 1 } else { 0 });
+}
+
+async releasing (dmut leaf: &Holding) {
+    leaf:.release ();
+}
+
+__test poolWakesBehindHeldWorker { // a task queued behind one holding its worker is polled by a worker it wakes
+    let mut released = true;
+    for _ in 0 .. 10 {
+        let dmut pool = copy TaskPool (nbThreads-> 2u32);
+        let dmut leaf = copy Holding ();
+        let dmut log = copy Log ();
+        sleep (millis (5u64));
+
+        // both are queued before the woken worker takes them, the second one going behind the first
+        pool:.submit (holding (alias leaf, alias log));
+        pool:.submit (releasing (alias leaf));
+        pool:.join ();
+        pool:.dispose ();
+
+        released = log.ids () == [1];
+        if !released break;
+    }
+
+    assert (released);
+}
+
 async napping () {
     sleep (millis (200u64));
 }
