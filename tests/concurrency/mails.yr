@@ -1,0 +1,375 @@
+in mails;
+
+use std::concurrency;
+use std::time;
+
+/**
+ * A waker counting its calls
+ */
+class Wakes {
+    let mut _n: i32 = 0;
+
+    pub self () {}
+
+    pub fn hit (mut self) {
+        atomic self {
+            self._n += 1;
+        }
+    }
+
+    pub fn count (self)-> i32 {
+        atomic self {
+            return self._n;
+        }
+    }
+}
+
+fn pending (ref dmut r: MailReceive!{i32}, dmut w: &Wakes)-> bool {
+    r:.poll (&w:.hit) == none
+}
+
+/**
+ * @returns: true iif `r` completes with the message `v`
+ */
+fn got (ref dmut r: MailReceive!{i32}, dmut w: &Wakes, v: i32)-> bool {
+    if let Ok (Ok (m)) = r:.poll (&w:.hit) {
+        return m == v;
+    }
+
+    false
+}
+
+/**
+ * @returns: true iif `r` completes with the empty option
+ */
+fn ended (ref dmut r: MailReceive!{i32}, dmut w: &Wakes)-> bool {
+    if let Ok (m) = r:.poll (&w:.hit) {
+        return m == none;
+    }
+
+    false
+}
+
+__test asyncMailFifoWake { // a message wakes the receiver waiting the longest, and only it
+    let dmut box = copy AsyncMailBox!{i32} ();
+    let dmut a = box:.receive ();
+    let dmut b = box:.receive ();
+    let dmut wa = copy Wakes ();
+    let dmut wb = copy Wakes ();
+
+    assert (pending (ref a, alias wa) && pending (ref b, alias wb));
+    assert (pending (ref a, alias wa)); // polled again, it keeps its place and is registered once
+
+    assert (box:.send (1));
+    assert (wa.count () == 1 && wb.count () == 0);
+    assert (box:.send (2));
+    assert (wa.count () == 1 && wb.count () == 1);
+
+    assert (got (ref a, alias wa, 1));
+    assert (got (ref b, alias wb, 2));
+    assert (box.len == 0us);
+}
+
+__test asyncMailLostRace { // a woken receiver beaten to the message registers again, and is woken by the next one
+    let dmut box = copy AsyncMailBox!{i32} ();
+    let dmut a = box:.receive ();
+    let dmut b = box:.receive ();
+    let dmut c = box:.receive ();
+    let dmut wa = copy Wakes ();
+    let dmut wb = copy Wakes ();
+    let dmut wc = copy Wakes ();
+
+    assert (pending (ref a, alias wa) && pending (ref b, alias wb));
+    box:.send (1);
+    assert (wa.count () == 1);
+
+    // b takes the message a was woken for, and leaves the queue of waiters
+    assert (got (ref b, alias wb, 1));
+    assert (pending (ref a, alias wa));
+
+    box:.send (2);
+    assert (wa.count () == 2 && wb.count () == 0);
+    assert (got (ref c, alias wc, 2));
+
+    box:.send (3);
+    assert (wa.count () == 2); // a was woken for 2 and has not polled since, no receiver is left waiting
+    assert (got (ref a, alias wa, 3));
+}
+
+__test asyncMailCloseWakes { // close wakes every waiting receiver, which drain the box, then complete empty
+    let dmut box = copy AsyncMailBox!{i32} ();
+    let dmut rs = copy [box:.receive () for _ in 0 .. 4];
+    let dmut ws = copy [copy Wakes () for _ in 0 .. 4];
+
+    for i in 0us .. rs.len {
+        assert (pending (ref rs[i], alias ws[i]));
+    }
+
+    box:.close ();
+    box:.close ();
+    assert (box.isClosed);
+    for i in 0us .. ws.len {
+        assert (ws[i].count () == 1);
+        assert (ended (ref rs[i], alias ws[i]));
+    }
+
+    assert (!box:.send (1));
+    assert (box.len == 0us);
+}
+
+__test asyncMailDrainAfterClose {
+    let dmut box = copy AsyncMailBox!{i32} ();
+    box:.send (1);
+    box:.send (2);
+    box:.close ();
+
+    let dmut r = box:.receive ();
+    let dmut w = copy Wakes ();
+    assert (got (ref r, alias w, 1));
+    assert (got (ref r, alias w, 2));
+    assert (ended (ref r, alias w));
+    assert (w.count () == 0);
+}
+
+async sumAll (dmut box: &AsyncMailBox!{i32})-> (i32, i32) {
+    let mut sum = 0;
+    let mut nb = 0;
+    while let Ok (v) = await alias box:.receive () {
+        sum += v;
+        nb += 1;
+    }
+
+    (sum, nb)
+}
+
+fn produce (dmut box: &AsyncMailBox!{i32}, from: i32, to: i32) {
+    for i in from .. to {
+        box:.send (i);
+    }
+}
+
+fn produceAndClose (dmut box: &AsyncMailBox!{i32}, n: i32) {
+    produce (alias box, 0, n);
+    box:.close ();
+}
+
+__test asyncMailProducerThread { // a thread sends to an async run on the main thread
+    let dmut box = copy AsyncMailBox!{i32} ();
+    let th = spawn produceAndClose (alias box, 1000);
+    let (sum, nb) = sumAll (alias box).run ();
+    th.value;
+
+    assert (nb == 1000);
+    assert (sum == 499500);
+}
+
+async ping (dmut out: &AsyncMailBox!{i32}, dmut back: &AsyncMailBox!{i32}, n: i32)-> i32 {
+    let mut matched = 0;
+    for i in 0 .. n {
+        out:.send (i);
+        if let Ok (v) = await alias back:.receive () {
+            if v == i + 1 matched += 1;
+        }
+    }
+
+    out:.close ();
+    matched
+}
+
+async pong (dmut inbox: &AsyncMailBox!{i32}, dmut back: &AsyncMailBox!{i32})-> i32 {
+    let mut nb = 0;
+    while let Ok (v) = await alias inbox:.receive () {
+        back:.send (v + 1);
+        nb += 1;
+    }
+
+    nb
+}
+
+__test asyncMailPingPong { // two tasks exchanging 10k messages on a 2-worker pool
+    let dmut pool = copy TaskPool (nbThreads-> 2u32);
+    let dmut there = copy AsyncMailBox!{i32} ();
+    let dmut back = copy AsyncMailBox!{i32} ();
+
+    let dmut b = pool:.submit (pong (alias there, alias back));
+    let dmut a = pool:.submit (ping (alias there, alias back, 10000));
+
+    assert (a:.wait () == 10000);
+    assert (b:.wait () == 10000);
+    pool:.dispose ();
+}
+
+/**
+ * How many times each message was received
+ */
+class Seen {
+    let dmut _counts: [i32];
+
+    pub self (n: i32) with _counts = copy [0 for _ in 0 .. n] {}
+
+    pub fn mark (mut self, v: i32) {
+        atomic self {
+            self._counts[v] += 1;
+        }
+    }
+
+    pub fn counts (self)-> [i32] {
+        atomic self {
+            return self._counts;
+        }
+    }
+}
+
+async collect (dmut box: &AsyncMailBox!{i32}, dmut seen: &Seen) {
+    while let Ok (v) = await alias box:.receive () {
+        seen:.mark (v);
+    }
+}
+
+__test asyncMailManyToMany { // N receivers and M senders, every message received exactly once
+    let nbReceivers = 8;
+    let nbSenders = 4;
+    let perSender = 2000;
+
+    let dmut pool = copy TaskPool (nbThreads-> 3u32);
+    let dmut box = copy AsyncMailBox!{i32} ();
+    let dmut seen = copy Seen (nbSenders * perSender);
+    for _ in 0 .. nbReceivers {
+        pool:.submit (collect (alias box, alias seen));
+    }
+
+    let senders = copy [spawn produce (alias box, i * perSender, (i + 1) * perSender) for i in 0 .. nbSenders];
+    for i in 0us .. senders.len {
+        senders[i].value;
+    }
+
+    box:.close ();
+    pool:.join ();
+    pool:.dispose ();
+
+    for c in seen.counts () {
+        assert (c == 1);
+    }
+}
+
+async receiveOne (dmut box: &AsyncMailBox!{i32})-> i32? {
+    await alias box:.receive ()
+}
+
+__test asyncMailCloseEndsTasks { // receivers parked on a pool complete empty once the box is closed
+    let dmut pool = copy TaskPool (nbThreads-> 2u32);
+    let dmut box = copy AsyncMailBox!{i32} ();
+    let dmut hs = copy [pool:.submit (receiveOne (alias box)) for _ in 0 .. 6];
+
+    sleep (millis (50u64));
+    box:.close ();
+    for i in 0us .. hs.len {
+        assert (hs[i]:.wait () == none);
+    }
+
+    pool:.dispose ();
+}
+
+/*!
+ * ====================================================================================================
+ * ====================================================================================================
+ * ==================================          MUTABLE MESSAGES          ==============================
+ * ====================================================================================================
+ * ====================================================================================================
+ */
+
+class Job {
+    pub let id: i32;
+    pub let mut runs: i32 = 0;
+
+    pub self (id: i32) with id = id {}
+}
+
+/**
+ * @returns: true iif `r` completes with the job `id`, which it runs once
+ */
+fn runJob (ref dmut r: MailReceive!{dmut &Job}, dmut w: &Wakes, id: i32)-> bool {
+    let dmut res = r:.poll (&w:.hit);
+    if let Ok (dmut m) = alias res {
+        if let Ok (dmut j) = alias m {
+            j.runs += 1;
+            return j.id == id;
+        }
+    }
+
+    false
+}
+
+fn jobsEnded (ref dmut r: MailReceive!{dmut &Job}, dmut w: &Wakes)-> bool {
+    if let Ok (m) = r:.poll (&w:.hit) {
+        return !m.hasValue;
+    }
+
+    false
+}
+
+__test asyncMailMutableInstance { // the receiver mutates the very instance that was sent
+    let dmut box = copy AsyncMailBox!{dmut &Job} ();
+    let dmut r = box:.receive ();
+    let dmut w = copy Wakes ();
+    let dmut job = copy Job (7);
+
+    assert (!r:.poll (&w:.hit).hasValue);
+    assert (box:.send (alias job));
+    assert (w.count () == 1);
+    assert (runJob (ref r, alias w, 7));
+    assert (job.runs == 1);
+
+    box:.close ();
+    assert (!box:.send (alias job));
+    assert (jobsEnded (ref r, alias w));
+    assert (box.isClosed && box.len == 0us);
+}
+
+async runAll (dmut box: &AsyncMailBox!{dmut &Job})-> i32 {
+    let mut nb = 0;
+    loop {
+        let dmut next = await alias box:.receive ();
+        if let Ok (dmut j) = alias next {
+            j.runs += 1;
+            nb += 1;
+        } else break;
+    }
+
+    nb
+}
+
+fn sendJobs (dmut box: &AsyncMailBox!{dmut &Job}, dmut jobs: [&Job]) {
+    for i in 0us .. jobs.len {
+        box:.send (alias jobs[i]);
+    }
+}
+
+__test asyncMailMutableManyToMany { // jobs sent from threads, each run exactly once by tasks of a pool
+    let nbSenders = 4;
+    let perSender = 500;
+
+    let dmut pool = copy TaskPool (nbThreads-> 3u32);
+    let dmut box = copy AsyncMailBox!{dmut &Job} ();
+    let dmut jobs = copy [copy [copy Job (s * perSender + i) for i in 0 .. perSender] for s in 0 .. nbSenders];
+    let dmut hs = copy [pool:.submit (runAll (alias box)) for _ in 0 .. 6];
+
+    let senders = copy [spawn sendJobs (alias box, alias jobs[s]) for s in 0us .. jobs.len];
+    for i in 0us .. senders.len {
+        senders[i].value;
+    }
+
+    box:.close ();
+    let mut total = 0;
+    for i in 0us .. hs.len {
+        total += hs[i]:.wait ();
+    }
+
+    pool:.dispose ();
+    assert (total == nbSenders * perSender);
+    for s in jobs {
+        for j in s {
+            assert (j.runs == 1);
+        }
+    }
+}
