@@ -379,3 +379,42 @@ __test dateTimeArithmetic { // durations move a date, and two dates subtract to 
     let westNoon = DateTime::at(utcOffset-> -3_600i64, year-> 2026, month-> 6, day-> 1, hour-> 12);
     assert(utcNoon < westNoon, "g");
 }
+
+__test delayCompletes { // a delay completes once its duration has passed, the timer thread restarting after it stopped
+    for _ in 0 .. 2 {
+        let start = Instant::now();
+        delay((30).millis()).run();
+        assert(Instant::now() - start >= (30).millis());
+    }
+}
+
+__test delayElapsed { // a zero or negative delay completes at the first poll, without calling its waker
+    let dmut wakes = copy [0];
+    assert(delay((0).seconds()).poll(copy || => { wakes[0] += 1; }).hasValue);
+    assert(delay(Duration(1u64, 0u64, negative-> true)).poll(copy || => { wakes[0] += 1; }).hasValue);
+    assert(wakes[0] == 0);
+}
+
+__test delayWakesInOrder { // pending delays are woken from the timer thread in the order of their deadlines
+    let dmut woken = copy std::concurrency::MailBox!{i32}();
+    let a = delay((60).millis());
+    let b = delay((20).millis());
+    let c = delay((40).millis());
+    assert(!a.poll(copy || => woken:.send(60)).hasValue);
+    assert(!b.poll(copy || => woken:.send(20)).hasValue);
+    assert(!c.poll(copy || => woken:.send(40)).hasValue);
+    assert(woken.len == 0us);
+
+    let deadline = Instant::now() + (5).seconds();
+    while woken.len < 3us && Instant::now() < deadline {
+        sleep((5).millis());
+    }
+
+    let mut order: [i32] = [];
+    while let Ok(ms) = woken:.receive() {
+        order ~= [ms];
+    }
+
+    assert(order == [20, 40, 60]);
+    assert(a.poll(|| => {}).hasValue && b.poll(|| => {}).hasValue && c.poll(|| => {}).hasValue);
+}
