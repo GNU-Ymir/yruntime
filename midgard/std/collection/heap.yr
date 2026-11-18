@@ -1,0 +1,101 @@
+/**
+ * A priority queue in a binary heap, the value it pops first being the smallest it holds.
+ * @example:
+ * ```
+ * let dmut q = copy PriorityQueue!{i32} ();
+ * for x in [5, 1, 3] {
+ *     q:.push (x);
+ * }
+ *
+ * assert (q:.pop () == (1)? && q:.pop () == (3)? && q.len == 1us);
+ * ```
+ * @Authors: Emile Cadorel
+ * @License: GPLv3
+ */
+
+in heap;
+
+use std::collection::slice;
+
+/**
+ * A priority queue popping its values from the smallest to the largest, by `<`.
+ * Values comparing equal come out in no particular order.
+ */
+@final
+pub class PriorityQueue {T} {
+
+    let mut _values: [mut T] = [];
+
+    pub self () {}
+
+    /**
+     * Insert `value` in the queue
+     * @complexity: O(log n), amortized
+     */
+    pub fn push (mut self, value: T) {
+        self._values ~= [value];
+        let mut i = self._values.len - 1us;
+        while i > 0us {
+            let p = (i - 1us) / 2us;
+            if !(value < self._values[p]) break;
+            self._values[i] = self._values[p];
+            i = p;
+        }
+
+        self._values[i] = value;
+    }
+
+    /**
+     * @returns: the smallest value of the queue, removed from it, none if the queue is empty
+     * @complexity: O(log n)
+     */
+    pub fn pop (mut self)-> T? {
+        if self._values.len == 0us return none;
+        let top = self._values[0us];
+        let last = self._values[self._values.len - 1us];
+        truncate (ref self._values, self._values.len - 1us);
+
+        let n = self._values.len;
+        if n != 0us {
+            let mut i = 0us;
+            loop {
+                let l = 2us * i + 1us;
+                if l >= n break;
+                let r = l + 1us;
+                let c = if r < n && self._values[r] < self._values[l] { r } else { l };
+                if !(self._values[c] < last) break;
+                self._values[i] = self._values[c];
+                i = c;
+            }
+
+            self._values[i] = last;
+        }
+
+        top?
+    }
+
+    /**
+     * @returns: the smallest value of the queue, none if the queue is empty
+     * @complexity: O(1)
+     */
+    pub fn top (self)-> T? {
+        if self._values.len == 0us return none;
+        self._values[0us]?
+    }
+
+    /**
+     * Remove every value, keeping the storage
+     */
+    pub fn clear (mut self) {
+        clear (ref self._values);
+    }
+
+    /**
+     * @returns: the number of values in the queue
+     */
+    @field
+    pub fn len (self)-> usize {
+        self._values.len
+    }
+
+}

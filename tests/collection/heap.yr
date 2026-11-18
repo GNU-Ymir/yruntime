@@ -1,0 +1,48 @@
+in heap;
+
+use std::collection;
+use std::algorithm::sorting;
+use std::rand;
+
+__test popsInOrder { // random values come out sorted
+    let dmut rng = copy Random (15u64);
+    let dmut q = copy PriorityQueue!{i32} ();
+    let mut values: [mut i32] = [];
+    for _ in 0 .. 1000 {
+        let x = rng:.uniform (-500, 500);
+        q:.push (x);
+        values ~= [x];
+    }
+
+    values = sort (alias values);
+    assert (q.len == 1000us && q.top () == (values[0us])?, "top");
+    for x in values {
+        assert (q:.pop () == (x)?, "order");
+    }
+
+    assert (q:.pop () == none && q.top () == none, "empty");
+}
+
+__test interleaved { // pushes and pops mixed, the queue always popping its smallest
+    let dmut rng = copy Random (16u64);
+    let dmut q = copy PriorityQueue!{i32} ();
+    for _ in 0 .. 200 {
+        for _ in 0 .. 3 { q:.push (rng:.uniform (0, 100)); }
+        let a = q:.pop () ?? -1;
+        let b = q.top () ?? 101;
+        assert (a <= b, "smallest first");
+    }
+
+    assert (q.len == 400us, "len");
+    q:.clear ();
+    assert (q.len == 0us && q:.pop () == none, "cleared");
+}
+
+__test strings {
+    let dmut q = copy PriorityQueue!{[c8]} ();
+    for s in ["pear"s8, "apple"s8, "fig"s8] {
+        q:.push (s);
+    }
+
+    assert (q:.pop () == ("apple"s8)? && q:.pop () == ("fig"s8)? && q:.pop () == ("pear"s8)?, "order");
+}
