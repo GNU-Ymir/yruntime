@@ -29,9 +29,11 @@ record Point {
     pub self (x: i32, y: i32) with x = x, y = y {}
 }
 
-#[packable (skip-> "cache")]
+#[packable]
 record Tagged {
     let name: [c8];
+
+    #[nopack]
     let cache: (u64)?;
     pub self (name: [c8]) with name = name, cache = (12u64)? {}
     pub fn getName(self)-> [c8] { self.name }
@@ -119,12 +121,26 @@ class P {
     pub self (x: i32, name: [c8], next: (&P)?) with x = x, name = name, next = next {}
 }
 
-#[packable (skip-> "lock,hits")]
+#[packable]
 class Cached {
     pub let key: [c8];
+
+    #[nopack]
     pub let lock: (u64)? = (1u64)?;
+
+    #[nopack]
     pub let mut hits: usize = 7us;
     pub self (key: [c8]) with key = key {}
+}
+
+#[packable]
+record Handle {
+    pub let id: u32;
+
+    #[nopack]
+    pub let raw: *void;
+
+    pub self (id: u32, raw: *void) with id = id, raw = raw {}
 }
 
 class Plain over Rect {
@@ -451,11 +467,18 @@ __test varints {
     assert(payload(pack(long))[0us .. 2us] == [0xC8u8, 0x01u8]);
 }
 
-__test skippedFields {
+__test nopackFields {
     let dmut c = copy Cached("k");
     c.hits = 9us;
     let back = unpack!{&Cached} (pack(c));
     assert(back.key == "k" && back.lock == none && back.hits == 0us);
+}
+
+__test unpackableFieldsTagged {
+    let v = 3;
+    let h = unpack!{Handle} (pack(Handle(4u32, cast!{*void} (&v))));
+    assert(h.id == 4u32 && h.raw == null);
+    assert(pack(Handle(5u32, null)) == pack(5u32));
 }
 
 __test appendToBuffer {

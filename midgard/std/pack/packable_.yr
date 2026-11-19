@@ -1,5 +1,5 @@
 /**
- * This module implements the `Packable` trait, and the `#[packable]` tag that implements it.
+ * This module implements the `Packable` trait, the `#[packable]` tag that implements it, and the `#[nopack]` tag leaving a field out.
  * @Authors: Emile Cadorel
  * @License: GPLv3
  */
@@ -13,7 +13,7 @@ use std::stream;
 
 /**
  * Trait of the classes and the records that can be packed into bytes, and rebuilt from them.
- * It is implemented by the tag `#[packable]`, never by hand: the tag reads and writes every field of the type, the private ones included, and registers the class so a packet can name it.
+ * It is implemented by the tag `#[packable]`, never by hand: the tag reads and writes every field of the type but those tagged `#[nopack]`, the private ones included, and registers the class so a packet can name it.
  */
 pub trait Packable {
 
@@ -45,11 +45,9 @@ pub trait Packable {
 
 /**
  * Tag implementing `Packable` for a class or a record.
- * Every field is packed, the private ones included, in the order of declaration, those of the ancestor first. A field whose type cannot be packed (a pointer, a function, a delegate, a class or a record that is not tagged, ...) is a compile error, unless it is skipped.
+ * Every field is packed, the private ones included, in the order of declaration, those of the ancestor first, but the fields tagged `#[nopack]`. A field whose type cannot be packed (a pointer, a function, a delegate, a class or a record that is not tagged, ...) is a compile error, unless it is tagged `#[nopack]`.
  * A tagged class is registered under its name, so a packet can name it, and has to derive from a tagged class if it derives from any. An abstract class is not registered: the objects of its subclasses are packed and rebuilt.
  * An object is rebuilt without calling a constructor, its fields read from the packet. A class can check that the fields it was given keep its invariants, by declaring a method `pub fn unpacked(self) throws UnpackError`, called once every object of the packet is read.
- * @params:
- *    - skip: the names of the fields that are not packed, separated by commas, without spaces. A skipped field is set to the `init` value of its type when the value is rebuilt, a type that has none (a class) cannot be skipped.
  * @example:
  * ```
  * use std::pack;
@@ -60,11 +58,11 @@ pub trait Packable {
  *     pub self (name: [c8]) with name = name {}
  * }
  *
- * #[packable (skip-> "draws")]
+ * #[packable]
  * class Square over Shape {
  *     pub let side: i32;
  *
- *     // local to the process drawing the square, it is rebuilt as 0
+ *     #[nopack]
  *     let mut draws: usize = 0us;
  *
  *     pub self (side: i32) with super ("square"), side = side {}
@@ -93,7 +91,7 @@ pub trait Packable {
  * }
  * ```
  */
-pub tag packable (skip: [c8] = "") {
+pub tag packable {
 
     pub class apply {class C} {
 
@@ -110,11 +108,11 @@ pub tag packable (skip: [c8] = "") {
                 }
 
                 cte for i in 0us .. C::field_infos.len {
-                    cte if (!inList!{skip, C::field_infos[i].name, 0us}) {
+                    cte if (packable_::isPacked!{C, C::field_infos[i].name}) {
                         cte if (isPackable!{__pragma!field_type(C, C::field_infos[i].name)}) {
                             p:.write(__pragma!field(self, C::field_infos[i].name));
                         } else {
-                            cte assert(false, "the field " ~ C::field_infos[i].name ~ " of " ~ C::typeid ~ " cannot be packed, it has to be skipped");
+                            cte assert(false, "the field " ~ C::field_infos[i].name ~ " of " ~ C::typeid ~ " cannot be packed, it has to be tagged #[nopack]");
                         }
                     }
                 }
@@ -130,7 +128,7 @@ pub tag packable (skip: [c8] = "") {
                 }
 
                 cte for i in 0us .. C::field_infos.len {
-                    cte if (!inList!{skip, C::field_infos[i].name, 0us}) {
+                    cte if (packable_::isPacked!{C, C::field_infos[i].name}) {
                         cte if (isPackable!{__pragma!field_type(C, C::field_infos[i].name)}) {
                             u:.readField!{__pragma!field_type(C, C::field_infos[i].name)} (dst, C::field_infos[i].offset);
                         }
@@ -143,7 +141,7 @@ pub tag packable (skip: [c8] = "") {
             pub over __pack__schema(self, dmut s: &StringStream) {
                 s:.write(classNameOf!{typeof(self)} (), "{");
                 cte for i in 0us .. C::field_infos.len {
-                    cte if (!inList!{skip, C::field_infos[i].name, 0us} && isPackable!{__pragma!field_type(C, C::field_infos[i].name)}) {
+                    cte if (packable_::isPacked!{C, C::field_infos[i].name} && isPackable!{__pragma!field_type(C, C::field_infos[i].name)}) {
                         s:.write(C::field_infos[i].name, ":");
                         utils::schema!{__pragma!field_type(C, C::field_infos[i].name)} (alias s);
                         s:.write(",");
@@ -190,11 +188,11 @@ pub tag packable (skip: [c8] = "") {
 
             pub over __pack__write(self, dmut p: &Packer) {
                 cte for i in 0us .. R::field_infos.len {
-                    cte if (!inList!{skip, R::field_infos[i].name, 0us}) {
+                    cte if (packable_::isPacked!{R, R::field_infos[i].name}) {
                         cte if (isPackable!{__pragma!field_type(R, R::field_infos[i].name)}) {
                             p:.write(__pragma!field(self, R::field_infos[i].name));
                         } else {
-                            cte assert(false, "the field " ~ R::field_infos[i].name ~ " of " ~ R::typeid ~ " cannot be packed, it has to be skipped");
+                            cte assert(false, "the field " ~ R::field_infos[i].name ~ " of " ~ R::typeid ~ " cannot be packed, it has to be tagged #[nopack]");
                         }
                     }
                 }
@@ -205,7 +203,7 @@ pub tag packable (skip: [c8] = "") {
             {
                 u:.readNothing();
                 cte for i in 0us .. R::field_infos.len {
-                    cte if (!inList!{skip, R::field_infos[i].name, 0us}) {
+                    cte if (packable_::isPacked!{R, R::field_infos[i].name}) {
                         cte if (isPackable!{__pragma!field_type(R, R::field_infos[i].name)}) {
                             u:.readField!{__pragma!field_type(R, R::field_infos[i].name)} (dst, R::field_infos[i].offset);
                         }
@@ -218,7 +216,7 @@ pub tag packable (skip: [c8] = "") {
             pub over __pack__schema(self, dmut s: &StringStream) {
                 s:.write(R::typeid, "{");
                 cte for i in 0us .. R::field_infos.len {
-                    cte if (!inList!{skip, R::field_infos[i].name, 0us} && isPackable!{__pragma!field_type(R, R::field_infos[i].name)}) {
+                    cte if (packable_::isPacked!{R, R::field_infos[i].name} && isPackable!{__pragma!field_type(R, R::field_infos[i].name)}) {
                         s:.write(R::field_infos[i].name, ":");
                         utils::schema!{__pragma!field_type(R, R::field_infos[i].name)} (alias s);
                         s:.write(",");
@@ -235,7 +233,7 @@ pub tag packable (skip: [c8] = "") {
         pub fn __pack__minWire(self)-> usize {
             let mut res = 0us;
             cte for i in 0us .. R::field_infos.len {
-                cte if (!inList!{skip, R::field_infos[i].name, 0us} && isPackable!{__pragma!field_type(R, R::field_infos[i].name)}) {
+                cte if (packable_::isPacked!{R, R::field_infos[i].name} && isPackable!{__pragma!field_type(R, R::field_infos[i].name)}) {
                     res += minWire!{__pragma!field_type(R, R::field_infos[i].name)} ();
                 }
             }
@@ -254,10 +252,40 @@ pub tag packable (skip: [c8] = "") {
 }
 
 /**
- * Write the `init` value of the type `T` of the skipped field `name`, at `offset` bytes from `dst`
+ * Tag of a field of a class or a record tagged `#[packable]` that is not packed: it is set to the `init` value of its type when the value is rebuilt, whatever the value it is given by its declaration or a constructor, and a type that has none, such as a class or a function pointer, cannot be tagged
+ * @example:
+ * ```
+ * use std::pack;
+ *
+ * #[packable]
+ * class Counter {
+ *     pub let name: [c8];
+ *
+ *     #[nopack]
+ *     pub let mut hits: usize = 0us;
+ *
+ *     pub self (name: [c8]) with name = name {}
+ * }
+ *
+ * let dmut c = copy Counter("requests");
+ * c.hits = 12us;
+ *
+ * let back = unpack!{&Counter} (c.pack());
+ * assert(back.name == "requests" && back.hits == 0us);
+ * ```
+ */
+pub tag nopack {}
+
+/**
+ * True if the field `F` of `T` is packed, i.e. it is not tagged `#[nopack]`
+ */
+pub def isPacked {T, F: [c8]} = cte (!__pragma!field_has_tag(T, F, nopack));
+
+/**
+ * Write the `init` value of the type `T` of the field `name` tagged `#[nopack]`, at `offset` bytes from `dst`
  */
 pub fn writeInit {T, name: [c8]} (dst: *u8, offset: usize) {
-    cte assert(__pragma!compile(T::init), "the field " ~ name ~ " is skipped, but " ~ T::typeid ~ " has no init value to rebuild it with");
+    cte assert(__pragma!compile(T::init), "the field " ~ name ~ " is tagged #[nopack], but " ~ T::typeid ~ " has no init value to rebuild it with");
     let v = T::init;
     memcpy(cast!{*void} (dst + offset), cast!{*void} (&v), T::size);
 }
