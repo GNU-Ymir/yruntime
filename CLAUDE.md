@@ -263,7 +263,7 @@ Three top-level modules declared in `midgard/__lib__.yr`:
   and `map` modules are functions over the builtin ones (a set is `[K => ()]`), next to `Ring`,
   `PriorityQueue` and the AVL-backed `OrderedMap`/`OrderedSet`. Shortening a slice
   (`_yrt_truncate_slice`) gives the room back to its block, so it takes `[mut T]` only. `std::pack` packs values into bytes and rebuilds them
-  (classes and records opt in with `#[packable]`); its generic code splits enums off in one entry
+  (classes and records opt in with `#[packable]`, a field left out tagged `#[nopack]`); its generic code splits enums off in one entry
   point per operation (`write`, `read`, `schema`, `minWire`), because a pattern like
   `{T of [U], U}` also matches an enum through its proxy type. A packet is a payload inside an
   envelope (`Header`); `Signer` tags it with HMAC-SHA-256, and `Verifier` checks the tag and the
