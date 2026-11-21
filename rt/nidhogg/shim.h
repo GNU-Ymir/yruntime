@@ -174,9 +174,22 @@ void     _yrt_i_nh_unblock_handshake (void);
 int      _yrt_i_nh_signal (uint64_t thread);
 
 /**
- * Call _yrt_i_nh_add_data_segment for every writable segment of every loaded object
+ * Call _yrt_i_nh_add_data_segment for every writable segment of every loaded object, and list the
+ * TLS modules of the shared objects among them
  * */
 void     _yrt_i_nh_data_segments (void);
+
+/**
+ * @returns: the thread pointer of the calling thread
+ * */
+uint64_t _yrt_i_nh_thread_pointer (void);
+
+/**
+ * Write in 'ranges' the bounds of the TLS blocks of shared objects the thread of thread pointer
+ * 'tp' has allocated, read from its dynamic thread vector, without taking any lock
+ * @returns: the number of (lo, hi) pairs written, at most 'cap', 0 off glibc on x86_64
+ * */
+uint64_t _yrt_i_nh_dynamic_tls (uint64_t tp, uint64_t * ranges, uint64_t cap);
 
 /**
  * Call the finalizer 'fn' of 'obj'

@@ -31,6 +31,12 @@ static __thread uint64_t __NH_SELF__ = 0;
 static __thread uint8_t __NH_BUSY__ = 0;
 static __thread uint8_t __NH_DEFERRED__ = 0;
 
+// the TLS modules of the shared objects, (module id, size of its block) pairs, rebuilt with the
+// data segments at every cycle, before the stacks are scanned
+#define _YRT_NH_TLS_MODS 256
+static uint64_t __NH_TLS_MODS__ [2 * _YRT_NH_TLS_MODS];
+static uint64_t __NH_TLS_NMODS__ = 0;
+
 static pthread_key_t __NH_THREAD_KEY__;
 static pthread_once_t __NH_THREAD_KEY_ONCE__ = PTHREAD_ONCE_INIT;
 
@@ -240,6 +246,46 @@ void _yrt_i_nh_tls_bounds (uint64_t * lo, uint64_t * hi) {
     *hi = bounds [1];
 }
 
+uint64_t _yrt_i_nh_thread_pointer (void) {
+    return (uint64_t) __builtin_thread_pointer ();
+}
+
+// an entry of the dynamic thread vector glibc keeps for each thread, indexed by TLS module id
+typedef union {
+    size_t counter;
+    struct { void * val; void * to_free; } pointer;
+} _yrt_i_nh_dtv_t;
+
+uint64_t _yrt_i_nh_dynamic_tls (uint64_t tp, uint64_t * ranges, uint64_t cap) {
+#if defined (__GLIBC__) && defined (__x86_64__)
+    if (tp == 0) return 0;
+
+    // the vector is the second word of the thread control block, its length is in front of it
+    _yrt_i_nh_dtv_t * dtv = *(_yrt_i_nh_dtv_t **) (tp + 8);
+    if (dtv == NULL) return 0;
+
+    uint64_t len = dtv [-1].counter, n = __atomic_load_n (&__NH_TLS_NMODS__, __ATOMIC_ACQUIRE), res = 0;
+    for (uint64_t i = 0 ; i < n && res < cap ; i++) {
+        uint64_t id = __NH_TLS_MODS__ [2 * i];
+        if (id == 0 || id > len) continue;
+
+        void * block = dtv [id].pointer.val;
+        if (block == NULL || block == (void *) -1) continue; // not allocated in that thread yet
+
+        ranges [2 * res] = (uint64_t) block;
+        ranges [2 * res + 1] = (uint64_t) block + __NH_TLS_MODS__ [2 * i + 1];
+        res += 1;
+    }
+
+    return res;
+#else
+    (void) tp;
+    (void) ranges;
+    (void) cap;
+    return 0;
+#endif
+}
+
 static void _thread_key_dtor (void * state) {
     _yrt_i_nh_thread_exit (state);
 }
@@ -424,7 +470,7 @@ int _yrt_i_nh_signal (uint64_t thread) {
 
 static int _read_data_phdr (struct dl_phdr_info * info, size_t size, void * data) {
     (void) size;
-    (void) data;
+    uint64_t * nmods = (uint64_t *) data;
 
     for (int i = 0 ; i < info-> dlpi_phnum ; i++) {
         const ElfW (Phdr) * ph = &info-> dlpi_phdr [i];
@@ -432,13 +478,23 @@ static int _read_data_phdr (struct dl_phdr_info * info, size_t size, void * data
             uint64_t lo = (uint64_t) (info-> dlpi_addr + ph-> p_vaddr);
             _yrt_i_nh_add_data_segment (lo, lo + (uint64_t) ph-> p_memsz);
         }
+
+        // the block of the main executable is the static one, scanned with the stack of each thread
+        int shared = info-> dlpi_name != NULL && info-> dlpi_name [0] != '\0';
+        if (ph-> p_type == PT_TLS && shared && info-> dlpi_tls_modid != 0 && *nmods < _YRT_NH_TLS_MODS) {
+            __NH_TLS_MODS__ [2 * *nmods] = (uint64_t) info-> dlpi_tls_modid;
+            __NH_TLS_MODS__ [2 * *nmods + 1] = (uint64_t) ph-> p_memsz;
+            *nmods += 1;
+        }
     }
 
     return 0;
 }
 
 void _yrt_i_nh_data_segments (void) {
-    dl_iterate_phdr (&_read_data_phdr, NULL);
+    uint64_t nmods = 0;
+    dl_iterate_phdr (&_read_data_phdr, &nmods);
+    __atomic_store_n (&__NH_TLS_NMODS__, nmods, __ATOMIC_RELEASE);
 }
 
 void _yrt_i_nh_call_finalizer (void * fn, void * obj) {

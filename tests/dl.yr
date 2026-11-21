@@ -1,0 +1,76 @@
+in dl;
+
+use etc::dl;
+
+__test openAndCall {
+    let dmut lib = copy SharedLibrary ("libm.so.6");
+    assert (lib.isOpen () && lib.path () == "libm.so.6");
+
+    let cos = lib.symbol!{fn (f64)-> f64} ("cos");
+    assert (cos (0.0) == 1.0, "the function looked up should be the one of the library");
+
+    lib:.close ();
+    assert (!lib.isOpen ());
+}
+
+__test hasSymbol {
+    let dmut lib = copy SharedLibrary ("libm.so.6");
+    assert (lib.hasSymbol ("sqrt"));
+    assert (!lib.hasSymbol ("ymir_test_dl_no_such_symbol"));
+
+    lib:.close ();
+    assert (!lib.hasSymbol ("sqrt"), "a closed library defines nothing");
+}
+
+__test missingSymbolThrows {
+    let dmut lib = copy SharedLibrary ("libm.so.6");
+    let mut msg = "";
+    {
+        lib.symbol!{fn ()-> void} ("ymir_test_dl_no_such_symbol");
+    } catch {
+        e: &SharedLibraryError => { msg = e.msg; }
+    }
+
+    assert (msg.len > 37us && msg [0us .. 37us] == "'libm.so.6' does not define 'ymir_tes", msg);
+    lib:.close ();
+}
+
+__test missingLibraryThrows {
+    let mut msg = "";
+    {
+        copy SharedLibrary ("libymir_test_dl_no_such_library.so");
+    } catch {
+        e: &SharedLibraryError => { msg = e.msg; }
+    }
+
+    assert (msg.len > 46us && msg [0us .. 46us] == "cannot open 'libymir_test_dl_no_such_library.s", msg);
+}
+
+__test closedLibraryThrows {
+    let dmut lib = copy SharedLibrary ("libm.so.6");
+    lib:.close ();
+
+    let mut lookup = "";
+    {
+        lib.symbol!{fn (f64)-> f64} ("cos");
+    } catch {
+        e: &SharedLibraryError => { lookup = e.msg; }
+    }
+
+    let mut again = "";
+    {
+        lib:.close ();
+    } catch {
+        e: &SharedLibraryError => { again = e.msg; }
+    }
+
+    assert (lookup == "'libm.so.6' is closed", lookup);
+    assert (again == "'libm.so.6' is already closed", again);
+}
+
+__test functionPointerTypes {
+    cte assert (isFunctionPointer!{fn ()-> void});
+    cte assert (isFunctionPointer!{fn (i32, [c8])-> f64});
+    cte assert (!isFunctionPointer!{i32});
+    cte assert (!isFunctionPointer!{*void});
+}

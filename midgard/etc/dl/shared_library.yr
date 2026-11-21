@@ -1,0 +1,147 @@
+in shared_library;
+
+use etc::c::dl;
+use etc::runtime::gc;
+
+use etc::dl::shared_library_error;
+use std::conv;
+
+/**
+ * True iif `T` is a function pointer type, the only type a symbol is looked up as
+ * */
+pub def isFunctionPointer {T of fn (A)-> R, A..., R} = true;
+
+/**
+ * True iif `T` is a function pointer type, the only type a symbol is looked up as
+ * */
+pub def isFunctionPointer {T of fn ()-> R, R} = true;
+
+/**
+ * True iif `T` is a function pointer type, the only type a symbol is looked up as
+ * */
+pub def isFunctionPointer {T} = false;
+
+/**
+ * A shared library opened at run time, whose exported functions are looked up by name.
+ * @warning: the functions looked up, and the objects of the classes the library defines, point
+ *    into its code: none of them can be used once it is closed
+ * */
+pub class SharedLibrary {
+
+    let mut _handle: *void = null;
+
+    let _path: [c8];
+
+    /**
+     * Open a shared library, resolving every symbol it leaves undefined
+     * @params:
+     *    - path: the file of the library, looked up like `dlopen` does when it has no `/`
+     *    - global: make its symbols available to the libraries opened after it
+     * @throws:
+     *    - &SharedLibraryError: the library cannot be loaded, or one of its symbols is undefined
+     * */
+    pub self (path: [c8], global: bool = false)
+        with _path = path
+        throws SharedLibraryError
+    {
+        let flags = if (global) { RTLD_NOW | RTLD_GLOBAL } else { RTLD_NOW };
+        self._handle = dlopen(path.toStringZ(), flags);
+        if (self._handle == null) {
+            throw copy SharedLibraryError(lastError("cannot open '" ~ path ~ "'"));
+        }
+    }
+
+    /**
+     * @returns: the path the library was opened from
+     * */
+    pub fn path(self)-> [c8] {
+        self._path
+    }
+
+    /**
+     * @returns: true iif the library is open
+     * */
+    pub fn isOpen(self)-> bool {
+        self._handle != null
+    }
+
+    /**
+     * Look up a function the library exports
+     * @params:
+     *    - name: the name of the symbol, an `extern (C)` function of the library
+     * @returns: the function, as a function pointer of type `T`
+     * @throws:
+     *    - &SharedLibraryError: the library is closed, or does not define `name`
+     * @warning: nothing checks that `T` is the signature of the function
+     * */
+    pub fn if (isFunctionPointer!{T}) symbol {T} (self, name: [c8])-> T
+        throws SharedLibraryError
+    {
+        let addr = self.lookup(name);
+        if (addr == null) {
+            throw copy SharedLibraryError(lastError("'" ~ self._path ~ "' does not define '" ~ name ~ "'"));
+        }
+
+        let slot = cast!{*void} (&addr);
+        unsafe { *(cast!{*T} (slot)) }
+    }
+
+    /**
+     * @returns: true iif the library is open and defines `name`
+     * */
+    pub fn hasSymbol(self, name: [c8])-> bool {
+        if (self._handle == null) { return false; }
+
+        {
+            self.lookup(name) != null
+        } catch {
+            _ => false
+        }
+    }
+
+    /**
+     * Close the library, after a collection that finalizes its objects no longer reachable while its
+     * code is still there. Its code is unloaded once every handle on it is closed; opening it again
+     * then reads the file anew
+     * @throws:
+     *    - &SharedLibraryError: the library is already closed, or cannot be unloaded
+     * */
+    pub fn close(mut self)
+        throws SharedLibraryError
+    {
+        if (self._handle == null) {
+            throw copy SharedLibraryError("'" ~ self._path ~ "' is already closed");
+        }
+
+        _yrt_gc_collect();
+        let res = dlclose(self._handle);
+        self._handle = null;
+        if (res != 0) {
+            throw copy SharedLibraryError(lastError("cannot close '" ~ self._path ~ "'"));
+        }
+    }
+
+    /**
+     * @returns: the address of the symbol `name`, null when the library does not define it
+     * */
+    prv fn lookup(self, name: [c8])-> *void
+        throws SharedLibraryError
+    {
+        if (self._handle == null) {
+            throw copy SharedLibraryError("'" ~ self._path ~ "' is closed");
+        }
+
+        dlerror();
+        dlsym(self._handle, name.toStringZ())
+    }
+}
+
+/**
+ * @returns: `what`, followed by the error `dlerror` reports, when it reports one
+ * */
+fn lastError(what: [c8])-> [c8] {
+    let err = dlerror();
+    if (err == null) { return what; }
+
+    what ~ ": " ~ unsafe { err.fromStringZ() }
+}

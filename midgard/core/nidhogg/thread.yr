@@ -19,6 +19,11 @@ use core::nidhogg::{heap, mark, state, sys, thread_state};
  * */
 pub def NOSCAN = 1u8;
 
+/**
+ * The number of TLS blocks of shared objects scanned with the stack of a thread
+ * */
+pub def DYNAMIC_TLS = 64us;
+
 /*!
  * ====================================================================================================
  * ====================================================================================================
@@ -28,7 +33,7 @@ pub def NOSCAN = 1u8;
  */
 
 /**
- * Make the calling thread known to the collector, its stack and its TLS block being scanned from
+ * Make the calling thread known to the collector, its stack and its TLS blocks being scanned from
  * then on, until it ends
  * @returns: its state
  * */
@@ -48,6 +53,8 @@ pub fn register ()-> usize {
         (*t).thread = _yrt_i_nh_thread_self ();
         _yrt_i_nh_stack_bounds (cast!usize (&((*t).stackLo)), cast!usize (&((*t).stackHi)));
         _yrt_i_nh_tls_bounds (cast!usize (&((*t).tlsLo)), cast!usize (&((*t).tlsHi)));
+        (*t).tp = _yrt_i_nh_thread_pointer ();
+        (*t).dynamicTls = words (2us * DYNAMIC_TLS);
         (*t).cache = words (NLISTS);
         (*t).returned = words (NLISTS);
         (*t).grey = words (GREY_WORDS);
@@ -103,6 +110,7 @@ pub extern (C) fn _yrt_i_nh_thread_exit (ts: usize) {
     _yrt_i_nh_set_self (0us);
     _yrt_i_nh_mutex_unlock ((*g).threadsLock);
 
+    free ((*t).dynamicTls);
     free ((*t).cache);
     free ((*t).returned);
     free ((*t).grey);
@@ -379,7 +387,33 @@ fn parked (ts: usize) {
 }
 
 /**
- * Copy the grey objects of the thread `ts`, and its stack and its TLS block if `stack` is set,
+ * Find the TLS blocks of shared objects the thread `ts` allocated, into its `dynamicTls` words
+ * @returns: their number
+ * */
+@{nogc, unsafe}
+fn dynamicTlsBlocks (ts: usize)-> usize {
+    let t = thread (ts);
+    {
+        cast!usize (_yrt_i_nh_dynamic_tls ((*t).tp, (*t).dynamicTls, cast!u64 (DYNAMIC_TLS)))
+    }
+}
+
+/**
+ * @returns: the bounds of the `i`-th TLS block of a shared object found for the thread `ts`, aligned
+ * on words inwards
+ * */
+@{nogc, unsafe}
+fn dynamicTlsBlock (ts: usize, i: usize)-> (usize, usize) {
+    let t = thread (ts);
+    {
+        let lo = ((ld ((*t).dynamicTls + i * 16us) + 7us) / 8us) * 8us;
+        let hi = ld ((*t).dynamicTls + i * 16us + 8us);
+        if (hi > lo) { (lo, lo + ((hi - lo) / 8us) * 8us) } else { (lo, lo) }
+    }
+}
+
+/**
+ * Copy the grey objects of the thread `ts`, and its stack and its TLS blocks if `stack` is set,
  * into a record of the copies, scanned once the round let the threads go (scanCopies)
  * @returns: false iif the copies have no room for them
  * @info: called by the thread itself, in the handler of the handshake signal, or by the collector
@@ -393,13 +427,18 @@ fn copyThread (ts: usize, stack: bool)-> bool {
         let ng = (*t).greyLen;
         let stackLo = (((*t).sp + 7us) / 8us) * 8us;
         let tlsLo = (((*t).tlsLo + 7us) / 8us) * 8us;
-        let mut stackLen = 0us, mut tlsLen = 0us;
+        let mut stackLen = 0us, mut tlsLen = 0us, mut nd = 0us, mut dynLen = 0us;
         if (stack) {
             stackLen = if ((*t).stackHi > stackLo) { (((*t).stackHi - stackLo) / 8us) * 8us } else { 0us };
             tlsLen = if ((*t).tlsHi > tlsLo) { (((*t).tlsHi - tlsLo) / 8us) * 8us } else { 0us };
+            nd = dynamicTlsBlocks (ts);
+            for i in 0us .. nd {
+                let (lo, hi) = dynamicTlsBlock (ts, i);
+                dynLen = dynLen + (hi - lo);
+            }
         }
 
-        let ns = (stackLen + tlsLen) / 8us;
+        let ns = (stackLen + tlsLen + dynLen) / 8us;
         if (ng == 0us && ns == 0us) return true;
 
         let size = (2us + ng + ns) * 8us;
@@ -417,6 +456,12 @@ fn copyThread (ts: usize, stack: bool)-> bool {
         memmove (rec + 16us, (*t).grey + 16us, ng * 8us);
         memmove (rec + 16us + ng * 8us, stackLo, stackLen);
         memmove (rec + 16us + ng * 8us + stackLen, tlsLo, tlsLen);
+        let mut dst = rec + 16us + ng * 8us + stackLen + tlsLen;
+        for i in 0us .. nd {
+            let (lo, hi) = dynamicTlsBlock (ts, i);
+            memmove (dst, lo, hi - lo);
+            dst = dst + (hi - lo);
+        }
 
         (*t).greyLen = 0us;
         (*t).handed = ng;
@@ -427,7 +472,7 @@ fn copyThread (ts: usize, stack: bool)-> bool {
 }
 
 /**
- * Scan the stack and the TLS block of the thread `ts` in place, while it is parked
+ * Scan the stack and the TLS blocks of the thread `ts` in place, while it is parked
  * */
 @{nogc, unsafe}
 fn scanThread (ts: usize) {
@@ -435,7 +480,14 @@ fn scanThread (ts: usize) {
     {
         scanRange ((*t).sp, (*t).stackHi);
         scanRange ((*t).tlsLo, (*t).tlsHi);
-        (*t).parkWords = cast!u64 (((*t).stackHi - (*t).sp) / 8us + ((*t).tlsHi - (*t).tlsLo) / 8us);
+        let mut dynWords = 0us;
+        for i in 0us .. dynamicTlsBlocks (ts) {
+            let (lo, hi) = dynamicTlsBlock (ts, i);
+            scanRange (lo, hi);
+            dynWords = dynWords + (hi - lo) / 8us;
+        }
+
+        (*t).parkWords = cast!u64 (((*t).stackHi - (*t).sp) / 8us + ((*t).tlsHi - (*t).tlsLo) / 8us + dynWords);
     }
 }
 

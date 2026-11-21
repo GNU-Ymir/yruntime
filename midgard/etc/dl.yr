@@ -1,0 +1,28 @@
+/**
+ * This module loads shared libraries at run time, and looks up the functions they export.
+ *
+ * A library compiled against the std lib of the program loading it shares its runtime: the
+ * classes, the allocations and the exceptions of the one are those of the other. The program has
+ * to be linked with its symbols exported(`-rdynamic`, the std lib linked whole), which gyllir does
+ * for an executable target declaring `exports = true`, and the library leaves the std lib to it
+ * (a gyllir `shared` target). The tags of the library register when it is opened.
+ *
+ * @example:
+ * ```
+ * use etc::dl;
+ *
+ * let dmut lib = copy SharedLibrary("libm.so.6");
+ * let cos = lib.symbol!{fn (f64)-> f64}("cos");
+ * assert(cos(0.0) == 1.0);
+ *
+ * lib:.close();
+ * ```
+ * */
+in dl;
+
+mod ::shared_library;
+mod ::shared_library_error;
+
+pub def SharedLibrary: shared_library::SharedLibrary;
+pub def SharedLibraryError: shared_library_error::SharedLibraryError;
+pub def isFunctionPointer = shared_library::isFunctionPointer;
