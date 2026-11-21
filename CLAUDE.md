@@ -275,7 +275,12 @@ Three top-level modules declared in `midgard/__lib__.yr`:
   the garbage collector (see below).
 - `etc` (`midgard/etc.yr`): externals — `etc::c` (raw C bindings) and `etc::runtime::*`
   (`dwarf`, `elf`, `env`, `errno`, `exception`, `files`, `gc`, `memory`, `threads` — thin
-  Ymir wrappers around `rt/`).
+  Ymir wrappers around `rt/`), and `etc::dl`: `SharedLibrary` opens a shared library at run time
+  (`dlopen`, `RTLD_NOW`) and looks up an `extern (C)` function as a typed function pointer
+  (`symbol!{fn (...)-> R}`). A library loaded later needs nothing more from the runtime: its
+  `.init_array` (tag registrations) runs at open, the collector re-reads the writable segments and
+  the TLS modules of every loaded object each cycle, and `close` collects before `dlclose` so the finalizers of its
+  unreachable objects run while its code is mapped. Its objects still alive at close are not.
 
 ### `rt/` — the C runtime
 
@@ -305,10 +310,13 @@ release note, and anything gymir calls has to be changed there in the same breat
 Níðhöggr replaced Boehm: a concurrent, non-moving tri-color mark and sweep collector, close to
 Go's, that never stops all the threads at once. It marks while the program runs, interrupts a few
 threads at a time through a handshake (`SIGPWR`: the thread does the task of the round itself in
-the handler, `doTask`, copying its stack, TLS block and grey objects into a record of the copies the
+the handler, `doTask`, copying its stack, TLS blocks and grey objects into a record of the copies the
 collector scans once the round let the threads go, or handing the spans of its cache back, and goes
 on; it parks on a futex for the collector to do it only when the copies, 64MiB reserved, have no
-room for it; a thread caught in a barrier or an assist does it once it is done, from `leaveBusy`; a
+room for it; a thread local stores no barrier, so its TLS blocks go with its stack: the static one of
+the executable, and those of the shared objects, read from glibc's dynamic thread vector through
+the thread pointer (`_yrt_i_nh_dynamic_tls`, x86_64 only) for the modules `_yrt_i_nh_data_segments`
+lists at every cycle; a thread caught in a barrier or an assist does it once it is done, from `leaveBusy`; a
 round signals `WINDOW` threads ahead and serves them in the order they park, since a thread in a
 barrier can wait for a lock a parked one holds). A pause is therefore the time a thread takes to
 copy its own stack, microseconds, not the time the collector takes to get a processor. It relies
